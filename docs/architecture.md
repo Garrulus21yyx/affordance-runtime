@@ -12,7 +12,8 @@ large-page liveness, viewport-grounded media, canonical public-identity, and lin
 complete. The current convergence patch additionally makes control discovery a real filter, publishes BrowserGym's
 official global navigation actions only for WebArena-family profiles, counts same-World discovery loops in Monitor,
 applies proactive SDK-history processing, byte-bounds the PageMap directory without shrinking current World, and
-keeps task-ranked current actions ahead of incidental browser focus when only a bounded action prefix fits. The
+keeps both one fresh focused executable target and one task-ranked target when an ordinary bounded action prefix is
+packed; an explicit `find_controls` result remains one complete higher-priority capability set. The
 current action-boundary repair also makes that rank purely presentational: registry-owned action tools use stable
 E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver alone validates the selected ref,
 operation, destination, parameters, and private action identity.
@@ -81,9 +82,11 @@ The converged owner contract restores one decision and one precise recovery iden
   all proposals are therefore closed together before the fresh World is reconsidered;
 - raw provider output remains in the transcript; benchmark metrics count each multi-call envelope, and invocation
   diagnostics record the proposals discarded from execution;
-- Monitor uses one consecutive no-progress episode. A different empty query, no-match region, observation-only step,
-  or ineffectual GUI dispatch cannot clear it. Typed `NEW_INFORMATION` or a GUI transition with a satisfied local
-  postcondition/observed change clears it; otherwise recovery advances once and then blocks bounded recurrence.
+- Monitor uses one consecutive same-World no-progress episode. A different empty query, no-match region,
+  observation-only step, or ineffectual same-World GUI dispatch cannot clear it. Typed `NEW_INFORMATION`, a GUI
+  transition with a satisfied local postcondition/observed change, or a causally dispatched action that reaches a
+  different fresh public World starts the next episode; otherwise recovery advances once and then blocks bounded
+  recurrence.
 
 This is the atomic-action variant used explicitly by [Agent S2](https://arxiv.org/abs/2504.00906), whose Worker chooses
 one atomic action from the latest observation. Systems that execute batches make that algebra explicit instead:
@@ -217,7 +220,7 @@ asynchrony, or another loop. Raw knowledge remains when reduction fails, and Har
 covered call/result pairs.
 
 Provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`; the full suite
-reports `1737 passed / 19 skipped` with the one pre-existing multiprocessing fork warning. Focused Ruff and diff checks
+reports `1733 passed / 25 skipped` with the one pre-existing multiprocessing fork warning. Focused Ruff and diff checks
 pass. This is implementation evidence, not overall closure or a fresh live Task266 witness.
 
 Overall project closure is still **open**:
@@ -225,6 +228,23 @@ Overall project closure is still **open**:
 - the stable-navigation outcome and reducer scheduling repairs require a post-repair Task266 live witness before this
   reopened causal subsystem can close;
 - Planner lexical admission still has a known gap.
+
+Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
+shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search
+textbox with a legal `press_key` binding, while the soft-packed model view retained only the task-ranked Wikipedia
+home link. After two empty `find_controls` calls, the model therefore bound `ArrowDown` to that visible unrelated
+link. BrowserGym sent the action and captured a different fresh public World, but Monitor inherited the two discovery
+recovery attempts, labeled the real receipt `not_sent`, and blocked it as attempt three because the semantic key
+postcondition was mechanically unknown.
+
+The converged action minimum no longer chooses between the two known counterexamples. On ordinary turns TurnPacker
+hard-admits one task-ranked target and the first direct focused target, then uses the soft target for optional breadth;
+an explicit discovery result still hard-admits its complete bounded route set. Direct focus precedes same-container
+siblings inside the existing interaction inventory. If the provider hard capacity cannot hold both small ordinary
+anchors, packing fails typed instead of guessing one. Monitor now derives recovery `dispatch` from the typed receipt,
+keeps ineffectual same-World actions in the episode, and starts a new same-World episode only when a causal GUI
+dispatch reaches a changed fresh public World. No second ranker, action authority, state machine, or projection was
+added. Task266 run18 remains failed pre-repair evidence; a fresh live witness is required.
 
 Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
 `done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
@@ -520,15 +540,18 @@ The owner-level contract is now:
 complete fresh ActionSpace
 -> private current resolver for every supported operation
 
-task-ranked prefix + incidental focus/container routes
--> bounded model-visible observation only
+ordinary packed action minimum
+-> one task-ranked target + one direct fresh focused target
+
+remaining task-ranked + focus-container routes
+-> optional bounded model-visible breadth
 
 find_controls(query)
 -> bounded current E-ref matches when the visible prefix is insufficient
 ```
 
-Focus remains visible state and an executable route; it is no longer entitled to displace the task-ranked prefix.
-Neither focus nor the ranker can remove a legal current action from the resolver. A syntactically valid but unavailable
+Neither focus nor the ranker is entitled to displace the other ordinary anchor, and neither can remove a legal current
+action from the resolver. A syntactically valid but unavailable
 or stale E-ref fails as a typed grounding gap before Binder/Executor.
 Monitor also renders recovery from the typed producer: action-discovery loops tell the model to use a returned control
 or materially change route, while an exact read/search replay points to the same tool's `next_cursor`, a different
@@ -787,7 +810,8 @@ discovery step and recovers on the second consecutive discovery. In addition, th
 ref-free public signatures for dispatched GUI attempts and recognizes repeated period-2/3 suffixes across fresh
 Worlds. Local read/search steps do not erase that effectful-action sequence. The first occurrence emits the existing
 typed `STATE_OSCILLATION` recovery; recurrence of the same phase-independent cycle blocks. Only a proven effectful GUI
-transition clears a no-progress episode; an arbitrary different dispatch does not. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
+transition or a causal dispatch that reaches a different fresh public World starts the next same-World no-progress
+episode; an arbitrary same-World dispatch does not. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
 task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
 
 ## World, perception, and action boundaries

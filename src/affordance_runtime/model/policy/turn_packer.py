@@ -117,19 +117,29 @@ class TurnPacker:
             ),
             None,
         )
-        if foreground is not None and foreground.remaining:
-            kind = foreground.kind.value
-            required_count = (
-                len(foreground.remaining)
-                if foreground.kind is DeliveryObligationKind.EXPLICIT_QUERY
-                else 1
-            )
-            attempted_counts[kind] = required_count
-            required = dict(admitted_counts)
-            required[kind] = required_count
-            # A bounded find_controls result is one capability set: every
-            # returned route must be callable in this same-World catalog.
-            # Other foreground inventories retain their one-record minimum.
+        required = dict(admitted_counts)
+        explicit_query = plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
+        if explicit_query is not None and explicit_query.remaining:
+            required[explicit_query.kind.value] = len(explicit_query.remaining)
+        else:
+            for required_kind in (
+                DeliveryObligationKind.BASE_ACTIONS,
+                DeliveryObligationKind.INTERACTION,
+            ):
+                obligation = plan.obligation(required_kind)
+                if obligation is not None and obligation.remaining:
+                    required[required_kind.value] = 1
+            if not any(required.values()) and foreground is not None and foreground.remaining:
+                required[foreground.kind.value] = 1
+
+        required_kinds = {kind for kind, count in required.items() if count}
+        if required_kinds:
+            for kind in required_kinds:
+                attempted_counts[kind] = required[kind]
+            # A bounded find_controls result is one complete capability set.
+            # Ordinary turns retain both structural current focus and one
+            # task-ranked suggestion instead of forcing a Runtime guess
+            # between them when the soft target can fit only one route.
             accepted = self._attempt(
                 request,
                 binder=binder,
@@ -147,15 +157,14 @@ class TurnPacker:
             )
             admitted_counts = required
 
-        first_extension_round = foreground is not None and bool(foreground.remaining)
+        first_extension_round = bool(required_kinds)
         while True:
             admitted_this_round = False
             for obligation in plan.obligations:
                 kind = obligation.kind.value
-                if first_extension_round and obligation is foreground:
-                    # The required foreground atom was this group's attempt in
-                    # depth round zero. Every other eligible group gets one
-                    # attempt before foreground can receive a second atom.
+                if first_extension_round and kind in required_kinds:
+                    # Every group outside the hard minimum gets one breadth
+                    # attempt before a minimum group receives another atom.
                     continue
                 if kind in blocked or admitted_counts[kind] >= len(obligation.remaining):
                     continue
@@ -186,11 +195,12 @@ class TurnPacker:
                 admitted_this_round = True
             if first_extension_round:
                 first_extension_round = False
-                foreground_has_more = bool(
-                    foreground is not None
-                    and admitted_counts[foreground.kind.value] < len(foreground.remaining)
+                minimum_has_more = any(
+                    admitted_counts[item.kind.value] < len(item.remaining)
+                    for item in plan.obligations
+                    if item.kind.value in required_kinds
                 )
-                if admitted_this_round or foreground_has_more:
+                if admitted_this_round or minimum_has_more:
                     continue
             if not admitted_this_round:
                 break

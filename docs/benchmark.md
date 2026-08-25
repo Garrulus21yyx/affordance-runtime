@@ -8,7 +8,7 @@ recapture repair, and BrowserGym large-page liveness, viewport-grounded media, c
 fresh-World projection repairs are implemented. The current convergence patch additionally filters control discovery,
 publishes only profile-supported BrowserGym navigation, detects same-World discovery loops, proactively processes SDK
 history, bounds the PageMap directory while retaining the complete recoverable region index, orders the ordinary
-model-visible action prefix by the existing task-aware rank before incidental focus, and gives Monitor
+model-visible action minimum with both one task-ranked target and one direct fresh focused target, and gives Monitor
 producer-specific recovery guidance for action discovery versus local-result replay. The current owner repair further
 decouples action callability from that prefix: stable registry action schemas accept current E-ref syntax and the
 existing complete current `ActionSpace` resolver performs exact route/domain validation.
@@ -25,14 +25,14 @@ matches by target coverage, and leaves an executable-control miss empty instead 
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
 Current provider-free verification passes the modified execution/projector/checkpoint surface at `131 passed`.
-The full suite reports `1737 passed / 19 skipped`; one pre-existing multiprocessing fork warning remains in the
+The full suite reports `1733 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the
 observability test. Focused Ruff and `git diff --check` pass. This is implementation evidence for the bounded changes,
 not a live witness for the Task266 repair or overall closure.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
 - post-repair live validation of the stable-navigation outcome and reducer scheduling repairs exposed by Task266
-  run17;
+  run17, plus the action-minimum and Monitor lifecycle repairs exposed by Task266 run18;
 - the Planner lexical-admission gap;
 - any broader live provider/benchmark gate.
 
@@ -189,6 +189,24 @@ The provider-free repair gates now require:
   official `extra_body={"thinking":{"type":"disabled"}}` request through the existing PydanticAI model settings.
 
 No live post-repair Task266 witness exists yet.
+
+The authorized Task266
+[`run18`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run18/run.json) crossed the reducer scheduling
+repair: only the bootstrap and first-recovery reductions ran, both completed, and no reducer timeout occurred. The
+fresh Wikipedia World contained a focused search textbox with a legal `press_key` binding, but the soft-packed request
+retained only the task-ranked Wikipedia home link. After two empty discovery attempts, the model chose the correct
+keyboard strategy but could ground `ArrowDown` only to that unrelated visible link. BrowserGym sent it and captured a
+different fresh public World. Monitor then inherited the discovery recovery count, rendered the real receipt as
+`not_sent`, and blocked the action as recovery attempt three because a semantic key press has no universal mechanical
+postcondition. Run18 is failed pre-repair evidence, not acceptance.
+
+The provider-free repair now requires one complete explicit discovery set when present; otherwise the hard packing
+minimum contains both one task-ranked target and the first direct fresh focused target. Optional candidates still use
+the existing soft token target. This closes both the earlier run5 counterexample (focus alone displaced the ranked
+target) and run18 (rank alone displaced focus). Monitor derives `sent|sent_unknown|not_sent` from the typed receipt,
+does not clear an ineffectual same-World action, and starts a new same-World recovery episode when a causally dispatched
+action reaches a changed fresh public World even if its semantic postcondition remains unknown. No alternate action
+view, recovery state machine, model, or retry was added. A fresh live Task266 witness remains required.
 
 The explicitly authorized W1b run8 witness is a failed pre-repair diagnostic, not acceptance. It proved progress-note
 retention in physical history, then terminated with `policy_failure_code=invalid_tool_arguments` when the model chose
@@ -531,9 +549,10 @@ Property and Monitor gates prove that focused/unrelated controls remain excluded
 membership, discovery creates no `InformationDelta`, and the second consecutive same-World discovery produces typed
 recovery rather than an unbounded query loop.
 
-For an ordinary turn without an explicit discovery result, one vertical gate gives the action delivery only one
-visible route and proves that the first task-ranked automatic candidate—not an incidental focused-context route—enters
-the Manifest. A second gate gives the delivery zero visible routes and proves that its action schema is unchanged and
+For an ordinary turn without an explicit discovery result, one vertical gate sets the soft target to the cost of only
+one visible route and proves that both the first task-ranked target and the direct fresh focused target enter the
+Manifest and resolve through the same Catalog. A property gate makes inability to fit both inside the hard capacity a
+typed capacity failure rather than a Runtime choice. A second gate gives the delivery zero visible routes and proves that its action schema is unchanged and
 that every exact current route remains resolvable through the same Catalog resolver. Monitor gates separately prove that
 control-discovery recovery and exact local-result replay publish producer-appropriate next routes; the latter points to
 same-tool `next_cursor`, a different relevant region, a current executable control, or browser navigation.
@@ -725,8 +744,9 @@ The final read-only review for this cutover must answer:
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
 20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist the
-    episode across different empty/no-match attempts, and clear it only on typed new information or a proven GUI
-    effect?
+    episode across different empty/no-match and ineffectual same-World attempts, project dispatch from the real
+    receipt, and start a new same-World episode only on typed new information, a proven GUI effect, or a causal GUI
+    dispatch reaching a changed fresh public World?
 21. When a BrowserGym action changes the active tab, do post-action stability, observation, physical enrichment, and
     transition URL all come from BrowserGym's one current page rather than joining pre- and post-action tabs?
 22. On a large unchanged World, does Monitor findings derivation scale with targets plus facts, avoid region-index

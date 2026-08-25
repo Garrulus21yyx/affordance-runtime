@@ -975,7 +975,7 @@ def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_f
     assert reasons["Zulu control"] == "focus_container"
 
 
-def test_task_ranked_actions_precede_incidental_focus_when_only_one_route_fits() -> None:
+def test_fresh_focus_and_task_ranked_action_both_survive_a_one_route_soft_target() -> None:
     task, world, _actions, evaluation, _context_value = _context()
     focused_world = replace(
         world,
@@ -992,13 +992,19 @@ def test_task_ranked_actions_precede_incidental_focus_when_only_one_route_fits()
     assert plan is not None
 
     foreground = next(item for item in plan.obligations if item.scope == plan.foreground_scope)
-    first = foreground.records[0]
-
+    base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+    interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
     assert foreground.kind is DeliveryObligationKind.BASE_ACTIONS
-    assert isinstance(first, ActionRouteFragment)
-    assert first.candidate.label == "Settings"
-    assert "Account Preferences" in first.candidate.functional_path
-    assert first.inclusion_reason in {"automatic_relevance", "viewport_relevance"}
+    assert base is not None and interaction is not None
+    ranked = base.records[0]
+    focused = interaction.records[0]
+    assert isinstance(ranked, ActionRouteFragment)
+    assert isinstance(focused, ActionRouteFragment)
+    assert ranked.candidate.label == "Settings"
+    assert "Account Preferences" in ranked.candidate.functional_path
+    assert ranked.inclusion_reason in {"automatic_relevance", "viewport_relevance"}
+    assert focused.candidate.label == "Alpha control"
+    assert focused.inclusion_reason == "focused"
 
     counts = {item.kind.value: 0 for item in plan.obligations}
     counts[DeliveryObligationKind.BASE_ACTIONS.value] = 1
@@ -1008,7 +1014,7 @@ def test_task_ranked_actions_precede_incidental_focus_when_only_one_route_fits()
         admitted_records=counts,
     )
     one_route_catalog = compile_grounded_action_catalog(context, one_route_delivery)
-    request = ModelDecisionRequest("request:ranked-first", context)
+    request = ModelDecisionRequest("request:focused-first", context)
     wide = CanonicalProviderEnvelopeBinder()
     one_route_envelope = wide.bind(
         request,
@@ -1032,18 +1038,28 @@ def test_task_ranked_actions_precede_incidental_focus_when_only_one_route_fits()
             )
         ),
     )
-    resolved = resolve_grounded_tool_call(
+    resolved_ranked = resolve_grounded_tool_call(
         packed.catalog,
-        ToolCall("activate", {"target": first.candidate.target_ref}, "call:ranked-first"),
+        ToolCall("activate", {"target": ranked.candidate.target_ref}, "call:ranked-anchor"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=packed.delivery.delivery_id,
+    )
+    resolved_focused = resolve_grounded_tool_call(
+        packed.catalog,
+        ToolCall("activate", {"target": focused.candidate.target_ref}, "call:focused-anchor"),
         expected_context_id=context.context_id,
         expected_delivery_id=packed.delivery.delivery_id,
     )
 
-    assert sum(dict(packed.admitted_record_counts).values()) == 1
+    assert sum(dict(packed.admitted_record_counts).values()) == 2
     assert dict(packed.admitted_record_counts)[DeliveryObligationKind.BASE_ACTIONS.value] == 1
-    assert first.candidate.target_ref in packed.delivery.manifest.executable_refs
-    assert isinstance(resolved.decision, SelectAction)
-    assert resolved.decision.action_id == first.candidate.action_id
+    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.INTERACTION.value] == 1
+    assert ranked.candidate.target_ref in packed.delivery.manifest.executable_refs
+    assert focused.candidate.target_ref in packed.delivery.manifest.executable_refs
+    assert isinstance(resolved_ranked.decision, SelectAction)
+    assert isinstance(resolved_focused.decision, SelectAction)
+    assert resolved_ranked.decision.action_id == ranked.candidate.action_id
+    assert resolved_focused.decision.action_id == focused.candidate.action_id
 
 
 @pytest.mark.parametrize(

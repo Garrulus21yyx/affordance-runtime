@@ -473,7 +473,14 @@ def build_action_delivery_plan(
         and target_id in options_by_target
         and options_by_target[target_id].target_role in _FOCUS_CONTAINER_SOURCE_ROLES
     }
-    for option in sorted(complete_actions, key=_public_option_view_order):
+    def interaction_order(option: AgentActionOptionView) -> tuple[object, ...]:
+        target_context = region_index.target_contexts.get(option.target_id)
+        return (
+            0 if target_context is not None and target_context.focused else 1,
+            *_public_option_view_order(option),
+        )
+
+    for option in sorted(complete_actions, key=interaction_order):
         target_context = region_index.target_contexts.get(option.target_id)
         direct = bool(target_context is not None and target_context.focused)
         same_focus_container = bool(
@@ -537,10 +544,6 @@ def build_action_delivery_plan(
 
     priorities = {
         DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 6,
-        # The automatic prefix is the task-ranked view of the current legal
-        # ActionSpace.  An incidental browser focus may remain executable, but
-        # it must not displace that prefix when the request budget can admit
-        # only one route.
         DeliveryObligationKind.BASE_ACTIONS: 2,
         DeliveryObligationKind.INTERACTION: 3,
         DeliveryObligationKind.DESTINATION_ROUTES: 4,

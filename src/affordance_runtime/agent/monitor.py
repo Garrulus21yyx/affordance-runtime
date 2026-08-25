@@ -158,6 +158,17 @@ class EpisodeMonitor:
             self.same_attempt_streak = 0
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
+        # A causally dispatched GUI attempt that reached a different fresh
+        # public World starts a new same-world recovery episode even when its
+        # semantic postcondition is not mechanically decidable.  It must not
+        # consume the remaining budget of an earlier read/discovery stall.
+        if gui_dispatched and state_changed and self.recovery_count:
+            self.observation_only_streak = 0
+            self.recovery_count = 0
+            self.latest_attempt_signature = gui_signature
+            self.same_attempt_streak = 1
+            return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+
         if self.recovery_count and result.feedback == "recovery_repeat_rejected":
             signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
             return EpisodeMonitorTransition(
@@ -266,6 +277,18 @@ def _gui_dispatched(result: StepResult) -> bool:
     )
 
 
+def _dispatch_status(result: StepResult) -> str:
+    """Project the strongest typed dispatch receipt without inventing state."""
+
+    receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
+    statuses = tuple(item.result.dispatch_status for item in receipts)
+    if DispatchStatus.SENT_UNKNOWN in statuses:
+        return DispatchStatus.SENT_UNKNOWN.value
+    if DispatchStatus.SENT in statuses:
+        return DispatchStatus.SENT.value
+    return DispatchStatus.NOT_SENT.value
+
+
 def _control_stall_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
@@ -290,7 +313,7 @@ def _control_stall_signal(
         signature,
         {
             "attempt": _bounded_public_attempt(result),
-            "dispatch": "not_sent",
+            "dispatch": _dispatch_status(result),
             "observation_only_streak": monitor.observation_only_streak,
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
@@ -317,7 +340,7 @@ def _gui_cycle_recovery_signal(
         "state_oscillation:" + cycle_digest,
         {
             "attempt": _bounded_public_attempt(result),
-            "dispatch": "sent",
+            "dispatch": _dispatch_status(result),
             "cycle_period": cycle_period,
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,

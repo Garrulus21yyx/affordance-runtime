@@ -601,7 +601,31 @@ def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> No
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recovery_signal is not None
     assert continued.recovery_signal.recovery_attempt == 2
+    assert continued.recovery_signal.observed_evidence["dispatch"] == "sent"
     assert monitor.recovery_count == 2
+
+
+def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery() -> None:
+    world = _world("observation:control-recovery")
+    changed = _world("observation:changed-by-gui", route="/map/next")
+    monitor = EpisodeMonitor(AgentLoopProfile(30, 1, 1))
+    monitor.start_episode(world, _evaluation(world))
+    recovery = _evaluate(monitor, _local_step(world, query="first"))
+    second_recovery = _evaluate(monitor, _local_step(world, query="second"))
+
+    continued = _evaluate(monitor, _dispatched_step(world, changed))
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second_recovery.recovery_signal is not None
+    assert second_recovery.recovery_signal.recovery_attempt == 2
+    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
+    assert continued.recovery_signal is None
+    assert monitor.recovery_count == 0
+    assert monitor.latest_attempt_signature is not None
+    assert monitor.latest_attempt_signature.operation == "activate"
+    assert monitor.same_attempt_streak == 1
 
 
 def test_monitor_never_overrides_native_terminal_evaluation() -> None:

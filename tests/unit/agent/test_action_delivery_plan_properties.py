@@ -209,20 +209,55 @@ def test_depth_round_packer_obeys_exact_fit_and_one_unit_under(
         perception_profile=SimpleNamespace(),
     )
 
-    assert sum(dict(packed.admitted_record_counts).values()) == expected_total
-    assert dict(packed.admitted_record_counts)[kinds[0].value] == 1
-    first_round_heads = [
-        next(kind for kind, value in call.items() if value > prior.get(kind, 0))
-        for prior, call in zip(calls, calls[1:], strict=False)
-        if sum(call.values()) == sum(prior.values()) + 1
-    ]
-    assert first_round_heads[:3] == [kind.value for kind in kinds]
+    admitted = dict(packed.admitted_record_counts)
+    assert sum(admitted.values()) == expected_total
+    assert admitted[DeliveryObligationKind.INTERACTION.value] == 1
+    assert admitted[DeliveryObligationKind.BASE_ACTIONS.value] == 1
+    assert admitted[DeliveryObligationKind.DESTINATION_ROUTES.value] == capacity - 2
+    assert any(
+        call[DeliveryObligationKind.INTERACTION.value] == 1
+        and call[DeliveryObligationKind.BASE_ACTIONS.value] == 1
+        for call in calls
+    )
+
+
+def test_structural_focus_and_task_ranked_head_fail_closed_if_hard_capacity_cannot_fit_both(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interaction = _obligation(DeliveryObligationKind.INTERACTION, 2, 0)
+    base = _obligation(DeliveryObligationKind.BASE_ACTIONS, 2, 1)
+    plan = ActionDeliveryPlan(
+        "actions:test",
+        "world:test",
+        (interaction, base),
+        interaction.scope,
+    )
+
+    def attempt(_request, **kwargs):
+        counts = dict(kwargs["admitted_records"])
+        if sum(counts.values()) > 1:
+            raise ModelRequestCapacityError(SimpleNamespace())
+        return _packed_artifacts(counts, kwargs["backoff_count"])
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(attempt))
+
+    with pytest.raises(ModelRequestCapacityError):
+        TurnPacker().pack(
+            SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
+            binder=_fake_binder(),
+            identity=None,
+            call_profile=_fake_profile(),
+            supports_multimodal=False,
+            perception_profile=SimpleNamespace(),
+        )
 
 
 def test_oversized_optional_head_blocks_only_its_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    foreground_kind, oversized_kind, small_kind = tuple(DeliveryObligationKind)[1:4]
+    foreground_kind = DeliveryObligationKind.BASE_ACTIONS
+    oversized_kind = DeliveryObligationKind.DESTINATION_ROUTES
+    small_kind = DeliveryObligationKind.ROUTE_ISSUES
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",
