@@ -6,6 +6,25 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+### Local agent shell
+
+The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is
+one task conversation with owner-emitted status and outcomes; the right column shows the latest Runtime-captured
+browser frame. Experiment configuration, failed-run review, raw trace JSON, and runner output live under Labs instead
+of competing with the user task in the foreground.
+
+The Console server owns both new read projections. `/activity` maps trace events into a bounded public vocabulary and
+does not expose World payloads, selectors, private bindings, or provider transcripts. `/browser-frame` serves only the
+latest image referenced by an observation after resolving it inside the run's trace directory and verifying its
+recorded SHA-256 digest. The browser pane is therefore a near-real-time, read-only view of Runtime evidence, not a
+second browser authority and not pixel-derived task state. Raw `/events` remains available only to the explicit Labs
+evidence view.
+
+This shell does not invent a free-form Runtime session API, task revision, or interactive browser takeover. Those
+controls are visibly unavailable until their owning Runtime contracts exist; the current benchmark runner remains the
+only launch and stop owner. Run history and automatic bad-case grouping are bounded to the current Console process.
+This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
+
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
 large-page liveness, viewport-grounded media, canonical public-identity, and linear fresh-World projection repairs is
