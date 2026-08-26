@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from interaction_shell.contracts import (
     AnswerQuestion,
     ApproveAction,
+    Capability,
     CloseSession,
     OptionalCommand,
     RunStatus,
     StartTask,
 )
 from interaction_shell.demo_port import ContractDemoPort
-from interaction_shell.manager import RunSessionManager
+from interaction_shell.manager import RunSessionManager, SessionUnauthorized
+from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 
 
 @pytest.mark.asyncio
@@ -202,3 +206,167 @@ async def test_terminal_owner_snapshot_triggers_external_cleanup_once():
     assert session.runtime_handle.cleanup_count == 1
     await manager.expire()
     assert session.runtime_handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_authenticates_same_session_without_persisting_reusable_key(tmp_path):
+    checkpoint_id = "runtime-checkpoint:" + "b" * 64
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
+    first_port = ContractDemoPort()
+    first_manager = RunSessionManager(first_port, registry)
+    created = await first_manager.create()
+    original = first_manager.authenticate(
+        created.snapshot.session_id,
+        created.session_key,
+    )
+    original.runtime_handle.snapshot = original.runtime_handle.snapshot.model_copy(
+        update={
+            "task_id": created.snapshot.session_id,
+            "task_revision": 1,
+            "task_text": "Paused task",
+            "run_status": RunStatus.PAUSED,
+            "checkpoint_id": checkpoint_id,
+            "resume_eligible": True,
+            "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
+        }
+    )
+    original_epoch = original.runtime_handle.snapshot.event_epoch
+
+    assert await first_manager.close_all() == ()
+    assert original.runtime_handle.cleanup_count == 1
+    with sqlite3.connect(registry.path) as connection:
+        persisted = " ".join(
+            str(value)
+            for row in connection.execute("SELECT session_id, salt, verifier, expires_at FROM shell_session_recovery")
+            for value in row
+        )
+    assert created.session_key not in persisted
+
+    class RecoveringDemoPort(ContractDemoPort):
+        recover_calls = []
+
+        async def recover(self, session_id, supplied_checkpoint_id, expires_at):
+            self.recover_calls.append((session_id, supplied_checkpoint_id, expires_at))
+            handle = await self.open(session_id, expires_at)
+            handle.snapshot = handle.snapshot.model_copy(
+                update={
+                    "task_id": session_id,
+                    "task_revision": 1,
+                    "task_text": "Paused task",
+                    "run_status": RunStatus.PAUSED,
+                    "checkpoint_id": supplied_checkpoint_id,
+                    "resume_eligible": True,
+                    "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
+                }
+            )
+            return handle
+
+    second_port = RecoveringDemoPort()
+    second_manager = RunSessionManager(second_port, registry)
+    with pytest.raises(SessionUnauthorized):
+        await second_manager.recover(
+            created.snapshot.session_id,
+            "wrong-session-key",
+            checkpoint_id,
+        )
+
+    recovered = await second_manager.recover(
+        created.snapshot.session_id,
+        created.session_key,
+        checkpoint_id,
+    )
+    assert recovered.snapshot.session_id == created.snapshot.session_id
+    assert recovered.snapshot.event_epoch != original_epoch
+    assert recovered.snapshot.run_status is RunStatus.PAUSED
+    assert recovered.snapshot.checkpoint_id == checkpoint_id
+    assert second_port.recover_calls == [
+        (
+            created.snapshot.session_id,
+            checkpoint_id,
+            created.snapshot.expires_at,
+        )
+    ]
+
+    closed = await second_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        CloseSession(
+            command_id="close:recovered",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+        ),
+    )
+    assert closed.kind == "accepted"
+    assert (
+        await registry.authenticate(
+            created.snapshot.session_id,
+            created.session_key,
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_recovery_installs_only_one_runtime_handle(tmp_path):
+    checkpoint_id = "runtime-checkpoint:" + "c" * 64
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
+    first_manager = RunSessionManager(ContractDemoPort(), registry)
+    created = await first_manager.create()
+    original = first_manager.authenticate(created.snapshot.session_id, created.session_key)
+    original.runtime_handle.snapshot = original.runtime_handle.snapshot.model_copy(
+        update={
+            "task_id": created.snapshot.session_id,
+            "task_revision": 1,
+            "task_text": "Paused task",
+            "run_status": RunStatus.PAUSED,
+            "checkpoint_id": checkpoint_id,
+            "resume_eligible": True,
+            "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
+        }
+    )
+    assert await first_manager.close_all() == ()
+
+    class BlockingRecoveryPort(ContractDemoPort):
+        def __init__(self):
+            super().__init__()
+            self.recover_started = asyncio.Event()
+            self.release_recovery = asyncio.Event()
+            self.recover_calls = 0
+
+        async def recover(self, session_id, supplied_checkpoint_id, expires_at):
+            self.recover_calls += 1
+            self.recover_started.set()
+            await self.release_recovery.wait()
+            handle = await self.open(session_id, expires_at)
+            handle.snapshot = handle.snapshot.model_copy(
+                update={
+                    "task_id": session_id,
+                    "task_revision": 1,
+                    "task_text": "Paused task",
+                    "run_status": RunStatus.PAUSED,
+                    "checkpoint_id": supplied_checkpoint_id,
+                    "resume_eligible": True,
+                    "capabilities": frozenset(
+                        {Capability.RESUME_TASK, Capability.CLOSE_SESSION}
+                    ),
+                }
+            )
+            return handle
+
+    port = BlockingRecoveryPort()
+    manager = RunSessionManager(port, registry)
+    first = asyncio.create_task(
+        manager.recover(created.snapshot.session_id, created.session_key, checkpoint_id)
+    )
+    await port.recover_started.wait()
+    second = asyncio.create_task(
+        manager.recover(created.snapshot.session_id, created.session_key, checkpoint_id)
+    )
+    await asyncio.sleep(0)
+    assert port.recover_calls == 1
+    port.release_recovery.set()
+
+    first_result, second_result = await asyncio.gather(first, second)
+    assert first_result == second_result
+    assert port.recover_calls == 1
+    await manager.close_all()

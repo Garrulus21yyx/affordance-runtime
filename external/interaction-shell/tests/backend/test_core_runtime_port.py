@@ -6,7 +6,14 @@ from datetime import datetime
 from typing import Any, cast
 
 import pytest
-from interaction_shell.contracts import Capability, OptionalCommand, RunStatus, StartTask, ViewerState
+from interaction_shell.contracts import (
+    Capability,
+    OptionalCommand,
+    ResumeTask,
+    RunStatus,
+    StartTask,
+    ViewerState,
+)
 from interaction_shell.core_runtime_port import CoreRuntimeSessionPort
 from interaction_shell.manager import RunSessionManager
 
@@ -17,6 +24,7 @@ from affordance_runtime.app.public_session import (
     PublicPendingQuestion,
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionSnapshot,
+    PublicSessionCapability,
     PublicSessionStatus,
 )
 
@@ -29,7 +37,7 @@ class FakePublicHandle:
             PublicSessionStatus.IDLE,
             "fake-public-event-epoch",
             0,
-            PUBLIC_SESSION_CAPABILITIES,
+            PUBLIC_SESSION_CAPABILITIES - {PublicSessionCapability.RESUME_TASK},
         )
         self.recorded: list[PublicRuntimeSessionEvent] = []
         self.release = asyncio.Event()
@@ -94,6 +102,8 @@ class FakePublicHandle:
                 status=PublicSessionStatus.PAUSED,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
+                capabilities=self.current.capabilities
+                | {PublicSessionCapability.RESUME_TASK},
                 last_control_outcome=PublicControlOutcome(
                     command_id,
                     "pause",
@@ -103,6 +113,21 @@ class FakePublicHandle:
                 ),
             ),
             "RUN_PAUSED",
+        )
+        return self.current
+
+    async def resume(self, command_id: str, checkpoint_id: str):
+        assert checkpoint_id == self.current.checkpoint_id
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.WAITING_USER,
+                resume_eligible=False,
+                capabilities=self.current.capabilities
+                - {PublicSessionCapability.RESUME_TASK},
+                pending_question=PublicPendingQuestion("ask:choice", "Which option?"),
+            ),
+            "RUN_RESUMED",
         )
         return self.current
 
@@ -128,6 +153,18 @@ class FakePublicFactory:
 
     async def open(self, session_id: str, expires_at: datetime):
         self.handle = FakePublicHandle(session_id, expires_at)
+        return self.handle
+
+    async def recover(self, session_id: str, checkpoint_id: str, expires_at: datetime):
+        self.handle = FakePublicHandle(session_id, expires_at)
+        self.handle.current = replace(
+            self.handle.current,
+            status=PublicSessionStatus.PAUSED,
+            checkpoint_id=checkpoint_id,
+            resume_eligible=True,
+            capabilities=self.handle.current.capabilities
+            | {PublicSessionCapability.RESUME_TASK},
+        )
         return self.handle
 
 
@@ -268,3 +305,19 @@ async def test_core_adapter_projects_durable_pause_without_terminal_cleanup() ->
     assert paused.snapshot.last_control_outcome.outcome == "paused"
     assert factory.handle is not None
     assert factory.handle.cleanup_count == 0
+
+    resumed = await manager.admit(
+        session_id,
+        created.session_key,
+        ResumeTask(
+            command_id="resume:1",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            checkpoint_id=paused.snapshot.checkpoint_id,
+        ),
+    )
+
+    assert resumed.kind == "accepted"
+    assert resumed.snapshot.run_status is RunStatus.WAITING_USER
+    assert resumed.snapshot.resume_eligible is False
+    assert Capability.RESUME_TASK not in resumed.snapshot.capabilities

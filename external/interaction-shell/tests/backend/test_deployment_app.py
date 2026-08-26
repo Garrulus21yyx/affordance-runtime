@@ -219,6 +219,33 @@ async def test_cancelled_session_open_recovers_and_closes_late_browser(monkeypat
     assert [trace.flush_count for trace in traces] == [1]
 
 
+@pytest.mark.asyncio
+async def test_local_browsergym_recovery_refuses_replacement_environment(monkeypatch):
+    open_calls = 0
+
+    async def forbidden_open(_settings):
+        nonlocal open_calls
+        open_calls += 1
+        raise AssertionError("restart recovery must not open a replacement browser")
+
+    monkeypatch.setattr(deployment_app, "_open_surface", forbidden_open)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test", 7, 10, 90
+        ),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    )
+
+    with pytest.raises(PublicSessionOpenError, match="environment_not_reconnectable"):
+        await factory.recover(
+            "session:lost-browser",
+            "runtime-checkpoint:" + "d" * 64,
+            datetime.now(UTC) + timedelta(minutes=5),
+        )
+
+    assert open_calls == 0
+
+
 def test_deployment_health_separates_runtime_viewer_and_durable_resume(monkeypatch):
     _patch_composition(monkeypatch)
     monkeypatch.setattr(
