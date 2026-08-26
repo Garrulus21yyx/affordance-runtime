@@ -24,20 +24,24 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current model/authority owner and cross-boundary verification reports `229 passed`. The full code suite reports
-`1760 passed / 25 skipped`; its sole failure is the pre-existing untracked `docs/interaction-shell.md` exceeding the
-repository's five-maintained-document governance set. That user file was not modified or removed. `git diff --check`
-passes. This is implementation evidence for the bounded changes; run37 is the correctness baseline, runs38--39 are
-failed efficiency witnesses, and run40 is the accepted same-task optimization witness.
+The latest full code suite reports `1775 passed / 19 skipped`; its sole failure is the pre-existing tracked
+`docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
+modified or removed. Focused typed-history verification reports `159 passed`, and the current TaskGoal/GoalCompiler/
+policy projection audit reports `54 passed`. `git diff --check` passes.
 
-Overall project status remains **reopened / non-closed**. This cutover does not close:
+Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
+gaps are stale after later evidence:
 
-- post-budget-repair live validation after run19 crossed the stable-navigation, action-minimum, and Monitor lifecycle
-  repairs;
-- the stable-only Harness summary prompt has provider-boundary coverage but did not cross live pressure in run40;
-  broader held-out pressure validation remains separate from the accepted cheap-path witness;
-- the Planner lexical-admission gap;
-- any broader live provider/benchmark gate.
+- Task266 run37 is accepted after the TaskGoal-budget, stable-navigation, action-minimum, Monitor lifecycle, and
+  document-scoped grounding repairs;
+- Task7 run2 accepts two live age/size-triggered stable-only Harness compactions and completes native evaluation;
+- C12 already removed privacy-by-field-name TaskGoal filtering and current generated tests conserve route-shaped
+  public business keys through GoalCompiler and ActionPolicy;
+- Task27 run2 live-verifies the one bounded read-only recapture after `acquisition_unstable`; ordinary stable
+  acquisition and typed stable-navigation paths are covered vertically and exercised by accepted runs.
+
+The remaining gate is generalization and stability across untouched cases. A typed `navigation_pending` remains an
+intentional fail-closed unsupported acquisition state, not a missing retry or alternate currentness path.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
@@ -99,8 +103,8 @@ same-ID `ToolFailed(not executed)`, followed by the fresh World. The ActionPolic
 later proposal, but Runtime never queues or automatically executes it. An invalid first call never falls through to a
 later one. Raw output remains in Trace, formal metrics count every multi-call envelope, and invocation diagnostics
 record proposals discarded from execution. Monitor recovery still prohibits only one exact typed attempt. No second
-action queue, reflection model, evidence path, cursor state, or non-SDK history was added. A fresh live Task266 witness
-is still required.
+action queue, reflection model, evidence path, cursor state, or non-SDK history was added. At that checkpoint a fresh
+live Task266 witness was still required; run37 later supplied it.
 
 Task266 run12 crossed that revised boundary: all fourteen produced calls were valid, the first proposal executed, and
 every later proposal received a same-ID native not-executed result. The next physical input contained both exact
@@ -160,16 +164,15 @@ operations cleared Monitor's episode. Run16 is failed pre-repair evidence, not a
 
 The current owner repair removes both the v1 co-output requirement and the later custom checkpoint/reducer. Exact
 accepted `ThinkingPart`, ordinary text, provider metadata, ToolCalls, same-ID ToolReturns, and each fresh-World user
-prompt remain in official PydanticAI history. Only when the complete canonical request's existing admission breakdown
-reaches 80% of effective provider input does Harness 0.25 `SummarizingCompaction` call the configured model, replace a
-pair-safe expired prefix with one ordinary `SystemPromptPart` summary, and retain the newest pair-safe suffix fitting
-12% of the admission-derived history capacity at full fidelity. The summary keeps bounded completed task outcomes,
-exact task-critical facts, and failed strategies rather than an action log or prospective task state. Summary
-failure leaves the exact raw history unchanged. A summary-only view exposes accepted `ThinkingPart`
-conclusions that Harness's formatter otherwise
-omits, after which the exact recent suffix is restored. There is no knowledge-specific trigger, source-coverage
-inventory, Monitor trigger, Workspace projection, or additional Runtime memory state. Runs20--24 are live failure
-witnesses for successive pre-repair contracts; a fresh witness after the role-timeout repair is still required.
+prompt remain in official PydanticAI history. Harness 0.25 `SummarizingCompaction` runs when either the complete
+canonical request reaches 80% of effective provider input or expired unsummarized model prose fills one bounded
+age/size batch. It receives the original typed history, replaces a pair-safe expired prefix with one ordinary
+`SystemPromptPart` summary, and retains the newest pair-safe suffix at full fidelity. The summary keeps bounded
+completed task outcomes, exact task-critical facts, and failed strategies rather than an action log or prospective
+task state. Provider failure, timeout, or invalid compacted topology leaves the exact typed raw history unchanged.
+There is no synthetic summary view, knowledge-specific trigger, source-coverage inventory, Monitor trigger, Workspace
+projection, or additional Runtime memory state. Runs20--24 are live failure witnesses for successive pre-repair
+contracts; Task7 run2 is the later accepted live-pressure witness.
 
 The authorized Task266
 [`run17`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run17/run.json) proved that the checkpoint now
@@ -196,7 +199,7 @@ The provider-free repair gates now require:
 - the exact compaction request/response is recorded as a `history_compactor` provider attempt while the summary itself
   remains a standard non-authoritative PydanticAI `SystemPromptPart`.
 
-No passing post-repair Task266 witness exists yet.
+At that checkpoint no passing post-repair Task266 witness existed; run37 later supplied it.
 
 The authorized Task266
 [`run18`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run18/run.json) crossed the reducer scheduling
@@ -214,7 +217,7 @@ the existing soft token target. This closes both the earlier run5 counterexample
 target) and run18 (rank alone displaced focus). Monitor derives `sent|sent_unknown|not_sent` from the typed receipt,
 does not clear an ineffectual same-World action, and starts a new same-World recovery episode when a causally dispatched
 action reaches a changed fresh public World even if its semantic postcondition remains unknown. No alternate action
-view, recovery state machine, model, or retry was added. A fresh live Task266 witness remains required.
+view, recovery state machine, model, or retry was added. Run37 is the later accepted live Task266 witness.
 
 The authorized Task266
 [`run19`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run19/run.json) live-validates those action and
@@ -436,7 +439,8 @@ set re-verification as `Next intent`. The run finished in 50 turns with 1,209,10
 scheduling witness but not an efficiency closure. The post-run contract removes `Remaining questions`, `Next intent`,
 working hypotheses, and current stage from long-term compaction. Harness now preserves only stable completed outcomes,
 verified facts, and failed strategies; the one ActionPolicy recalculates prospective work each turn from the current
-task/plan/World and recent exact suffix. A fresh live witness for that final contract was required.
+task/plan/World and recent exact suffix. A fresh live witness for that final contract was required; Task7 run2 later
+crossed it twice under age/size pressure.
 
 [`run40`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run40/run.json) is accepted with native
 `verified_success`: 34 valid policy calls, zero waits, zero invalid arguments, one STOP, and no compactor invocation.
@@ -447,7 +451,7 @@ of 160,751 (15.9%); model latency fell from about 127.7s to 98.9s. Overall wall 
 BrowserGym transition latency varied, so the evidence supports token/model-call efficiency, not a wall-time claim.
 Trace-reported provider cost fell from about 0.05937 to 0.05698 (4.0%), less than the token reduction because much of
 run37's repeated prefix was served from the provider cache. Provider-boundary tests cover the stable-only summary path
-for genuinely pressured histories.
+for genuinely pressured histories, and Task7 run2 later exercised it twice live.
 
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
@@ -806,7 +810,7 @@ The explicitly authorized W1b Task0
 `verified_success`. It made 28 policy calls with 28 valid tool calls, zero invalid arguments, grounding gaps, stale
 bindings, or waits; one age/size-triggered Harness compaction ran, the policy reached the real Period control and
 submitted `Quest Lumaflex™ Band`. This live witness closes the two contracts above for the exercised path, while the
-independent Planner and BrowserGym causal-acquisition gaps remain open.
+broader untouched-case campaign remains open.
 
 For an ordinary turn without an explicit discovery result, one vertical gate sets the soft target to the cost of only
 one visible route and proves that both the first task-ranked target and the direct fresh focused target enter the
@@ -827,7 +831,7 @@ ToolCall -> SelectAction -> Binder -> Executor -> stable capture -> fresh World 
 The post-action repair reuses this route. A failed normal acquisition now permits one independent read-only recapture
 for the same dispatch; tests prove a recovered fresh World reaches the receipt and next control state with one physical
 action. Task27 run2 supplies the live recapture witness. Task266 runs 2 and 3 remain ordered pre-repair witnesses for
-media and public-identity projection; the complete repaired large-page route still requires a fresh live witness.
+media and public-identity projection; run37 is the later accepted complete repaired large-page witness.
 
 The current vertical gate additionally forces a second Recording FunctionModel call after a GUI action and verifies
 that its observation comes from the fresh `WorldDeliveryIndex` PageMap with no retained effect/currentness block.
@@ -1039,7 +1043,8 @@ The final read-only review for this cutover must answer:
 
 ## Exit statement
 
-Passing this document's provider-free gates permits describing the thin result cutover and bounded recapture
-implementation as verified. It does not permit describing the whole GUI agent, BrowserGym causal transition, Planner
-admission, or benchmark campaign as closed. Those statuses change only when their own falsifiable gates and, where
-required, an explicitly authorized live benchmark pass without case-specific production branches.
+Passing this document's provider-free gates plus the recorded Task27 run2, Task266 run37, and Task7 run2 live witnesses
+permits describing the exercised thin result, bounded recapture, stable-navigation, TaskGoal projection, and typed
+history-compaction paths as verified. It does not permit describing the whole GUI agent or benchmark campaign as
+stable across untouched cases. That status changes only after the declared held-out cohort passes without
+case-specific production branches.

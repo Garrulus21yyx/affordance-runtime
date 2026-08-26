@@ -36,8 +36,8 @@ The authorized
 [`run37`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run37/run.json) crossed these contracts and ended
 `done` with native `verified_success`, returning relation `2176999` and driving distance `287km`. It made one
 GoalCompiler call, 39 ordinary ActionPolicy calls, zero recovery calls, and exactly one STOP, post-STOP capture, and
-native evaluation. This is a live correctness witness for this Task266 causal line, not closure of the Planner gap or
-the broader benchmark campaign. Its 870,289 accumulated history tokens also falsified the efficiency claim that
+native evaluation. This is a live correctness witness for this Task266 causal line, not closure of the broader
+held-out benchmark campaign. Its 870,289 accumulated history tokens also falsified the efficiency claim that
 pressure-only semantic compaction was sufficient: 135 historical user prompts replayed the same TaskGoal/GoalPlan and
 large expired Worlds, while only 39 prompts represented the authoritative current turn.
 
@@ -73,8 +73,8 @@ and model conclusions remain exact, while full original results remain in trace.
 with native `verified_success`. Both age/size-triggered compactions continued into an ActionPolicy request with 18
 catalog tools. The run made 16 valid policy calls, zero invalid, grounding, stale, or wait outcomes, and exactly one
 STOP, post-STOP capture, and native evaluator call. It returned Pittsburgh International Airport, Pennsylvania,
-15231 after reading the explicit 33 km OSRM route. This is a live witness for typed pair-safe compaction, not closure
-of independent Planner or BrowserGym causal-acquisition gaps.
+15231 after reading the explicit 33 km OSRM route. This is a live witness for typed pair-safe compaction under actual
+age/size pressure, not closure of the broader held-out benchmark campaign.
 
 [`run38`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run38/run.json) remained behaviorally correct—native
 `verified_success`, 43 valid policy calls, zero waits, zero invalid calls, and one STOP—but falsified the first
@@ -104,7 +104,8 @@ did no model-backed work; the model used relation `2176999`, found `Distance: 28
 than reopening relation verification. Prompt tokens fell from run37's 1,008,148 to 847,397 (160,751 / 15.9%), and
 model latency fell from about 127.7s to 98.9s. End-to-end wall time was about 350s versus 325s because BrowserGym
 transition time varied, so no wall-time improvement is claimed. The stable-only summary contract remains covered by
-provider-boundary tests for cases that genuinely cross pressure; run40 demonstrates the preferred cheap path.
+provider-boundary tests; Task7 run2 later crossed that live pressure twice, while run40 demonstrates the preferred
+cheap path.
 
 The latest repair keeps the generic BrowserGym browser profile unrestricted, while an environment may explicitly
 provide a navigation scope. WebArena is the only current selector of that restricted profile: its runner reads the
@@ -148,8 +149,8 @@ The authorized W1b Task0
 no longer filled discovery with unrelated controls, partial matches exposed their unsupported terms, and exactly one
 age/size-triggered Harness compaction handled expired model prose. The run made 28 valid policy tool calls, zero
 invalid, grounding, stale, or wait outcomes, then submitted `Quest Lumaflex™ Band`; the native evaluator returned
-`verified_success`. This is a live witness for these two bounded contracts, not closure of the independent Planner or
-BrowserGym causal-acquisition gaps.
+`verified_success`. This is a live witness for these two bounded contracts, not closure of the broader held-out
+campaign.
 Task266 run8 crossed that repaired recall boundary, activated the intended article, and read the official coordinates.
 It then navigated to an unauthorized external API even though the benchmark-provided map was already open in tab 0.
 BrowserGym correctly terminated the WebArena task, so the following currentness result was the expected
@@ -351,16 +352,17 @@ spent later turns reading both wiki pages again. The 900-second watchdog was onl
 successful compactions consumed about 266 seconds, and the final exact suffix had already retained the independently
 confirmed `287km` result while the policy was locating the still-unknown relation link.
 
-The existing PydanticAI boundary now supplies Harness a throwaway summary-only view in which completed, already
-owner-bounded public ToolReturns are rendered in full, alongside the accepted reasoning already exposed there.
-Harness still selects the pair-safe expired prefix and produces the sole non-authoritative summary; the bridge still
-restores its preserved suffix from the exact official messages. The summary contract preserves a later explicit
-ActionPolicy conclusion drawn from a completed result unless later trajectory content contradicts or retracts it,
-and treats coverage/pagination as scope metadata rather than evidence that a returned complete record is absent.
-Because Harness invokes the configured model directly rather than the canonical ActionPolicy envelope, that same
-model now has a default 1,024-token, temperature-zero, thinking-disabled compaction cap; normal action and repair
-requests continue to override it with their existing request-scoped role settings. No synthetic part enters canonical
-history, and no checkpoint, fact store, cursor, Monitor trigger, scheduler, or second model state is introduced.
+That revision temporarily supplied Harness a throwaway summary-only view so owner-bounded public ToolReturns appeared
+past Harness's generic prose clip. Task7 run1 later falsified the approach: replacing typed `ToolReturnPart` values in
+the view hid call/result pairing from Harness's cutoff. The current boundary therefore gives Harness the original
+typed PydanticAI history, lets its official cutoff select a pair-safe expired prefix, restores the exact suffix, and
+validates the entire compacted topology before acceptance. A provider error, timeout, or invalid topology restores the
+exact typed input history. The summary prompt still preserves a later explicit ActionPolicy conclusion unless later
+trajectory content contradicts or retracts it, and treats coverage/pagination as scope metadata rather than evidence
+that a returned complete record is absent. Because Harness invokes the configured model directly rather than the
+canonical ActionPolicy envelope, that same model has a bounded compaction role cap; normal action and repair requests
+continue to use their existing request-scoped role settings. No synthetic part, checkpoint, fact store, cursor,
+Monitor trigger, scheduler, or second model state enters canonical history.
 
 Run28 crossed that history-fidelity repair: the model retained both city coordinates and obtained the route distance,
 but chose a direct external OSRM URL rather than the already-open WebArena map. BrowserGym's official post-step
@@ -446,13 +448,22 @@ chooses the pair-safe prefix. There is no queue, cooldown, coverage inventory, a
 Provider-free verification and the post-repair fresh Task266 witness are recorded in `docs/benchmark.md`. Historical
 run results below remain failure evidence rather than claims about the current implementation.
 
-Overall project closure is still **open**:
+Overall project closure remains **open only at the broader held-out campaign level**. The former named open claims have
+later evidence:
 
-- run19 live-validates stable navigation, action delivery, and the changed-World Monitor reset, but the single
-  TaskGoal-budget repair requires a post-repair live witness;
-- provider-capacity-triggered Harness compaction and document-scoped structural grounding require a fresh post-repair
-  Task266 witness;
-- Planner lexical admission still has a known gap.
+- Task266 run37 is the accepted post-budget live witness after run19 for stable navigation, action delivery,
+  changed-World Monitor reset, document-scoped structural grounding, and the TaskGoal-owned turn budget;
+- Task7 run2 crosses two accepted age/size-triggered Harness compactions with exact typed call/result topology;
+- the former Planner lexical-admission defect was the C12 privacy-by-field-name filter. Current typed intake,
+  GoalCompiler request construction, and `AgentContext.task` projection preserve bounded public TaskGoal values
+  losslessly, including route-shaped business key names.
+
+BrowserGym's supported acquisition algebra is also bounded rather than open-ended: ordinary dispatched actions return
+one causal post-action acquisition; typed stable navigation reaches the same fresh-World StepResult path; a dispatched
+action whose normal acquisition returns `acquisition_unstable` receives at most one independent read-only recapture,
+as live-verified by Task27 run2; and uncommitted `navigation_pending` remains typed fail-closed. These witnesses do not
+establish breadth or repeated-run stability across the untouched benchmark set, so the next evidence is a held-out
+campaign rather than another production repair.
 
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
 shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search
@@ -469,7 +480,7 @@ siblings inside the existing interaction inventory. If the provider hard capacit
 anchors, packing fails typed instead of guessing one. Monitor now derives recovery `dispatch` from the typed receipt,
 keeps ineffectual same-World actions in the episode, and starts a new same-World episode only when a causal GUI
 dispatch reaches a changed fresh public World. No second ranker, action authority, state machine, or projection was
-added. Task266 run18 remains failed pre-repair evidence; a fresh live witness is required.
+added. Task266 run18 remains failed pre-repair evidence; run37 is the later accepted live witness.
 
 Task266
 [`run19`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260825-run19/run.json) crossed the action-minimum,
@@ -1188,5 +1199,6 @@ This cutover is implementation-complete only when all of the following agree:
     with media intact, and expires older World prompts without altering model progress, thinking, calls, returns, or
     the unresolved suffix; only the remaining request can trigger Harness semantic compaction.
 
-These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
-live witness, Planner lexical admission, or the broader benchmark campaign.
+These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
+paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark
+campaign.
