@@ -1033,6 +1033,8 @@ outcomes.
 
 The benchmark cohort is the final empirical test of cross-task/cross-site generalization and robustness. Production
 code may not branch on cohort identity, task text, page wording, selector, fixed action ID, or expected output.
+The already frozen `WA_W2_COHORT_CASES` are exposed unchanged through the formal target-loop suite
+`webarena-verified-w2`; `--case-id` selects one member without constructing an ad-hoc manifest or changing the cohort.
 
 ## Live-run authorization and execution
 

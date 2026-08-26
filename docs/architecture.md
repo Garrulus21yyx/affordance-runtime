@@ -1103,6 +1103,10 @@ memory. ActionPolicy responses may contain provider-native optional reasoning/te
 emit a progress artifact per step. Harness alone replaces an expired pair-safe history prefix with one cumulative
 summary under its existing low-frequency age/pressure schedule; no Runtime progress reducer is present.
 
+The benchmark runner registers the already frozen `WA_W2_COHORT_CASES` as the formal `webarena-verified-w2` suite.
+This is benchmark composition only: every case reuses the same BrowserGym environment, ActionPolicy, GoalCompiler,
+Runtime, native evaluator, and acceptance metrics as W1b; cohort identity never reaches production Agent behavior.
+
 `TurnPacker` budgets the already-compacted history but does not summarize, edit, or rebuild ToolReturn content.
 Harness removes only a pair-safe expired prefix and produces the one replacement summary. The bridge verifies that the
 unresolved call suffix is unchanged and restores raw history on any summary failure. No dedicated summary model is

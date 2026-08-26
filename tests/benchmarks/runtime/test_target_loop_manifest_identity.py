@@ -11,7 +11,11 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricExpectationOperator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
-from affordance_runtime.benchmarks.webarena_verified import WA_W1_HELD_OUT_CASES, WA_W1_SMOKE_CASES
+from affordance_runtime.benchmarks.webarena_verified import (
+    WA_W1_HELD_OUT_CASES,
+    WA_W1_SMOKE_CASES,
+    WA_W2_COHORT_CASES,
+)
 
 
 def test_manifest_digest_covers_profile_seed_and_expectations() -> None:
@@ -74,3 +78,25 @@ def test_webarena_verified_w1b_manifest_uses_one_action_policy_and_goal_compiler
         assert composition.policy is policy
         assert composition.goal_compiler is compiler
         assert not hasattr(composition, "mission_planner")
+
+
+def test_webarena_verified_w2_manifest_is_the_complete_frozen_cohort() -> None:
+    manifest = get_manifest("webarena-verified-w2", "model-long-horizon", 20260818)
+
+    assert manifest.suite_id == "webarena-verified-w2"
+    assert manifest.profile_id == "model-long-horizon"
+    assert [case.case_id for case in manifest.cases] == [
+        f"webarena-verified-w2-task-{case.task_id}"
+        for case in WA_W2_COHORT_CASES
+    ]
+    assert all(case.expected_terminal_statuses == (RunStatus.DONE,) for case in manifest.cases)
+    assert all(case.timeout_s == 900.0 for case in manifest.cases)
+    assert all(case.required_measurements == (
+        "observations",
+        "policy_calls",
+        "provider_attempts",
+        "stop_send_count",
+        "post_stop_capture_count",
+        "native_evaluator_count",
+    ) for case in manifest.cases)
+    assert manifest_digest(manifest) == "e5646d8b5ef39d06d0364dab30f1f02b6528d4b90d14a7f77b15440d54af3b2d"

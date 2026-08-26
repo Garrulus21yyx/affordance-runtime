@@ -49,6 +49,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_SELECTION_SEED,
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
+    WA_W2_COHORT_CASES,
     open_webarena_verified_case,
 )
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
@@ -66,6 +67,11 @@ def build_manifest(suite_id: str, profile_id: str, seed: int):
         cases = tuple(
             _webarena_verified_w1b_case(case_ref, seed)
             for case_ref in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES)
+        )
+    elif suite_id == "webarena-verified-w2" and profile_id == "model-long-horizon":
+        cases = tuple(
+            _webarena_verified_w2_case(case_ref, seed)
+            for case_ref in WA_W2_COHORT_CASES
         )
     elif suite_id == "internal-core" and profile_id in {"deterministic", "scripted-model"}:
         cases = (
@@ -97,6 +103,30 @@ def _expect(**values: int) -> tuple[MetricExpectation, ...]:
 
 
 def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
+    return _webarena_verified_case(
+        case_ref,
+        seed,
+        suite_id="webarena-verified-w1b",
+        description=f"official WebArena-Verified W1b smoke task {case_ref.task_id}",
+    )
+
+
+def _webarena_verified_w2_case(case_ref, seed: int) -> BenchmarkCase:
+    return _webarena_verified_case(
+        case_ref,
+        seed,
+        suite_id="webarena-verified-w2",
+        description=f"official frozen WebArena-Verified W2 task {case_ref.task_id}",
+    )
+
+
+def _webarena_verified_case(
+    case_ref,
+    seed: int,
+    *,
+    suite_id: str,
+    description: str,
+) -> BenchmarkCase:
     holder: dict[str, object] = {}
 
     def environment_factory(_metrics):
@@ -128,9 +158,9 @@ def _webarena_verified_w1b_case(case_ref, seed: int) -> BenchmarkCase:
         )
 
     return BenchmarkCase(
-        f"webarena-verified-w1b-task-{case_ref.task_id}",
-        "webarena-verified-w1b",
-        f"official WebArena-Verified W1b smoke task {case_ref.task_id}",
+        f"{suite_id}-task-{case_ref.task_id}",
+        suite_id,
+        description,
         task_factory,
         environment_factory,
         composition_factory,
