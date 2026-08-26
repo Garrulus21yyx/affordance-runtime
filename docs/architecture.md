@@ -465,6 +465,15 @@ as live-verified by Task27 run2; and uncommitted `navigation_pending` remains ty
 establish breadth or repeated-run stability across the untouched benchmark set, so the next evidence is a held-out
 campaign rather than another production repair.
 
+The first untouched Task8 run reached the native evaluator without a Runtime, provider, grounding, currentness, or
+history failure, but exposed an external response-contract contradiction. The installed WebArena-Verified public
+`FinalAgentResponse` schema tells the model that an empty retrieval uses an empty array; the official Task8 evaluator
+reference instead requires `NOT_FOUND_ERROR` with null data. The model had correctly excluded the approximately 32 km
+CMU-to-Pittsburgh-International route from a 5 km result and followed the public empty-array instruction, so the native
+failure does not reopen Planner lexical admission, BrowserGym acquisition, or typed history. Production Agent owners
+must not infer the private evaluator answer or special-case Task8; the benchmark response owner must first publish one
+unambiguous zero-result rule before the held-out cohort resumes.
+
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
 shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search
 textbox with a legal `press_key` binding, while the soft-packed model view retained only the task-ranked Wikipedia

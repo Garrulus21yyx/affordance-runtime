@@ -43,6 +43,17 @@ gaps are stale after later evidence:
 The remaining gate is generalization and stability across untouched cases. A typed `navigation_pending` remains an
 intentional fail-closed unsupported acquisition state, not a missing retry or alternate currentness path.
 
+Held-out Task8 run1 did not pass, but it does not reproduce any of the former Agent-chain gaps. The run completed 34
+valid single-call policy turns, 18 executions, one STOP, one post-STOP capture, and one native evaluation, with zero
+fallbacks, invalid tool arguments, stale catalogs, grounding gaps, context-capacity rejections, or waits. The model
+read the CMU-to-Pittsburgh-International route, correctly concluded that roughly 32 km exceeds the requested 5 km,
+and submitted `SUCCESS` with an empty list. The installed WebArena-Verified public `FinalAgentResponse` description
+says that a retrieval with no items returns an empty array, while the same official Task8 evaluator reference requires
+`NOT_FOUND_ERROR` with null data. The native evaluator therefore returned `verified_terminal_task_failure` solely on
+the status classification. This is a benchmark public-response-contract/reference conflict at the installed
+WebArena-Verified owner, not evidence for changing GoalCompiler, Runtime, World, BrowserGym currentness, history,
+cursor, or ToolReturn. The next held-out cohort is deferred until that external protocol is unambiguous.
+
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
 repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect

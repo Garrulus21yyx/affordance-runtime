@@ -28,13 +28,22 @@ Steps:
 3. **done — Commit the audit separately.** Commit only the plan/docs if the audit changes maintained truth; do not
    include `output/` or production code.
    Result: committed as `eca4f13d docs: reconcile held-out benchmark status`.
-4. **in_progress — Run held-out Task8 once.** Reuse `.env`, the fixed BrowserGym interpreter, the project service/profile,
+4. **done — Run held-out Task8 once.** Reuse `.env`, the fixed BrowserGym interpreter, the project service/profile,
    and the existing W1b runner. Persist formal evidence and inspect the full trace after completion.
    Preparation: declared official case `79.8.2` in a held-out benchmark-only set before execution; 34 focused manifest/
    launcher tests pass. Full suite reports 1787 pass, 4 skip, the existing docs-governance failure, and three isolated
    wall-clock deadline tests that pass 3/3 on each of three immediate reruns.
-5. **pending — Decide the next cohort.** If Task8 succeeds, select 3–5 untouched cases and report the fixed cohort
+   Result: run1 completed normally through one STOP and one native evaluation. All 34 policy decisions were valid
+   single calls, with zero provider fallback, stale catalog, grounding gap, invalid arguments, or context rejection.
+   The model derived that Pittsburgh International Airport is about 32 km from CMU and returned `SUCCESS` with an
+   empty result list. The native evaluator rejected only that public response classification: the installed public
+   `FinalAgentResponse` schema says an empty retrieval returns an empty array, while the official Task8 reference
+   requires `NOT_FOUND_ERROR` with null data. This is an upstream benchmark-response contract conflict, not the stale
+   Planner, compaction, BrowserGym acquisition, or Agent data-flow gap.
+5. **done — Decide the next cohort.** If Task8 succeeds, select 3–5 untouched cases and report the fixed cohort
    before running it. If Task8 fails, classify environment/provider/case vs shared contract failure before any change.
+   Result: classify as an external benchmark public-contract/evaluator-reference conflict. Do not run the cohort or
+   change production Agent behavior until that response protocol is made unambiguous at its benchmark owner.
 6. **pending — Defer efficiency work.** Consider Task7 token optimization only after the held-out correctness cohort;
    keep it separate from any correctness repair.
 
