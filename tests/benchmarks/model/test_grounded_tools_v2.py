@@ -379,13 +379,13 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     assert not {"actions.entities", "actions.groups"}.intersection(public)
     observation = payload["observation"]
     assert isinstance(observation, str)
-    assert '[E1] type_text textbox "Username"' in observation
-    assert '[E2] type_text textbox "Password"' in observation
-    assert '[E3] activate button "Login"' in observation
+    assert '[E1] textbox "Username"' in observation
+    assert '[E2] textbox "Password"' in observation
+    assert '[E3] button "Login"' in observation
     focused_ref = next(item.ref for item in context.grounding.entities if item.role == "focused_context")
     viewport_ref = next(item.ref for item in context.grounding.entities if item.role == "viewport")
-    assert f'[{focused_ref}] press_key focused_context "Current keyboard focus"' in observation
-    assert f'[{viewport_ref}] scroll viewport "Current page viewport"' in observation
+    assert f'[{focused_ref}] focused_context "Current keyboard focus"' in observation
+    assert f'[{viewport_ref}] viewport "Current page viewport"' in observation
     assert "find_controls" in {item.name for item in catalog.specs}
 
 

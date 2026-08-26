@@ -64,6 +64,9 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
+from affordance_runtime.model.policy.grounded_tool_rejection import (
+    grounded_tool_rejection_decision,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.prompt import MODEL_POLICY_EVIDENCE_STATUS
@@ -605,12 +608,21 @@ class PydanticAIGroundedDecisionPort:
             )
             self._record_protocol_selection(result.output)
             resolution_error = None
+            source_response = _latest_model_response(result)
             accepted_exchange, resolution_error, initial_calls = _resolve_deferred(
                 result.output,
                 catalog,
                 request.context_id,
-                source_response=_latest_model_response(result),
+                source_response=source_response,
             )
+            if accepted_exchange is None:
+                accepted_exchange = _grounded_rejection_exchange(
+                    result.output,
+                    resolution_error,
+                    initial_calls,
+                    request.agent_context,
+                    source_response=source_response,
+                )
             if accepted_exchange is not None:
                 accepted_exchange = _reject_prohibited_recovery_replay(
                     accepted_exchange,
@@ -1731,6 +1743,47 @@ def _resolve_deferred(
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)
     return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
+
+
+def _grounded_rejection_exchange(
+    output,
+    error: GroundedToolResolutionError | None,
+    calls: tuple[ToolCall, ...],
+    context: AgentContext,
+    *,
+    source_response,
+) -> AcceptedToolExchange | None:
+    """Close one parsed semantic rejection as its same-call ToolReturn.
+
+    Representation failures still use the one bounded representation repair.
+    A known, schema-valid operation applied to an unavailable current target is
+    already semantically parsed, so asking the provider to rewrite its JSON
+    would hide the real feedback and can repeat the same invalid operation.
+    """
+
+    from pydantic_ai import DeferredToolRequests
+
+    if (
+        error is None
+        or error.code is not GroundedToolResolutionCode.GROUNDING_GAP
+        or len(calls) != 1
+        or not isinstance(output, DeferredToolRequests)
+    ):
+        return None
+    call = calls[0]
+    proposed_calls = tuple(output.calls)
+    discarded_call_count = max(0, len(proposed_calls) - 1)
+    return AcceptedToolExchange(
+        call,
+        grounded_tool_rejection_decision(error, call, context.context_id, context),
+        _accepted_model_response(
+            source_response,
+            call,
+            proposed_calls=proposed_calls,
+            discarded_call_count=discarded_call_count,
+        ),
+        discarded_call_count,
+    )
 
 
 def _reject_prohibited_recovery_replay(

@@ -392,7 +392,7 @@ The provider-free repair leaves the generic BrowserGym browser profile unrestric
 BrowserGym's official configured URL set and supplies it as the explicit environment navigation scope. The current
 World browser subject exposes only that the scope is restricted, and the current `goto` ActionBinding keeps the
 registry's generic HTTP(S) shape. The existing private BrowserGym binding retains the normalized locations and rejects
-external, lookalike, userinfo, and wrong-port URLs as typed `NOT_SENT/invalid_parameters` before dispatch. Provider
+external, lookalike, userinfo, and wrong-port URLs as typed `NOT_SENT/destination_outside_environment` before dispatch. Provider
 terminal state is classified on the same post-action World without waiting for an agent STOP, and
 the normal ToolReturn projection exposes typed non-dispatch terminal failures. A vertical fake-BrowserGym test proves
 that terminal failure ends the CoreLoop after the one dispatched action with no second policy turn. This adds no
@@ -1036,6 +1036,22 @@ code may not branch on cohort identity, task text, page wording, selector, fixed
 The already frozen `WA_W2_COHORT_CASES` are exposed unchanged through the formal target-loop suite
 `webarena-verified-w2`; `--case-id` selects one member without constructing an ad-hoc manifest or changing the cohort.
 
+The first frozen Task267 execution is a failed pre-repair diagnostic:
+[`run1`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run1/run.json) recorded 33 policy calls,
+`policy_failure_code=tool_grounding_gap`, zero STOP sends, and zero native evaluator calls. Its final current World had
+144 targets. The failure was not absent task/history evidence: the policy had already recovered Acadia relation
+`2176999`. The final compact delivery duplicated one focused textbox as two route candidates (`type_text` and
+`press_key`), displaced a different control, and then treated the model's schema-valid `activate(textbox)` semantic
+rejection as JSON representation repair.
+
+The provider-free repair changes only the owners of those meanings. Delivery now emits one target subject per E-ref
+with complete current verbs while retaining every private route for Catalog resolution. A resolver-produced
+`tool_grounding_gap` becomes the existing same-call `ToolRejectedResult` and reaches the next Recording FunctionModel
+turn without repair or GUI dispatch. Restricted `goto` rejection is now
+`NOT_SENT/destination_outside_environment`, distinct from malformed parameters. Prefix/property tests prove target
+uniqueness and verb completeness; vertical tests prove same-call pairing and zero dispatch. No post-repair live W2
+run has been executed, so Task267 remains empirically open pending explicit authorization.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1118,6 +1134,13 @@ The final read-only review for this cutover must answer:
 30. Does physical SDK history contain exactly one current task/plan anchor and an admission-token-bounded recent raw
     World tail, while retaining exact model progress, thinking, ToolCall/ToolReturn pairing, media, and unresolved
     suffix across cheap projection and optional Harness compaction?
+31. Does every admitted action-delivery prefix render each E-ref once with the complete current verb set while leaving
+    the Catalog resolver's complete route set unchanged?
+32. Does a schema-valid operation/target mismatch return the existing `ToolRejectedResult` under the original call ID
+    to the next ordinary PydanticAI turn, without representation repair, Binder/Executor dispatch, or terminal policy
+    failure?
+33. Does restricted BrowserGym navigation reject an out-of-scope destination as
+    `NOT_SENT/destination_outside_environment`, preserve zero dispatch, and allow the same policy to reselect?
 
 ## Exit statement
 

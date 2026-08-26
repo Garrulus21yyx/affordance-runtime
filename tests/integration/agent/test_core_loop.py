@@ -612,7 +612,16 @@ def test_physical_stale_not_sent_refreshes_world_and_returns_to_policy_without_r
     asyncio.run(scenario())
 
 
-def test_invalid_parameters_not_sent_returns_same_call_failure_for_reselection() -> None:
+@pytest.mark.parametrize(
+    "correctable_error",
+    (
+        ActionError.INVALID_PARAMETERS,
+        ActionError.DESTINATION_OUTSIDE_ENVIRONMENT,
+    ),
+)
+def test_correctable_not_sent_returns_same_call_failure_for_reselection(
+    correctable_error: ActionError,
+) -> None:
     @dataclass
     class ReselectingPolicy:
         turns: int = 0
@@ -627,13 +636,13 @@ def test_invalid_parameters_not_sent_returns_same_call_failure_for_reselection()
                 )
             assert context.last_step is not None
             assert context.last_step.status_after is RunStatus.RUNNING
-            assert context.last_step.feedback == "action_not_sent:invalid_parameters"
+            assert context.last_step.feedback == f"action_not_sent:{correctable_error.value}"
             assert context.last_step.execution_receipts is not None
             assert context.last_step.execution_receipts.execution_count == 0
             terminal = context.last_step.execution_receipts.terminal_failure
             assert terminal is not None
             assert terminal.permits_reselection is True
-            assert terminal.error is ActionError.INVALID_PARAMETERS
+            assert terminal.error is correctable_error
             return Abort(context.context_id, "typed failure observed", AbortCategory.USER_REQUEST)
 
     async def scenario() -> None:
@@ -652,7 +661,7 @@ def test_invalid_parameters_not_sent_returns_same_call_failure_for_reselection()
                     DispatchStatus.NOT_SENT,
                     "dom",
                     False,
-                    ActionError.INVALID_PARAMETERS,
+                    correctable_error,
                 ),
             ),
         )
@@ -667,7 +676,7 @@ def test_invalid_parameters_not_sent_returns_same_call_failure_for_reselection()
         assert environment.capture_calls == 0
         assert environment.dispatched_requests == []
         assert [item.reason for item in state.workspace.recent_steps] == [
-            "action_not_sent:invalid_parameters",
+            f"action_not_sent:{correctable_error.value}",
             "agent_aborted:user_request",
         ]
 

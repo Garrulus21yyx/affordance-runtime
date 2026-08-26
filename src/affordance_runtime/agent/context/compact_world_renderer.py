@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from affordance_runtime.actions.capabilities import InteractionSubjectKind
 from affordance_runtime.agent.context.action_candidate_projection import (
+    ActionCandidate,
     ActionCandidateProjection,
     ActionRouteIssueFragment,
 )
@@ -391,8 +392,14 @@ def _render_full(
     if action_candidates is not None and action_candidates.candidates:
         lines.append("ActionCandidates")
         for item in action_candidates.candidates:
+            manifest.node(item.target_ref, executable=True)
+            manifest.region(item.region_ref)
+            for destination in item.destinations:
+                manifest.node(destination.target_ref, executable=True)
+                manifest.region(destination.region_ref)
+            _register_candidate_routes(item, action_candidates, manifest)
             lines.append(
-                f"  [{item.target_ref}] {item.operation} {item.role} {_value(item.label)} "
+                f"  [{item.target_ref}] {item.role} {_value(item.label)} "
                 f"path={_value(item.functional_path)} verbs={_value(verbs.get(item.target_ref, ()))} "
                 f"rank={item.rank}"
             )
@@ -1025,7 +1032,7 @@ def _render_action_candidates(
     target_id_by_ref = {ref: target_id for target_id, ref in grounding.target_refs.items()}
     for candidate in projection.candidates:
         target_id = target_id_by_ref.get(candidate.target_ref, "")
-        if not target_id or candidate.operation not in verbs.get(candidate.target_ref, ()):
+        if not target_id or not verbs.get(candidate.target_ref, ()):
             continue
         region = index.region_for_action(candidate.action_id) or index.region_for_target(target_id)
         if region is None:
@@ -1035,25 +1042,10 @@ def _render_action_candidates(
         for destination in candidate.destinations:
             manifest.node(destination.target_ref, executable=True)
             manifest.region(destination.region_ref)
-        if candidate.destination_required:
-            for destination in candidate.destinations:
-                manifest.route(
-                    candidate.operation,
-                    candidate.target_ref,
-                    destination.target_ref,
-                    private_action_id=candidate.action_id,
-                    private_option=candidate.private_option,
-                )
-        else:
-            manifest.route(
-                candidate.operation,
-                candidate.target_ref,
-                private_action_id=candidate.action_id,
-                private_option=candidate.private_option,
-            )
+        _register_candidate_routes(candidate, projection, manifest)
         context, headers = _action_structural_context(target_id, region, observation)
         descriptor = (
-            f"  rank={candidate.rank} [{candidate.target_ref}] {candidate.operation} "
+            f"  rank={candidate.rank} [{candidate.target_ref}] "
             f"{candidate.role} {_value(candidate.label)} "
             f"path={_value(candidate.functional_path)} region=[{candidate.region_ref}] "
             f"verbs={_value(verbs[candidate.target_ref])}"
@@ -1093,6 +1085,56 @@ def _render_action_candidates(
         descriptor += f" reasons={_value(candidate.reasons)}"
         lines.append(descriptor)
     return lines if len(lines) > 1 else []
+
+
+def _register_candidate_routes(
+    candidate: ActionCandidate,
+    projection: ActionCandidateProjection,
+    manifest: _ManifestBuilder,
+) -> None:
+    """Keep private selected routes complete behind one public target descriptor."""
+
+    fragments = tuple(
+        item
+        for item in projection.route_fragments
+        if item.candidate.target_ref == candidate.target_ref
+    )
+    if fragments:
+        for fragment in fragments:
+            route = fragment.candidate
+            if route.destination_required:
+                destination = route.destinations[0]
+                manifest.route(
+                    route.operation,
+                    route.target_ref,
+                    destination.target_ref,
+                    private_action_id=route.action_id,
+                    private_option=route.private_option,
+                )
+            else:
+                manifest.route(
+                    route.operation,
+                    route.target_ref,
+                    private_action_id=route.action_id,
+                    private_option=route.private_option,
+                )
+        return
+    if candidate.destination_required:
+        for destination in candidate.destinations:
+            manifest.route(
+                candidate.operation,
+                candidate.target_ref,
+                destination.target_ref,
+                private_action_id=candidate.action_id,
+                private_option=candidate.private_option,
+            )
+        return
+    manifest.route(
+        candidate.operation,
+        candidate.target_ref,
+        private_action_id=candidate.action_id,
+        private_option=candidate.private_option,
+    )
 
 
 def _render_action_route_issues(

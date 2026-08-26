@@ -550,7 +550,7 @@ def test_restricted_goto_rejects_unauthorized_location_before_dispatch(url: str)
 
     assert (result.dispatch_status, result.error) == (
         DispatchStatus.NOT_SENT,
-        ActionError.INVALID_PARAMETERS,
+        ActionError.DESTINATION_OUTSIDE_ENVIRONMENT,
     )
     assert fake.actions == []
     assert environment.step_calls == 0

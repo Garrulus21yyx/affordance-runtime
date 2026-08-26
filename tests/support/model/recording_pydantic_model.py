@@ -467,22 +467,23 @@ def _visible_action_routes(
     observation = str(public_payload["observation"])
     routes = []
     for line in observation.splitlines():
-        match = re.search(
-            r"^\s*rank=[0-9]+\s+\[(E[1-9][0-9]{0,3})\]\s+([a-z][a-z0-9_]*)\b",
-            line,
-        )
+        match = re.search(r"^\s*rank=[0-9]+\s+\[(E[1-9][0-9]{0,3})\].*?\bverbs=(\[[^\n]*?\])", line)
         if match is None:
+            continue
+        operations = json.loads(match.group(2))
+        if not isinstance(operations, list):
             continue
         destination = re.search(
             r'destinations=.*?"target"\s*:\s*"(E[1-9][0-9]{0,3})"',
             line,
         )
-        routes.append(
+        routes.extend(
             (
-                match.group(2),
+                str(operation),
                 match.group(1),
                 destination.group(1) if destination is not None else "",
             )
+            for operation in operations
         )
     return tuple(routes)
 

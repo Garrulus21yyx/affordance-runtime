@@ -132,7 +132,7 @@ provide a navigation scope. WebArena is the only current selector of that restri
 official BrowserGym `ENV_VARS` URL set once and gives the normalized locations to the existing private browser-context
 binding. World publishes only `navigation_scope=environment_restricted`, while the ordinary ActionSpace/Catalog keeps
 the registry's generic HTTP(S) `goto` shape. BrowserGym execution checks the selected destination against the private
-scope before `step` and returns the existing typed `NOT_SENT/invalid_parameters` outcome on rejection. There is no
+scope before `step` and returns typed `NOT_SENT/destination_outside_environment` on rejection. There is no
 task-, URL-, or site-name detection, model-visible service directory, or alternate navigation executor.
 Task266 run6 crossed that repaired boundary, activated the intended article, and recovered Portland's official
 coordinates. It then exposed a narrower browser-profile mismatch: the generic tool compiler still required an `E-ref`
@@ -395,7 +395,7 @@ The positive contract is now singular. Every browser profile receives the regist
 A restricted environment supplies configured URLs; Surface projection derives BrowserGym-compatible netlocs and
 keeps them only in the current private browser-context binding. World exposes only that the scope is restricted, not
 the allowed hosts. After normal Catalog resolution and binding, BrowserGym execution rejects an unauthorized URL as
-typed `NOT_SENT/invalid_parameters` before dispatch. Independently, every WebArena native
+typed `NOT_SENT/destination_outside_environment` before dispatch. Independently, every WebArena native
 `terminated|truncated|done` snapshot is classified immediately; only voluntary successful completion remains
 gated by agent STOP. The ordinary ToolReturn projection now marks any failed execution result as failed and exposes the typed
 non-dispatch terminal failure plus bounded currentness reason. No retry, navigation wrapper, evaluator oracle, or
@@ -1133,6 +1133,37 @@ and recurrence of the same phase-independent cycle blocks. Typed `NEW_INFORMATIO
 replaces it. A cycle is sequence-level feedback, so Monitor does not incorrectly blacklist the last action that
 happened to close it. This bounded operational detection never reads TaskGoal, GoalPlan,
 ToolReturn bodies, URLs, task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
+
+## W2 Task267 delivery and rejection convergence
+
+The first frozen W2 Task267 run is a failed pre-repair witness, not an accepted benchmark result:
+[`run1`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run1/run.json) ended after 33 ActionPolicy calls with
+`policy_failure_code=tool_grounding_gap`, no STOP, and no native evaluation. The model had already recovered Acadia's
+relation ID and reached the correct OpenStreetMap page. Its final fresh World contained one focused search textbox
+whose current verbs were `type_text` and `press_key`, but route-oriented delivery spent both the task-ranked and focus
+minimum on separate routes for that same E-ref. The compact observation consequently printed the same target twice
+and omitted a different useful control. The model proposed `activate` on the textbox; the PydanticAI bridge then sent
+that already parsed semantic mismatch to representation repair, which repeated the call and terminated the run.
+
+The repaired contract keeps one authority for each concern:
+
+- complete current `ActionSpace` plus the Catalog's private resolver table own all executable
+  `(operation, target[, destination])` routes;
+- `ActionDeliveryPlan` is presentation only. Every admitted prefix groups selected private routes by target and emits
+  one public target descriptor with the union of all current verbs. Focus and task-ranked minimum groups use distinct
+  target subjects, so a multi-verb focused target cannot consume both visibility anchors;
+- a wire/schema failure still receives the one bounded representation repair. A schema-valid registered operation
+  rejected by the current resolver with `tool_grounding_gap` instead becomes the existing `ToolRejectedResult` under
+  the original call ID and is returned to the next ordinary ActionPolicy turn. Binder and Executor are not reached;
+- BrowserGym environment authorization remains private. A rejected `goto` now reports the precise typed
+  `NOT_SENT/destination_outside_environment` result and permits ordinary reselection, while malformed parameters
+  remain `invalid_parameters`.
+
+No World projection, history/cursor path, Monitor rule, fallback action, URL recognizer, task branch, second catalog,
+or alternate Runtime loop is added. Provider-free gates cover every admitted delivery prefix, multi-verb target
+coalescing, Catalog independence from visible-prefix size, same-call rejection pairing through a second Recording
+FunctionModel turn, and zero-dispatch URL-scope rejection. A fresh authorized W2 run is still required before claiming
+live closure for Task267.
 
 ## World, perception, and action boundaries
 

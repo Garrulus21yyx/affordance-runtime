@@ -1023,7 +1023,10 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
     assert any(item.get("kind") == "schema_member" for item in opened.items)
     assert len(tuple(item for item in opened.items if item.get("kind") == "complete_item")) == 5
     assert reports.target_ref in view.manifest.executable_refs
-    assert f"[{reports.target_ref}] activate" in view.text
+    assert f"[{reports.target_ref}] link" in view.text
+    assert '"activate"' in next(
+        line for line in view.text.splitlines() if f"[{reports.target_ref}]" in line
+    )
 
 
 def test_page_map_manifest_is_atomic_and_folded_descriptors_contain_no_exact_refs() -> None:
@@ -1466,7 +1469,10 @@ def test_task_related_current_action_is_promoted_with_structural_closure() -> No
     ).decision
 
     assert "ActionCandidates" in view.view.text
-    assert f'[{target.target_ref}] activate menuitem "Settings"' in view.view.text
+    assert f'[{target.target_ref}] menuitem "Settings"' in view.view.text
+    assert 'verbs=["activate"]' in next(
+        line for line in view.view.text.splitlines() if f"[{target.target_ref}]" in line
+    )
     assert 'path=["Control Center","Account workspace","Account Preferences","Settings"]' in view.view.text
     assert 'verbs=["activate"]' in view.view.text
     assert target.target_ref in view.manifest.executable_refs
@@ -1490,7 +1496,10 @@ def test_fresh_world_promotes_newly_available_action() -> None:
 
     assert all(item.target_id != "action:account-settings" for item in before_context.complete_actions)
     target = next(item for item in after_context.complete_actions if item.target_id == "action:account-settings")
-    assert f'[{target.target_ref}] activate menuitem "Settings"' in after_view.view.text
+    assert f'[{target.target_ref}] menuitem "Settings"' in after_view.view.text
+    assert 'verbs=["activate"]' in next(
+        line for line in after_view.view.text.splitlines() if f"[{target.target_ref}]" in line
+    )
     assert target.target_ref in after_view.manifest.executable_refs
 
 

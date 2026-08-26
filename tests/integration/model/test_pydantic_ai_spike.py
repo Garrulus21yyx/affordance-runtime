@@ -30,16 +30,22 @@ import affordance_runtime.model.policy.canonical_provider_envelope as canonical_
 import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 import affordance_runtime.model.policy.request_admission as request_admission_module
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
-from affordance_runtime.actions import ActionSpace, ActionSpaceBuilder
+from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.action_candidate_projection import (
+    ActionRouteFragment,
+    DeliveryObligationKind,
+)
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.decisions import (
     FinalResponse,
     ReadRegionResult,
     SearchPageContentResult,
     SelectAction,
+    ToolRejectedResult,
 )
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.run_state import StepResult
@@ -54,6 +60,10 @@ from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
+from affordance_runtime.model.policy.grounded_tool_catalog import (
+    compile_grounded_action_catalog,
+    resolve_grounded_action_call,
+)
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
@@ -82,6 +92,7 @@ from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
     SemanticTarget,
+    StateFact,
     SurfaceObservation,
     WorldFusion,
 )
@@ -168,6 +179,192 @@ def _runtime(model) -> TargetRuntime:
         SharedTaskEvaluator(),
         goal_compiler=NotRequiredGoalCompiler("atomic_pydantic_test"),
     )
+
+
+def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_policy() -> None:
+    async def scenario() -> None:
+        task = replace(
+            shared_task(),
+            allowed_effects=("shared_state_enabled", "query_changed"),
+        )
+        button = SemanticTarget("shared-toggle", "button", "Enable shared state", {"enabled": False})
+        textbox = SemanticTarget("query", "textbox", "Search", {"focused": True})
+        observation_id = "grounding-rejection"
+        source = SurfaceObservation(
+            observation_id,
+            "dom",
+            "revision:grounding-rejection",
+            ObservationSourceProfile.dom(),
+            (button, textbox),
+            (StateFact("fact:grounding-rejection:enabled", button.target_id, "enabled", False, observation_id),),
+            (
+                ActionBinding(
+                    "binding:grounding-rejection:button",
+                    observation_id,
+                    observation_id,
+                    "revision:grounding-rejection",
+                    "fingerprint:button",
+                    button.target_id,
+                    button.target_id,
+                    "dom",
+                    "dom",
+                    "activate",
+                    "click",
+                    "local_reversible",
+                    ("shared_state_enabled",),
+                    {"type": "object", "properties": {}, "additionalProperties": False},
+                    {"selector": "#shared"},
+                    risk=ActionRisk.LOW,
+                ),
+                ActionBinding(
+                    "binding:grounding-rejection:textbox",
+                    observation_id,
+                    observation_id,
+                    "revision:grounding-rejection",
+                    "fingerprint:textbox",
+                    textbox.target_id,
+                    textbox.target_id,
+                    "dom",
+                    "dom",
+                    "type_text",
+                    "fill",
+                    "local_reversible",
+                    ("query_changed",),
+                    {
+                        "type": "object",
+                        "properties": {"text": {"type": "string"}},
+                        "required": ["text"],
+                        "additionalProperties": False,
+                    },
+                    {"selector": "#query"},
+                    risk=ActionRisk.LOW,
+                ),
+                ActionBinding(
+                    "binding:grounding-rejection:textbox-key",
+                    observation_id,
+                    observation_id,
+                    "revision:grounding-rejection",
+                    "fingerprint:textbox",
+                    textbox.target_id,
+                    textbox.target_id,
+                    "dom",
+                    "dom",
+                    "press_key",
+                    "press",
+                    "local_reversible",
+                    ("query_changed",),
+                    {
+                        "type": "object",
+                        "properties": {"key": {"type": "string", "enum": ["ENTER"]}},
+                        "required": ["key"],
+                        "additionalProperties": False,
+                    },
+                    {"selector": "#query"},
+                    risk=ActionRisk.LOW,
+                ),
+            ),
+        )
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        world = fused.observation
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        refs = context.grounding.target_refs
+        textbox_ref = refs[textbox.target_id]
+        subject_lines = tuple(
+            line
+            for line in build_model_turn_delivery(context, include_images=False).view.text.splitlines()
+            if f"[{textbox_ref}]" in line and line.lstrip().startswith("rank=")
+        )
+        assert len(subject_lines) == 1
+        assert '"press_key"' in subject_lines[0]
+        assert '"type_text"' in subject_lines[0]
+        plan = context.action_delivery_plan
+        assert plan is not None
+        base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+        interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+        assert base is not None and interaction is not None
+        base_refs = {
+            item.candidate.target_ref
+            for item in base.records
+            if isinstance(item, ActionRouteFragment)
+        }
+        interaction_refs = {
+            item.candidate.target_ref
+            for item in interaction.records
+            if isinstance(item, ActionRouteFragment)
+        }
+        assert base_refs.isdisjoint(interaction_refs)
+        delivery = build_model_turn_delivery(context, include_images=False)
+        catalog = compile_grounded_action_catalog(context, delivery)
+        with pytest.raises(GroundedToolResolutionError) as direct_rejection:
+            resolve_grounded_action_call(
+                catalog,
+                ToolCall("activate", {"target": textbox_ref}, "call:direct"),
+                expected_context_id=context.context_id,
+                expected_delivery_id=delivery.delivery_id,
+                expected_catalog_id=catalog.catalog_id,
+            )
+        assert direct_rejection.value.code is GroundedToolResolutionCode.GROUNDING_GAP
+        scripted = ScriptedModel(
+            [
+                ("activate", {"target": textbox_ref}),
+                ("activate", {"target": refs[button.target_id]}),
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        first = await policy.port.generate(ModelDecisionRequest("request:grounding-rejection:1", context))
+
+        assert first.failure is None and first.output is not None, (
+            first.failure,
+            policy.port.last_tool_resolution_code,
+            policy.port.last_tool_resolution_detail,
+            scripted.calls,
+        )
+        rejected = first.output.decision
+        assert isinstance(rejected, ToolRejectedResult)
+        assert rejected.tool_call_id == "recording-call:1"
+        assert rejected.result["kind"] == "operation_mismatch"
+        assert rejected.result["attempted_operation"] == "activate"
+        assert set(rejected.result["supported_operations"]) == {"press_key", "type_text"}
+        assert rejected.result["dispatch"] == "not_sent"
+        assert scripted.calls == 1
+
+        committed = StepResult(
+            rejected,
+            world,
+            world,
+            evaluation,
+            RunStatus.RUNNING,
+            feedback="local_tool_result",
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:grounding-rejection:2", context, committed)
+        )
+
+        assert second.failure is None and second.output is not None
+        assert isinstance(second.output.decision, SelectAction)
+        assert scripted.calls == 2
+        normalized = normalize_recorded_provider_input(scripted.records[1])
+        returns = tuple(
+            part
+            for message in normalized["messages"]
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert len(returns) == 1
+        assert returns[0]["tool_name"] == "activate"
+        assert returns[0]["tool_call_id"] == "recording-call:1"
+        assert returns[0]["content"]["kind"] == "operation_mismatch"
+        assert set(returns[0]["content"]["supported_operations"]) == {"press_key", "type_text"}
+
+    asyncio.run(scenario())
 
 
 def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() -> None:

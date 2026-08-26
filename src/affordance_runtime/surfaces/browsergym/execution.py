@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
-from affordance_runtime.execution import BoundActionRequest
+from affordance_runtime.execution import ActionError, BoundActionRequest
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
     BrowserGymElementBinding,
@@ -18,6 +18,14 @@ from affordance_runtime.surfaces.browsergym.binding import (
 from affordance_runtime.surfaces.visual.execution import integer_click_point
 
 
+class BrowserGymActionRejection(ValueError):
+    """One typed pre-dispatch rejection owned by BrowserGym action binding."""
+
+    def __init__(self, error: ActionError, detail: str) -> None:
+        self.error = error
+        super().__init__(detail)
+
+
 def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBinding) -> str:
     primitive = request.binding.primitive_action
     if isinstance(private, BrowserGymNavigationBinding):
@@ -25,8 +33,13 @@ def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBin
             raise ValueError("BrowserGym navigation primitive changed after binding")
         if primitive == "goto":
             url = request.intent.parameters.get("url")
-            if not isinstance(url, str) or not private.allows_url(url):
+            if not isinstance(url, str):
                 raise ValueError("goto URL is outside the current browser environment")
+            if not private.allows_url(url):
+                raise BrowserGymActionRejection(
+                    ActionError.DESTINATION_OUTSIDE_ENVIRONMENT,
+                    "goto destination is outside the current browser environment",
+                )
             return f"goto({json.dumps(url, ensure_ascii=False)})"
         if primitive == "tab_focus":
             index = request.intent.parameters.get("index")

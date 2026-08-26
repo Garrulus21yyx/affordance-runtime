@@ -641,7 +641,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
     assert "MacBook Pro" in repr(context.actor_world)
     button_line = next(
         line for line in observation.splitlines()
-        if f"[{option.target_ref}] activate button" in line
+        if f"[{option.target_ref}] button" in line
     )
     assert '"Add to cart"' in button_line
     assert 'verbs=["activate","press_key"]' in button_line

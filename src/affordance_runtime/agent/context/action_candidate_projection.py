@@ -99,7 +99,7 @@ class ActionCandidateDestination:
 
 @dataclass(frozen=True)
 class ActionCandidate:
-    """Disposable public ranking of one existing current ActionOption."""
+    """One disposable public target subject with a representative current route."""
 
     action_id: str
     target_ref: str
@@ -146,6 +146,12 @@ class ActionCandidateProjection:
     candidates: tuple[ActionCandidate, ...]
     scope: str = "automatic"
     projection_id: str = ""
+    route_fragments: tuple[ActionRouteFragment, ...] = field(
+        default=(),
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         candidates = tuple(self.candidates)
@@ -155,16 +161,14 @@ class ActionCandidateProjection:
             raise ValueError("candidate projection scope is invalid")
         if self.scope == "automatic" and len(candidates) > 5:
             raise ValueError("automatic action candidates are bounded to Top-5")
-        identities = tuple(
-            (
-                item.target_ref,
-                item.operation,
-                tuple(destination.target_ref for destination in item.destinations),
-            )
-            for item in candidates
-        )
-        if len(set(identities)) != len(identities):
+        if len({item.target_ref for item in candidates}) != len(candidates):
+            raise ValueError("candidate projection subjects must be unique")
+        route_fragments = tuple(self.route_fragments)
+        if len({item.public_route for item in route_fragments}) != len(route_fragments):
             raise ValueError("candidate projection route fragments must be unique")
+        candidate_refs = {item.target_ref for item in candidates}
+        if any(item.candidate.target_ref not in candidate_refs for item in route_fragments):
+            raise ValueError("candidate projection routes require one visible subject")
         payload = {
             "scope": self.scope,
             "candidates": tuple(
@@ -186,12 +190,13 @@ class ActionCandidateProjection:
         if self.projection_id and self.projection_id != expected:
             raise ValueError("candidate projection identity does not bind its ranking")
         object.__setattr__(self, "candidates", candidates)
+        object.__setattr__(self, "route_fragments", route_fragments)
         object.__setattr__(self, "projection_id", expected)
 
 
 @dataclass(frozen=True)
 class ActionRouteFragment:
-    """The sole atomic action-authorization record proposed for one turn."""
+    """One private route retained behind a target-centric public subject."""
 
     candidate: ActionCandidate
     inclusion_reason: str
@@ -356,12 +361,48 @@ class ActionDeliveryPlan:
                         continue
                     seen_routes.add(fragment.public_route)
                     fragments.append(fragment)
-        candidates = tuple(replace(item.candidate, rank=index) for index, item in enumerate(fragments, 1))
+        candidates_by_target: dict[str, ActionCandidate] = {}
+        target_order: list[str] = []
+        for fragment in fragments:
+            candidate = fragment.candidate
+            current = candidates_by_target.get(candidate.target_ref)
+            if current is None:
+                target_order.append(candidate.target_ref)
+                candidates_by_target[candidate.target_ref] = candidate
+                continue
+            if (
+                current.label,
+                current.role,
+                current.functional_path,
+                current.region_ref,
+                current.public_state,
+            ) != (
+                candidate.label,
+                candidate.role,
+                candidate.functional_path,
+                candidate.region_ref,
+                candidate.public_state,
+            ):
+                raise ValueError("one current target cannot have conflicting public semantics")
+            destinations = tuple(
+                {item.target_ref: item for item in (*current.destinations, *candidate.destinations)}.values()
+            )
+            candidates_by_target[candidate.target_ref] = replace(
+                current,
+                reasons=tuple(dict.fromkeys((*current.reasons, *candidate.reasons))),
+                destination_required=current.destination_required or candidate.destination_required,
+                destinations=destinations,
+            )
+        candidates = tuple(
+            replace(candidates_by_target[target_ref], rank=index)
+            for index, target_ref in enumerate(target_order, 1)
+        )
         return ActionCandidateProjection(
             self.action_space_id,
             self.world_observation_id,
             candidates,
             "delivery",
+            route_fragments=tuple(fragments),
         )
 
     def obligation(self, kind: DeliveryObligationKind) -> DeliveryObligation | None:
@@ -493,10 +534,16 @@ def build_action_delivery_plan(
                 reason="focused" if direct else "focus_container",
             )
 
+    interaction_target_refs = {
+        record.candidate.target_ref
+        for record in groups[DeliveryObligationKind.INTERACTION]
+        if isinstance(record, ActionRouteFragment)
+    }
+
     option_by_id = {item.action_id: item for item in complete_actions}
     for ranked in automatic.candidates:
         option = option_by_id.get(ranked.action_id)
-        if option is None:
+        if option is None or option.target_ref in interaction_target_refs:
             continue
         target_context = region_index.target_contexts.get(option.target_id)
         reason = (
@@ -506,6 +553,8 @@ def build_action_delivery_plan(
         )
         append(option, kind=DeliveryObligationKind.BASE_ACTIONS, reason=reason)
     for option in sorted(complete_actions, key=_public_option_view_order):
+        if not option.destination_required and option.target_ref in interaction_target_refs:
+            continue
         append(
             option,
             kind=(

@@ -536,6 +536,41 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert before_action_space == actions.action_space_id
 
 
+def test_every_delivery_prefix_projects_one_subject_per_target_with_complete_current_verbs() -> None:
+    _task, _world, _actions, _evaluation, context = _context()
+    plan = context.action_delivery_plan
+    assert plan is not None
+    scenarios = [{item.kind.value: 0 for item in plan.obligations}]
+    for obligation in plan.obligations:
+        for count in range(1, len(obligation.records) + 1):
+            counts = {item.kind.value: 0 for item in plan.obligations}
+            counts[obligation.kind.value] = count
+            scenarios.append(counts)
+    scenarios.append({item.kind.value: len(item.records) for item in plan.obligations})
+
+    operations_by_target: dict[str, set[str]] = {}
+    for option in context.complete_actions:
+        operations_by_target.setdefault(option.target_ref, set()).add(option.operation)
+    for counts in scenarios:
+        projection = plan.projection(counts)
+        refs = tuple(item.target_ref for item in projection.candidates)
+        assert len(refs) == len(set(refs))
+        delivery = build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records=counts,
+        )
+        candidate_lines = tuple(
+            line
+            for line in delivery.view.text.splitlines()
+            if line.lstrip().startswith("rank=")
+        )
+        for candidate in projection.candidates:
+            matching = tuple(line for line in candidate_lines if f"[{candidate.target_ref}]" in line)
+            assert len(matching) == 1
+            assert all(f'"{operation}"' in matching[0] for operation in operations_by_target[candidate.target_ref])
+
+
 def test_destination_required_candidate_closes_destination_in_same_manifest_and_resolver() -> None:
     task, world, actions, context = _drag_context()
     delivery, catalog = _catalog(context)
@@ -543,11 +578,11 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
 
     assert candidate.operation == "drag_to"
     assert candidate.destination_required is True
-    assert len(candidate.destinations) == 1
+    assert len(candidate.destinations) == 2
     destination = candidate.destinations[0]
     assert candidate.target_ref in delivery.manifest.executable_refs
-    assert destination.target_ref in delivery.manifest.executable_refs
-    assert f'"target":"{destination.target_ref}"' in delivery.view.text
+    assert all(item.target_ref in delivery.manifest.executable_refs for item in candidate.destinations)
+    assert all(f'"target":"{item.target_ref}"' in delivery.view.text for item in candidate.destinations)
 
     selected = resolve_grounded_tool_call(
         catalog,

@@ -49,7 +49,10 @@ from affordance_runtime.surfaces.browsergym.diagnostics import (
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.surfaces.browsergym.execution import browsergym_action
+from affordance_runtime.surfaces.browsergym.execution import (
+    BrowserGymActionRejection,
+    browsergym_action,
+)
 from affordance_runtime.surfaces.browsergym.lifecycle_identity import (
     episode_identity,
     page_identity,
@@ -585,6 +588,15 @@ class BrowserGymSurfaceAdapter:
         assert private is not None
         try:
             action = browsergym_action(request, private)
+        except BrowserGymActionRejection as rejection:
+            return ActionResult(
+                request.request_id,
+                DispatchStatus.NOT_SENT,
+                request.binding.executor_id,
+                False,
+                rejection.error,
+                self._currentness_evidence(1, 0),
+            )
         except ValueError:
             return ActionResult(
                 request.request_id,

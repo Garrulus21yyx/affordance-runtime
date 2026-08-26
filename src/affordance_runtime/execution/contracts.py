@@ -48,6 +48,7 @@ class ActionError(StrEnum):
     CURRENTNESS_UNAVAILABLE = "currentness_unavailable"
     RATE_LIMITED = "rate_limited"
     INVALID_PARAMETERS = "invalid_parameters"
+    DESTINATION_OUTSIDE_ENVIRONMENT = "destination_outside_environment"
     EXECUTION_FAILED = "execution_failed"
     UNSUPPORTED_ACTION = "unsupported_action"
     CANCELLED = "cancelled"
@@ -270,7 +271,11 @@ class ActionResult:
 
         return (
             self.dispatch_status is DispatchStatus.NOT_SENT
-            and self.error is ActionError.INVALID_PARAMETERS
+            and self.error
+            in {
+                ActionError.INVALID_PARAMETERS,
+                ActionError.DESTINATION_OUTSIDE_ENVIRONMENT,
+            }
         )
 
 

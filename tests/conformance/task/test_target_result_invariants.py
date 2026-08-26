@@ -37,7 +37,7 @@ def test_action_result_allows_sent_business_failure() -> None:
 
 
 @pytest.mark.parametrize("error", tuple(ActionError))
-def test_only_invalid_parameters_permits_zero_dispatch_reselection(error) -> None:
+def test_only_correctable_pre_dispatch_errors_permit_reselection(error) -> None:
     result = ActionResult(
         "request",
         DispatchStatus.NOT_SENT,
@@ -46,7 +46,13 @@ def test_only_invalid_parameters_permits_zero_dispatch_reselection(error) -> Non
         error,
     )
 
-    assert result.permits_reselection is (error is ActionError.INVALID_PARAMETERS)
+    assert result.permits_reselection is (
+        error
+        in {
+            ActionError.INVALID_PARAMETERS,
+            ActionError.DESTINATION_OUTSIDE_ENVIRONMENT,
+        }
+    )
 
 
 def test_causal_transition_requires_a_successful_sent_action() -> None:

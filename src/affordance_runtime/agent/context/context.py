@@ -286,6 +286,7 @@ class AgentContext:
         from affordance_runtime.agent.context.action_candidate_projection import (
             ActionCandidateProjection,
             ActionDeliveryPlan,
+            ActionRouteFragment,
         )
         from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
         from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -318,20 +319,46 @@ class AgentContext:
                 for item in self.action_candidates.candidates
             ):
                 raise ValueError("AgentContext candidates are outside the complete current actions")
+            current_by_target: dict[str, list[AgentActionOptionView]] = {}
             current_by_action = {item.action_id: item for item in complete_actions}
+            for current in complete_actions:
+                current_by_target.setdefault(current.target_ref, []).append(current)
             if any(
                 not set(destination.target_ref for destination in item.destinations).issubset(
                     {
                         destination.grounding_ref
-                        for destination in current_by_action[item.action_id].destinations.items
+                        for current in current_by_target[item.target_ref]
+                        for destination in current.destinations.items
                     }
                 )
                 or (item.destination_required and not item.destinations)
                 or item.destination_required
-                != current_by_action[item.action_id].destination_required
+                != any(current.destination_required for current in current_by_target[item.target_ref])
                 for item in self.action_candidates.candidates
             ):
                 raise ValueError("AgentContext candidate destinations are outside current actions")
+            if any(
+                not isinstance(fragment, ActionRouteFragment)
+                or (
+                    fragment.candidate.action_id,
+                    fragment.candidate.target_ref,
+                    fragment.candidate.operation,
+                )
+                not in current_candidates
+                or not {
+                    destination.target_ref
+                    for destination in fragment.candidate.destinations
+                }.issubset(
+                    {
+                        destination.grounding_ref
+                        for destination in current_by_action[
+                            fragment.candidate.action_id
+                        ].destinations.items
+                    }
+                )
+                for fragment in self.action_candidates.route_fragments
+            ):
+                raise ValueError("AgentContext candidate routes are outside complete current actions")
         if self.action_delivery_plan is not None:
             if not isinstance(self.action_delivery_plan, ActionDeliveryPlan):
                 raise TypeError("AgentContext action delivery plan must be typed")
