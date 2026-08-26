@@ -463,6 +463,38 @@
         "title": "ControlOutcome",
         "type": "object"
       },
+      "ConversationTurn": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "turn_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "role",
+          "text"
+        ],
+        "title": "ConversationTurn",
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1016,6 +1048,16 @@
             "title": "Command Id",
             "type": "string"
           },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RevisionConversationContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expected_checkpoint_id": {
             "anyOf": [
               {
@@ -1056,6 +1098,32 @@
           "text"
         ],
         "title": "ReviseTask",
+        "type": "object"
+      },
+      "RevisionConversationContext": {
+        "additionalProperties": false,
+        "properties": {
+          "latest_turn_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Latest Turn Id",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurn"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Turns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "turns",
+          "latest_turn_id"
+        ],
+        "title": "RevisionConversationContext",
         "type": "object"
       },
       "RunStatus": {

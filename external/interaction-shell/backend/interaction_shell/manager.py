@@ -160,7 +160,9 @@ class RunSessionManager:
         await self._cleanup_if_terminal(managed, await self._snapshot(managed))
         return events
 
-    async def admit(self, session_id: str, session_key: str, command: ShellCommand) -> CommandAdmission:
+    async def admit(
+        self, session_id: str, session_key: str, command: ShellCommand
+    ) -> CommandAdmission:
         managed = self.authenticate(session_id, session_key)
         async with managed.lock:
             await self._expire_if_needed(managed)
@@ -174,14 +176,17 @@ class RunSessionManager:
                     )
                 first_seen = command.command_id not in managed.commands
                 managed.commands.add(command.command_id)
+                context = managed.conversation.revision_context(
+                    command.command_id,
+                    command.text,
+                )
+                runtime_command = command.model_copy(update={"conversation": context})
                 admission, _events = await self._port.revise(
                     managed.runtime_handle,
-                    command,
+                    runtime_command,
                 )
                 if first_seen:
-                    managed.conversation.append(
-                        ConversationTurn(role="user", text=command.text)
-                    )
+                    managed.conversation.append(context.turns[-1])
                 current = await self._snapshot(managed)
                 if current.run_status.value in {
                     "done",
@@ -200,12 +205,16 @@ class RunSessionManager:
                 )
             managed.commands.add(command.command_id)
             if managed.closed and not isinstance(command, CloseSession):
-                return Conflict(command_id=command.command_id, code="session_closed", snapshot=snapshot)
+                return Conflict(
+                    command_id=command.command_id, code="session_closed", snapshot=snapshot
+                )
             if (
                 command.expected_task_revision != snapshot.task_revision
                 or command.expected_run_status != snapshot.run_status
             ):
-                return Conflict(command_id=command.command_id, code="stale_command", snapshot=snapshot)
+                return Conflict(
+                    command_id=command.command_id, code="stale_command", snapshot=snapshot
+                )
             pending_conflict = self._pending_conflict(command, snapshot)
             if pending_conflict:
                 return Conflict(
@@ -230,12 +239,14 @@ class RunSessionManager:
                 command,
             )
             if isinstance(command, (StartTask, AnswerQuestion)):
-                text = (
-                    command.task
-                    if isinstance(command, StartTask)
-                    else command.answer
+                text = command.task if isinstance(command, StartTask) else command.answer
+                managed.conversation.append(
+                    ConversationTurn(
+                        turn_id=command.command_id,
+                        role="user",
+                        text=text,
+                    )
                 )
-                managed.conversation.append(ConversationTurn(role="user", text=text))
             current = await self._snapshot(managed)
             if current.run_status.value in {"done", "failed", "blocked", "cancelled"}:
                 await self._cleanup_if_terminal(managed, current)
@@ -280,7 +291,9 @@ class RunSessionManager:
         await self._cleanup_once(managed)
         return True
 
-    async def _cleanup_if_terminal(self, managed: ManagedSession, snapshot: RuntimeSessionSnapshot) -> None:
+    async def _cleanup_if_terminal(
+        self, managed: ManagedSession, snapshot: RuntimeSessionSnapshot
+    ) -> None:
         if snapshot.run_status.value in {"done", "failed", "blocked", "cancelled"}:
             await self._cleanup_once(managed)
 
@@ -303,9 +316,13 @@ class RunSessionManager:
     @staticmethod
     def _pending_conflict(command: ShellCommand, snapshot: RuntimeSessionSnapshot) -> bool:
         if isinstance(command, AnswerQuestion):
-            return snapshot.pending_question is None or command.request_id != snapshot.pending_question.request_id
+            return (
+                snapshot.pending_question is None
+                or command.request_id != snapshot.pending_question.request_id
+            )
         if isinstance(command, (ApproveAction, RejectAction)):
             return (
-                snapshot.pending_confirmation is None or command.request_id != snapshot.pending_confirmation.request_id
+                snapshot.pending_confirmation is None
+                or command.request_id != snapshot.pending_confirmation.request_id
             )
         return False

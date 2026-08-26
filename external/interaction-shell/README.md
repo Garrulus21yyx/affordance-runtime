@@ -52,6 +52,12 @@ cooperative cancel, durable pause/resume, bounded zero-prior-effect task revisio
 and close. Effect reconciliation/compensation, new task, and takeover remain
 typed unavailable.
 
+For revision, the manager attaches an immutable language-only snapshot of at
+most six turns and 16 KiB to the single Runtime command. Runtime adds its own
+current goal and pending question/confirmation before invoking the sole
+TaskRevisionCompiler. The snapshot participates in Runtime command identity but
+never enters ActionPolicy history or grants GUI-effect authority.
+
 Install the deployment profile alongside the Runtime worktree, then start its
 dedicated app (the example interpreter is the repository's pinned BrowserGym
 environment):
@@ -79,6 +85,9 @@ BrowserGym/Playwright. Runtime-private SQLite WAL checkpoints make cooperative
 pause durable and provide the reconnectable-lease restart/resume contract.
 Viewer and the local BrowserGym profile's process-restart resume intentionally
 remain typed unavailable until an environment reconnect contract exists.
+Model-call OpenTelemetry instrumentation is present, but this deployment does
+not yet configure a recording `TracerProvider` or exporter; existing Runtime
+JSONL/Langfuse projection remains the deployed diagnostic path.
 
 Start the frontend in another shell:
 

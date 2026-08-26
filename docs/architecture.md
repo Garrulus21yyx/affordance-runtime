@@ -67,13 +67,21 @@ environment fails typed rather than opening a replacement browser. Bounded
 `ReviseTask` reuses the same cooperative pause, validates one complete
 consecutive `TaskGoal`, revises the same environment, captures fresh World,
 compiles one new GoalPlan, atomically commits revision `n+1`, and remains
-paused. Runtime also owns revision command identity: the existing outcome row
-stores a canonical complete-command digest plus bounded result/message, exact
-retries replay before current-state validation, and changed payload under one
-ID fails as `command_identity_reused`. Shell forwards complete revision
-commands and only suppresses duplicate conversation turns; it owns no durable
-revision result. Model continuity is a separate authority: every PydanticAI
-ActionPolicy invocation records official Harness step events under the Web
+paused. The Shell attaches one immutable language-only conversation snapshot
+of at most six turns and 16 KiB of UTF-8 text, ending at exactly one identified
+latest user turn. Runtime adds the authoritative current `TaskGoal` and pending
+question/confirmation from `RunState` before invoking the sole existing
+`TaskRevisionCompiler`; neither value enters ActionPolicy history or authorizes
+GUI effects. Runtime also owns revision command identity: the existing outcome
+row stores a canonical digest covering the complete command and conversation
+plus bounded result/message, exact retries replay before current-state
+validation, and changed text/context under one ID fails as
+`command_identity_reused`. Shell only caches the bounded snapshot and owns no
+durable revision result; the unused external Shell revision compiler has been
+removed. Model continuity is a separate authority: admitted task identity is
+bound before environment reset, GoalCompiler, or the first ActionPolicy call,
+so an empty history can be committed as an official settled Harness snapshot.
+Every PydanticAI ActionPolicy invocation records official Harness step events under the Web
 session conversation ID, and each Runtime safe checkpoint first writes one
 immutable, provider-valid Harness `ContinuableSnapshot` through the session's
 deterministically located `SqliteStepStore` file.
@@ -81,11 +89,12 @@ The Runtime checkpoint contains only that run reference, conversation ID,
 message digest, and task identity; it does not embed or invent a parallel model
 transcript. Legacy `ModelMessagesTypeAdapter` checkpoints remain readable.
 Harness persistence never decides GUI dispatch truth, pause eligibility, or
-browser recovery. PydanticAI's native instrumentation emits model/tool spans
-to the configured OpenTelemetry provider, and the custom structured-model
-boundary used by GoalCompiler/TaskRevisionCompiler emits compatible bounded
-provider spans to the same provider. Runtime trace remains an observation of
-GUI owner facts, not model-history or control authority. Prior GUI effects
+browser recovery. PydanticAI and the custom structured-model boundary expose
+native/compatible OpenTelemetry instrumentation, but the current deployment
+does not install a recording `TracerProvider` or exporter. Connecting one later
+is a non-blocking deployment/observability task. Runtime JSONL/Langfuse trace
+remains an observation of GUI owner facts, not model-history or control
+authority. Prior GUI effects
 still return `effect_reconciliation_required`; Viewer, compensation, and takeover remain
 unavailable. These deployment/control tests are not benchmark witnesses and do
 not alter the reopened overall project status.

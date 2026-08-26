@@ -388,7 +388,7 @@ Constraints:
       session stores initialize without locking; SQLite reopen/digest tampering,
       official step events, and native/custom OTel spans are covered. No live
       benchmark was run; Phase 7, Viewer, and takeover were not started.
-19. **in progress — Reclose pre-policy checkpoint identity and revision conversation.**
+19. **done — Reclose pre-policy checkpoint identity and revision conversation.**
     - Keep the single `CoreAgentLoop`, existing Runtime checkpoint/receipt
       authorities, existing Runtime `TaskRevisionCompiler`, and current SQLite
       stores. Do not add an Agent, database, workflow engine, or Phase 7
@@ -428,6 +428,26 @@ Constraints:
       epoch, and calls policy only after explicit Resume. Focused evidence: 102
       public-session/checkpoint/Runtime/PydanticAI tests, touched Ruff/MyPy,
       compileall, and diff checks passed.
+    - Revision-conversation milestone implemented: the Shell manager constructs
+      one immutable snapshot of at most six turns and 16 KiB, identifies the
+      latest user turn exactly once, caches the exact command snapshot for
+      replay, and forwards it through the existing dedicated revision port.
+      Runtime alone adds current `TaskGoal` plus pending question/confirmation
+      facts from `RunState`, calls the existing compiler once, and includes the
+      complete conversation in its canonical command digest. Same identity with
+      changed text or context fails typed before a second compiler call;
+      conversation never enters ActionPolicy Harness history. The unused
+      external Shell compiler module and its parallel schema/provider tests were
+      removed; OpenAPI and generated TypeScript now reflect the typed value.
+    - Closure evidence: the acceptance-focused Runtime/model/Shell slice passed
+      45 tests; the broader Runtime app/model/external-isolation slice passed
+      117; external backend plus architecture passed 57; backend Pyright and
+      touched-owner MyPy/Ruff/compileall/diff checks passed. Frontend passed 8
+      unit tests, ESLint, TypeScript, generated OpenAPI, production build, and 1
+      Demo Playwright E2E. Root architecture/governance passed 93 tests; its
+      only failure remains the pre-existing five-document count rejecting this
+      user-required implementation document. No live benchmark ran. Phase 7,
+      Viewer, takeover, and deployment OTel exporter wiring remain unstarted.
 
 ## Current-work produced files
 

@@ -457,6 +457,18 @@ export interface components {
              */
             outcome: "paused" | "failed" | "revised" | "needs_input" | "no_change" | "new_task_suggested" | "unsupported" | "effect_reconciliation_required";
         };
+        /** ConversationTurn */
+        ConversationTurn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
+            /** Turn Id */
+            turn_id: string;
+        };
         /** CreateSessionRequest */
         CreateSessionRequest: {
             /**
@@ -696,6 +708,7 @@ export interface components {
         ReviseTask: {
             /** Command Id */
             command_id: string;
+            conversation?: components["schemas"]["RevisionConversationContext"] | null;
             /** Expected Checkpoint Id */
             expected_checkpoint_id?: string | null;
             expected_run_status: components["schemas"]["RunStatus"];
@@ -709,6 +722,13 @@ export interface components {
             kind: "revise_task";
             /** Text */
             text: string;
+        };
+        /** RevisionConversationContext */
+        RevisionConversationContext: {
+            /** Latest Turn Id */
+            latest_turn_id: string;
+            /** Turns */
+            turns: components["schemas"]["ConversationTurn"][];
         };
         /**
          * RunStatus

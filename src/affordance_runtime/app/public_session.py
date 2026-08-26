@@ -33,6 +33,9 @@ from affordance_runtime.task.intake import (
     TaskUnsupported,
 )
 from affordance_runtime.task.revision import (
+    REVISION_CONVERSATION_MAX_TEXT_BYTES,
+    RevisionConversationContext,
+    RevisionConversationTurn,
     RevisionFailed,
     RevisionNeedsInput,
     RevisionNewTaskSuggested,
@@ -54,6 +57,8 @@ from .checkpoint import (
 from .runtime import TargetRuntime, TargetRuntimeRunOutcome
 
 PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v1"
+PublicRevisionConversationContext = RevisionConversationContext
+PublicRevisionConversationTurn = RevisionConversationTurn
 
 
 class PublicSessionStatus(StrEnum):
@@ -77,6 +82,7 @@ class PublicTaskRevisionCommand:
     expected_run_status: PublicSessionStatus
     expected_checkpoint_id: str | None
     text: str
+    conversation: RevisionConversationContext
 
     def __post_init__(self) -> None:
         if (
@@ -94,6 +100,9 @@ class PublicTaskRevisionCommand:
             )
             or not self.text.strip()
             or len(self.text) > 8000
+            or len(self.text.encode("utf-8")) > REVISION_CONVERSATION_MAX_TEXT_BYTES
+            or not isinstance(self.conversation, RevisionConversationContext)
+            or self.conversation.latest_turn.text != self.text
         ):
             raise ValueError("public task revision command is invalid")
 
@@ -105,7 +114,17 @@ class PublicTaskRevisionCommand:
             "expected_task_revision": self.expected_task_revision,
             "kind": "revise_task",
             "schema_version": PUBLIC_SESSION_SCHEMA_VERSION,
-            "text": self.text,
+            "conversation": {
+                "latest_turn_id": self.conversation.latest_turn_id,
+                "turns": [
+                    {
+                        "role": turn.role,
+                        "text": turn.text,
+                        "turn_id": turn.turn_id,
+                    }
+                    for turn in self.conversation.turns
+                ],
+            },
         }
         canonical = json.dumps(
             payload,
@@ -275,12 +294,8 @@ class PublicRuntimeSessionHandle(Protocol):
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
     async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
-    async def resume(
-        self, command_id: str, checkpoint_id: str
-    ) -> PublicRuntimeSessionSnapshot: ...
-    async def revise(
-        self, command: PublicTaskRevisionCommand
-    ) -> PublicRuntimeSessionSnapshot: ...
+    async def resume(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
 
@@ -310,9 +325,7 @@ class TargetRuntimeSession:
     _failure: PublicCompletion | None = field(default=None, init=False, repr=False)
     _checkpoint_id: str | None = field(default=None, init=False, repr=False)
     _resume_eligible: bool = field(default=False, init=False, repr=False)
-    _last_control_outcome: PublicControlOutcome | None = field(
-        default=None, init=False, repr=False
-    )
+    _last_control_outcome: PublicControlOutcome | None = field(default=None, init=False, repr=False)
     _progress: list[PublicProgressStep] = field(default_factory=list, init=False, repr=False)
     _events: list[PublicRuntimeSessionEvent] = field(default_factory=list, init=False, repr=False)
     _active: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -326,10 +339,7 @@ class TargetRuntimeSession:
         if not isinstance(self.lease, RuntimeEnvironmentLease):
             raise TypeError("public Runtime session requires a typed environment lease")
         required_environment_methods = ("reset", "revise_task", "capture", "is_current", "execute")
-        if any(
-            not callable(getattr(self.lease.environment, method, None))
-            for method in required_environment_methods
-        ):
+        if any(not callable(getattr(self.lease.environment, method, None)) for method in required_environment_methods):
             raise TypeError("public Runtime session environment does not implement WorldEnvironment")
         if not callable(self.request_factory):
             raise TypeError("public Runtime session requires a task request factory")
@@ -403,10 +413,7 @@ class TargetRuntimeSession:
             if self._closed:
                 raise PublicSessionConflict("session_closed", self._project())
             state = self._state
-            if (
-                (state is not None and state.terminal)
-                or (state is None and self._active is None)
-            ):
+            if (state is not None and state.terminal) or (state is None and self._active is None):
                 raise PublicSessionConflict("run_not_active", self._project())
             admission = self.runtime.request_control(command_id, RunControlKind.CANCEL)
             if admission.outcome is RunControlAdmissionKind.CONFLICT:
@@ -433,16 +440,11 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("pause_unavailable", self._project())
             state = self._state
             if state is not None and state.status is RunStatus.PAUSED:
-                existing = await self.checkpoint_store.command_outcome(
-                    self.session_id, command_id
-                )
+                existing = await self.checkpoint_store.command_outcome(self.session_id, command_id)
                 if existing is not None and existing.checkpoint_id == state.durable_checkpoint_id:
                     return self._project()
                 raise PublicSessionConflict("run_not_active", self._project())
-            if (
-                (state is not None and state.terminal)
-                or (state is None and self._active is None)
-            ):
+            if (state is not None and state.terminal) or (state is None and self._active is None):
                 raise PublicSessionConflict("run_not_active", self._project())
             admission = self.runtime.request_control(command_id, RunControlKind.PAUSE)
             if admission.outcome is RunControlAdmissionKind.CONFLICT:
@@ -455,10 +457,7 @@ class TargetRuntimeSession:
                 if state is None or self._admitted is None:
                     raise PublicSessionConflict("run_not_active", self._project())
                 outcome = self.runtime.apply_waiting_control(state)
-                if (
-                    outcome is None
-                    or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
-                ):
+                if outcome is None or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED:
                     raise PublicSessionConflict("control_boundary_failed", self._project())
                 await self._settle_pause_boundary(self.runtime, self._admitted.task, state)
             return self._project()
@@ -513,9 +512,7 @@ class TargetRuntimeSession:
                 )
             return self._project()
 
-    async def revise(
-        self, command: PublicTaskRevisionCommand
-    ) -> PublicRuntimeSessionSnapshot:
+    async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
             if self._closed:
                 raise PublicSessionConflict("session_closed", self._project())
@@ -530,9 +527,7 @@ class TargetRuntimeSession:
                 and admitted_at_entry.task.revision == command.expected_task_revision
                 and self._status is command.expected_run_status
             )
-            checkpoint_matches_entry = (
-                self._checkpoint_id == command.expected_checkpoint_id
-            )
+            checkpoint_matches_entry = self._checkpoint_id == command.expected_checkpoint_id
             try:
                 existing = await store.revision_outcome(
                     self.session_id,
@@ -552,11 +547,7 @@ class TargetRuntimeSession:
                 self._set_revision_outcome(
                     existing.outcome,
                     command.command_id,
-                    checkpoint_id=(
-                        existing.result_checkpoint_id
-                        if existing.outcome == "revised"
-                        else None
-                    ),
+                    checkpoint_id=(existing.result_checkpoint_id if existing.outcome == "revised" else None),
                     message=existing.message,
                 )
                 if existing.outcome == "revised":
@@ -607,8 +598,9 @@ class TargetRuntimeSession:
                     "The current revision has committed GUI effects.",
                 )
             compiled = await self.runtime.compile_task_revision(
-                self._admitted,
-                command.text,
+                admitted_at_entry,
+                command.conversation,
+                state,
             )
             revised = compiled.intake
             if not isinstance(revised, ReadyTask):
@@ -708,10 +700,7 @@ class TargetRuntimeSession:
             if state is None or self._admitted is None:
                 raise PublicSessionConflict("run_not_active", self._project())
             outcome = self.runtime.apply_waiting_control(state)
-            if (
-                outcome is None
-                or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
-            ):
+            if outcome is None or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED:
                 raise PublicSessionConflict("control_boundary_failed", self._project())
             await self._settle_pause_boundary(
                 self._runtime_with_projection(),
@@ -835,9 +824,7 @@ class TargetRuntimeSession:
                 self._admitted = outcome.intake
                 self._state = outcome.state
                 if outcome.state is not None:
-                    await self._settle_pause_boundary(
-                        session_runtime, outcome.intake.task, outcome.state
-                    )
+                    await self._settle_pause_boundary(session_runtime, outcome.intake.task, outcome.state)
             elif isinstance(outcome.intake, TaskInputRequired):
                 self._fail(outcome.intake.reason_code, outcome.intake.question)
             else:
@@ -865,9 +852,7 @@ class TargetRuntimeSession:
             else:
                 self._admitted = outcome.intake
                 self._state = outcome.state
-                await self._settle_pause_boundary(
-                    self._runtime_with_projection(), outcome.intake.task, outcome.state
-                )
+                await self._settle_pause_boundary(self._runtime_with_projection(), outcome.intake.task, outcome.state)
         except BaseException as exc:
             self._fail("runtime_session_resume_failed", type(exc).__name__)
         finally:
@@ -884,9 +869,7 @@ class TargetRuntimeSession:
                 self._state,
                 approved=approved,
             )
-            await self._settle_pause_boundary(
-                self._runtime_with_projection(), self._admitted.task, self._state
-            )
+            await self._settle_pause_boundary(self._runtime_with_projection(), self._admitted.task, self._state)
         except BaseException as exc:
             self._fail("runtime_session_confirmation_failed", type(exc).__name__)
         finally:
@@ -1192,12 +1175,8 @@ class TargetRuntimeSessionFactory:
             )
         try:
             checkpoint = await store.load(session_id, checkpoint_id)
-            resume_outcome = await store.checkpoint_resume_outcome(
-                session_id, checkpoint_id
-            )
-            revision_outcome = await store.checkpoint_revision_outcome(
-                session_id, checkpoint_id
-            )
+            resume_outcome = await store.checkpoint_resume_outcome(session_id, checkpoint_id)
+            revision_outcome = await store.checkpoint_revision_outcome(session_id, checkpoint_id)
         except Exception as exc:
             raise PublicSessionOpenError(
                 PublicSessionOpenStage.SESSION,
@@ -1219,11 +1198,7 @@ class TargetRuntimeSessionFactory:
                 "checkpoint_already_revised",
             )
         reconnector = self.environment_reconnector
-        if (
-            not checkpoint.resume_eligible
-            or not checkpoint.environment_reference
-            or reconnector is None
-        ):
+        if not checkpoint.resume_eligible or not checkpoint.environment_reference or reconnector is None:
             raise PublicSessionOpenError(
                 PublicSessionOpenStage.ENVIRONMENT,
                 "environment_not_reconnectable",
@@ -1343,17 +1318,9 @@ def _revision_rejection(
         return "revision_unsupported", intake.reason_code
     if isinstance(
         compiler,
-        RevisionNeedsInput
-        | RevisionNoChange
-        | RevisionNewTaskSuggested
-        | RevisionUnsupported
-        | RevisionFailed,
+        RevisionNeedsInput | RevisionNoChange | RevisionNewTaskSuggested | RevisionUnsupported | RevisionFailed,
     ):
-        message = (
-            compiler.question
-            if isinstance(compiler, RevisionNeedsInput)
-            else compiler.reason
-        )
+        message = compiler.question if isinstance(compiler, RevisionNeedsInput) else compiler.reason
         return revision_outcome_code(compiler), message
     if isinstance(compiler, RevisionReady):
         return "revision_failed", "task_intake_failed"

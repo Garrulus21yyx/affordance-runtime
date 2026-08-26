@@ -46,7 +46,15 @@ class FakePublicHandle:
         self.release = asyncio.Event()
         self.cleanup_count = 0
         self.revise_calls: list[
-            tuple[str, int, PublicSessionStatus, str | None, str]
+            tuple[
+                str,
+                int,
+                PublicSessionStatus,
+                str | None,
+                str,
+                tuple[str, ...],
+                str,
+            ]
         ] = []
         self.revision_digests: dict[str, str] = {}
 
@@ -93,9 +101,7 @@ class FakePublicHandle:
                 self.current,
                 status=PublicSessionStatus.CANCELLED,
                 pending_question=None,
-                completion=PublicCompletion(
-                    "cancelled", "user_cancelled", "Cancelled at a safe boundary."
-                ),
+                completion=PublicCompletion("cancelled", "user_cancelled", "Cancelled at a safe boundary."),
             ),
             "RUN_FINISHED",
         )
@@ -109,8 +115,7 @@ class FakePublicHandle:
                 status=PublicSessionStatus.PAUSED,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
-                capabilities=self.current.capabilities
-                | {PublicSessionCapability.RESUME_TASK},
+                capabilities=self.current.capabilities | {PublicSessionCapability.RESUME_TASK},
                 last_control_outcome=PublicControlOutcome(
                     command_id,
                     "pause",
@@ -130,8 +135,7 @@ class FakePublicHandle:
                 self.current,
                 status=PublicSessionStatus.WAITING_USER,
                 resume_eligible=False,
-                capabilities=self.current.capabilities
-                - {PublicSessionCapability.RESUME_TASK},
+                capabilities=self.current.capabilities - {PublicSessionCapability.RESUME_TASK},
                 pending_question=PublicPendingQuestion("ask:choice", "Which option?"),
             ),
             "RUN_RESUMED",
@@ -146,6 +150,8 @@ class FakePublicHandle:
                 command.expected_run_status,
                 command.expected_checkpoint_id,
                 command.text,
+                tuple(turn.text for turn in command.conversation.turns),
+                command.conversation.latest_turn_id,
             )
         )
         existing_digest = self.revision_digests.get(command.command_id)
@@ -170,8 +176,7 @@ class FakePublicHandle:
                 task_text=command.text,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
-                capabilities=self.current.capabilities
-                | {PublicSessionCapability.RESUME_TASK},
+                capabilities=self.current.capabilities | {PublicSessionCapability.RESUME_TASK},
                 pending_question=None,
                 pending_confirmation=None,
                 last_control_outcome=PublicControlOutcome(
@@ -217,8 +222,7 @@ class FakePublicFactory:
             status=PublicSessionStatus.PAUSED,
             checkpoint_id=checkpoint_id,
             resume_eligible=True,
-            capabilities=self.handle.current.capabilities
-            | {PublicSessionCapability.RESUME_TASK},
+            capabilities=self.handle.current.capabilities | {PublicSessionCapability.RESUME_TASK},
         )
         return self.handle
 
@@ -416,6 +420,11 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "This stale command must be rejected by Runtime",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+            ),
+            "revise:stale",
         )
     ]
 
@@ -443,6 +452,11 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "This stale command must be rejected by Runtime",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+            ),
+            "revise:stale",
         ),
         (
             "revise:1",
@@ -450,6 +464,12 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "Inspect the account and its owner",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+                "Inspect the account and its owner",
+            ),
+            "revise:1",
         ),
     ]
     reused = await manager.admit(
@@ -471,6 +491,12 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
         PublicSessionStatus.RUNNING,
         None,
         "Reuse the identity for a different revision",
+        (
+            "Inspect the account",
+            "This stale command must be rejected by Runtime",
+            "Reuse the identity for a different revision",
+        ),
+        "revise:1",
     )
 
     duplicate = await manager.admit(
@@ -494,6 +520,11 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "This stale command must be rejected by Runtime",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+            ),
+            "revise:stale",
         ),
         (
             "revise:1",
@@ -501,6 +532,12 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "Inspect the account and its owner",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+                "Inspect the account and its owner",
+            ),
+            "revise:1",
         ),
         (
             "revise:1",
@@ -508,6 +545,12 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "Reuse the identity for a different revision",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+                "Reuse the identity for a different revision",
+            ),
+            "revise:1",
         ),
         (
             "revise:1",
@@ -515,13 +558,19 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             PublicSessionStatus.RUNNING,
             None,
             "Inspect the account and its owner",
+            (
+                "Inspect the account",
+                "This stale command must be rejected by Runtime",
+                "Inspect the account and its owner",
+            ),
+            "revise:1",
         ),
     ]
     conversation = manager.authenticate(
         created.snapshot.session_id,
         created.session_key,
-    ).conversation.view(duplicate.snapshot)
-    assert tuple(turn.text for turn in conversation.recent_turns) == (
+    ).conversation.view()
+    assert tuple(turn.text for turn in conversation.turns) == (
         "Inspect the account",
         "This stale command must be rejected by Runtime",
         "Inspect the account and its owner",

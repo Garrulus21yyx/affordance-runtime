@@ -27,7 +27,12 @@ local/E2E port; it emits no GUI action, has no agent loop, and labels its
 completion `demo_owner_completion`.
 
 Task revision is one dedicated command/port call and always remains paused after
-success. A prior `SENT` or `SENT_UNKNOWN` receipt returns typed
+success. The Shell manager supplies an immutable language-only context of at
+most six turns and 16 KiB, ending at exactly one identified latest user turn.
+Runtime supplies the authoritative current goal and pending interruption facts,
+and the complete command/context participates in Runtime idempotency digesting.
+Conversation never authorizes actions or enters ActionPolicy model history. A
+prior `SENT` or `SENT_UNKNOWN` receipt returns typed
 `effect_reconciliation_required`; compensation, new-task replacement, takeover,
 and return-control remain unavailable. Viewer interaction likewise remains
 disabled without an exclusive typed control lease and return outcome.

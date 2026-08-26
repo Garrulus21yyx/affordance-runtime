@@ -11,6 +11,8 @@ from affordance_runtime.app.public_session import (
     PublicRuntimeSessionFactory,
     PublicRuntimeSessionHandle,
     PublicRuntimeSessionSnapshot,
+    PublicRevisionConversationContext,
+    PublicRevisionConversationTurn,
     PublicSessionCapability,
     PublicSessionConflict,
     PublicSessionOpenError,
@@ -140,16 +142,28 @@ class CoreRuntimeSessionPort:
 
     async def revise(self, handle: PublicRuntimeSessionHandle, command: ReviseTask):
         before = (await handle.snapshot()).event_cursor
+        conversation = command.conversation
+        if conversation is None:
+            raise TypeError("Shell manager must attach bounded revision conversation")
         try:
             current = await handle.revise(
                 PublicTaskRevisionCommand(
                     command_id=command.command_id,
                     expected_task_revision=command.expected_task_revision,
-                    expected_run_status=PublicSessionStatus(
-                        command.expected_run_status.value
-                    ),
+                    expected_run_status=PublicSessionStatus(command.expected_run_status.value),
                     expected_checkpoint_id=command.expected_checkpoint_id,
                     text=command.text,
+                    conversation=PublicRevisionConversationContext(
+                        turns=tuple(
+                            PublicRevisionConversationTurn(
+                                turn.turn_id,
+                                turn.role,
+                                turn.text,
+                            )
+                            for turn in conversation.turns
+                        ),
+                        latest_turn_id=conversation.latest_turn_id,
+                    ),
                 )
             )
         except PublicSessionConflict as exc:

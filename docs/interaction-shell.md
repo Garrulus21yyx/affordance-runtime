@@ -2,7 +2,7 @@
 
 Status: **Local real execution, durable control, and bounded task revision implemented; Viewer and effect reconciliation unavailable**
 
-Date: 2026-08-26
+Date: 2026-08-27
 
 Scope: standalone Web product, deployment composition, resumable control, and evaluation design outside the core Runtime
 
@@ -56,7 +56,7 @@ framework can own without duplicating Runtime authority.
 | Structured model calls | existing PydanticAI/provider boundary | another LLM or Agent framework |
 | Model-history persistence | PydanticAI Harness `StepPersistence(SqliteStepStore)`, `ModelMessagesTypeAdapter`, and deferred-tool results | a parallel transcript schema or prose reconstruction |
 | Initial durable session storage | SQLite transaction/WAL, with Postgres only when multi-process deployment requires it | a custom event store or event-sourcing platform |
-| Trace, usage, and cost | PydanticAI OpenTelemetry plus the existing Runtime trace/Langfuse projection | another observability platform |
+| Trace, usage, and cost | PydanticAI/custom-provider OpenTelemetry instrumentation plus the existing Runtime trace/Langfuse projection; deployment exporter wiring remains pending | another observability platform |
 | Charts | shadcn chart components/Recharts | custom SVG charting |
 | Web end-to-end tests | Playwright | a custom browser test harness |
 
@@ -103,6 +103,7 @@ The following states must not be collapsed into one label such as "implemented":
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
 | Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
+| Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
 | Effect reconciliation/compensation | Unavailable | Phase 6 preserves and blocks on prior dispatched truth; Phase 7 has not implemented observation/compensation or automatic undo. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
 | Delivery hygiene | Closed through Phase 6.5 | Phase 0–6 plus the bounded persistence/trace/idempotency convergence, tests, documentation, and milestone evidence agree in the current commit. |
@@ -656,7 +657,7 @@ Cancel persists final audit/receipt truth but produces no resumable checkpoint. 
 user message is not injected directly into ActionPolicy and does not mutate an existing `GoalPlan`:
 
 ```text
-ReviseTask(command_id, expected_task_revision=n)
+ReviseTask(command_id, expected_task_revision=n, bounded_conversation)
 → cooperative pause at a Runtime safe boundary
 → commit checkpoint for the last closed step
 → if any prior receipt is SENT/SENT_UNKNOWN, keep revision n and return effect_reconciliation_required
@@ -779,8 +780,9 @@ Conversation history is used only to interpret user-owned task revision language
 
 ```python
 @dataclass(frozen=True)
-class BoundedConversationContext:
-    turns: tuple[ConversationTurn, ...]  # bounded, normally 3–6; includes the latest user turn exactly once
+class RevisionConversationContext:
+    turns: tuple[ConversationTurn, ...]  # at most 6, total UTF-8 text <= 16 KiB
+    latest_turn_id: str                  # identifies the final user turn exactly once
 ```
 
 The Shell includes only this bounded user-owned conversation value in one `ReviseTask` command. Inside the single
@@ -815,14 +817,15 @@ The shell conversation is necessary for user experience and revision interpretat
 resume the Agent. The PydanticAI transcript is necessary for model continuity, but it is not sufficient to restore the
 Runtime or browser. Trace is necessary for diagnosis, but must never reconstruct either one. Each provider initial and
 repair attempt remains captured at the provider boundary even when the enclosing policy call is cancelled.
-PydanticAI ActionPolicy calls use its native instrumentation with binary content
+PydanticAI ActionPolicy calls have native instrumentation with binary content
 disabled; GoalCompiler/TaskRevisionCompiler calls made through the custom
-structured `ModelPort` emit compatible `gen_ai.*` spans from that provider
-boundary. Both use the configured global or explicitly injected OpenTelemetry
-provider, so deployment chooses Langfuse or another OTLP exporter without a
-Runtime-specific transcript database. Ephemeral `last_invocation_result` and
-Runtime trace projections remain diagnostics, not persistence or recovery
-inputs.
+structured `ModelPort` have compatible `gen_ai.*` instrumentation at that
+provider boundary. The current deployment does not configure a recording
+`TracerProvider` or exporter, so no deployed model-span recording is claimed.
+A later deployment may choose Langfuse or another OTLP exporter without adding
+a Runtime-specific transcript database. Ephemeral `last_invocation_result` and
+Runtime JSONL/Langfuse projections remain diagnostics, not persistence or
+recovery inputs.
 
 ## 11. Resume checkpoint and persistence contract
 
@@ -1288,7 +1291,8 @@ checkpoint payload.
 Owner: Shell bounded user-conversation input plus the public Runtime revision boundary, TaskIntake/TaskGoal,
 GoalCompiler, and existing ActionPolicy.
 
-1. Add `ReviseTask` with `command_id`, expected task revision/status/checkpoint, and bounded text.
+1. Add `ReviseTask` with `command_id`, expected task revision/status/checkpoint, bounded text, and one immutable
+   at-most-six-turn/16-KiB conversation snapshot whose latest user turn is identified exactly once.
 2. Implement one-shot PydanticAI-backed `TaskRevisionCompiler` outcomes:
    `RevisionReady | NeedsInput | NoChange | NewTaskSuggested | Unsupported | Failed`.
 3. Require a cooperative safe-point checkpoint before accepting the authoritative revision.
@@ -1308,19 +1312,25 @@ use revision `n+1`; no revision-`n` selection or approval can dispatch; old
 effects are preserved as immutable receipts; GoalCompiler is called exactly once for the accepted revision; known and
 unknown prior dispatches reach `effect_reconciliation_required` without compiling or executing a new action.
 
-Implementation status (2026-08-26): complete for the bounded Phase 6 scope. `ReviseTask` is a dedicated Shell command
+Implementation status (2026-08-27): complete for the bounded Phase 6/6.5 scope. `ReviseTask` is a dedicated Shell command
 and endpoint that makes one `RuntimeSessionPort.revise` call. Runtime reuses the Phase 5 cooperative pause and source
 checkpoint, durably closes every compiler non-ready outcome, admits only a complete consecutive `TaskGoal`, revises
 the same environment, captures fresh World, invokes the existing GoalCompiler once, rebinds official PydanticAI
 history, and atomically commits the new checkpoint plus command outcome before publishing revision `n+1`. Successful
 revision remains `PAUSED`, clears stale action/confirmation state, and never auto-resumes. Duplicate commands replay
-the Runtime-owned stored result. The stored row now contains a canonical digest of the complete command and a bounded
-outcome/message summary: an exact retry replays without compilation or environment mutation, while reuse of the same
-identity for different expected values or text returns typed `command_identity_reused`. The Shell always forwards
-revision attempts under its per-session lock and uses its command set only to avoid duplicating conversation turns;
-it does not decide revision idempotency or staleness. Prior dispatched truth fails closed as
+the Runtime-owned stored result. The Shell now attaches one immutable bounded conversation snapshot; Runtime adds
+only its authoritative current goal and pending question/confirmation before calling the existing compiler once.
+The latest user message appears once in the compiler payload, conversation never enters ActionPolicy Harness history,
+and the unused external Shell compiler has been removed. The stored row contains a canonical digest of the complete
+command including conversation plus a bounded outcome/message summary: an exact retry replays without compilation or
+environment mutation, while reuse of the same identity for different expected values, text, or context returns typed
+`command_identity_reused`. The Shell always forwards revision attempts under its per-session lock and uses its command
+set only to avoid duplicating conversation turns; it does not decide revision idempotency or staleness. Task admission
+also binds model-history identity before initialization, so a pre-policy pause can persist and recover an empty settled
+Harness snapshot. Prior dispatched truth fails closed as
 `effect_reconciliation_required` while keeping revision `n`; effect reconciliation, compensation, Viewer, and
-takeover remain unavailable.
+takeover remain unavailable. OTel exporter wiring remains a non-blocking deployment task and is not part of this
+closure.
 
 ### Phase 7 — bounded compensation for already-applied effects
 

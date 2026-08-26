@@ -13,6 +13,35 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+REVISION_CONVERSATION_MAX_TURNS = 6
+REVISION_CONVERSATION_MAX_TEXT_BYTES = 16 * 1024
+
+
+class ConversationTurn(StrictModel):
+    turn_id: str = Field(min_length=1, max_length=128)
+    role: Literal["user", "assistant"]
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class RevisionConversationContext(StrictModel):
+    turns: tuple[ConversationTurn, ...] = Field(min_length=1, max_length=6)
+    latest_turn_id: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def require_bounded_latest_user_turn(self):
+        if len({turn.turn_id for turn in self.turns}) != len(self.turns):
+            raise ValueError("revision conversation turn identities must be unique")
+        latest = tuple(turn for turn in self.turns if turn.turn_id == self.latest_turn_id)
+        if len(latest) != 1 or self.turns[-1] is not latest[0] or latest[0].role != "user":
+            raise ValueError("revision conversation must end at one identified user turn")
+        if (
+            sum(len(turn.text.encode("utf-8")) for turn in self.turns)
+            > REVISION_CONVERSATION_MAX_TEXT_BYTES
+        ):
+            raise ValueError("revision conversation exceeds its total text-byte bound")
+        return self
+
+
 class RunStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
@@ -178,7 +207,9 @@ class ShellEvent(StrictModel):
             if isinstance(node, dict):
                 overlap = {str(key).lower() for key in node} & forbidden
                 if overlap:
-                    raise ValueError(f"private public-event fields are forbidden: {sorted(overlap)}")
+                    raise ValueError(
+                        f"private public-event fields are forbidden: {sorted(overlap)}"
+                    )
                 for child in node.values():
                     inspect(child)
             elif isinstance(node, (list, tuple)):
@@ -240,6 +271,16 @@ class ReviseTask(CommandBase):
     kind: Literal["revise_task"] = "revise_task"
     expected_checkpoint_id: str | None = Field(default=None, max_length=200)
     text: str = Field(min_length=1, max_length=8000)
+    conversation: RevisionConversationContext | None = None
+
+    @field_validator("text")
+    @classmethod
+    def bound_revision_text_bytes(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("revision text must be nonblank")
+        if len(value.encode("utf-8")) > REVISION_CONVERSATION_MAX_TEXT_BYTES:
+            raise ValueError("revision text exceeds its UTF-8 byte bound")
+        return value
 
 
 ShellCommand = Annotated[
@@ -310,7 +351,9 @@ class Rejected(StrictModel):
     snapshot: RuntimeSessionSnapshot
 
 
-CommandAdmission = Annotated[Accepted | Conflict | Unsupported | Rejected, Field(discriminator="kind")]
+CommandAdmission = Annotated[
+    Accepted | Conflict | Unsupported | Rejected, Field(discriminator="kind")
+]
 
 
 class CreateSessionRequest(StrictModel):

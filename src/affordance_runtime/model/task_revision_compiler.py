@@ -53,9 +53,7 @@ _MAX_PROVIDER_RETRY_DELAY_S = 5.0
 
 
 def _load_prompt() -> tuple[str, str]:
-    resource = files("affordance_runtime.model").joinpath(
-        "policy/prompts/task_revision_compiler.yaml"
-    )
+    resource = files("affordance_runtime.model").joinpath("policy/prompts/task_revision_compiler.yaml")
     raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping) or set(raw) != {"version", "compiler"}:
         raise ValueError("task-revision compiler prompt bundle has an invalid shape")
@@ -65,9 +63,7 @@ def _load_prompt() -> tuple[str, str]:
     return version, compiler
 
 
-TASK_REVISION_COMPILER_PROMPT_VERSION, TASK_REVISION_COMPILER_INSTRUCTIONS = (
-    _load_prompt()
-)
+TASK_REVISION_COMPILER_PROMPT_VERSION, TASK_REVISION_COMPILER_INSTRUCTIONS = _load_prompt()
 
 
 class RevisionMaterialBindingModel(BaseModel):
@@ -179,19 +175,9 @@ class TaskRevisionCompilerModelResponse(BaseModel):
             if self.goal is None or self.reason or self.question or self.missing_fields:
                 raise ValueError("ready revision has contradictory fields")
         elif self.disposition == "needs_input":
-            if (
-                self.goal is not None
-                or self.reason
-                or not self.question.strip()
-                or not self.missing_fields
-            ):
+            if self.goal is not None or self.reason or not self.question.strip() or not self.missing_fields:
                 raise ValueError("needs-input revision has contradictory fields")
-        elif (
-            self.goal is not None
-            or self.question
-            or self.missing_fields
-            or not self.reason.strip()
-        ):
+        elif self.goal is not None or self.question or self.missing_fields or not self.reason.strip():
             raise ValueError("non-ready revision has contradictory fields")
         return self
 
@@ -211,9 +197,7 @@ class ModelBackedTaskRevisionCompiler:
         )
     )
     last_model_call_count: int = field(default=0, init=False, compare=False)
-    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
-        default=(), init=False, compare=False
-    )
+    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(default=(), init=False, compare=False)
     last_invocation_result: ModelInvocationResult[TaskRevisionCompilerOutcome] | None = field(
         default=None, init=False, compare=False
     )
@@ -365,9 +349,7 @@ class ModelBackedTaskRevisionCompiler:
             metadata=_metadata(self.port, self.config, attempts),
             attempts=attempts,
             repair_diagnostics=(
-                ({"kind": "structured_output_repair", "count": 1},)
-                if self.last_schema_repair_count
-                else ()
+                ({"kind": "structured_output_repair", "count": 1},) if self.last_schema_repair_count else ()
             ),
             lineage={
                 "role": "TaskRevisionCompiler",
@@ -389,8 +371,7 @@ def model_task_revision_compiler_from_environment(
     selected_port = port or model_port_from_environment(environment)
     output_mode: Literal["json_object_prompt_schema"] | None = (
         "json_object_prompt_schema"
-        if selected_port.provider.casefold() == "zhipu"
-        and selected_port.model.casefold() == "glm-4.1v-thinking-flashx"
+        if selected_port.provider.casefold() == "zhipu" and selected_port.model.casefold() == "glm-4.1v-thinking-flashx"
         else None
     )
     return ModelBackedTaskRevisionCompiler(
@@ -429,6 +410,7 @@ def _model_outcome(
 
 def _compiler_messages(request: TaskRevisionRequest) -> tuple[ModelMessage, ...]:
     task = request.current_task
+    context = request.runtime_context
     payload = {
         "current_task": {
             "instruction": task.instruction,
@@ -444,7 +426,37 @@ def _compiler_messages(request: TaskRevisionRequest) -> tuple[ModelMessage, ...]
             "evaluation_spec": to_json_compatible(task.evaluation_spec),
             "revision": task.revision,
         },
-        "revision_text": request.text,
+        "conversation": {
+            "turns": [
+                {
+                    "turn_id": turn.turn_id,
+                    "role": turn.role,
+                    "text": turn.text,
+                }
+                for turn in request.conversation.turns
+            ],
+            "latest_turn_id": request.conversation.latest_turn_id,
+        },
+        "runtime_context": {
+            "pending_question": (
+                {
+                    "request_id": context.pending_question_id,
+                    "prompt": context.pending_question,
+                    "requested_fields": context.pending_question_fields,
+                }
+                if context.pending_question_id
+                else None
+            ),
+            "pending_confirmation": (
+                {
+                    "request_id": context.pending_confirmation_id,
+                    "summary": context.pending_confirmation_summary,
+                    "risk": context.pending_confirmation_risk,
+                }
+                if context.pending_confirmation_id
+                else None
+            ),
+        },
     }
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
     if len(encoded.encode()) > _MAX_COMPILER_TEXT_BYTES:
@@ -462,8 +474,7 @@ def _schema_repair_messages(
     repair = {
         "repair": structured_output_repair_contract(error),
         "instruction": (
-            "Return one complete TaskRevisionCompilerModelResponse replacement "
-            "using only the declared fields."
+            "Return one complete TaskRevisionCompilerModelResponse replacement using only the declared fields."
         ),
     }
     return (

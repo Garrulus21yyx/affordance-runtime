@@ -16,6 +16,7 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
+from affordance_runtime.agent.decisions import AskUser
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.run_control import (
@@ -38,10 +39,12 @@ from affordance_runtime.task.intake import (
     ThinTaskIntake,
 )
 from affordance_runtime.task.revision import (
+    RevisionConversationContext,
     RevisionReady,
     TaskRevisionBoundary,
     TaskRevisionCompiler,
     TaskRevisionCompilerOutcome,
+    TaskRevisionRuntimeContext,
     UnavailableTaskRevisionCompiler,
 )
 from affordance_runtime.world.environment import WorldEnvironment
@@ -90,12 +93,8 @@ class TargetRuntime:
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
-    task_revision_compiler: TaskRevisionCompiler = field(
-        default_factory=UnavailableTaskRevisionCompiler
-    )
-    task_revision_boundary: TaskRevisionBoundary = field(
-        default_factory=TaskRevisionBoundary
-    )
+    task_revision_compiler: TaskRevisionCompiler = field(default_factory=UnavailableTaskRevisionCompiler)
+    task_revision_boundary: TaskRevisionBoundary = field(default_factory=TaskRevisionBoundary)
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
@@ -345,14 +344,16 @@ class TargetRuntime:
     async def compile_task_revision(
         self,
         admitted: ReadyTask,
-        text: str,
+        conversation: RevisionConversationContext,
+        state: RunState,
     ) -> TargetRuntimeRevisionOutcome:
         """Compile once, then re-admit the complete consecutive TaskGoal."""
 
         compiled = await self.task_revision_boundary.resolve(
             self.task_revision_compiler,
             admitted.task,
-            text,
+            conversation,
+            self._task_revision_runtime_context(state),
         )
         if not isinstance(compiled, RevisionReady):
             return TargetRuntimeRevisionOutcome(compiled)
@@ -365,6 +366,29 @@ class TargetRuntime:
             admitted.task.revision + 1,
         )
         return TargetRuntimeRevisionOutcome(compiled, self.intake.compile(request))
+
+    @staticmethod
+    def _task_revision_runtime_context(state: RunState) -> TaskRevisionRuntimeContext:
+        """Read interruption facts from the sole authoritative RunState."""
+
+        effective_status = state.paused_from_status if state.status is RunStatus.PAUSED else state.status
+        step = state.last_step
+        if effective_status is RunStatus.WAITING_USER and step is not None and isinstance(step.decision, AskUser):
+            decision = step.decision
+            identity = decision.tool_call_id or decision.context_id
+            return TaskRevisionRuntimeContext(
+                pending_question_id=f"ask:{identity}",
+                pending_question=decision.question,
+                pending_question_fields=decision.requested_fields,
+            )
+        if effective_status is RunStatus.WAITING_CONFIRMATION and step is not None and step.confirmation is not None:
+            confirmation = step.confirmation
+            return TaskRevisionRuntimeContext(
+                pending_confirmation_id=(f"confirmation:{confirmation.subject_id}"),
+                pending_confirmation_summary=confirmation.reason,
+                pending_confirmation_risk=confirmation.risk.value,
+            )
+        return TaskRevisionRuntimeContext()
 
     async def prepare_paused_task_revision(
         self,

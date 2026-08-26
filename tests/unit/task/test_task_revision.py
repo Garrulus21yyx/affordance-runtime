@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import pytest
 
 from affordance_runtime.task import (
+    RevisionConversationContext,
+    RevisionConversationTurn,
     RevisionFailed,
     RevisionNeedsInput,
     RevisionNewTaskSuggested,
@@ -23,6 +25,13 @@ from affordance_runtime.task import (
 
 def _task() -> TaskGoal:
     return TaskGoal("task:revision", "Inspect the current account.")
+
+
+def _conversation(text: str) -> RevisionConversationContext:
+    return RevisionConversationContext(
+        (RevisionConversationTurn("turn:latest", "user", text),),
+        "turn:latest",
+    )
 
 
 @dataclass
@@ -45,7 +54,11 @@ def test_revision_boundary_admits_one_complete_typed_proposal() -> None:
     compiler = Compiler(RevisionReady(1, proposal))
 
     outcome = asyncio.run(
-        TaskRevisionBoundary().resolve(compiler, _task(), "Also include the owner")
+        TaskRevisionBoundary().resolve(
+            compiler,
+            _task(),
+            _conversation("Also include the owner"),
+        )
     )
 
     assert outcome == RevisionReady(1, proposal)
@@ -67,18 +80,31 @@ def test_revision_boundary_admits_one_complete_typed_proposal() -> None:
 )
 def test_revision_outcomes_have_one_closed_code(outcome, code) -> None:
     assert revision_outcome_code(outcome) == code
-    assert asyncio.run(TaskRevisionBoundary().resolve(Compiler(outcome), _task(), "change")) == outcome
+    assert (
+        asyncio.run(
+            TaskRevisionBoundary().resolve(
+                Compiler(outcome),
+                _task(),
+                _conversation("change"),
+            )
+        )
+        == outcome
+    )
 
 
 def test_revision_boundary_fails_closed_on_exception_or_revision_mismatch() -> None:
     failed = asyncio.run(
-        TaskRevisionBoundary().resolve(Compiler(RuntimeError("boom")), _task(), "change")
+        TaskRevisionBoundary().resolve(
+            Compiler(RuntimeError("boom")),
+            _task(),
+            _conversation("change"),
+        )
     )
     mismatched = asyncio.run(
         TaskRevisionBoundary().resolve(
             Compiler(RevisionNoChange(2, "wrong revision")),
             _task(),
-            "change",
+            _conversation("change"),
         )
     )
 

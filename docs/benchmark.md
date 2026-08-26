@@ -25,8 +25,12 @@ commit and rollback plus fresh-World continuation after injected persistence
 failure. Reconnectable test leases now verify restart hydration, fresh-World
 resume without GUI-effect replay, and bounded paused task revision. Revision
 idempotency is Runtime-owned: one existing SQLite outcome row stores the
-canonical complete-command digest and bounded result, exact retries replay, and
-changed payload under one ID fails typed before compiler/environment mutation.
+canonical complete-command digest including the immutable, at-most-six-turn,
+16-KiB conversation snapshot and bounded result. Exact retries replay, while
+changed text or context under one ID fails typed before compiler/environment
+mutation. The sole Runtime compiler receives the Shell language snapshot plus
+Runtime-owned current goal and pending interruption facts; no Shell compiler or
+ActionPolicy-history injection remains.
 The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.
@@ -36,10 +40,12 @@ ActionPolicy now uses PydanticAI Harness `StepPersistence` with a per-session
 conversation ID and a deterministic per-session SQLite step-store file. A
 committed Runtime safe checkpoint refers to one immutable, provider-valid Harness snapshot by run ID and digest;
 it does not treat Harness tool effects as GUI execution receipts. PydanticAI
-native OpenTelemetry spans cover ActionPolicy model/tool calls, while the
-custom structured provider boundary used by the bounded compilers emits to the
-same configured tracer provider. These are continuity and diagnosis evidence,
-not benchmark success evidence; no live benchmark was run for this change.
+and the custom structured provider boundary have native/compatible
+OpenTelemetry instrumentation, but the current deployment does not configure a
+recording `TracerProvider` or exporter. Existing Runtime JSONL/Langfuse
+projection remains available; exporter wiring is a non-blocking observability
+follow-up, not benchmark or Phase 6 closure evidence. No live benchmark was run
+for this change.
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action

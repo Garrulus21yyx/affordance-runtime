@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 
@@ -15,11 +16,14 @@ from affordance_runtime.model.task_revision_compiler import (
     TaskRevisionCompilerModelResponse,
 )
 from affordance_runtime.task import (
+    RevisionConversationContext,
+    RevisionConversationTurn,
     RevisionNeedsInput,
     RevisionNoChange,
     RevisionReady,
     TaskGoal,
     TaskRevisionRequest,
+    TaskRevisionRuntimeContext,
 )
 
 
@@ -49,9 +53,7 @@ class ScriptedModelPort:
         )
         self.last_transcript = {
             "llm.input_messages": [{"role": "user", "content": f"input:{index}"}],
-            "llm.output_messages": [
-                {"role": "assistant", "content": f"raw:{index}"}
-            ],
+            "llm.output_messages": [{"role": "assistant", "content": f"raw:{index}"}],
         }
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, BaseException):
@@ -78,14 +80,31 @@ def _goal() -> RevisedTaskGoalModel:
 def _request() -> TaskRevisionRequest:
     return TaskRevisionRequest(
         TaskGoal("task:revision", "Inspect the current account."),
-        "Also include its owner.",
+        RevisionConversationContext(
+            (
+                RevisionConversationTurn(
+                    "turn:prior",
+                    "user",
+                    "Use the business account.",
+                ),
+                RevisionConversationTurn(
+                    "turn:latest",
+                    "user",
+                    "Also include its owner.",
+                ),
+            ),
+            "turn:latest",
+        ),
+        TaskRevisionRuntimeContext(
+            pending_question_id="ask:account",
+            pending_question="Which account should I use?",
+            pending_question_fields=("account",),
+        ),
     )
 
 
 def test_model_compiler_returns_complete_ready_proposal_once() -> None:
-    port = ScriptedModelPort(
-        [TaskRevisionCompilerModelResponse(disposition="ready", goal=_goal())]
-    )
+    port = ScriptedModelPort([TaskRevisionCompilerModelResponse(disposition="ready", goal=_goal())])
     compiler = ModelBackedTaskRevisionCompiler(port)
 
     outcome = asyncio.run(compiler.compile(_request()))
@@ -97,6 +116,18 @@ def test_model_compiler_returns_complete_ready_proposal_once() -> None:
     assert compiler.last_model_call_count == 1
     assert compiler.last_invocation_result is not None
     assert compiler.last_invocation_result.lineage["role"] == "TaskRevisionCompiler"
+    payload = json.loads(port.messages[0][-1].content)
+    assert payload["conversation"]["latest_turn_id"] == "turn:latest"
+    assert [turn["text"] for turn in payload["conversation"]["turns"]] == [
+        "Use the business account.",
+        "Also include its owner.",
+    ]
+    assert "revision_text" not in payload
+    assert payload["runtime_context"]["pending_question"] == {
+        "request_id": "ask:account",
+        "prompt": "Which account should I use?",
+        "requested_fields": ["account"],
+    }
 
 
 def test_model_compiler_preserves_all_nonready_dispositions() -> None:
@@ -131,6 +162,39 @@ def test_model_compiler_preserves_all_nonready_dispositions() -> None:
         1,
         "already_equivalent",
     )
+
+
+def test_model_compiler_includes_elliptical_latest_turn_exactly_once() -> None:
+    port = ScriptedModelPort([TaskRevisionCompilerModelResponse(disposition="ready", goal=_goal())])
+    compiler = ModelBackedTaskRevisionCompiler(port)
+    request = TaskRevisionRequest(
+        TaskGoal("task:revision", "Book the appointment for today."),
+        RevisionConversationContext(
+            (
+                RevisionConversationTurn(
+                    "turn:prior-date",
+                    "user",
+                    "Change it to Friday.",
+                ),
+                RevisionConversationTurn(
+                    "turn:latest-date",
+                    "user",
+                    "还是明天",
+                ),
+            ),
+            "turn:latest-date",
+        ),
+    )
+
+    asyncio.run(compiler.compile(request))
+
+    payload = json.loads(port.messages[0][-1].content)
+    assert payload["conversation"]["turns"][-1] == {
+        "turn_id": "turn:latest-date",
+        "role": "user",
+        "text": "还是明天",
+    }
+    assert json.dumps(payload, ensure_ascii=False).count("还是明天") == 1
 
 
 def test_model_compiler_allows_one_structured_output_repair_with_transcripts() -> None:
