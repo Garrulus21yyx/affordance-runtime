@@ -6,6 +6,7 @@ from affordance_runtime.app.checkpoint import (
     RuntimeCheckpointCommandOutcome,
     RuntimeCheckpointError,
     RuntimeCheckpointResumeOutcome,
+    RuntimeCheckpointRevisionOutcome,
     RuntimeCheckpointStore,
     SQLiteRuntimeCheckpointStore,
 )
@@ -33,16 +34,19 @@ from affordance_runtime.app.public_session import (
 )
 from affordance_runtime.app.runtime import (
     TargetRuntime,
+    TargetRuntimeRevisionOutcome,
     TargetRuntimeRunOutcome,
 )
 
 __all__ = [
     "TargetRuntime",
     "TargetRuntimeRunOutcome",
+    "TargetRuntimeRevisionOutcome",
     "RUNTIME_CHECKPOINT_SCHEMA_VERSION",
     "RuntimeCheckpoint",
     "RuntimeCheckpointCommandOutcome",
     "RuntimeCheckpointError",
+    "RuntimeCheckpointRevisionOutcome",
     "RuntimeCheckpointResumeOutcome",
     "RuntimeCheckpointStore",
     "SQLiteRuntimeCheckpointStore",

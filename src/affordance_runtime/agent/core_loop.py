@@ -336,6 +336,111 @@ class CoreAgentLoop:
         state.commit_durable_pause(checkpoint_id)
         return state
 
+    async def revise_paused(
+        self,
+        environment: WorldEnvironment,
+        current_task: TaskGoal,
+        revised_task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Build a fresh revision candidate without resuming the policy loop."""
+
+        if (
+            state.status is not RunStatus.PAUSED
+            or state.control_boundary is None
+            or state.paused_from_status is None
+            or current_task.task_id != revised_task.task_id
+            or current_task.revision != state.task_revision
+            or revised_task.revision != current_task.revision + 1
+        ):
+            raise ValueError("task revision requires one durable consecutive pause")
+        await environment.revise_task(revised_task)
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh World after task revision",
+            )
+        )
+        if (
+            acquisition.status is not AcquisitionStatus.ACQUIRED
+            or acquisition.observation is None
+        ):
+            raise CoreLoopStartError("task_revision_fresh_world_unavailable")
+        current = acquisition.observation
+        projection, region_index = self._canonical_world_for(revised_task, current)
+        evaluation = await self._validated_task_evaluation(
+            revised_task,
+            current,
+            projection,
+        )
+        resolution = await self.goal_plan_boundary.resolve(
+            self.goal_compiler,
+            revised_task,
+            current,
+            next_plan_version=state.goal_plan_version_counter + 1,
+            trigger=GoalCompileTrigger.TASK_REVISION,
+        )
+        status = self._status_for_goal_resolution(
+            revised_task,
+            evaluation,
+            resolution,
+        )
+        if status in {RunStatus.DONE, RunStatus.BLOCKED}:
+            status = RunStatus.RUNNING
+        pending = (
+            StepResult(
+                AskUser(
+                    f"context:goal-compiler:{revised_task.revision}",
+                    resolution.question,
+                    resolution.fields,
+                ),
+                current,
+                current,
+                evaluation,
+                RunStatus.WAITING_USER,
+                feedback="goal_compiler_needs_input",
+            )
+            if isinstance(resolution, NeedsInput)
+            and status is RunStatus.WAITING_USER
+            else None
+        )
+        candidate = RunState(
+            current,
+            evaluation,
+            max(0, revised_task.loop_budget.max_turns - state.step_count),
+            status=status,
+            last_step=pending,
+            observation_count=state.observation_count + 1,
+            execution_count=state.execution_count,
+            step_count=state.step_count,
+            context_generation=state.context_generation,
+            workspace=state.workspace,
+            waited_ms=state.waited_ms,
+            task_revision=revised_task.revision,
+            goal_resolution=resolution,
+            goal_plan_version_counter=(
+                resolution.accepted_plan.plan_version
+                if isinstance(resolution, Ready)
+                else state.goal_plan_version_counter
+            ),
+            committed_sent_unknown_count=state.committed_sent_unknown_count,
+            decision_counts=dict(state.decision_counts),
+            currentness_probe_count=state.currentness_probe_count,
+            control_boundary=state.control_boundary,
+        )
+        candidate.install_delivery_index(region_index)
+        candidate.install_canonical_world(projection)
+        self.trace_sink.goal_compiler_completed(
+            goal_compiler_trace_diagnostic(
+                self.goal_compiler,
+                resolution,
+                task_revision=revised_task.revision,
+                trigger=GoalCompileTrigger.TASK_REVISION,
+                initial_evidence=current,
+            )
+        )
+        return candidate
+
     def _rebase_checkpoint_confirmation(
         self,
         task: TaskGoal,

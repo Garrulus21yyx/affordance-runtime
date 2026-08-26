@@ -37,8 +37,10 @@ from affordance_runtime.task.intake import (
     ThinTaskIntake,
 )
 from affordance_runtime.task.revision import (
+    RevisionReady,
     TaskRevisionBoundary,
     TaskRevisionCompiler,
+    TaskRevisionCompilerOutcome,
     UnavailableTaskRevisionCompiler,
 )
 from affordance_runtime.world.environment import WorldEnvironment
@@ -58,6 +60,16 @@ class TargetRuntimeRunOutcome:
     @property
     def started(self) -> bool:
         return self.state is not None
+
+
+@dataclass(frozen=True)
+class TargetRuntimeRevisionOutcome:
+    compiler: TaskRevisionCompilerOutcome
+    intake: TaskIntakeOutcome | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.compiler, RevisionReady) != (self.intake is not None):
+            raise ValueError("Runtime revision must align compiler and intake outcomes")
 
 
 @dataclass(frozen=True)
@@ -166,6 +178,22 @@ class TargetRuntime:
             raise TypeError("Runtime model policy does not support checkpoint restoration")
         restorer(payload, task_id=task_id, task_revision=task_revision)
 
+    def rebind_checkpoint_history(
+        self,
+        *,
+        task_id: str,
+        current_revision: int,
+        revised_revision: int,
+    ) -> None:
+        rebind = getattr(self.decision_ports.action_policy, "rebind_checkpoint_history", None)
+        if not callable(rebind):
+            raise TypeError("Runtime model policy does not support task revision")
+        rebind(
+            task_id=task_id,
+            current_revision=current_revision,
+            revised_revision=revised_revision,
+        )
+
     def apply_waiting_control(
         self,
         state: RunState,
@@ -257,6 +285,44 @@ class TargetRuntime:
         except BaseException:
             self.run_control.resume("restore-failed")
             raise
+
+    async def compile_task_revision(
+        self,
+        admitted: ReadyTask,
+        text: str,
+    ) -> TargetRuntimeRevisionOutcome:
+        """Compile once, then re-admit the complete consecutive TaskGoal."""
+
+        compiled = await self.task_revision_boundary.resolve(
+            self.task_revision_compiler,
+            admitted.task,
+            text,
+        )
+        if not isinstance(compiled, RevisionReady):
+            return TargetRuntimeRevisionOutcome(compiled)
+        request = NaturalLanguageTaskRequest(
+            admitted.task.task_id,
+            compiled.proposal.instruction,
+            compiled.proposal.boundary,
+            admitted.intent_context,
+            admitted.source_ref,
+            admitted.task.revision + 1,
+        )
+        return TargetRuntimeRevisionOutcome(compiled, self.intake.compile(request))
+
+    async def prepare_paused_task_revision(
+        self,
+        environment: WorldEnvironment,
+        current_task: TaskGoal,
+        revised_task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        return await self.build_loop().revise_paused(
+            environment,
+            current_task,
+            revised_task,
+            state,
+        )
 
     def with_runtime_controls(
         self,

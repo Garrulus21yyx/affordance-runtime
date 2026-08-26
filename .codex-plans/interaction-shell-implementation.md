@@ -292,6 +292,15 @@ Constraints:
       bounded model call with schema/provider retry evidence, production role
       composition, and disabled fallback. Its 31 contract/model/factory tests,
       22 Runtime composition regressions, Ruff, MyPy, and diff check pass.
+    - Runtime owner milestone implemented: one revision command can request the
+      existing cooperative pause, commit its source checkpoint, reject any
+      prior dispatched effect for Phase 7, compile/re-admit a consecutive goal,
+      revise the environment, capture fresh World, invoke GoalCompiler once,
+      rebind one closed official model history, and atomically commit the new
+      checkpoint plus revision outcome without auto-resume. Persistence failure
+      restores old history/environment/fresh paused state. The 82 checkpoint and
+      PydanticAI tests plus 51 public Runtime/composition/architecture tests,
+      Ruff, compileall, and the five typed Runtime-owner MyPy files pass.
     - Commit and push each coherent milestone; do not run live benchmark or
       start Viewer/Phase 7 work.
 

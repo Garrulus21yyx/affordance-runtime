@@ -275,6 +275,52 @@ class RuntimeCheckpointResumeOutcome:
             raise RuntimeCheckpointError("checkpoint_resume_outcome_invalid")
 
 
+_REVISION_OUTCOMES = frozenset(
+    {
+        "revised",
+        "revision_needs_input",
+        "revision_no_change",
+        "revision_new_task_suggested",
+        "revision_unsupported",
+        "revision_failed",
+        "effect_reconciliation_required",
+    }
+)
+
+
+@dataclass(frozen=True)
+class RuntimeCheckpointRevisionOutcome:
+    """Durable closed result of one revision command against one source pause."""
+
+    session_id: str
+    command_id: str
+    source_checkpoint_id: str
+    result_checkpoint_id: str
+    task_revision: int
+    outcome: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.session_id.strip()
+            or not self.command_id.strip()
+            or len(self.command_id) > 128
+            or not self.source_checkpoint_id.startswith("runtime-checkpoint:")
+            or not self.result_checkpoint_id.startswith("runtime-checkpoint:")
+            or type(self.task_revision) is not int
+            or self.task_revision < 1
+            or self.outcome not in _REVISION_OUTCOMES
+            or (
+                self.outcome == "revised"
+                and self.result_checkpoint_id == self.source_checkpoint_id
+            )
+            or (
+                self.outcome != "revised"
+                and self.result_checkpoint_id != self.source_checkpoint_id
+            )
+        ):
+            raise RuntimeCheckpointError("checkpoint_revision_outcome_invalid")
+
+
 class RuntimeCheckpointStore(Protocol):
     async def commit_pause(
         self,
@@ -295,6 +341,20 @@ class RuntimeCheckpointStore(Protocol):
     async def checkpoint_resume_outcome(
         self, session_id: str, checkpoint_id: str
     ) -> RuntimeCheckpointResumeOutcome | None: ...
+
+    async def commit_revision(
+        self,
+        checkpoint: RuntimeCheckpoint | None,
+        outcome: RuntimeCheckpointRevisionOutcome,
+    ) -> None: ...
+
+    async def revision_outcome(
+        self, session_id: str, command_id: str
+    ) -> RuntimeCheckpointRevisionOutcome | None: ...
+
+    async def checkpoint_revision_outcome(
+        self, session_id: str, checkpoint_id: str
+    ) -> RuntimeCheckpointRevisionOutcome | None: ...
 
 
 @dataclass(frozen=True)
@@ -375,6 +435,59 @@ class SQLiteRuntimeCheckpointStore:
         except (OSError, sqlite3.Error) as exc:
             raise RuntimeCheckpointError("checkpoint_load_failed") from exc
 
+    async def commit_revision(
+        self,
+        checkpoint: RuntimeCheckpoint | None,
+        outcome: RuntimeCheckpointRevisionOutcome,
+    ) -> None:
+        if checkpoint is not None and (
+            outcome.outcome != "revised"
+            or checkpoint.session_id != outcome.session_id
+            or checkpoint.checkpoint_id != outcome.result_checkpoint_id
+            or checkpoint.restore_task().revision != outcome.task_revision
+        ):
+            raise RuntimeCheckpointError("checkpoint_revision_join_mismatch")
+        if checkpoint is None and outcome.outcome == "revised":
+            raise RuntimeCheckpointError("checkpoint_revision_missing")
+        try:
+            await asyncio.to_thread(self._commit_revision, checkpoint, outcome)
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_revision_persistence_failed") from exc
+
+    async def revision_outcome(
+        self,
+        session_id: str,
+        command_id: str,
+    ) -> RuntimeCheckpointRevisionOutcome | None:
+        try:
+            return await asyncio.to_thread(
+                self._revision_outcome,
+                session_id,
+                command_id,
+            )
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_load_failed") from exc
+
+    async def checkpoint_revision_outcome(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+    ) -> RuntimeCheckpointRevisionOutcome | None:
+        try:
+            return await asyncio.to_thread(
+                self._checkpoint_revision_outcome,
+                session_id,
+                checkpoint_id,
+            )
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_load_failed") from exc
+
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=10)
@@ -401,25 +514,7 @@ class SQLiteRuntimeCheckpointStore:
                     raise RuntimeCheckpointError("checkpoint_command_conflict")
                 connection.commit()
                 return
-            connection.execute(
-                "INSERT OR IGNORE INTO runtime_checkpoints "
-                "(session_id, checkpoint_id, schema_version, digest, created_at, payload_json) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    checkpoint.session_id,
-                    checkpoint.checkpoint_id,
-                    checkpoint.schema_version,
-                    checkpoint.digest,
-                    checkpoint.created_at.isoformat(),
-                    checkpoint.to_json(),
-                ),
-            )
-            row = connection.execute(
-                "SELECT digest, payload_json FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
-                (checkpoint.session_id, checkpoint.checkpoint_id),
-            ).fetchone()
-            if row != (checkpoint.digest, checkpoint.to_json()):
-                raise RuntimeCheckpointError("checkpoint_identity_conflict")
+            _persist_checkpoint_identity(connection, checkpoint)
             connection.execute(
                 "INSERT INTO runtime_command_outcomes "
                 "(session_id, command_id, kind, outcome, checkpoint_id, created_at) "
@@ -554,6 +649,119 @@ class SQLiteRuntimeCheckpointStore:
         if row is None:
             return None
         return RuntimeCheckpointResumeOutcome(session_id, str(row[0]), checkpoint_id, str(row[1]))
+
+    def _commit_revision(
+        self,
+        checkpoint: RuntimeCheckpoint | None,
+        outcome: RuntimeCheckpointRevisionOutcome,
+    ) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            source = connection.execute(
+                "SELECT 1 FROM runtime_checkpoints "
+                "WHERE session_id = ? AND checkpoint_id = ?",
+                (outcome.session_id, outcome.source_checkpoint_id),
+            ).fetchone()
+            if source is None:
+                raise RuntimeCheckpointError("checkpoint_not_found")
+            existing = connection.execute(
+                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome "
+                "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
+                (outcome.session_id, outcome.command_id),
+            ).fetchone()
+            expected = (
+                outcome.source_checkpoint_id,
+                outcome.result_checkpoint_id,
+                outcome.task_revision,
+                outcome.outcome,
+            )
+            if existing is not None:
+                if existing != expected:
+                    raise RuntimeCheckpointError("checkpoint_revision_command_conflict")
+                connection.commit()
+                return
+            if outcome.outcome == "revised":
+                assert checkpoint is not None
+                consumed = connection.execute(
+                    "SELECT command_id FROM runtime_revision_outcomes "
+                    "WHERE session_id = ? AND source_checkpoint_id = ? AND outcome = 'revised'",
+                    (outcome.session_id, outcome.source_checkpoint_id),
+                ).fetchone()
+                if consumed is not None:
+                    raise RuntimeCheckpointError("checkpoint_already_revised")
+                _persist_checkpoint_identity(connection, checkpoint)
+            connection.execute(
+                "INSERT INTO runtime_revision_outcomes "
+                "(session_id, command_id, source_checkpoint_id, result_checkpoint_id, "
+                "task_revision, outcome, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    outcome.session_id,
+                    outcome.command_id,
+                    outcome.source_checkpoint_id,
+                    outcome.result_checkpoint_id,
+                    outcome.task_revision,
+                    outcome.outcome,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _revision_outcome(
+        self,
+        session_id: str,
+        command_id: str,
+    ) -> RuntimeCheckpointRevisionOutcome | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome "
+                "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
+                (session_id, command_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return RuntimeCheckpointRevisionOutcome(
+            session_id,
+            command_id,
+            str(row[0]),
+            str(row[1]),
+            int(row[2]),
+            str(row[3]),
+        )
+
+    def _checkpoint_revision_outcome(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+    ) -> RuntimeCheckpointRevisionOutcome | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT command_id, result_checkpoint_id, task_revision, outcome "
+                "FROM runtime_revision_outcomes "
+                "WHERE session_id = ? AND source_checkpoint_id = ? AND outcome = 'revised'",
+                (session_id, checkpoint_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return RuntimeCheckpointRevisionOutcome(
+            session_id,
+            str(row[0]),
+            checkpoint_id,
+            str(row[1]),
+            int(row[2]),
+            str(row[3]),
+        )
 
 
 def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, object]:
@@ -930,6 +1138,32 @@ def _checkpoint_digest(unsigned_payload: Mapping[str, object]) -> str:
     return hashlib.sha256(_canonical_json(unsigned_payload).encode()).hexdigest()
 
 
+def _persist_checkpoint_identity(
+    connection: sqlite3.Connection,
+    checkpoint: RuntimeCheckpoint,
+) -> None:
+    connection.execute(
+        "INSERT OR IGNORE INTO runtime_checkpoints "
+        "(session_id, checkpoint_id, schema_version, digest, created_at, payload_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            checkpoint.session_id,
+            checkpoint.checkpoint_id,
+            checkpoint.schema_version,
+            checkpoint.digest,
+            checkpoint.created_at.isoformat(),
+            checkpoint.to_json(),
+        ),
+    )
+    row = connection.execute(
+        "SELECT digest, payload_json FROM runtime_checkpoints "
+        "WHERE session_id = ? AND checkpoint_id = ?",
+        (checkpoint.session_id, checkpoint.checkpoint_id),
+    ).fetchone()
+    if row != (checkpoint.digest, checkpoint.to_json()):
+        raise RuntimeCheckpointError("checkpoint_identity_conflict")
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(
         to_json_compatible(value),
@@ -973,4 +1207,29 @@ CREATE TABLE IF NOT EXISTS runtime_resume_outcomes (
     FOREIGN KEY (session_id, checkpoint_id)
         REFERENCES runtime_checkpoints (session_id, checkpoint_id)
 );
+CREATE TABLE IF NOT EXISTS runtime_revision_outcomes (
+    session_id TEXT NOT NULL,
+    command_id TEXT NOT NULL,
+    source_checkpoint_id TEXT NOT NULL,
+    result_checkpoint_id TEXT NOT NULL,
+    task_revision INTEGER NOT NULL CHECK (task_revision >= 1),
+    outcome TEXT NOT NULL CHECK (outcome IN (
+        'revised',
+        'revision_needs_input',
+        'revision_no_change',
+        'revision_new_task_suggested',
+        'revision_unsupported',
+        'revision_failed',
+        'effect_reconciliation_required'
+    )),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, command_id),
+    FOREIGN KEY (session_id, source_checkpoint_id)
+        REFERENCES runtime_checkpoints (session_id, checkpoint_id),
+    FOREIGN KEY (session_id, result_checkpoint_id)
+        REFERENCES runtime_checkpoints (session_id, checkpoint_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS runtime_revision_source_consumed
+    ON runtime_revision_outcomes (session_id, source_checkpoint_id)
+    WHERE outcome = 'revised';
 """

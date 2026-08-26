@@ -148,6 +148,22 @@ class ModelBackedAgentPolicy:
             raise TypeError("model port does not support checkpoint history restoration")
         restorer(payload, task_id=task_id, task_revision=task_revision)
 
+    def rebind_checkpoint_history(
+        self,
+        *,
+        task_id: str,
+        current_revision: int,
+        revised_revision: int,
+    ) -> None:
+        rebind = getattr(self.port, "rebind_checkpoint_history", None)
+        if not callable(rebind):
+            raise TypeError("model port does not support task revision")
+        rebind(
+            task_id=task_id,
+            current_revision=current_revision,
+            revised_revision=revised_revision,
+        )
+
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]

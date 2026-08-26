@@ -356,6 +356,34 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "message_history", restored)
         object.__setattr__(self, "active_task_identity", (task_id, task_revision))
 
+    def rebind_checkpoint_history(
+        self,
+        *,
+        task_id: str,
+        current_revision: int,
+        revised_revision: int,
+    ) -> None:
+        """Keep one closed official history while changing only task revision."""
+
+        if revised_revision != current_revision + 1:
+            raise ValueError("model history revision must be consecutive")
+        identity = self.active_task_identity
+        if identity is not None and identity != (task_id, current_revision):
+            raise ValueError("model history belongs to another task revision")
+        if identity is None and self.message_history:
+            raise ValueError("model history identity is unavailable")
+        if _pending_tool_parts_from_history(self.message_history):
+            raise ValueError("model history contains an unclosed tool call")
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+        encoded = ModelMessagesTypeAdapter.dump_json(list(self.message_history))
+        ModelMessagesTypeAdapter.validate_json(encoded)
+        object.__setattr__(
+            self,
+            "active_task_identity",
+            (task_id, revised_revision),
+        )
+
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES

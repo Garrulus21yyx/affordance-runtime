@@ -223,6 +223,39 @@ def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
         policy.export_checkpoint_history()
 
 
+def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    history = (
+        ModelRequest(parts=[UserPromptPart("current task")]),
+        ModelResponse(
+            parts=[ToolCallPart("activate", {"target": "E1"}, "call:revision")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:revision")]
+        ),
+    )
+    object.__setattr__(policy.port, "message_history", history)
+    object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+    policy.rebind_checkpoint_history(
+        task_id="task:checkpoint",
+        current_revision=3,
+        revised_revision=4,
+    )
+
+    assert policy.port.message_history == history
+    assert policy.export_checkpoint_history()["active_task_identity"] == [
+        "task:checkpoint",
+        4,
+    ]
+    with pytest.raises(ValueError, match="consecutive"):
+        policy.rebind_checkpoint_history(
+            task_id="task:checkpoint",
+            current_revision=4,
+            revised_revision=6,
+        )
+
+
 def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
