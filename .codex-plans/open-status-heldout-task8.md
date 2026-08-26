@@ -25,10 +25,14 @@ Steps:
    Planner/compaction claims and state the bounded BrowserGym status precisely. Verify docs and focused owner gates.
    Result: `221 passed / 3 skipped` across complete focused TaskGoal, GoalCompiler, policy projection, CoreLoop,
    BrowserGym acquisition/currentness, real-backend active capture, and PydanticAI history suites; diff check passes.
-3. **in_progress — Commit the audit separately.** Commit only the plan/docs if the audit changes maintained truth; do not
+3. **done — Commit the audit separately.** Commit only the plan/docs if the audit changes maintained truth; do not
    include `output/` or production code.
-4. **pending — Run held-out Task8 once.** Reuse `.env`, the fixed BrowserGym interpreter, the project service/profile,
+   Result: committed as `eca4f13d docs: reconcile held-out benchmark status`.
+4. **in_progress — Run held-out Task8 once.** Reuse `.env`, the fixed BrowserGym interpreter, the project service/profile,
    and the existing W1b runner. Persist formal evidence and inspect the full trace after completion.
+   Preparation: declared official case `79.8.2` in a held-out benchmark-only set before execution; 34 focused manifest/
+   launcher tests pass. Full suite reports 1787 pass, 4 skip, the existing docs-governance failure, and three isolated
+   wall-clock deadline tests that pass 3/3 on each of three immediate reruns.
 5. **pending — Decide the next cohort.** If Task8 succeeds, select 3–5 untouched cases and report the fixed cohort
    before running it. If Task8 fails, classify environment/provider/case vs shared contract failure before any change.
 6. **pending — Defer efficiency work.** Consider Task7 token optimization only after the held-out correctness cohort;
@@ -39,3 +43,9 @@ Files modified so far:
 - `.codex-plans/open-status-heldout-task8.md` — persistent audit/run plan.
 - `docs/architecture.md` — reconciled bounded owner/live status.
 - `docs/benchmark.md` — reconciled evaluation and held-out status.
+- `src/affordance_runtime/benchmarks/webarena_verified.py` — declared public held-out case identity in the benchmark
+  manifest owner; no task content or evaluator answer enters Runtime.
+- `src/affordance_runtime/benchmarks/target_loop/cases.py` — exposes the held-out declaration through the existing W1b
+  runner and native evaluator.
+- `tests/benchmarks/runtime/test_webarena_verified_benchmark.py` — freezes held-out manifest identity.
+- `tests/benchmarks/runtime/test_target_loop_manifest_identity.py` — proves Task8 is selected by the existing suite.

@@ -11,7 +11,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricExpectationOperator,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import get_manifest, manifest_digest
-from affordance_runtime.benchmarks.webarena_verified import WA_W1_SMOKE_CASES
+from affordance_runtime.benchmarks.webarena_verified import WA_W1_HELD_OUT_CASES, WA_W1_SMOKE_CASES
 
 
 def test_manifest_digest_covers_profile_seed_and_expectations() -> None:
@@ -49,7 +49,8 @@ def test_webarena_verified_w1b_manifest_uses_one_action_policy_and_goal_compiler
     assert manifest.suite_id == "webarena-verified-w1b"
     assert manifest.profile_id == "model-long-horizon"
     assert [case.case_id for case in manifest.cases] == [
-        f"webarena-verified-w1b-task-{case.task_id}" for case in WA_W1_SMOKE_CASES
+        f"webarena-verified-w1b-task-{case.task_id}"
+        for case in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES)
     ]
     assert all(case.expected_terminal_statuses == (RunStatus.DONE,) for case in manifest.cases)
     assert all(case.timeout_s == 900.0 for case in manifest.cases)

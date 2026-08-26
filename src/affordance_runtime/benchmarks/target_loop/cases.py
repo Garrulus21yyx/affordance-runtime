@@ -47,6 +47,7 @@ from affordance_runtime.benchmarks.target_loop.support import (
 )
 from affordance_runtime.benchmarks.webarena_verified import (
     WA_SELECTION_SEED,
+    WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     open_webarena_verified_case,
 )
@@ -62,7 +63,10 @@ WA_W1B_MODEL_CALL_TIMEOUT_S = 90.0
 
 def build_manifest(suite_id: str, profile_id: str, seed: int):
     if suite_id == "webarena-verified-w1b" and profile_id == "model-long-horizon":
-        cases = tuple(_webarena_verified_w1b_case(case_ref, seed) for case_ref in WA_W1_SMOKE_CASES)
+        cases = tuple(
+            _webarena_verified_w1b_case(case_ref, seed)
+            for case_ref in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES)
+        )
     elif suite_id == "internal-core" and profile_id in {"deterministic", "scripted-model"}:
         cases = (
             *(_shared_case(surface, profile_id, seed) for surface in ("dom", "visual", "wot")),

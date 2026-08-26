@@ -135,7 +135,7 @@ WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
 WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
-WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v1"
+WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v2"
 _W1B_PRIVATE_MARKERS = (
     "browsergym_id",
     "private_bid",
@@ -266,6 +266,12 @@ WA_W1_SMOKE_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
     WebArenaVerifiedCaseRef(266, 85, 4, ("wikipedia", "map"), "smoke", "w1"),
 )
 
+# Frozen before its first current-tree execution. Held-out cases are admitted
+# by the benchmark owner but remain outside the W1 smoke/development probes.
+WA_W1_HELD_OUT_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
+    WebArenaVerifiedCaseRef(8, 79, 2, ("map",), "retrieve", "w1-heldout"),
+)
+
 WA_W2_COHORT_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
     WebArenaVerifiedCaseRef(267, 85, 4, ("wikipedia", "map"), "retrieve", "w2"),
     WebArenaVerifiedCaseRef(97, 120, 2, ("map", "wikipedia"), "retrieve", "w2"),
@@ -281,7 +287,11 @@ WA_W2_COHORT_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
     WebArenaVerifiedCaseRef(554, 84, 2, ("gitlab", "reddit"), "mutate", "w2"),
 )
 
-WA_W0_REQUIRED_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (*WA_W1_SMOKE_CASES, *WA_W2_COHORT_CASES)
+WA_W0_REQUIRED_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
+    *WA_W1_SMOKE_CASES,
+    *WA_W1_HELD_OUT_CASES,
+    *WA_W2_COHORT_CASES,
+)
 
 _W0_PREFLIGHT_PROGRAM = r"""
 import importlib
@@ -692,6 +702,7 @@ def write_webarena_verified_w0_manifest(
         "timeout_frozen": timeout_s > 0,
         "registration_module": WA_REGISTRATION_MODULE,
         "smoke_cases": [case.public_payload() for case in WA_W1_SMOKE_CASES],
+        "heldout_cases": [case.public_payload() for case in WA_W1_HELD_OUT_CASES],
         "proof_cohort_cases": [case.public_payload() for case in WA_W2_COHORT_CASES],
         "configured_sites": _site_config_from_environment(env),
         "site_environment_frozen": _site_environment_frozen(env),
@@ -2317,6 +2328,7 @@ def _w0_report(payload: dict[str, Any], *, runtime_python: Path) -> dict[str, An
         },
         "required_task_ids": [case.gym_id for case in WA_W0_REQUIRED_CASES],
         "smoke_task_ids": [case.gym_id for case in WA_W1_SMOKE_CASES],
+        "heldout_task_ids": [case.gym_id for case in WA_W1_HELD_OUT_CASES],
         "proof_cohort_task_ids": [case.gym_id for case in WA_W2_COHORT_CASES],
         "subprocess": payload,
     }

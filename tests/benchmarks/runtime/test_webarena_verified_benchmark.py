@@ -14,6 +14,7 @@ from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
+    WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
     WebArenaVerifiedFinalResponseCodec,
@@ -344,9 +345,10 @@ def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp
 
     manifest = write_webarena_verified_w0_manifest(tmp_path / "w0.json", timeout_s=180.0, environment=env)
 
-    assert manifest["schema_version"] == "webarena-verified-target-loop-manifest.v1"
+    assert manifest["schema_version"] == "webarena-verified-target-loop-manifest.v2"
     assert manifest["hard_subset_sha256"] == f"sha256:{WA_HARD_SUBSET_SHA256}"
     assert [case["task_id"] for case in manifest["smoke_cases"]] == [0, 7, 21, 27, 44, 266]
+    assert [case["task_id"] for case in manifest["heldout_cases"]] == [8]
     assert [case["task_id"] for case in manifest["proof_cohort_cases"]] == [
         267, 97, 265, 268, 740, 759, 424, 426, 681, 672, 556, 554,
     ]
@@ -425,7 +427,10 @@ def test_w0_readiness_accepts_registered_sites_reset_and_evaluator(
                 "registration": {
                     "imported": True,
                     "missing_task_ids": [],
-                    "registered_task_ids": [case.gym_id for case in (*WA_W1_SMOKE_CASES, *WA_W2_COHORT_CASES)],
+                    "registered_task_ids": [
+                        case.gym_id
+                        for case in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES, *WA_W2_COHORT_CASES)
+                    ],
                 },
                 "sites": sites,
                 "exercise": {
