@@ -36,6 +36,11 @@ from affordance_runtime.task.intake import (
     TaskIntakeOutcome,
     ThinTaskIntake,
 )
+from affordance_runtime.task.revision import (
+    TaskRevisionBoundary,
+    TaskRevisionCompiler,
+    UnavailableTaskRevisionCompiler,
+)
 from affordance_runtime.world.environment import WorldEnvironment
 
 
@@ -72,6 +77,12 @@ class TargetRuntime:
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
+    task_revision_compiler: TaskRevisionCompiler = field(
+        default_factory=UnavailableTaskRevisionCompiler
+    )
+    task_revision_boundary: TaskRevisionBoundary = field(
+        default_factory=TaskRevisionBoundary
+    )
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
@@ -92,6 +103,8 @@ class TargetRuntime:
             raise TypeError("TargetRuntime intake is invalid")
         if not callable(getattr(self.goal_compiler, "compile", None)):
             raise TypeError("TargetRuntime goal compiler is invalid")
+        if not callable(getattr(self.task_revision_compiler, "compile", None)):
+            raise TypeError("TargetRuntime task revision compiler is invalid")
         if not isinstance(self.run_control, CooperativeRunControl):
             raise TypeError("TargetRuntime cooperative control owner is invalid")
         required = normalize_decision_capabilities(

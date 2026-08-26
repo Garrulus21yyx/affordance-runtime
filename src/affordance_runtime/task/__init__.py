@@ -13,6 +13,12 @@ _MODULE_EXPORTS = {
         "NaturalLanguageTaskRequest", "ReadyTask", "TaskBoundary", "TaskInputRequired", "TaskIntake",
         "TaskIntakeOutcome", "TaskIntakeStatus", "TaskPolicyRejected", "TaskUnsupported", "ThinTaskIntake",
     },
+    "affordance_runtime.task.revision": {
+        "RevisionFailed", "RevisionNeedsInput", "RevisionNewTaskSuggested", "RevisionNoChange",
+        "RevisionReady", "RevisionUnsupported", "TaskRevisionBoundary", "TaskRevisionCompiler",
+        "TaskRevisionCompilerOutcome", "TaskRevisionProposal", "TaskRevisionRequest",
+        "UnavailableTaskRevisionCompiler", "revision_outcome_code",
+    },
 }
 
 _EXPORTS = {name: module for module, names in _MODULE_EXPORTS.items() for name in names}

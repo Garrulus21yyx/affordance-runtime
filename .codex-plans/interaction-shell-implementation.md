@@ -267,8 +267,33 @@ Constraints:
       regressions also pass: concurrent same-session recovery installs one
       Runtime handle, and SQLite rejects row/payload scope mismatch. No benchmark
       was run.
-17. **pending — Phase 6: ReviseTask compiler and paused revision commit.**
-    - Do not start until this Phase 5 milestone is committed and pushed.
+17. **in progress — Phase 6: ReviseTask compiler and paused revision commit.**
+    - Baseline is clean `0a7b0ddc`; Phase 5 checkpoint/recovery infrastructure
+      is fixed and will not be redesigned for this phase.
+    - First map the existing TaskIntake, GoalCompiler, environment task-revision,
+      checkpoint transaction, public session, Shell port, OpenAPI, and UI owners.
+    - Add one bounded `TaskRevisionCompiler` call with the closed outcomes
+      `Ready | NeedsInput | NoChange | NewTaskSuggested | Unsupported | Failed`.
+      It is a typed compiler, not an Agent, manager, or execution loop.
+    - `ReviseTask` must reuse the cooperative pause boundary, commit the old
+      revision checkpoint, compile and validate a complete consecutive
+      `TaskGoal`, revise the same environment, capture fresh World, invoke the
+      existing GoalCompiler exactly once, atomically commit the new revision
+      checkpoint, and remain `PAUSED` until a separate `ResumeRun`.
+    - Invalidate the old GoalPlan/action/binding/confirmation. If the committed
+      old boundary contains `SENT` or `SENT_UNKNOWN`, return typed
+      `effect_reconciliation_required`; compensation remains Phase 7.
+    - Migrate Runtime/private checkpoint/public session/Shell/OpenAPI/UI and
+      documentation together. Verify every compiler outcome, stale/idempotent
+      command behavior, pause/commit ordering, rollback/failure currentness,
+      zero auto-resume, one GoalCompiler call, and no second state authority.
+    - Internal compiler milestone implemented: a non-agent
+      `TaskRevisionCompiler` algebra, complete TaskGoal proposal schema, one
+      bounded model call with schema/provider retry evidence, production role
+      composition, and disabled fallback. Its 31 contract/model/factory tests,
+      22 Runtime composition regressions, Ruff, MyPy, and diff check pass.
+    - Commit and push each coherent milestone; do not run live benchmark or
+      start Viewer/Phase 7 work.
 
 ## Current-work produced files
 

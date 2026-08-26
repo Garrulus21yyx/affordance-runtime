@@ -158,6 +158,7 @@ class BrowserGymDeploymentSessionFactory:
                 required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
                 trace_sink=trace_sink,
                 goal_compiler=roles.goal_compiler,
+                task_revision_compiler=roles.task_revision_compiler,
             )
             lease = RuntimeEnvironmentLease(world, cleanup.close)
             return TargetRuntimeSession(
