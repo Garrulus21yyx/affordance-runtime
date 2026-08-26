@@ -54,9 +54,27 @@ capacity threshold or unsummarized model prose outside the recent raw tail fills
 bounded by the smaller of the recent-tail target and the existing maximum summary-output budget, so old paraphrased
 narration is handled before whole-request pressure without per-step reducer calls. The second trigger measures only
 typed-message age and size, not semantic similarity. Harness preserves the task anchor and exact unresolved suffix.
-This is one projection inside
-the existing PydanticAI history owner, not a memory, progress reducer, evidence path, cursor, or second current-state
-authority.
+This is one projection inside the existing PydanticAI history owner, not a memory, progress reducer, evidence path,
+cursor, or second current-state authority.
+
+The authorized W1b Task7
+[`run1`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run1/run.json) falsified one wrapper assumption in that
+history owner. A throwaway summary view had replaced typed `ToolReturnPart` values with `SystemPromptPart` values to
+bypass Harness's prose-display clipping. Harness therefore could not recognize one completed call/result pair at its
+token cutoff; the third incremental compaction retained the old `find_controls` return while summarizing its call.
+The newest pending call remained exact, so the wrapper's pending-only check accepted the invalid history. Canonical
+provider projection then correctly rejected it before Catalog construction. The owner repair deletes that synthetic
+view and gives Harness the original typed PydanticAI history, whose official cutoff is pair-safe. Before accepting any
+compaction, the same boundary now projects the whole candidate through the canonical history algebra; an invalid
+third-party result restores the byte-for-byte input history instead of terminating ActionPolicy. Recent raw reasoning
+and model conclusions remain exact, while full original results remain in trace.
+
+[`run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run2/run.json) crosses the repaired boundary and ends
+with native `verified_success`. Both age/size-triggered compactions continued into an ActionPolicy request with 18
+catalog tools. The run made 16 valid policy calls, zero invalid, grounding, stale, or wait outcomes, and exactly one
+STOP, post-STOP capture, and native evaluator call. It returned Pittsburgh International Airport, Pennsylvania,
+15231 after reading the explicit 33 km OSRM route. This is a live witness for typed pair-safe compaction, not closure
+of independent Planner or BrowserGym causal-acquisition gaps.
 
 [`run38`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run38/run.json) remained behaviorally correct—native
 `verified_success`, 43 valid policy calls, zero waits, zero invalid calls, and one STOP—but falsified the first

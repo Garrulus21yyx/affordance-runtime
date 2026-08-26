@@ -400,6 +400,23 @@ is needed by full-request pressure or when expired unsummarized model prose fill
 smaller of the recent-tail target and existing maximum summary-output budget. This is not semantic matching or a
 reducer. Generated history tests cover 5--12 turns, exact call/result and stable-conclusion conservation, bounded
 repeated prose, one task anchor, a bounded recent raw tail, provider-boundary equality, and multimodal grounding.
+Task7 [`run1`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run1/run.json) is the failed pre-repair witness
+for incremental pair conservation. The project's summary-only view had changed each `ToolReturnPart` into a
+`SystemPromptPart`, so Harness's official token cutoff could not see one completed pair. Its third compaction retained
+the old return without its call; the wrapper checked only the newest pending identity, and canonical projection
+rejected the orphan before Catalog construction. Production now passes original typed messages directly to Harness,
+validates the complete compacted topology at the history owner, and restores the exact input history on invalid
+output. Generated regression coverage uses a prior summary, six completed exchanges, large expired Worlds, and the
+same adverse token boundary; every retained completed call ID equals its return ID and the newest pending call remains
+exact.
+
+Task7 [`run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run2/run.json) is accepted with native
+`verified_success`: 16 valid policy calls, two accepted age/size compactions, zero invalid arguments, grounding gaps,
+stale bindings, or waits, and exactly one STOP, post-STOP capture, and native evaluator. Both compacted turns retained
+an 18-tool Catalog and continued into ActionPolicy. The final result is
+`[{"name":"Pittsburgh International Airport","state":"Pennsylvania","postcode":"15231"}]`, supported by the
+explicit 33 km OSRM route. Aggregate prompt/history/completion tokens were 215,510 / 200,355 / 4,790; no cross-run
+efficiency claim is made because run1 followed a different failed trajectory.
 [`run38`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run38/run.json) passed native evaluation with 43
 valid policy calls, zero waits, zero invalid calls, and one STOP, so the observation/action path remained correct. It
 failed the efficiency objective: six Harness calls consumed 198,783 input tokens and all six summaries were discarded
@@ -749,7 +766,8 @@ same final RequestAdmission breakdown counts history, pending ToolReturn, fresh 
 of effective input no capacity-driven summary call occurs. The expired-prose gate may still batch old narration
 without semantic matching. The summary input contains the remaining historical Worlds,
 model-authored conclusions, ToolCalls, and ToolReturns; the task anchor, newest pair-safe SDK suffix, and unresolved
-call remain byte-for-byte unchanged. A provider error or timeout returns the exact raw history. Source-coverage,
+call remain byte-for-byte unchanged. Compaction is accepted only after the complete canonical history algebra passes;
+a provider error, timeout, or invalid compacted topology returns the exact raw history. Source-coverage,
 knowledge bootstrap/batching, result-kind triggers, and failed-input memos are absent from production.
 
 Monitor gates prove a different empty discovery/read attempt remains in the same recovery episode, while typed

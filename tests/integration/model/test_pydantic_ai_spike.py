@@ -1356,7 +1356,12 @@ def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None
     serialized_input = json.dumps(summary_input, sort_keys=True)
     assert "World 0" in serialized_input
     assert "stable" in serialized_input
-    assert "inspect the fresh World" in serialized_input
+    assert any(
+        isinstance(part, ThinkingPart) and "inspect the fresh World" in part.content
+        for message in run.messages
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+    )
     assert "continue toward Acadia" in serialized_input
     canonical_envelope_module._project_pydantic_history(run.messages)
 
@@ -1486,7 +1491,7 @@ def test_compaction_does_not_treat_summary_text_as_runtime_fact_state() -> None:
     assert len(scripted.records) == 1
 
 
-def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() -> None:
+def test_harness_summary_keeps_stable_model_conclusion_past_tool_result_clip() -> None:
     coordinate = "43°39′36″N 70°15′18″W"
     long_result = {
         "kind": "Opened",
@@ -1535,10 +1540,16 @@ def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() 
         ensure_ascii=False,
         sort_keys=True,
     )
-    assert coordinate in summary_input
-    assert "Completed tool result [read_region] call_id=call:read" in summary_input
+    assert "Tool [read_region]" in summary_input
     assert "Coverage or pagination metadata limits the result's scope" in summary_input
     _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history)
+    assert history[-1] in run.messages
+    assert any(
+        isinstance(part, TextPart) and coordinate in part.content
+        for message in run.messages
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+    )
     assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
         "wait", {"reason": "fixture"}, "call:pending"
     )
@@ -1768,6 +1779,101 @@ def test_harness_summary_failure_keeps_the_exact_raw_history() -> None:
     assert run.attempted is True
     assert "summary provider unavailable" in run.error
     assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall("activate", {"target": "E6"}, "call:6")
+
+
+def test_invalid_compacted_history_falls_back_to_the_exact_typed_history(monkeypatch) -> None:
+    history = _official_history_with_pending_actions(7)
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart("summary must be rejected")])])
+
+    def reject_orphaned_history(_messages) -> None:
+        raise ValueError("orphaned tool result")
+
+    monkeypatch.setattr(pydantic_bridge, "_project_pydantic_history", reject_orphaned_history)
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=scripted.build(),
+            max_estimated_tokens=1,
+            timeout_s=2.0,
+        )
+    )
+
+    assert run.messages == history
+    assert run.attempted is True
+    assert run.error == "ValueError: orphaned tool result"
+
+
+def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> None:
+    messages: list[object] = [
+        ModelRequest(
+            parts=[SystemPromptPart("Summary of previous conversation:\n\n## Verified facts\n- Earlier generic fact.")]
+        ),
+        ModelRequest(parts=[UserPromptPart("Generic long task " + "t" * 7_000)]),
+    ]
+    for index in range(6):
+        messages.append(
+            ModelResponse(
+                parts=[
+                    ThinkingPart(f"reasoning {index} " + "q" * 300),
+                    TextPart(f"stable conclusion {index} " + "r" * 800),
+                    ToolCallPart(
+                        "read_region",
+                        {"region_ref": f"R{index}"},
+                        f"call:{index}",
+                    ),
+                ]
+            )
+        )
+        if index < 5:
+            messages.append(
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            "read_region",
+                            {"items": [{"fact": f"value-{index}"}]},
+                            f"call:{index}",
+                        ),
+                        UserPromptPart(f"World {index + 1} " + "w" * 5_000),
+                    ]
+                )
+            )
+    projected = pydantic_bridge._project_expired_history(
+        tuple(messages),
+        max_estimated_tokens=6_000,
+    )
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart("## Verified facts\n- Stable generic fact.")])])
+
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            projected,
+            model=scripted.build(),
+            max_estimated_tokens=55_000,
+            observed_estimated_tokens=999_999,
+            timeout_s=2.0,
+            trigger="expired_model_prose",
+        )
+    )
+
+    call_ids = {
+        part.tool_call_id
+        for message in run.messages
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    }
+    return_ids = {
+        part.tool_call_id
+        for message in run.messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    }
+    pending_ids = {part.tool_call_id for part in pydantic_bridge._pending_tool_parts_from_history(run.messages)}
+
+    assert run.error == ""
+    assert return_ids == call_ids - pending_ids
+    assert pending_ids == {"call:5"}
+    canonical_envelope_module._project_pydantic_history(run.messages)
 
 
 @given(turns=st.integers(min_value=5, max_value=12))

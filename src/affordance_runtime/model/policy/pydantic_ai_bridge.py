@@ -46,6 +46,7 @@ from affordance_runtime.model.policy.canonical_provider_envelope import (
     CanonicalProviderEnvelope,
     CanonicalProviderEnvelopeBinder,
     CanonicalProviderIdentity,
+    _project_pydantic_history,
 )
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
@@ -2283,51 +2284,6 @@ def _completed_exchange_count(messages: tuple[object, ...]) -> int:
     return len(_completed_tool_exchanges(messages))
 
 
-def _summary_visible_history(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Expose exact completed results and reasoning only to Harness's summarizer.
-
-    Harness's prose formatter intentionally clips every ``ToolReturnPart`` to 500
-    characters. Our local read/search tools already return owner-bounded public
-    pages, and task facts can legitimately occur after that generic clip. Replace
-    request-local tool returns in this throwaway view with ordinary prompt text so
-    the official summarizer sees the same bounded result that the ActionPolicy saw.
-    The compacted result still restores Harness's suffix from ``messages`` below,
-    so no synthetic part enters canonical PydanticAI history.
-    """
-
-    from pydantic_ai.messages import (
-        ModelRequest,
-        ModelResponse,
-        SystemPromptPart,
-        TextPart,
-        ThinkingPart,
-        ToolReturnPart,
-    )
-
-    visible: list[object] = []
-    for message in messages:
-        if isinstance(message, ModelRequest):
-            parts = tuple(
-                SystemPromptPart(
-                    f"Completed tool result [{part.tool_name}] call_id={part.tool_call_id}:\n{part.content}"
-                )
-                if isinstance(part, ToolReturnPart)
-                else part
-                for part in message.parts
-            )
-            visible.append(replace(message, parts=parts))
-            continue
-        if isinstance(message, ModelResponse):
-            parts = tuple(
-                TextPart(f"Model reasoning:\n{part.content}") if isinstance(part, ThinkingPart) else part
-                for part in message.parts
-            )
-            visible.append(replace(message, parts=parts))
-            continue
-        visible.append(message)
-    return tuple(visible)
-
-
 def _history_compaction_required(
     breakdown: ModelRequestBreakdown,
     *,
@@ -2401,19 +2357,18 @@ async def _compact_pydantic_history(
         receipts=False,
     )
     started = time.perf_counter()
-    summary_visible = _summary_visible_history(messages)
     with capture_run_messages() as transcript:
         try:
             async with asyncio.timeout(timeout_s):
                 compacted = await compact_now(
                     strategy,
-                    list(summary_visible),
+                    list(messages),
                     model=model,
                     usage=RunUsage(),
                 )
             if transcript:
                 preserved_count = _shared_history_suffix_count(
-                    tuple(summary_visible),
+                    messages,
                     tuple(compacted[1:]),
                 )
                 extra_end = len(compacted) - preserved_count
@@ -2423,7 +2378,7 @@ async def _compact_pydantic_history(
                 exact_extras: list[object] = []
                 for extra in preserved_extras:
                     source_index = next(
-                        (index for index, item in enumerate(summary_visible) if item is extra or item == extra),
+                        (index for index, item in enumerate(messages) if item is extra or item == extra),
                         None,
                     )
                     if source_index is None:
@@ -2444,6 +2399,12 @@ async def _compact_pydantic_history(
             )
             if before_pending != after_pending:
                 raise ValueError("Harness compaction changed the unresolved tool-call suffix")
+            # Harness owns the pair-safe cutoff.  Validate the complete output
+            # at the same history-conversion boundary before it can replace the
+            # canonical SDK history.  A third-party regression therefore falls
+            # back to the exact input history instead of reaching TurnPacker as
+            # an orphaned ToolCall/ToolReturn sequence.
+            _project_pydantic_history(tuple(compacted))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
