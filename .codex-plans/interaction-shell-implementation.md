@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 6.5 complete; Phase 7 not started
+Status: Phase 6/6.5 reopened for two bounded main-chain gaps; Phase 7 not started
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -388,6 +388,46 @@ Constraints:
       session stores initialize without locking; SQLite reopen/digest tampering,
       official step events, and native/custom OTel spans are covered. No live
       benchmark was run; Phase 7, Viewer, and takeover were not started.
+19. **in progress — Reclose pre-policy checkpoint identity and revision conversation.**
+    - Keep the single `CoreAgentLoop`, existing Runtime checkpoint/receipt
+      authorities, existing Runtime `TaskRevisionCompiler`, and current SQLite
+      stores. Do not add an Agent, database, workflow engine, or Phase 7
+      compensation behavior.
+    - Diagnose and repair model-history identity at its owner: bind admitted
+      `TaskGoal(task_id, revision)` before environment reset/GoalCompiler/first
+      ActionPolicy, allow a provider-valid empty settled Harness snapshot, and
+      prove pause/restart/resume before the first policy call.
+    - Define one immutable bounded revision-conversation value (at most six
+      turns and one total byte bound), include it in the complete Runtime
+      command digest, and pass it only to the existing one-shot Runtime
+      `TaskRevisionCompiler`. Runtime alone adds authoritative TaskGoal and
+      pending question/confirmation facts; conversation cannot authorize GUI
+      actions and never enters ActionPolicy Harness history.
+    - Make Shell construct and forward the bounded snapshot with the latest
+      revision message exactly once. Remove the unused external Shell revision
+      compiler and migrate public contracts/OpenAPI/generated frontend types,
+      duplicate/stale behavior, tests, and docs together.
+    - Correct observability status: native/custom OTel instrumentation exists,
+      but deployment has no configured recording `TracerProvider + exporter`;
+      this remains a non-blocking deployment follow-up and does not count as
+      Phase 6 closure evidence.
+    - Acceptance matrix: pre-policy pause with zero policy calls and restart
+      recovery; ordinary post-step pause; contextual and self-contained
+      revisions; pending-question reference; exact duplicate replay; changed
+      text/context identity conflict; stale command with zero compiler calls;
+      old action/binding/confirmation invalidation; revised state remains
+      paused until explicit Resume.
+    - Commit and push the checkpoint-identity repair first, then the bounded
+      conversation/removal/doc closure. Do not run live benchmark.
+    - Checkpoint-identity milestone implemented: synchronous task admission now
+      binds model continuity before the public start task is scheduled, and
+      every direct Runtime initialize/run entry binds idempotently before
+      environment reset or GoalCompiler. Empty official PydanticAI history is a
+      provider-valid settled Harness snapshot. The pre-policy restart witness
+      pauses while reset is held with zero policy calls, restores under a new
+      epoch, and calls policy only after explicit Resume. Focused evidence: 102
+      public-session/checkpoint/Runtime/PydanticAI tests, touched Ruff/MyPy,
+      compileall, and diff checks passed.
 
 ## Current-work produced files
 

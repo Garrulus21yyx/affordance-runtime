@@ -137,6 +137,17 @@ class ModelBackedAgentPolicy:
             raise TypeError("model checkpoint history must be a mapping")
         return history
 
+    def bind_checkpoint_history_identity(
+        self,
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        binder = getattr(self.port, "bind_checkpoint_history_identity", None)
+        if not callable(binder):
+            return
+        binder(task_id=task_id, task_revision=task_revision)
+
     async def persist_checkpoint_history(self) -> Mapping[str, object]:
         persister = getattr(self.port, "persist_checkpoint_history", None)
         if not callable(persister):

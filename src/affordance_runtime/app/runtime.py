@@ -167,6 +167,17 @@ class TargetRuntime:
             raise TypeError("Runtime checkpoint history must be a mapping")
         return history
 
+    def bind_checkpoint_history_identity(self, task: TaskGoal) -> None:
+        """Bind model continuity to admitted task authority before initialization."""
+
+        binder = getattr(
+            self.decision_ports.action_policy,
+            "bind_checkpoint_history_identity",
+            None,
+        )
+        if callable(binder):
+            binder(task_id=task.task_id, task_revision=task.revision)
+
     async def persist_checkpoint_history(self) -> Mapping[str, object]:
         """Durably settle model history before the Runtime checkpoint refers to it."""
 
@@ -386,6 +397,7 @@ class TargetRuntime:
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> RunState:
+        self.bind_checkpoint_history_identity(task)
         return await self.build_loop().run(environment, task)
 
     async def initialize_task(
@@ -393,6 +405,7 @@ class TargetRuntime:
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> RunState:
+        self.bind_checkpoint_history_identity(task)
         return await self.build_loop().initialize(environment, task)
 
     async def continue_task(
@@ -429,7 +442,10 @@ class TargetRuntime:
     def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
         """Compile stable task authority before allocating a world session."""
 
-        return self.intake.compile(request)
+        admitted = self.intake.compile(request)
+        if isinstance(admitted, ReadyTask):
+            self.bind_checkpoint_history_identity(admitted.task)
+        return admitted
 
     async def run_request(
         self,

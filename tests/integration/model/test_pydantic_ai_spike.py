@@ -267,6 +267,53 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
     asyncio.run(scenario())
 
 
+def test_pydantic_ai_empty_history_binds_and_restores_before_first_policy(
+    tmp_path,
+) -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        database = tmp_path / "empty-model-steps.sqlite3"
+        store = step_persistence.SqliteStepStore(database=database)
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:empty")
+
+        policy.bind_checkpoint_history_identity(
+            task_id="task:empty",
+            task_revision=1,
+        )
+        reference = await policy.persist_checkpoint_history()
+
+        assert policy.port.message_history == ()
+        snapshot = await store.latest_snapshot(run_id=reference["run_id"])
+        assert snapshot is not None
+        assert snapshot.state == "complete"
+        assert snapshot.messages == []
+
+        restored = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(
+            restored.port,
+            "step_store",
+            step_persistence.SqliteStepStore(database=database),
+        )
+        object.__setattr__(
+            restored.port,
+            "step_conversation_id",
+            "session:empty",
+        )
+        await restored.restore_persisted_checkpoint_history(
+            reference,
+            task_id="task:empty",
+            task_revision=1,
+        )
+        assert restored.port.message_history == ()
+        assert restored.port.active_task_identity == ("task:empty", 1)
+
+    asyncio.run(scenario())
+
+
 def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     object.__setattr__(

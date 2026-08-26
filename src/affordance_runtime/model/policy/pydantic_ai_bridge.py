@@ -335,6 +335,32 @@ class PydanticAIGroundedDecisionPort:
             "active_task_identity": list(identity) if identity is not None else None,
         }
 
+    def bind_checkpoint_history_identity(
+        self,
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        """Bind admitted task authority before environment or model work begins."""
+
+        if not task_id.strip() or type(task_revision) is not int or task_revision < 1:
+            raise ValueError("model history task identity is invalid")
+        identity = (task_id, task_revision)
+        current = self.active_task_identity
+        if current == identity:
+            return
+        if current is None:
+            if self.message_history:
+                raise ValueError("model history identity is unavailable")
+        elif current[0] == task_id:
+            raise ValueError("model history revision requires an explicit rebind")
+        else:
+            if _pending_tool_parts_from_history(self.message_history):
+                raise ValueError("model history contains an unclosed tool call")
+            object.__setattr__(self, "message_history", ())
+            object.__setattr__(self, "last_step_run_id", "")
+        object.__setattr__(self, "active_task_identity", identity)
+
     async def persist_checkpoint_history(self) -> Mapping[str, object]:
         """Save one immutable settled snapshot in the official Harness store."""
 

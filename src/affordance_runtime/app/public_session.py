@@ -28,6 +28,7 @@ from affordance_runtime.task.intake import (
     ReadyTask,
     TaskBoundary,
     TaskInputRequired,
+    TaskIntakeOutcome,
     TaskPolicyRejected,
     TaskUnsupported,
 )
@@ -50,7 +51,7 @@ from .checkpoint import (
     RuntimeCheckpointRevisionOutcome,
     RuntimeCheckpointStore,
 )
-from .runtime import TargetRuntime
+from .runtime import TargetRuntime, TargetRuntimeRunOutcome
 
 PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v1"
 
@@ -347,9 +348,15 @@ class TargetRuntimeSession:
             self._request = self.request_factory(self.session_id, instruction)
             if self._request.request_id != self.session_id or self._request.revision != 1:
                 raise TypeError("public task request factory must preserve session identity and initial revision")
+            intake = self.runtime.admit(self._request)
+            if isinstance(intake, ReadyTask):
+                self._admitted = intake
             self._status = PublicSessionStatus.RUNNING
             self._emit("RUN_STARTED")
-            self._active = asyncio.create_task(self._run_start(), name=f"runtime-session:{self.session_id}")
+            self._active = asyncio.create_task(
+                self._run_start(intake),
+                name=f"runtime-session:{self.session_id}",
+            )
             return self._project()
 
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot:
@@ -815,11 +822,15 @@ class TargetRuntimeSession:
             return
         await self._cleanup_once()
 
-    async def _run_start(self) -> None:
+    async def _run_start(self, intake: TaskIntakeOutcome) -> None:
         assert self._request is not None
         session_runtime = self._runtime_with_projection()
         try:
-            outcome = await session_runtime.run_request(self.lease.environment, self._request)
+            outcome = (
+                await session_runtime.run_admitted(self.lease.environment, intake)
+                if isinstance(intake, ReadyTask)
+                else TargetRuntimeRunOutcome(intake)
+            )
             if isinstance(outcome.intake, ReadyTask):
                 self._admitted = outcome.intake
                 self._state = outcome.state

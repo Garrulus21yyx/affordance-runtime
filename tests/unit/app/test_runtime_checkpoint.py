@@ -69,6 +69,12 @@ class RecoverableAskPolicy(AskForAccountPolicy):
     active_task_identity: tuple[str, int] | None = None
     restored: bool = False
 
+    def bind_checkpoint_history_identity(self, *, task_id, task_revision):
+        identity = (task_id, task_revision)
+        if self.active_task_identity not in {None, identity}:
+            raise ValueError("history identity mismatch")
+        self.active_task_identity = identity
+
     async def decide(self, context):
         self.active_task_identity = (
             context.task.task_id,
@@ -740,7 +746,6 @@ async def test_restart_from_running_boundary_reselects_only_after_explicit_resum
             return await super().reset(task)
 
     first_policy = RecoverableAskPolicy()
-    first_policy.active_task_identity = ("session:running-restart", 1)
     first_factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(first_policy),
         lambda _session_id: RuntimeEnvironmentLease(
@@ -753,6 +758,8 @@ async def test_restart_from_running_boundary_reselects_only_after_explicit_resum
     first = await first_factory.open("session:running-restart", expires_at)
     await first.start("Inspect the selected account")
     await first.pause("pause:running-restart")
+    assert first_policy.active_task_identity == ("session:running-restart", 1)
+    assert first_policy.calls == 0
     release.set()
     for _ in range(100):
         paused = await first.snapshot()
