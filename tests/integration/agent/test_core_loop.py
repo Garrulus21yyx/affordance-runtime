@@ -512,6 +512,64 @@ def test_same_observation_reuses_one_expensive_context_projection(monkeypatch) -
     assert calls == ["same-world"]
 
 
+def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -> None:
+    @dataclass
+    class RecoveryHandoffPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns in {1, 2}:
+                return SearchPageContentResult(
+                    context.context_id,
+                    "search_page_content",
+                    {"query": f"missing-{self.turns}"},
+                    {"kind": "NoMatches", "items": (), "total_count": 0},
+                    f"provider-call:missing-{self.turns}",
+                )
+            if self.turns == 3:
+                return RequestActionPage(context.context_id, query="shared state")
+            if self.turns == 4:
+                assert context.last_step is not None
+                assert context.last_step.action_page_result is not None
+                assert context.last_step.action_page_result.matches
+                assert context.control_feedback["kind"] == "control_stall"
+                option = next(item for item in context.complete_actions if item.operation == "activate")
+                return SelectAction(
+                    context.context_id,
+                    option.action_id,
+                    tool_call_id="provider-call:recovered-action",
+                )
+            raise AssertionError("policy should complete after the recovered action")
+
+    async def scenario() -> None:
+        policy = RecoveryHandoffPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("recovery_handoff_test"),
+            episode_monitor=EpisodeMonitor(AgentLoopProfile(1, 1)),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("recovery-before", False),
+            post_observations=(_world("recovery-after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.DONE
+        assert policy.turns == 4
+        assert state.step_count == 4
+        assert state.execution_count == 1
+        assert environment.execute_calls == 1
+        assert state.last_step is not None
+        assert state.last_step.decision.tool_call_id == "provider-call:recovered-action"
+
+    asyncio.run(scenario())
+
+
 def test_fresh_observation_replaces_context_projection_once(monkeypatch) -> None:
     calls: list[str] = []
     index_calls: list[str] = []

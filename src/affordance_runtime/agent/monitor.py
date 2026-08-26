@@ -127,10 +127,12 @@ class EpisodeMonitor:
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         if self.recovery_count and isinstance(result.decision, ToolRejectedResult):
+            signature = _same_world_attempt_signature(result)
+            repeats_latest = signature == self.latest_attempt_signature
             self.no_progress_count += 1
-            self.same_attempt_streak += 1
-            self.latest_attempt_signature = _same_world_attempt_signature(result)
-            self.recovery_count += 1
+            self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
+            self.latest_attempt_signature = signature
+            self.recovery_count = self.recovery_count + 1 if repeats_latest else 1
             signal = _control_stall_signal(
                 result,
                 self,
@@ -231,19 +233,16 @@ class EpisodeMonitor:
                     "control_stalled",
                     signal,
                 )
-            self.recovery_count += 1
+            # A different attempt is not evidence of a repeated strategy.
+            # Keep the recovery feedback active, but restart its local retry
+            # phase instead of accumulating a hidden semantic-attempt budget.
+            # The TaskGoal turn budget remains the sole total-loop bound.
+            self.recovery_count = 1
             signal = _control_stall_signal(
                 result,
                 self,
                 recovery_attempt=self.recovery_count,
             )
-            if self.recovery_count > self.profile.max_recovery_retries + 1:
-                return EpisodeMonitorTransition(
-                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
-                    EpisodeMonitorRecommendation.BLOCK,
-                    "control_stalled",
-                    signal,
-                )
             return EpisodeMonitorTransition(
                 tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
                 EpisodeMonitorRecommendation.RECOVER,

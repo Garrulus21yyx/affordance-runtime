@@ -223,8 +223,8 @@ def test_control_discovery_recovery_is_not_cleared_by_a_different_query() -> Non
     assert third.information_delta is None
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recovery_signal is not None
-    assert continued.recovery_signal.recovery_attempt == 2
-    assert monitor.recovery_count == 2
+    assert continued.recovery_signal.recovery_attempt == 1
+    assert monitor.recovery_count == 1
 
 
 def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
@@ -321,8 +321,8 @@ def test_exact_replay_recovery_is_not_cleared_by_a_no_match_region_result() -> N
     assert different.information_delta.kind is InformationDeltaKind.NO_MATCHES
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recovery_signal is not None
-    assert continued.recovery_signal.recovery_attempt == 2
-    assert monitor.recovery_count == 2
+    assert continued.recovery_signal.recovery_attempt == 1
+    assert monitor.recovery_count == 1
 
 
 @given(
@@ -431,23 +431,49 @@ def test_different_no_progress_attempt_after_recovery_remains_in_episode() -> No
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert continued.recovery_signal is not None
-    assert continued.recovery_signal.recovery_attempt == 2
-    assert monitor.recovery_count == 2
+    assert continued.recovery_signal.recovery_attempt == 1
+    assert monitor.recovery_count == 1
 
 
-def test_monitor_profile_bounds_alternate_recovery_retries() -> None:
-    world = _world("observation:bounded-recovery-retries")
+@given(
+    queries=st.lists(
+        st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=20),
+        min_size=3,
+        max_size=20,
+        unique=True,
+    )
+)
+def test_distinct_no_progress_attempts_never_become_a_runtime_semantic_budget(queries) -> None:
+    world = _world("observation:distinct-recovery-attempts")
     monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
 
-    first_recovery = _evaluate(monitor, _local_step(world, query="one"))
-    retry = _evaluate(monitor, _local_step(world, query="two"))
-    blocked = _evaluate(monitor, _local_step(world, query="three"))
+    transitions = tuple(_evaluate(monitor, _local_step(world, query=query)) for query in queries)
+
+    assert transitions[0].recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert all(item.recommendation is EpisodeMonitorRecommendation.RECOVER for item in transitions)
+    assert all(item.recovery_signal is not None for item in transitions)
+    assert monitor.recovery_count == 1
+
+
+def test_recovery_allows_one_turn_to_use_a_nonempty_discovered_control() -> None:
+    world = _world("observation:recovery-discovery-handoff")
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first_recovery = _evaluate(monitor, _local_step(world, query="first"))
+    second_recovery = _evaluate(monitor, _local_step(world, query="second"))
+    discovery_step = _control_discovery_step(world, "search", "Search Wikipedia")
+    handoff = _evaluate(monitor, discovery_step)
+    blocked = _evaluate(monitor, discovery_step)
 
     assert first_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert retry.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert retry.recovery_signal is not None
-    assert retry.recovery_signal.recovery_attempt == 2
+    assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert handoff.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert handoff.recovery_signal is not None
+    assert handoff.recovery_signal.recovery_attempt == 1
+    assert "Use a nonempty returned current control" in handoff.recovery_signal.human_instruction
+    assert monitor.recovery_count == 1
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -743,9 +769,9 @@ def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> No
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recovery_signal is not None
-    assert continued.recovery_signal.recovery_attempt == 2
+    assert continued.recovery_signal.recovery_attempt == 1
     assert continued.recovery_signal.observed_evidence["dispatch"] == "sent"
-    assert monitor.recovery_count == 2
+    assert monitor.recovery_count == 1
 
 
 def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery() -> None:
@@ -761,7 +787,7 @@ def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery(
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recovery_signal is not None
-    assert second_recovery.recovery_signal.recovery_attempt == 2
+    assert second_recovery.recovery_signal.recovery_attempt == 1
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
     assert continued.recovery_signal is None

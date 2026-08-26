@@ -31,10 +31,11 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1790 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1798 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed. Focused ActionPolicy envelope, PydanticAI bridge, provider-profile, and retry-trace verification
-reports `96 passed`; Ruff and `git diff --check` pass.
+modified or removed. Excluding that governance file reports `1796 passed / 19 skipped`. Focused Monitor/CoreLoop and
+ActionPolicy/PydanticAI vertical verification reports `189 passed / 3 skipped`; Ruff, compileall, and
+`git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -1109,6 +1110,29 @@ seconds, and a subsequent context turn 2.2 seconds. Lifecycle, discovery, and tr
 reconstruction. No threshold, truncation, VLM, cursor, evidence inventory, retry, or benchmark branch was introduced.
 Task97 remains open pending a fresh live witness.
 
+Task97
+[`run3`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run3/run.json) crossed that performance boundary and
+completed normally in about 116 seconds. It recorded 29 policy calls, 12 observations, 11 executions, 447,639 aggregate
+tokens, zero waits, zero grounding gaps, zero representation repairs, and no STOP or native evaluation. The model did
+repeat its research strategy despite retained history: Harness compaction preserved that the SCImago article lacked
+the 2019 list, both failed search strategies, and the still-untried `College and university rankings` candidate. That
+semantic planning weakness is not evidence loss or a Runtime fact to infer.
+
+The terminal `blocked / control_stalled` was nevertheless a Runtime counterexample. After the repeated article reads,
+the final `find_controls("search")` returned the current Wikipedia textbox with both executable verbs, but Monitor
+blocked the producing step with `same_attempt_streak == 1` and `recovery_attempt == 3`. The shared cause was the
+alternate-attempt accumulation introduced in `d7546ba4`: different no-information queries and routes preserved the
+episode, but also consumed a hidden `max_recovery_retries` budget. That let Monitor judge a multi-step semantic recovery
+without understanding it and prevented the ToolReturn from reaching the next ordinary policy turn.
+
+The owner repair keeps recovery active across different public attempt signatures without incrementing a semantic
+attempt budget. Exact attempt replay, typed prohibited-call replay, and recurrence of a proven GUI cycle remain
+bounded; the existing TaskGoal turn budget remains the generic fallback. A generated property covers arbitrary unique
+query sequences and a CoreLoop vertical gate covers two empty results -> nonempty current control discovery -> next
+ActionPolicy turn -> dispatch -> fresh native-complete World. No tool-specific branch, threshold increase, World,
+history, cursor, ToolReturn, PydanticAI, BrowserGym, or benchmark behavior was added. Task97 remains open pending a
+fresh post-repair witness.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1162,10 +1186,11 @@ The final read-only review for this cutover must answer:
     or second browser-state channel?
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
-20. Does Monitor issue bounded recovery for no-information families and every dispatched GUI cycle representable in its fixed window, persist the
-    episode across different empty/no-match and ineffectual same-World attempts, project dispatch from the real
-    receipt, and start a new same-World episode only on typed new information, a proven GUI effect, or a causal GUI
-    dispatch reaching a changed fresh public World?
+20. Does Monitor issue bounded recovery for no-information families and every dispatched GUI cycle representable in
+    its fixed window, persist the episode across different empty/no-match and ineffectual same-World attempts without
+    turning their count into a semantic budget, block exact replay or proven cycle recurrence, project dispatch from
+    the real receipt, and start a new same-World episode only on typed new information, a proven GUI effect, or a
+    causal GUI dispatch reaching a changed fresh public World?
 21. When a BrowserGym action changes the active tab, do post-action stability, observation, physical enrichment, and
     transition URL all come from BrowserGym's one current page rather than joining pre- and post-action tabs?
 22. On a large unchanged World, does Monitor findings derivation scale with targets plus facts, avoid region-index

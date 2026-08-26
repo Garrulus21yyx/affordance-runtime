@@ -1254,6 +1254,26 @@ all 644 functional regions while `WorldDeliveryIndex` falls from about 71.9 to 1
 seconds. No page cap, task/site rule, VLM, cursor, evidence path, fallback, retry, or alternate observation was added.
 Task97 remains empirically open until a fresh run crosses this repaired lifecycle and reaches native evaluation.
 
+Task97 run3 crossed the large-World lifecycle repair: the case completed in about 116 seconds with 29 policy calls,
+12 observations, 11 executions, zero waits, zero grounding gaps, and zero representation repairs. It then exposed a
+pre-existing contradiction in Monitor recovery semantics. The policy had already received one exact replay recovery,
+made a different current-page discovery, and `find_controls("search")` returned the current Wikipedia textbox with
+both `press_key` and `type_text`. The committed result was nevertheless changed to `blocked / control_stalled` before
+the next ActionPolicy turn because `d7546ba4` had made every different no-information attempt increment the same
+`recovery_count`; the third distinct attempt crossed `max_recovery_retries + 1` even though
+`same_attempt_streak == 1`.
+
+That counter is operational recovery phase, not a semantic plan budget. A different public attempt signature now
+replaces the current recovery attempt and retains the same typed recovery feedback; it cannot cause `BLOCK` merely by
+being the third distinct query, region, control lookup, or GUI route. The existing exact-signature branch still blocks
+an immediately repeated attempt after recovery, typed prohibited-call rejection remains bounded, and the bounded
+ref-free GUI sequence still blocks recurrence of a proven cycle. `TaskGoal.loop_budget` remains the sole generic total
+turn bound. This is one Monitor-owner rule for every tool and action, not a `find_controls`, task, site, or result-shape
+exception. Generated tests cover up to twenty distinct same-World attempts, and a CoreLoop vertical test covers
+no-result recovery -> nonempty control discovery -> next ActionPolicy turn -> dispatch -> fresh completed World.
+Task97 remains empirically open until a fresh run reaches native evaluation; this repair only removes the premature
+Runtime termination and does not claim that the model will choose the correct remaining research strategy.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1362,8 +1382,10 @@ This cutover is implementation-complete only when all of the following agree:
 13. proactive SDK history processing preserves exact call/result pairs and exactly one latest cumulative progress
     note across tool-only turns, and a partial PageMap remains aggregate-bounded and recoverable through the existing
     read tools.
-14. dispatched GUI attempts have one bounded ref-free Monitor history; every repeated cycle representable in that window recovers once and
-    block only on recurrence, without task-progress interpretation or a second policy.
+14. dispatched GUI attempts have one bounded ref-free Monitor history; every repeated cycle representable in that
+    window recovers once and blocks only on recurrence. Different public attempt signatures retain recovery feedback
+    but never accumulate into a hidden semantic-attempt budget; exact replay still blocks after one recovery, and the
+    TaskGoal turn budget remains the only total-loop bound.
 15. every current non-entity `InteractionSubjectKind` present in Actor World reaches the same compact observation;
     adding an action for an existing kind does not require a renderer or history-path change.
 16. BrowserGym element currentness consumes only the selected interaction offer's declared semantic fields and private
