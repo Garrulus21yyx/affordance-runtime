@@ -46,6 +46,19 @@ Steps:
    change production Agent behavior until that response protocol is made unambiguous at its benchmark owner.
 6. **pending — Defer efficiency work.** Consider Task7 token optimization only after the held-out correctness cohort;
    keep it separate from any correctness repair.
+7. **done — Repair the WebArena-Verified zero-result public contract.** Add one generic benchmark-profile
+   `TaskBoundary` rule that makes the upstream status algebra unambiguous to the same ActionPolicy: a completed
+   RETRIEVE with zero qualifying items uses `NOT_FOUND_ERROR` and null data; a nonempty completed retrieval uses
+   `SUCCESS` and the result list. Preserve the original BrowserGym goal byte-for-byte, keep the upstream response
+   codec validation-only, and do not inspect evaluator expectations or branch on task identity. Verify the rule at
+   intake and model-context projection before rerunning Task8.
+   Result: the rule is projected through the existing `TaskGoal.constraints -> AgentContext.task.constraints` path
+   for both smoke and held-out cases. The original BrowserGym instruction remains unchanged and the response codec
+   still delegates only to the upstream Pydantic model. Focused gates report 32 benchmark/manifest passes and 47
+   TaskGoal/GoalCompiler/model-view passes; the full suite reports 1777 passes, 19 skips, and only the pre-existing
+   `docs/interaction-shell.md` governance failure.
+8. **in_progress — Rerun held-out Task8 once.** Use the same fixed profile and native evaluator. Inspect the final
+   response and result before deciding whether the held-out cohort can resume.
 
 Files modified so far:
 

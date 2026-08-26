@@ -50,9 +50,17 @@ read the CMU-to-Pittsburgh-International route, correctly concluded that roughly
 and submitted `SUCCESS` with an empty list. The installed WebArena-Verified public `FinalAgentResponse` description
 says that a retrieval with no items returns an empty array, while the same official Task8 evaluator reference requires
 `NOT_FOUND_ERROR` with null data. The native evaluator therefore returned `verified_terminal_task_failure` solely on
-the status classification. This is a benchmark public-response-contract/reference conflict at the installed
+the status classification. This was a benchmark public-response-contract/reference conflict at the installed
 WebArena-Verified owner, not evidence for changing GoalCompiler, Runtime, World, BrowserGym currentness, history,
-cursor, or ToolReturn. The next held-out cohort is deferred until that external protocol is unambiguous.
+cursor, or ToolReturn.
+
+The benchmark profile now resolves that ambiguity at its existing `TaskBoundary`: every WebArena-Verified task carries
+one generic public rule that a completed RETRIEVE with zero qualifying items uses `NOT_FOUND_ERROR` and null data,
+while a nonempty completed retrieval uses `SUCCESS` and the result list. The original BrowserGym goal remains
+byte-for-byte unchanged, `TaskGoal.constraints` projects the rule through the normal `AgentContext`, and the existing
+upstream Pydantic response codec remains validation-only. There is no evaluator lookup, task-ID/text branch, response
+rewrite, alternate prompt, or production Agent change. A fresh Task8 native-evaluator witness is still required before
+the held-out cohort resumes.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture

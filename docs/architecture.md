@@ -470,9 +470,15 @@ history failure, but exposed an external response-contract contradiction. The in
 `FinalAgentResponse` schema tells the model that an empty retrieval uses an empty array; the official Task8 evaluator
 reference instead requires `NOT_FOUND_ERROR` with null data. The model had correctly excluded the approximately 32 km
 CMU-to-Pittsburgh-International route from a 5 km result and followed the public empty-array instruction, so the native
-failure does not reopen Planner lexical admission, BrowserGym acquisition, or typed history. Production Agent owners
-must not infer the private evaluator answer or special-case Task8; the benchmark response owner must first publish one
-unambiguous zero-result rule before the held-out cohort resumes.
+failure does not reopen Planner lexical admission, BrowserGym acquisition, or typed history.
+
+The WebArena-Verified benchmark profile now publishes one unambiguous zero-result rule through its existing
+`TaskBoundary`: after a completed RETRIEVE finds zero qualifying items, the model must emit `NOT_FOUND_ERROR` with null
+data; a nonempty completed retrieval emits `SUCCESS` with the result list. This is projected through the ordinary
+`TaskGoal.constraints -> AgentContext.task.constraints` path. The BrowserGym goal remains unchanged and the upstream
+Pydantic response codec remains validation-only, so no private evaluator answer, task identity, response rewrite,
+alternate prompt, or new Agent/Runtime authority was introduced. A fresh native Task8 result remains the acceptance
+witness for this benchmark-owner clarification.
 
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
 shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search

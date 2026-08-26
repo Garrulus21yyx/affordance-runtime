@@ -17,6 +17,7 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    WA_ZERO_RESULT_RESPONSE_RULE,
     WebArenaVerifiedFinalResponseCodec,
     _capability_census,
     _private_leak_markers,
@@ -32,7 +33,11 @@ from affordance_runtime.benchmarks.webarena_verified import (
     write_webarena_verified_subset,
     write_webarena_verified_w0_manifest,
 )
-from affordance_runtime.evaluation import ProductionActionOutcomeProjector
+from affordance_runtime.evaluation import (
+    ProductionActionOutcomeProjector,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
@@ -171,6 +176,40 @@ def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
 
     with pytest.raises(ValueError):
         WebArenaVerifiedFinalResponseCodec().normalize('{"status":"SUCCESS"}')
+
+
+@pytest.mark.parametrize("case_ref", (WA_W1_SMOKE_CASES[0], WA_W1_HELD_OUT_CASES[0]))
+def test_webarena_public_task_clarifies_zero_result_response_without_rewriting_goal(case_ref) -> None:
+    public_goal = "Retrieve every qualifying item and use the official FinalAgentResponse schema."
+    browsergym = FakeBrowserGym(raw_observation(goal=public_goal))
+
+    environment, task, _evaluator = open_webarena_verified_case(
+        case_ref,
+        gym_factory=lambda *_args, **_kwargs: browsergym,
+        browser_navigation_urls=("https://map.example.test",),
+    )
+
+    try:
+        assert environment.surface.goal_instruction == public_goal
+        assert task.instruction == public_goal
+        assert WA_ZERO_RESULT_RESPONSE_RULE in task.constraints
+        acquisition = asyncio.run(environment.reset(task))
+        assert acquisition.observation is not None
+        observation = acquisition.observation
+        context = ContextBuilder().build(
+            task,
+            observation,
+            ActionSpaceBuilder().build(task, observation),
+            TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "ongoing",
+            ),
+        )
+        assert WA_ZERO_RESULT_RESPONSE_RULE in context.task.constraints.items
+    finally:
+        asyncio.run(environment.close())
 
 
 def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() -> None:

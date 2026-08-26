@@ -136,6 +136,11 @@ WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v2"
+WA_ZERO_RESULT_RESPONSE_RULE = (
+    "For the WebArena-Verified FinalAgentResponse protocol, when a completed RETRIEVE finds zero qualifying items, "
+    "use status NOT_FOUND_ERROR with retrieved_data null; use SUCCESS with retrieved_data containing the qualifying "
+    "items when one or more are found."
+)
 _W1B_PRIVATE_MARKERS = (
     "browsergym_id",
     "private_bid",
@@ -615,7 +620,10 @@ def open_webarena_verified_case(
                 TaskBoundary(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
-                    constraints=("Provide exactly one final response matching the public task format when ready.",),
+                    constraints=(
+                        "Provide exactly one final response matching the public task format when ready.",
+                        WA_ZERO_RESULT_RESPONSE_RULE,
+                    ),
                     risk_profile=RiskProfile.LOW,
                     loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
                 ),
