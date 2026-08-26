@@ -1,4 +1,4 @@
-"""Contract demo for local UI/E2E only. It is not a GUI agent or Runtime adapter."""
+"""Synthetic contract demo for local UI/E2E only; not a GUI agent or Runtime adapter."""
 
 from __future__ import annotations
 

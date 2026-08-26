@@ -8,6 +8,13 @@ from affordance_runtime.surfaces.browsergym.inventory import (
     BrowserGymApiInventory,
     browsergym_api_inventory,
 )
+from affordance_runtime.surfaces.browsergym.task_evaluator import (
+    BrowserGymTaskAssessment,
+    BrowserGymTaskEvaluator,
+    BrowserGymTaskReason,
+    BrowserGymTaskStatus,
+    assess_browsergym_task_state,
+)
 from affordance_runtime.surfaces.browsergym.task_state import (
     BrowserGymTaskStateSnapshot,
     BrowserGymTaskStateSource,
@@ -26,6 +33,11 @@ __all__ = [
     "BrowserGymPort",
     "BrowserGymTaskStateSnapshot",
     "BrowserGymTaskStateSource",
+    "BrowserGymTaskAssessment",
+    "BrowserGymTaskEvaluator",
+    "BrowserGymTaskReason",
+    "BrowserGymTaskStatus",
     "BrowserGymTransitionTrace",
     "browsergym_api_inventory",
+    "assess_browsergym_task_state",
 ]

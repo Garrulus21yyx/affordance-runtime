@@ -122,6 +122,45 @@ async def test_session_create_snapshot_failure_cleans_opaque_handle_once():
 
 
 @pytest.mark.asyncio
+async def test_manager_shutdown_closes_all_session_handles_once():
+    port = ContractDemoPort()
+    manager = RunSessionManager(port)
+    first = await manager.create()
+    second = await manager.create()
+    first_handle = manager.authenticate(first.snapshot.session_id, first.session_key).runtime_handle
+    second_handle = manager.authenticate(second.snapshot.session_id, second.session_key).runtime_handle
+
+    await manager.close_all()
+    await manager.close_all()
+
+    assert first_handle.cleanup_count == 1
+    assert second_handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_manager_shutdown_attempts_every_handle_when_one_cleanup_fails():
+    class OneFailurePort(ContractDemoPort):
+        failed_handle = None
+
+        async def close(self, handle):
+            if handle is self.failed_handle:
+                raise RuntimeError("first cleanup failed")
+            await super().close(handle)
+
+    port = OneFailurePort()
+    manager = RunSessionManager(port)
+    first = await manager.create()
+    second = await manager.create()
+    port.failed_handle = manager.authenticate(first.snapshot.session_id, first.session_key).runtime_handle
+    second_handle = manager.authenticate(second.snapshot.session_id, second.session_key).runtime_handle
+
+    errors = await manager.close_all()
+
+    assert [str(error) for error in errors] == ["first cleanup failed"]
+    assert second_handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
 async def test_terminal_owner_snapshot_triggers_external_cleanup_once():
     port = ContractDemoPort()
     manager = RunSessionManager(port)

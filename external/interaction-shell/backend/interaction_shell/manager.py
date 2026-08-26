@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,9 @@ from .contracts import (
 )
 from .conversation import BoundedConversation, ConversationTurn
 from .port import RuntimeSessionPort
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -141,6 +145,16 @@ class RunSessionManager:
             if await self._expire_if_needed(managed):
                 expired += 1
         return expired
+
+    async def close_all(self) -> tuple[Exception, ...]:
+        errors: list[Exception] = []
+        for managed in tuple(self._sessions.values()):
+            try:
+                await self._cleanup_once(managed)
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("session cleanup failed during shutdown: %s", managed.session_id)
+        return tuple(errors)
 
     async def _snapshot(self, managed: ManagedSession) -> RuntimeSessionSnapshot:
         snapshot = await self._port.snapshot(managed.runtime_handle)

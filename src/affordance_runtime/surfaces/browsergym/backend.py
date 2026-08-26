@@ -20,6 +20,53 @@ from affordance_runtime.surfaces.browsergym.transition import (
     BrowserGymTransitionTrace,
 )
 
+_BROWSERGYM_PLAYWRIGHT_LOCAL = threading.local()
+_BROWSERGYM_PLAYWRIGHT_PATCH_LOCK = threading.Lock()
+_browsergym_playwright_patch_installed = False
+
+
+def _get_thread_owned_browsergym_playwright() -> object:
+    playwright = getattr(_BROWSERGYM_PLAYWRIGHT_LOCAL, "playwright", None)
+    if playwright is None:
+        sync_api = import_module("playwright.sync_api")
+        playwright = sync_api.sync_playwright().start()
+        _BROWSERGYM_PLAYWRIGHT_LOCAL.playwright = playwright
+    return playwright
+
+
+def _set_thread_owned_browsergym_playwright(playwright: object | None) -> None:
+    _BROWSERGYM_PLAYWRIGHT_LOCAL.playwright = playwright
+
+
+def _install_thread_owned_browsergym_playwright() -> None:
+    """Replace BrowserGym 0.14's process-global sync driver with owner-thread state.
+
+    BrowserGym caches one synchronous Playwright instance at module scope.  A
+    second ``ThreadBoundBrowserGym`` would otherwise reuse the first owner's
+    greenlet and fail, while closing either environment could stop the other's
+    driver.  BrowserGym's environment and chat modules cache the getter at
+    import time, so all three authoritative import sites must be migrated
+    together before an environment is reset.
+    """
+
+    global _browsergym_playwright_patch_installed
+    with _BROWSERGYM_PLAYWRIGHT_PATCH_LOCK:
+        if _browsergym_playwright_patch_installed:
+            return
+        core = import_module("browsergym.core")
+        environment_module = import_module("browsergym.core.env")
+        chat_module = import_module("browsergym.core.chat")
+        setattr(core, "_get_global_playwright", _get_thread_owned_browsergym_playwright)
+        setattr(core, "_set_global_playwright", _set_thread_owned_browsergym_playwright)
+        setattr(
+            environment_module,
+            "_get_global_playwright",
+            _get_thread_owned_browsergym_playwright,
+        )
+        setattr(chat_module, "_get_global_playwright", _get_thread_owned_browsergym_playwright)
+        _browsergym_playwright_patch_installed = True
+
+
 _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
   selected: (() => {
@@ -395,6 +442,7 @@ class ThreadBoundBrowserGym:
 
             for module in registration_modules:
                 import_module(module)
+            _install_thread_owned_browsergym_playwright()
             # BrowserGym's default ``standard_html`` marking omits SVG child
             # elements.  Those elements still appear as clickable in the CDP
             # DOM snapshot, but without a BrowserGym ID they cannot participate

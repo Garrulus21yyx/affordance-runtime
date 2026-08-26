@@ -34,15 +34,15 @@ Production-safe backend without a configured Runtime/environment factory
 .venv/bin/uvicorn interaction_shell.api:app --host 127.0.0.1 --port 8100
 ```
 
-For the contract-only UI demo and E2E flow:
+For the synthetic, contract-only UI Demo and E2E flow:
 
 ```bash
 INTERACTION_SHELL_DEMO=true .venv/bin/uvicorn interaction_shell.api:app --host 127.0.0.1 --port 8100
 ```
 
 For a real session, the deployment composition supplies a per-session
-`runtime_factory(session_id)` and `RuntimeEnvironmentLease` factory, then calls
-`interaction_shell.runtime_app.create_runtime_app(factory)`. This is deliberately
+Runtime, ActionPolicy/history, BrowserGym environment, browser context,
+`RuntimeEnvironmentLease`, and opaque public handle. This is deliberately
 explicit: browser/provider credentials and the product's stable task boundary
 stay with the deployment, while the returned handle keeps `RunState` private.
 The Runtime/public port owns one event epoch and cursor; the Shell manager only
@@ -50,12 +50,36 @@ forwards `events(after)` and never keeps a second event log.
 The configured port supports start, AskUser answer, confirmation approve/reject,
 and close. Cancel, revise, new task, and takeover remain typed unavailable.
 
+Install the deployment profile alongside the Runtime worktree, then start its
+dedicated app (the example interpreter is the repository's pinned BrowserGym
+environment):
+
+```bash
+cd /path/to/affordance-runtime
+DEPLOYMENT_PYTHON=/path/to/browsergym-python
+uv pip install --python "$DEPLOYMENT_PYTHON" -e . \
+  -e 'external/interaction-shell/backend[deployment]'
+
+set -a
+source .env
+set +a
+export PYTHONPATH="$PWD/src:$PWD/external/interaction-shell/backend"
+export MINIWOB_URL=http://127.0.0.1:18888/miniwob/
+export INTERACTION_SHELL_BROWSERGYM_TASK_ID=browsergym/miniwob.click-test
+"$DEPLOYMENT_PYTHON" -m uvicorn interaction_shell.deployment_app:app \
+  --host 127.0.0.1 --port 8200
+```
+
+`/health` reports `runtime_execution`, `viewer`, and `durable_resume`
+independently. The first real profile uses local BrowserGym/Playwright;
+Viewer and durable resume intentionally remain typed unavailable.
+
 Start the frontend in another shell:
 
 ```bash
 cd external/interaction-shell/frontend
 npm install
-SHELL_BACKEND_URL=http://127.0.0.1:8100 npm run dev -- --port 3100
+SHELL_BACKEND_URL=http://127.0.0.1:8200 npm run dev -- --port 3100
 ```
 
 Open `http://127.0.0.1:3100` for the operator shell. It contains only

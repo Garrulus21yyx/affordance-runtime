@@ -9,6 +9,17 @@ activity projection and private-field exclusion, trace-root confinement and dige
 desktop/mobile rendering, Labs navigation, and hidden-drawer focus isolation. No live benchmark was launched for this
 UI change, so it contributes no new task witness and does not alter any benchmark acceptance or closure claim.
 
+The separate external interaction shell's local real-execution profile has now
+passed its Phase 0–2 deployment gate. A held-out Web/UI smoke used one isolated
+BrowserGym session, one real dispatch, two fresh observations, native
+`verified_success`, Runtime-owned SSE, explicit close, and clean application
+shutdown. A separate real two-session check proved independent browser owners
+and that closing one leaves the other alive. The reusable BrowserGym native
+task-state classifier now belongs to the surface package, while the existing
+benchmark verifier is a compatibility projection of that result. These were
+deployment smokes only: no benchmark cohort was launched, no benchmark artifact
+was accepted, and the reopened/non-closed benchmark status below is unchanged.
+
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear

@@ -1109,6 +1109,10 @@ session cannot alter the other; no global mutable Runtime/provider-policy instan
 
 Owner: deployment package.
 
+Status: implemented and real-deployment verified on 2026-08-26 for the local
+BrowserGym/Playwright profile. This status does not include Viewer, durable
+resume, revision, takeover, or benchmark acceptance.
+
 1. Add `interaction_shell.deployment_app` that loads the existing model/provider configuration and constructs the Phase
    1 private session constructor.
 2. First profile: reuse the existing Playwright/BrowserGym `WorldEnvironment`; expose Viewer as typed unavailable.
@@ -1121,6 +1125,24 @@ Owner: deployment package.
 Exit evidence: at least one real browser task moves the actual page and reaches an owner-produced waiting or terminal
 status through the deployed API. `Viewer unavailable` does not prevent it. No live benchmark is implied; any benchmark
 run still requires separate user authorization.
+
+Recorded evidence: a held-out Web/UI run opened one session, admitted the exact
+BrowserGym goal, selected and dispatched one real `activate` action, captured a
+second fresh World, received native `verified_success`, streamed
+`STEP_FINISHED/RUN_FINISHED` through the Next.js same-origin route, rendered
+`done` in the Shell, accepted explicit close, and completed application
+shutdown. A separate real two-session witness proved distinct environments and
+owner threads and showed the second browser remained alive after closing the
+first. The reusable native task-state classifier now belongs to the BrowserGym
+surface; the benchmark policy is only a compatibility projection.
+
+Two deployment-boundary defects were closed by that evidence. BrowserGym
+0.14.3's process-global synchronous Playwright cache is migrated at all cached
+import sites to owner-thread-local driver state before reset, so per-session
+owner threads cannot share greenlets or stop each other's drivers. SSE responses
+declare `no-cache, no-transform`, identity encoding, and buffering disabled, so
+the Next.js proxy cannot gzip-buffer Runtime events until disconnect. Neither
+repair adds Shell Runtime state or a second event stream.
 
 ### Phase 3 — read-only Live View deployment
 

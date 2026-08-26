@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
+from collections.abc import Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from ag_ui.core import CustomEvent
@@ -29,6 +32,7 @@ from .diagnosis import (
     PublicTraceExport,
 )
 from .manager import RunSessionManager, SessionNotFound, SessionUnauthorized
+from .port import RuntimeSessionUnavailable
 from .unavailable_port import UnavailableRuntimeSessionPort
 
 
@@ -45,9 +49,22 @@ def _event_position(value: str) -> tuple[str | None, int]:
     return (epoch or None), int(raw_cursor)
 
 
-def create_app(manager: RunSessionManager | None = None) -> FastAPI:
+HealthProvider = Callable[[], Mapping[str, object] | Awaitable[Mapping[str, object]]]
+
+
+def create_app(
+    manager: RunSessionManager | None = None,
+    *,
+    health_provider: HealthProvider | None = None,
+) -> FastAPI:
     shell = manager or RunSessionManager(UnavailableRuntimeSessionPort())
-    app = FastAPI(title="Affordance Interaction Shell", version="0.1.0")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        await shell.close_all()
+
+    app = FastAPI(title="Affordance Interaction Shell", version="0.1.0", lifespan=lifespan)
     app.state.manager = shell
     app.state.diagnoses = {}
 
@@ -60,8 +77,13 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
         return HTTPException(404 if isinstance(exc, SessionNotFound) else 403, "session unavailable")
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health() -> dict[str, object]:
+        if health_provider is None:
+            return {"status": "ok"}
+        value = health_provider()
+        if inspect.isawaitable(value):
+            value = await value
+        return dict(value)
 
     @app.get("/schemas/shell-event", response_model=ShellEvent)
     async def shell_event_schema() -> ShellEvent:
@@ -92,7 +114,10 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
 
     @app.post("/sessions", response_model=CreateSessionResponse, status_code=201)
     async def create_session(body: CreateSessionRequest) -> CreateSessionResponse:
-        return await shell.create(body.ttl_seconds)
+        try:
+            return await shell.create(body.ttl_seconds)
+        except RuntimeSessionUnavailable as exc:
+            raise HTTPException(503, exc.code) from exc
 
     @app.get("/sessions/{session_id}", response_model=RuntimeSessionSnapshot)
     async def get_snapshot(session_id: str, session_key: str = Depends(key)):
@@ -145,7 +170,15 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
                         idle = 0
                 await asyncio.sleep(0.1)
 
-        return StreamingResponse(stream(), media_type="text/event-stream")
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Content-Encoding": "identity",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     async def command(session_id: str, session_key: str, body):
         try:

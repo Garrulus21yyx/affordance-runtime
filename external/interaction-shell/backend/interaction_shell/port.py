@@ -16,6 +16,12 @@ class RuntimeSessionHandle(Protocol):
     """Opaque public handle. It must never expose internal Runtime state."""
 
 
+class RuntimeSessionUnavailable(RuntimeError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 class RuntimeSessionPort(Protocol):
     """The only shell-to-Runtime boundary."""
 

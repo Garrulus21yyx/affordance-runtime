@@ -11,11 +11,13 @@ export function useShellSession() {
   const [notice, setNotice] = useState("");
   const cursor = useRef(0);
   const eventEpoch = useRef("");
+  const sessionOpening = useRef<ReturnType<typeof createSession> | null>(null);
   const sessionId = snapshot?.session_id;
 
   useEffect(() => {
     let active = true;
-    createSession()
+    sessionOpening.current ??= createSession();
+    sessionOpening.current
       .then((created) => {
         if (!active) return;
         setSessionKey(created.session_key);

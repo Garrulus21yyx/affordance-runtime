@@ -30,6 +30,8 @@ def test_external_production_has_no_forbidden_runtime_imports():
 def test_external_runtime_imports_are_limited_to_the_versioned_public_session_port():
     runtime_imports: set[str] = set()
     for path in production_python_files():
+        if path.name == "deployment_app.py":
+            continue
         tree = ast.parse(path.read_text(), filename=str(path))
         runtime_imports.update(
             node.module
@@ -44,6 +46,30 @@ def test_external_runtime_imports_are_limited_to_the_versioned_public_session_po
             if alias.name.startswith("affordance_runtime")
         )
     assert runtime_imports == {"affordance_runtime.app.public_session"}
+
+
+def test_deployment_composition_imports_only_named_core_owners():
+    path = EXTERNAL / "backend" / "interaction_shell" / "deployment_app.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    imports = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module
+        and node.module.startswith("affordance_runtime")
+    }
+    assert imports == {
+        "affordance_runtime.agent.decision_capability",
+        "affordance_runtime.agent.observability",
+        "affordance_runtime.app.composition",
+        "affordance_runtime.app.public_session",
+        "affordance_runtime.evaluation",
+        "affordance_runtime.model.policy",
+        "affordance_runtime.surfaces.browsergym",
+        "affordance_runtime.task",
+        "affordance_runtime.world.orchestrator",
+    }
+    assert not any("benchmarks" in name for name in imports)
 
 
 def test_external_scope_contains_no_platform_or_custom_media_implementation():

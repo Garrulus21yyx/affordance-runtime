@@ -25,6 +25,37 @@ controls are visibly unavailable until their owning Runtime contracts exist; the
 only launch and stop owner. Run history and automatic bad-case grouping are bounded to the current Console process.
 This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
 
+### External interaction shell real-execution profile
+
+Phases 0–2 of the separately packaged external interaction shell are now
+implemented. `interaction_shell.api:app` remains fail-closed and the Demo
+remains synthetic; real local execution starts only through
+`interaction_shell.deployment_app:app`. Each Web session creates its own
+TargetRuntime, PydanticAI ActionPolicy/history, Unified World environment,
+BrowserGym browser context, public Runtime session handle, event epoch, and
+per-session trace directory. The Shell manager retains only the opaque handle,
+TTL, command lock/idempotency admission, and bounded conversation, and directly
+forwards Runtime-owned `events(after)`.
+
+The real BrowserGym witness found that BrowserGym 0.14.3's nominally global
+synchronous Playwright cache cannot be shared by per-session owner threads. The
+BrowserGym integration boundary now installs owner-thread-local driver access
+at every cached BrowserGym import site before reset; browser contexts remain
+independent, and closing one real session leaves the other alive. The deployed
+TaskEvaluator consumes the surface-owned native task-state classifier with
+fresh World lineage; benchmark code projects that same result into its legacy
+benchmark types instead of owning a second classifier. Same-origin SSE declares
+an identity, non-transforming, non-buffered response so asynchronous Runtime
+events reach the Next.js UI incrementally.
+
+A held-out local real-execution run opened one Web session, made one real
+BrowserGym dispatch, captured two observations, terminated from native
+`verified_success`, updated the Shell to `done` through SSE, accepted explicit
+close, and completed application shutdown. Viewer, checkpoint/pause/resume,
+revision, compensation, and takeover remain unavailable. This deployment smoke
+is not a benchmark witness and does not alter the reopened overall project
+status.
+
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
 large-page liveness, viewport-grounded media, canonical public-identity, and linear fresh-World projection repairs is

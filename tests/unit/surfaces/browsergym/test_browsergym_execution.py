@@ -3,6 +3,7 @@ import copy
 import threading
 import time
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -182,6 +183,45 @@ def test_completed_command_timeout_does_not_poison_owner() -> None:
 
     assert not worker.is_alive()
     assert owner._command_timed_out.is_set() is False  # noqa: SLF001
+
+
+def test_browsergym_playwright_driver_is_owned_per_environment_thread() -> None:
+    main_driver = object()
+    worker_driver = object()
+    observed: list[object] = []
+    browsergym_backend._set_thread_owned_browsergym_playwright(main_driver)  # noqa: SLF001
+
+    def worker() -> None:
+        browsergym_backend._set_thread_owned_browsergym_playwright(worker_driver)  # noqa: SLF001
+        observed.append(browsergym_backend._get_thread_owned_browsergym_playwright())  # noqa: SLF001
+        browsergym_backend._set_thread_owned_browsergym_playwright(None)  # noqa: SLF001
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=1)
+
+    assert not thread.is_alive()
+    assert observed == [worker_driver]
+    assert browsergym_backend._get_thread_owned_browsergym_playwright() is main_driver  # noqa: SLF001
+    browsergym_backend._set_thread_owned_browsergym_playwright(None)  # noqa: SLF001
+
+
+def test_browsergym_playwright_migration_updates_cached_getter_sites(monkeypatch) -> None:
+    modules = {name: SimpleNamespace() for name in ("browsergym.core", "browsergym.core.env", "browsergym.core.chat")}
+    monkeypatch.setattr(browsergym_backend, "_browsergym_playwright_patch_installed", False)
+    monkeypatch.setattr(browsergym_backend, "import_module", modules.__getitem__)
+
+    browsergym_backend._install_thread_owned_browsergym_playwright()  # noqa: SLF001
+
+    for module in modules.values():
+        assert (
+            module._get_global_playwright  # type: ignore[attr-defined]
+            is browsergym_backend._get_thread_owned_browsergym_playwright  # noqa: SLF001
+        )
+    assert (
+        modules["browsergym.core"]._set_global_playwright  # type: ignore[attr-defined]
+        is browsergym_backend._set_thread_owned_browsergym_playwright  # noqa: SLF001
+    )
 
 
 def _drag_fixture():

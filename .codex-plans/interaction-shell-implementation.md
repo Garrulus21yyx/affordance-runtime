@@ -1,14 +1,15 @@
 # External Interaction Shell implementation plan
 
-Status: in_progress (Phase 0 baseline first; Phase 1-2 authorized)
+Status: complete through Phase 2 (Phase 3+ not started)
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
 
 ## Invariants
 
-- Core control owners and authoritative docs remain untouched; the authorized
-  Core change is limited to a versioned public session boundary and trace fanout.
+- Core changes stay within the authorized public session boundary, trace
+  fanout, and BrowserGym surface-owned execution/evaluation boundaries;
+  authoritative architecture and benchmark docs record their current status.
 - The shell consumes one versioned `RuntimeSessionPort`, closed `ShellCommand`, one current `RuntimeSessionSnapshot`, and one ordered `ShellEvent` stream.
 - Runtime facts are projected exactly once at the adapter boundary; HTTP/SSE/UI reuse that representation.
 - Unsupported Runtime capabilities remain typed `Unsupported`; no simulated cancellation, revision, takeover, completion, or Runtime state machine.
@@ -138,12 +139,26 @@ Constraints:
       identities, event epochs, and cleanup counters; concurrent readers received
       identical owner timestamps/envelopes. Ruff, MyPy, Pyright, frontend unit,
       lint, typecheck, production build, and Demo E2E passed.
-13. **pending — Phase 2: add the real deployment entrypoint.**
+13. **done — Phase 2: add the real deployment entrypoint.**
     - Add thin `interaction_shell.deployment_app` composition over existing
       provider/runtime configuration and per-session BrowserGym/Playwright.
     - Keep Viewer typed unavailable.
     - Verify one real deployed chain from Web session through page mutation,
       fresh World/evaluation, snapshot/SSE/UI, and cleanup.
+    - Owner finding: the existing MiniWoB native outcome interpreter lives under
+      the benchmark package. The deployment must consume a reusable BrowserGym
+      surface-owned native TaskEvaluator rather than import benchmark policy or
+      branch on a smoke case/task label.
+    - Root-cause repairs from the real witness: BrowserGym 0.14.3's process-global
+      synchronous Playwright cache is now owner-thread-local at every cached
+      import site; the Next.js SSE path uses identity/no-transform/no-buffer
+      headers; StrictMode shares one in-flight session open; trace directories
+      are per session; cancelled late browser opens are recovered and closed.
+    - Evidence: the held-out UI run issued one session create, one real dispatch,
+      two observations, native `verified_success`, incremental SSE/UI `done`,
+      explicit close, and clean application shutdown. A separate real concurrent
+      witness opened distinct BrowserGym owners and kept the second alive after
+      closing the first. No benchmark was run.
 
 ## Current-work produced files
 
@@ -154,3 +169,31 @@ Constraints:
   typed open stages, epoch/cursor/timestamp ownership, and partial-open cleanup.
 - `external/interaction-shell/backend/interaction_shell/manager.py` — direct
   owner-event passthrough with no Shell event list or cursor override.
+- `.codex-plans/interaction-shell-phase2-real-smoke.md` — real deployment,
+  concurrent isolation, SSE/UI, and cleanup evidence.
+- `external/interaction-shell/backend/interaction_shell/deployment_app.py` —
+  thin local BrowserGym deployment composition.
+- `src/affordance_runtime/surfaces/browsergym/task_evaluator.py` — reusable
+  native task-state interpretation and fresh-World TaskEvaluator.
+
+## Phase 2 final verification
+
+- Affected Core/deployment/benchmark compatibility slice: 107 passed.
+- External backend and architecture suite: 44 passed.
+- Frontend: 3 unit tests passed; ESLint, TypeScript, generated OpenAPI, and
+  production build passed.
+- Synthetic Demo Playwright E2E: 1 passed.
+- Ruff, touched-file Ruff format, Pyright, touched typed-owner MyPy, compileall,
+  and `git diff --check`: passed.
+- Default `interaction_shell.api:app`: `StartTask` still returned typed
+  `unsupported`; advertised capabilities remained close-only.
+- Full root provider-free suite: 1758 passed / 19 skipped, with two known
+  non-Phase-2 failures retained honestly: documentation governance rejects the
+  branch's pre-existing `docs/interaction-shell.md`, which the user explicitly
+  required as the implementation-sequence source; one semantic-delivery replay
+  requires a historical live trace absent from this worktree. No production
+  workaround or benchmark run was added for either.
+- Held-out real deployment: one Web session, one BrowserGym dispatch, two fresh
+  observations, native `verified_success`, incremental SSE/UI `done`, explicit
+  close, and clean lifespan shutdown. The independent real two-session witness
+  kept the second browser alive after closing the first.

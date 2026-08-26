@@ -13,6 +13,7 @@ from affordance_runtime.app.public_session import (
     PublicRuntimeSessionSnapshot,
     PublicSessionCapability,
     PublicSessionConflict,
+    PublicSessionOpenError,
 )
 
 from .contracts import (
@@ -33,6 +34,7 @@ from .contracts import (
     StartTask,
     ViewerState,
 )
+from .port import RuntimeSessionUnavailable
 
 
 class ViewerStateProjector(Protocol):
@@ -66,7 +68,10 @@ class CoreRuntimeSessionPort:
         )
 
     async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle:
-        return await self.factory.open(session_id, expires_at)
+        try:
+            return await self.factory.open(session_id, expires_at)
+        except PublicSessionOpenError as exc:
+            raise RuntimeSessionUnavailable(exc.code) from exc
 
     async def snapshot(self, handle: PublicRuntimeSessionHandle) -> RuntimeSessionSnapshot:
         return _snapshot(await handle.snapshot(), self.viewer_projector(handle))

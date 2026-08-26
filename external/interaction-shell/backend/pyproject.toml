@@ -15,6 +15,12 @@ dependencies = [
 
 [project.optional-dependencies]
 model = ["pydantic-ai>=2,<3"]
+deployment = [
+  "browsergym-miniwob==0.14.3",
+  "playwright==1.44.0",
+  "pydantic-ai>=2,<3",
+  "python-dotenv>=1,<2",
+]
 test = [
   "httpx>=0.28,<1",
   "hypothesis>=6.130,<7",
