@@ -1073,7 +1073,7 @@ first prove why the existing `RuntimeSessionPort` command/snapshot/event algebra
 
 ### Phase 0 — preserve and attest the implemented foundation
 
-Status: implemented in the current worktree; delivery hygiene still open.
+Status: implemented, provider-free gates attested, and committed before Phase 1.
 
 1. Keep `RuntimeSessionPort`, the closed command union, snapshot/event schemas, cursor-based SSE, duplicate/stale
    command handling, bounded conversation, diagnosis projection, frontend, and contract demo unchanged except for
