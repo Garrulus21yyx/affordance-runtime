@@ -120,12 +120,27 @@ backend create call.
 - terminal snapshot/event reads trigger idempotent handle cleanup;
 - explicit close after terminal remains accepted;
 - closing one real browser owner leaves the other alive;
+- the deployment-private cleanup owner closes each session's BrowserGym surface
+  and flushes/closes its optional trace viewer worker exactly once;
+- environment-open failure flushes an already-created trace worker, and later
+  composition failure closes both the trace worker and surface;
+- trace cleanup failure is logged without skipping surface cleanup or changing
+  task truth;
 - a composition failure after environment creation closes that environment;
 - cancellation during synchronous BrowserGym open waits for the late result and
-  closes it instead of losing the newly created browser;
+  closes it instead of losing the newly created browser, then closes the trace
+  worker;
 - application lifespan shutdown calls idempotent `RunSessionManager.close_all`;
 - environment-open errors remain typed HTTP 503 responses and log their private
   server-side exception without exposing it to the client.
+
+The focused lifecycle tests now report seven passing cases, including the
+previously missing positive witness:
+
+```text
+surface_close_count 1
+trace_flush_count   1
+```
 
 ## Conclusion
 

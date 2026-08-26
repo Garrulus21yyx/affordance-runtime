@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 from interaction_shell import deployment_app
 
-from affordance_runtime.agent.observability import NullRunTraceSink
 from affordance_runtime.app.public_session import PublicSessionOpenError, PublicSessionOpenStage
 from tests.unit.agent.test_target_runtime_facade import _runtime
 
@@ -43,13 +42,36 @@ class FakeSurface:
         raise AssertionError("unit composition does not evaluate a task")
 
 
-def _patch_composition(monkeypatch, *, fail_composition: bool = False):
+class FakeTrace:
+    def __init__(self, identity: int, *, flush_fails: bool = False) -> None:
+        self.identity = identity
+        self.flush_fails = flush_fails
+        self.flush_count = 0
+
+    def flush_viewer(self) -> None:
+        self.flush_count += 1
+        if self.flush_fails:
+            raise RuntimeError("trace flush failed")
+
+
+def _patch_composition(
+    monkeypatch,
+    *,
+    fail_composition: bool = False,
+    trace_flush_fails: bool = False,
+):
     surfaces: list[FakeSurface] = []
+    traces: list[FakeTrace] = []
 
     def open_surface(*_args, **_kwargs):
         surface = FakeSurface(len(surfaces) + 1)
         surfaces.append(surface)
         return surface
+
+    def open_trace(*_args, **_kwargs):
+        trace = FakeTrace(len(traces) + 1, flush_fails=trace_flush_fails)
+        traces.append(trace)
+        return trace
 
     monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", open_surface)
     monkeypatch.setattr(deployment_app, "UnifiedWorldEnvironment", lambda _sources: FakeWorld())
@@ -61,7 +83,7 @@ def _patch_composition(monkeypatch, *, fail_composition: bool = False):
     monkeypatch.setattr(
         deployment_app,
         "trace_recorder_from_environment",
-        lambda *_args, **_kwargs: NullRunTraceSink(),
+        open_trace,
     )
     if fail_composition:
         monkeypatch.setattr(
@@ -71,12 +93,28 @@ def _patch_composition(monkeypatch, *, fail_composition: bool = False):
         )
     else:
         monkeypatch.setattr(deployment_app, "compose_target_runtime", lambda *_args, **_kwargs: _runtime())
-    return surfaces
+    return surfaces, traces
+
+
+@pytest.mark.asyncio
+async def test_deployment_session_close_releases_surface_and_trace_once(monkeypatch):
+    surfaces, traces = _patch_composition(monkeypatch)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    )
+    session = await factory.open("session:close", datetime.now(UTC) + timedelta(minutes=5))
+
+    await session.close()
+    await session.close()
+
+    assert [surface.close_count for surface in surfaces] == [1]
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 @pytest.mark.asyncio
 async def test_deployment_factory_opens_and_closes_disjoint_runtime_browser_sessions(monkeypatch):
-    surfaces = _patch_composition(monkeypatch)
+    surfaces, traces = _patch_composition(monkeypatch)
     factory = deployment_app.BrowserGymDeploymentSessionFactory(
         deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
         {"MINIWOB_URL": "http://example.test/miniwob/"},
@@ -92,14 +130,37 @@ async def test_deployment_factory_opens_and_closes_disjoint_runtime_browser_sess
     assert len(surfaces) == 2
     await first.close()
     assert [surface.close_count for surface in surfaces] == [1, 0]
+    assert [trace.flush_count for trace in traces] == [1, 0]
     assert (await second.snapshot()).session_id == "session:second"
     await second.close()
     assert [surface.close_count for surface in surfaces] == [1, 1]
+    assert [trace.flush_count for trace in traces] == [1, 1]
+
+
+@pytest.mark.asyncio
+async def test_environment_open_failure_releases_created_trace(monkeypatch):
+    surfaces, traces = _patch_composition(monkeypatch)
+    monkeypatch.setattr(
+        deployment_app.BrowserGymSurfaceAdapter,
+        "open",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("environment open failed")),
+    )
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    )
+
+    with pytest.raises(PublicSessionOpenError) as caught:
+        await factory.open("session:open-failure", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert caught.value.stage is PublicSessionOpenStage.ENVIRONMENT
+    assert surfaces == []
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 @pytest.mark.asyncio
 async def test_deployment_factory_cleans_browser_when_later_composition_fails(monkeypatch):
-    surfaces = _patch_composition(monkeypatch, fail_composition=True)
+    surfaces, traces = _patch_composition(monkeypatch, fail_composition=True)
     factory = deployment_app.BrowserGymDeploymentSessionFactory(
         deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
         {"MINIWOB_URL": "http://example.test/miniwob/"},
@@ -109,11 +170,27 @@ async def test_deployment_factory_cleans_browser_when_later_composition_fails(mo
     assert caught.value.stage is PublicSessionOpenStage.SESSION
     assert len(surfaces) == 1
     assert surfaces[0].close_count == 1
+    assert [trace.flush_count for trace in traces] == [1]
+
+
+@pytest.mark.asyncio
+async def test_trace_cleanup_failure_is_fail_open_for_surface_cleanup(monkeypatch):
+    surfaces, traces = _patch_composition(monkeypatch, trace_flush_fails=True)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    )
+    session = await factory.open("session:trace-failure", datetime.now(UTC) + timedelta(minutes=5))
+
+    await session.close()
+
+    assert [surface.close_count for surface in surfaces] == [1]
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 @pytest.mark.asyncio
 async def test_cancelled_session_open_recovers_and_closes_late_browser(monkeypatch):
-    _patch_composition(monkeypatch)
+    _surfaces, traces = _patch_composition(monkeypatch)
     started = threading.Event()
     release = threading.Event()
     surface = FakeSurface(1)
@@ -139,6 +216,7 @@ async def test_cancelled_session_open_recovers_and_closes_late_browser(monkeypat
         await opening
 
     assert surface.close_count == 1
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 def test_deployment_health_separates_runtime_viewer_and_durable_resume(monkeypatch):

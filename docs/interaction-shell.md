@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Contract/demo implemented; real deployment and resumable control not yet closed**
+Status: **Local real execution implemented and verified; Viewer and resumable control unavailable**
 
 Date: 2026-08-26
 
@@ -16,12 +16,13 @@ lifecycle, command serialization, bounded conversational revision input, event d
 browser viewing. It consumes only versioned typed Runtime commands, events, snapshots, trace exports, and benchmark
 artifacts. It does not import, mutate, or drive `CoreAgentLoop` internals.
 
-The shell contract, synthetic demo, frontend, diagnosis projection, and provider-free tests are implemented. That is
-not the same as a deployable product path. The production-safe default deliberately uses an unavailable Runtime port;
-the demo owns no real browser or GUI action; no deployment entry currently composes a real per-session Runtime,
-environment lease, viewer lease, and cleanup; and running pause, cancellation, revision, durable resume, and takeover
-are not public Runtime capabilities. These gaps must remain visible as typed unavailable states rather than being
-hidden by the UI or simulated by the shell.
+The shell contract, synthetic demo, frontend, diagnosis projection, provider-free tests, and local real-execution
+profile are implemented. The production-safe default deliberately uses an unavailable Runtime port, while
+`interaction_shell.deployment_app:app` composes one real Runtime, policy/history, BrowserGym environment, browser
+context, trace sink, and idempotent resource cleanup owner per Web session. The local profile has passed real API/UI
+execution and two-session isolation witnesses. Viewer, running pause/cancellation/revision, durable resume, and
+takeover are not public Runtime capabilities and remain visible as typed unavailable states rather than being hidden
+by the UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -94,11 +95,11 @@ The following states must not be collapsed into one label such as "implemented":
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
 | Core public session adapter | Implemented but in-memory | It wraps currently supported start, answer, confirmation, snapshot/event, and close operations. |
-| Real Runtime/environment composition | Missing | No ASGI entry constructs the configured Runtime and one real browser/environment lease per session. |
-| Live View deployment | Missing | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
-| Running pause/revise/cancel and durable resume | Missing | The public Runtime port does not advertise these transitions. |
-| Real end-to-end deployment witness | Missing | No real browser task has passed through the deployed Shell-to-Runtime path. |
-| Delivery hygiene | Open | The implementation remains uncommitted in the current worktree at this document date. |
+| Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
+| Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
+| Running pause/revise/cancel and durable resume | Unavailable | The public Runtime port does not advertise these transitions. |
+| Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
+| Delivery hygiene | Closed through Phase 2 | Phase 0–2 changes are committed and synchronized with the branch origin. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1143,6 +1144,14 @@ owner threads cannot share greenlets or stop each other's drivers. SSE responses
 declare `no-cache, no-transform`, identity encoding, and buffering disabled, so
 the Next.js proxy cannot gzip-buffer Runtime events until disconnect. Neither
 repair adds Shell Runtime state or a second event stream.
+
+The deployment factory also owns one private idempotent cleanup closure per
+session. It closes the BrowserGym surface and flushes/closes the optional trace
+viewer worker on normal close, TTL, terminal cleanup, application shutdown, and
+partial session creation. Trace cleanup failures are logged and cannot skip
+surface cleanup or change task truth. Focused tests cover normal exactly-once
+cleanup, environment-open failure, later composition failure, cancellation,
+trace failure, and two-session resource independence.
 
 ### Phase 3 — read-only Live View deployment
 

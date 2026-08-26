@@ -6,12 +6,12 @@ import asyncio
 import logging
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
-from affordance_runtime.agent.observability import trace_recorder_from_environment
+from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.app.public_session import (
     PublicSessionOpenError,
@@ -41,6 +41,42 @@ from .manager import RunSessionManager
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _DeploymentSessionCleanup:
+    """Own every deployment resource created for one opaque Runtime session."""
+
+    session_id: str
+    trace_sink: RunTraceSink
+    surface: BrowserGymSurfaceAdapter | None = None
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
+
+    def attach_surface(self, surface: BrowserGymSurfaceAdapter) -> None:
+        if self._closed or self.surface is not None:
+            raise RuntimeError("deployment surface ownership is already resolved")
+        self.surface = surface
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            surface_error: BaseException | None = None
+            if self.surface is not None:
+                try:
+                    await self.surface.close()
+                except BaseException as exc:
+                    surface_error = exc
+            flush_viewer = getattr(self.trace_sink, "flush_viewer", None)
+            if callable(flush_viewer):
+                try:
+                    await asyncio.to_thread(flush_viewer)
+                except Exception:
+                    logger.exception("trace viewer cleanup failed for session %s", self.session_id)
+            if surface_error is not None:
+                raise surface_error
 
 
 @dataclass(frozen=True)
@@ -95,17 +131,21 @@ class BrowserGymDeploymentSessionFactory:
                 "runtime_factory_failed",
             ) from exc
 
+        cleanup = _DeploymentSessionCleanup(session_id, trace_sink)
         try:
             surface = await _open_surface(self.settings)
         except asyncio.CancelledError:
+            await cleanup.close()
             raise
         except Exception as exc:
+            await cleanup.close()
             logger.exception("BrowserGym environment creation failed for session %s", session_id)
             raise PublicSessionOpenError(
                 PublicSessionOpenStage.ENVIRONMENT,
                 "environment_factory_failed",
             ) from exc
 
+        cleanup.attach_surface(surface)
         try:
             world = UnifiedWorldEnvironment((surface,))
             runtime = compose_target_runtime(
@@ -116,7 +156,7 @@ class BrowserGymDeploymentSessionFactory:
                 trace_sink=trace_sink,
                 goal_compiler=roles.goal_compiler,
             )
-            lease = RuntimeEnvironmentLease(world, surface.close)
+            lease = RuntimeEnvironmentLease(world, cleanup.close)
             return TargetRuntimeSession(
                 runtime,
                 lease,
@@ -129,7 +169,10 @@ class BrowserGymDeploymentSessionFactory:
                 ),
             )
         except Exception as exc:
-            await surface.close()
+            try:
+                await cleanup.close()
+            except Exception:
+                logger.exception("resource cleanup failed after session composition failure")
             logger.exception("runtime session composition failed for session %s", session_id)
             raise PublicSessionOpenError(
                 PublicSessionOpenStage.SESSION,

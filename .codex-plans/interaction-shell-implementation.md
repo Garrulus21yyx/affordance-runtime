@@ -139,7 +139,7 @@ Constraints:
       identities, event epochs, and cleanup counters; concurrent readers received
       identical owner timestamps/envelopes. Ruff, MyPy, Pyright, frontend unit,
       lint, typecheck, production build, and Demo E2E passed.
-13. **done — Phase 2: add the real deployment entrypoint.**
+13. **done — Phase 2: add and fully close the real deployment entrypoint.**
     - Add thin `interaction_shell.deployment_app` composition over existing
       provider/runtime configuration and per-session BrowserGym/Playwright.
     - Keep Viewer typed unavailable.
@@ -159,6 +159,13 @@ Constraints:
       explicit close, and clean application shutdown. A separate real concurrent
       witness opened distinct BrowserGym owners and kept the second alive after
       closing the first. No benchmark was run.
+    - Cleanup closure: one deployment-private idempotent owner now closes the
+      BrowserGym surface and flushes/closes the optional trace viewer worker.
+      Environment-open failure, later composition failure, cancellation,
+      normal/session/TTL/terminal/application close, and concurrent sessions all
+      converge on that owner. Trace cleanup failure is logged and fail-open for
+      task truth and surface cleanup. The delivery-state truth table now agrees
+      with the verified Phase 2 status.
 
 ## Current-work produced files
 
@@ -178,8 +185,8 @@ Constraints:
 
 ## Phase 2 final verification
 
-- Affected Core/deployment/benchmark compatibility slice: 107 passed.
-- External backend and architecture suite: 44 passed.
+- Affected Core/deployment/benchmark compatibility slice: 110 passed.
+- External backend and architecture suite: 47 passed.
 - Frontend: 3 unit tests passed; ESLint, TypeScript, generated OpenAPI, and
   production build passed.
 - Synthetic Demo Playwright E2E: 1 passed.
