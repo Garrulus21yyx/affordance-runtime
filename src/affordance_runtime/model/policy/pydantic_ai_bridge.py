@@ -8,13 +8,15 @@ execution, risk, observation, and evaluation.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
@@ -90,6 +92,7 @@ _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
 _HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.12
 _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
+_STEP_PERSISTENCE_HISTORY_FORMAT = "pydantic-ai.step-persistence.v1"
 _HISTORY_COMPACTION_SUMMARY_PROMPT = """
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
@@ -134,6 +137,7 @@ _HISTORY_COMPACTION_INSTRUCTIONS = (
 )
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
+    from pydantic_ai_harness.step_persistence import StepStore
 
 
 @dataclass(frozen=True)
@@ -218,6 +222,9 @@ class PydanticAIGroundedDecisionPort:
     model_id: str
     endpoint_host: str
     supports_multimodal: bool
+    step_store: StepStore | None = field(default=None, repr=False)
+    step_conversation_id: str = field(default="", repr=False)
+    tracer_provider: object | None = field(default=None, repr=False)
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     transport_timeout_s: float = 85.0
     policy_timeout_s: float | None = None
@@ -256,6 +263,7 @@ class PydanticAIGroundedDecisionPort:
     last_model_delivery: ModelTurnDelivery | None = field(
         default=None, init=False, compare=False, repr=False
     )
+    last_step_run_id: str = field(default="", init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
@@ -270,6 +278,8 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("provider retry delay must be in (0, 5]")
         if not 0 < self.history_compaction_timeout_s <= 60:
             raise ValueError("history compaction timeout must be in (0, 60]")
+        if self.step_store is not None and not self.step_conversation_id.strip():
+            raise ValueError("step persistence requires one conversation identity")
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
     def close_deferred_call(self, step: object) -> None:
@@ -325,6 +335,62 @@ class PydanticAIGroundedDecisionPort:
             "active_task_identity": list(identity) if identity is not None else None,
         }
 
+    async def persist_checkpoint_history(self) -> Mapping[str, object]:
+        """Save one immutable settled snapshot in the official Harness store."""
+
+        fallback = self.export_checkpoint_history()
+        store = self.step_store
+        if store is None:
+            return fallback
+        identity = self.active_task_identity
+        if identity is None:
+            raise ValueError("PydanticAI checkpoint history task identity is unavailable")
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+        from pydantic_ai_harness.step_persistence import (
+            ContinuableSnapshot,
+            RunRecord,
+            is_provider_valid,
+        )
+
+        messages = list(self.message_history)
+        if not is_provider_valid(messages):
+            raise ValueError("PydanticAI checkpoint history contains unsettled tool work")
+        encoded = ModelMessagesTypeAdapter.dump_json(messages)
+        history_digest = hashlib.sha256(encoded).hexdigest()
+        run_id = f"action-policy-checkpoint-{uuid4().hex}"
+        await store.register_run(
+            RunRecord(
+                run_id=run_id,
+                conversation_id=self.step_conversation_id,
+                parent_run_id=self.last_step_run_id or None,
+                agent_name="action-policy-checkpoint",
+                metadata={
+                    "kind": "runtime_safe_point",
+                    "task_id": identity[0],
+                    "task_revision": str(identity[1]),
+                },
+            )
+        )
+        await store.save_snapshot(
+            ContinuableSnapshot(
+                run_id=run_id,
+                step_index=len(messages),
+                messages=messages,
+                conversation_id=self.step_conversation_id,
+                parent_run_id=self.last_step_run_id or None,
+                agent_name="action-policy-checkpoint",
+                state="complete",
+            )
+        )
+        object.__setattr__(self, "last_step_run_id", run_id)
+        return {
+            "format": _STEP_PERSISTENCE_HISTORY_FORMAT,
+            "run_id": run_id,
+            "conversation_id": self.step_conversation_id,
+            "message_digest": history_digest,
+            "active_task_identity": list(identity),
+        }
+
     def restore_checkpoint_history(
         self,
         payload: Mapping[str, object],
@@ -356,6 +422,64 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "message_history", restored)
         object.__setattr__(self, "active_task_identity", (task_id, task_revision))
 
+    async def restore_persisted_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        """Restore an exact settled Harness snapshot, with legacy fallback."""
+
+        if payload.get("format") == "pydantic-ai.messages.v1":
+            self.restore_checkpoint_history(
+                payload,
+                task_id=task_id,
+                task_revision=task_revision,
+            )
+            return
+        if payload.get("format") != _STEP_PERSISTENCE_HISTORY_FORMAT:
+            raise ValueError("PydanticAI checkpoint history format is unsupported")
+        store = self.step_store
+        if store is None:
+            raise ValueError("PydanticAI step persistence store is unavailable")
+        identity = payload.get("active_task_identity")
+        if not isinstance(identity, list | tuple) or tuple(identity) != (
+            task_id,
+            task_revision,
+        ):
+            raise ValueError("PydanticAI checkpoint history belongs to another task")
+        run_id = payload.get("run_id")
+        conversation_id = payload.get("conversation_id")
+        expected_digest = payload.get("message_digest")
+        if (
+            not isinstance(run_id, str)
+            or not run_id.startswith("action-policy-checkpoint-")
+            or conversation_id != self.step_conversation_id
+            or not isinstance(expected_digest, str)
+            or len(expected_digest) != 64
+        ):
+            raise ValueError("PydanticAI step persistence reference is invalid")
+        snapshot = await store.latest_snapshot(run_id=run_id)
+        if (
+            snapshot is None
+            or snapshot.state != "complete"
+            or snapshot.conversation_id != conversation_id
+            or snapshot.agent_name != "action-policy-checkpoint"
+        ):
+            raise ValueError("PydanticAI settled checkpoint history is unavailable")
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+        encoded = ModelMessagesTypeAdapter.dump_json(snapshot.messages)
+        if hashlib.sha256(encoded).hexdigest() != expected_digest:
+            raise ValueError("PydanticAI settled checkpoint history digest is invalid")
+        restored = tuple(snapshot.messages)
+        if _pending_tool_parts_from_history(restored):
+            raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
+        object.__setattr__(self, "message_history", restored)
+        object.__setattr__(self, "active_task_identity", (task_id, task_revision))
+        object.__setattr__(self, "last_step_run_id", run_id)
+
     def rebind_checkpoint_history(
         self,
         *,
@@ -382,6 +506,29 @@ class PydanticAIGroundedDecisionPort:
             self,
             "active_task_identity",
             (task_id, revised_revision),
+        )
+
+    def _step_persistence_capabilities(
+        self,
+        agent_name: str,
+    ) -> tuple[str, tuple[Any, ...]]:
+        store = self.step_store
+        if store is None:
+            return "", ()
+        from pydantic_ai_harness.step_persistence import StepPersistence
+
+        run_id = f"{agent_name}-{uuid4().hex}"
+        return (
+            run_id,
+            (
+                StepPersistence(
+                    store=store,
+                    agent_name=agent_name,
+                    run_id=run_id,
+                    parent_run_id=self.last_step_run_id or None,
+                    metadata={"role": "action_policy"},
+                ),
+            ),
         )
 
     @property
@@ -456,6 +603,7 @@ class PydanticAIGroundedDecisionPort:
                 DeferredToolRequests,
                 DeferredToolResults,
                 ExternalToolset,
+                InstrumentationSettings,
                 ModelRetry,
                 ToolDefinition,
                 ToolReturn,
@@ -503,12 +651,20 @@ class PydanticAIGroundedDecisionPort:
                 ToolReturn,
                 ToolDefinition,
             )
+            persistence_run_id, persistence_capabilities = (
+                self._step_persistence_capabilities(agent_name)
+            )
             current_agent = Agent(
                 self.model,
                 name=agent_name,
                 instructions=current_instructions,
                 output_type=[str, DeferredToolRequests],
                 retries={"tools": 0, "output": output_retry_budget},
+                capabilities=persistence_capabilities,
+            )
+            current_agent.instrument = InstrumentationSettings(
+                tracer_provider=self.tracer_provider,  # type: ignore[arg-type]
+                include_binary_content=False,
             )
 
             @current_agent.output_validator
@@ -526,7 +682,7 @@ class PydanticAIGroundedDecisionPort:
             started = time.perf_counter()
             with capture_run_messages() as captured_messages:
                 try:
-                    return await self._run_provider_call(
+                    result = await self._run_provider_call(
                         lambda: current_agent.run(
                             current_prompt,
                             toolsets=[current_toolset],
@@ -535,11 +691,22 @@ class PydanticAIGroundedDecisionPort:
                             model_settings=dict(current_envelope.model_settings),
                             message_history=current_history,
                             deferred_tool_results=current_deferred_results,
+                            conversation_id=(
+                                self.step_conversation_id or None
+                            ),
+                            run_id=persistence_run_id or None,
                         ),
                         phase=phase,
                         envelope=current_envelope,
                         provider_error_type=ModelAPIError,
                     )
+                    if persistence_run_id:
+                        object.__setattr__(
+                            self,
+                            "last_step_run_id",
+                            persistence_run_id,
+                        )
+                    return result
                 except UnexpectedModelBehavior:
                     self._record_captured_output_validation_failure(
                         tuple(captured_messages),
@@ -1534,6 +1701,8 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
     """Build native-tool policy transport for supported OpenAI-compatible profiles."""
 
@@ -1553,6 +1722,8 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         model_id=configured.model_id,
         endpoint_host=configured.endpoint_host,
         supports_multimodal=configured.supports_multimodal,
+        step_store=step_store,
+        step_conversation_id=conversation_id,
         perception_profile=selected_perception,
         transport_timeout_s=transport_timeout_s,
         policy_timeout_s=call_timeout_s,
@@ -1729,6 +1900,8 @@ def zhipu_pydantic_ai_policy_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
     """Compatibility entry point for existing Zhipu/Aliyun callers."""
 
@@ -1736,6 +1909,8 @@ def zhipu_pydantic_ai_policy_from_environment(
         environment,
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
+        step_store=step_store,
+        conversation_id=conversation_id,
     )
 
 

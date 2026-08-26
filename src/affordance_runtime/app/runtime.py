@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
@@ -166,6 +167,23 @@ class TargetRuntime:
             raise TypeError("Runtime checkpoint history must be a mapping")
         return history
 
+    async def persist_checkpoint_history(self) -> Mapping[str, object]:
+        """Durably settle model history before the Runtime checkpoint refers to it."""
+
+        persister = getattr(
+            self.decision_ports.action_policy,
+            "persist_checkpoint_history",
+            None,
+        )
+        if not callable(persister):
+            return self.export_checkpoint_history()
+        history = persister()
+        if inspect.isawaitable(history):
+            history = await history
+        if not isinstance(history, Mapping):
+            raise TypeError("Runtime persisted checkpoint history must be a mapping")
+        return history
+
     def restore_checkpoint_history(
         self,
         payload: Mapping[str, object],
@@ -177,6 +195,33 @@ class TargetRuntime:
         if not callable(restorer):
             raise TypeError("Runtime model policy does not support checkpoint restoration")
         restorer(payload, task_id=task_id, task_revision=task_revision)
+
+    async def restore_persisted_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(
+            self.decision_ports.action_policy,
+            "restore_persisted_checkpoint_history",
+            None,
+        )
+        if not callable(restorer):
+            self.restore_checkpoint_history(
+                payload,
+                task_id=task_id,
+                task_revision=task_revision,
+            )
+            return
+        restored = restorer(
+            payload,
+            task_id=task_id,
+            task_revision=task_revision,
+        )
+        if inspect.isawaitable(restored):
+            await restored
 
     def rebind_checkpoint_history(
         self,

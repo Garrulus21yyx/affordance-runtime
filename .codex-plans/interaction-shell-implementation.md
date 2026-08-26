@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 6 complete; Phase 6.5 persistence/trace/idempotency convergence in progress
+Status: Phase 6.5 complete; Phase 7 not started
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -323,7 +323,7 @@ Constraints:
       one semantic-delivery test requires a historical live trace absent from
       the worktree. An initial unfiltered run recorded only those two failures.
       No live benchmark was run; Viewer and Phase 7 were not started.
-18. **in progress — Phase 6.5: reuse model persistence/trace and close command identity.**
+18. **done — Phase 6.5: reuse model persistence/trace and close command identity.**
     - Preserve Runtime ownership of `TaskGoal`, `RunState`, cooperative safe
       points, GUI dispatch receipts, fresh-World currentness, checkpoint/resume
       eligibility, and browser reconnect references.
@@ -364,6 +364,30 @@ Constraints:
       every revision attempt and retains the ID only as a bounded-conversation
       cache. Focused evidence: 23 Runtime checkpoint tests and 13 Shell
       manager/port tests passed; touched Ruff, MyPy, and Pyright checks passed.
+    - Model-continuity milestone implemented: every PydanticAI ActionPolicy call
+      uses official Harness `StepPersistence` with explicit run/conversation
+      identity, while a Runtime safe checkpoint saves one immutable,
+      provider-valid official Harness snapshot through `SqliteStepStore` and stores only its run reference,
+      message digest, and task identity. A new `SqliteStepStore` instance can
+      restore the exact settled messages; legacy embedded
+      `ModelMessagesTypeAdapter` checkpoints remain readable. Deployment maps
+      each session to a deterministic private step-store SQLite file, avoiding
+      the proven concurrent first-schema-initialization lock while preserving
+      restart lookup and complete session isolation.
+    - Trace milestone implemented: PydanticAI native instrumentation emits
+      ActionPolicy model/tool spans with binary content excluded, and the
+      custom OpenAI-compatible/Ollama structured-provider boundary emits
+      compatible `gen_ai.*` spans through the same global or injected
+      OpenTelemetry provider. No trace value participates in checkpoint,
+      receipt, revision, or task authority.
+    - Final focused evidence: 132 Runtime checkpoint/public-session/PydanticAI/
+      provider tests, 91 root architecture tests, and 58 external backend/
+      architecture tests passed. Deployment Pyright, six touched-owner MyPy
+      files, touched Ruff, compileall, and diff checks passed. Failure injection
+      proves model-step persistence failure never publishes `PAUSED`; concurrent
+      session stores initialize without locking; SQLite reopen/digest tampering,
+      official step events, and native/custom OTel spans are covered. No live
+      benchmark was run; Phase 7, Viewer, and takeover were not started.
 
 ## Current-work produced files
 

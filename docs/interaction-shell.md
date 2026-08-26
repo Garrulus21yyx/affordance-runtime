@@ -54,9 +54,9 @@ framework can own without duplicating Runtime authority.
 | Browser automation | existing Playwright/BrowserGym Runtime | browser actions, currentness, or selectors |
 | Browser media/input | Steel Live View or Browserbase | screenshot polling, video encoding, or mouse/keyboard transport |
 | Structured model calls | existing PydanticAI/provider boundary | another LLM or Agent framework |
-| Model-history persistence | PydanticAI `ModelMessagesTypeAdapter` and deferred-tool results | a parallel transcript schema or prose reconstruction |
+| Model-history persistence | PydanticAI Harness `StepPersistence(SqliteStepStore)`, `ModelMessagesTypeAdapter`, and deferred-tool results | a parallel transcript schema or prose reconstruction |
 | Initial durable session storage | SQLite transaction/WAL, with Postgres only when multi-process deployment requires it | a custom event store or event-sourcing platform |
-| Trace, usage, and cost | existing local trace plus Langfuse | another observability platform |
+| Trace, usage, and cost | PydanticAI OpenTelemetry plus the existing Runtime trace/Langfuse projection | another observability platform |
 | Charts | shadcn chart components/Recharts | custom SVG charting |
 | Web end-to-end tests | Playwright | a custom browser test harness |
 
@@ -105,7 +105,7 @@ The following states must not be collapsed into one label such as "implemented":
 | Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
 | Effect reconciliation/compensation | Unavailable | Phase 6 preserves and blocks on prior dispatched truth; Phase 7 has not implemented observation/compensation or automatic undo. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Closed through Phase 6 | Phase 0–6 implementation, tests, documentation, and milestone evidence agree in the current commit. |
+| Delivery hygiene | Closed through Phase 6.5 | Phase 0–6 plus the bounded persistence/trace/idempotency convergence, tests, documentation, and milestone evidence agree in the current commit. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -808,13 +808,21 @@ Three records serve different owners and must not be merged:
 | Record | Purpose | Persistence/visibility |
 |---|---|---|
 | Shell bounded conversation | interpret user-owned follow-up/revision language and render chat | bounded shell/session projection; no GUI execution authority |
-| PydanticAI model messages | preserve exact ActionPolicy tool-call/result conversation | private Runtime checkpoint through PydanticAI serializers |
-| Trace/Langfuse transcript | observe provider calls, repairs, latency, and lineage | append-only diagnosis projection; never resume/control authority |
+| PydanticAI model messages/steps | preserve exact ActionPolicy tool-call/result conversation and model-step lifecycle | Harness `StepPersistence`/`SqliteStepStore`; Runtime checkpoint stores only a settled snapshot reference and digest |
+| Trace/Langfuse transcript | observe provider calls, repairs, latency, and lineage | PydanticAI/native provider OpenTelemetry plus append-only Runtime diagnosis projection; never resume/control authority |
 
 The shell conversation is necessary for user experience and revision interpretation, but it is not sufficient to
 resume the Agent. The PydanticAI transcript is necessary for model continuity, but it is not sufficient to restore the
 Runtime or browser. Trace is necessary for diagnosis, but must never reconstruct either one. Each provider initial and
 repair attempt remains captured at the provider boundary even when the enclosing policy call is cancelled.
+PydanticAI ActionPolicy calls use its native instrumentation with binary content
+disabled; GoalCompiler/TaskRevisionCompiler calls made through the custom
+structured `ModelPort` emit compatible `gen_ai.*` spans from that provider
+boundary. Both use the configured global or explicitly injected OpenTelemetry
+provider, so deployment chooses Langfuse or another OTLP exporter without a
+Runtime-specific transcript database. Ephemeral `last_invocation_result` and
+Runtime trace projections remain diagnostics, not persistence or recovery
+inputs.
 
 ## 11. Resume checkpoint and persistence contract
 
@@ -847,7 +855,7 @@ accepted GoalPlan resolution/version
 RunState counters, budgets, bounded AgentWorkspace, Runtime World-delivery index
 last committed StepResult, including its typed ExecutionReceiptBatch
 pending AskUser or confirmation identity when applicable
-PydanticAI message history and unresolved-call identity, if any
+PydanticAI settled-snapshot run reference, conversation ID, message digest, and task identity
 opaque environment_lease_ref and lease expiry
 bounded Runtime command-id → payload-digest + committed-outcome references
 integrity digest and committed_at
@@ -873,10 +881,25 @@ authority, fresh `WorldObservation` remains environment authority, execution rec
 `TaskEvaluator`/native verifier remains completion authority. Public snapshots and AG-UI events are projections of the
 restored Runtime value; they are not inputs used to rebuild it.
 
-PydanticAI history is serialized/deserialized through `ModelMessagesTypeAdapter`. Deferred external tool calls resume
-through the existing `DeferredToolResults`/`ToolReturn`/`ToolFailed` pairing. The deployment must not define a parallel
-transcript JSON shape, summarize an unresolved tool call into prose, or use the UI conversation as ActionPolicy model
-history. Existing bounded history compaction remains the model-boundary owner.
+PydanticAI owns model-step and message persistence through Harness
+`StepPersistence(SqliteStepStore)`. Each ActionPolicy invocation has an
+explicit run ID and the Runtime session ID as its conversation ID. Deployment
+maps that session ID to a deterministic private SQLite file, keeping concurrent
+session schema initialization and model records isolated while allowing the
+same file to be reopened after restart. At a Runtime
+safe point, after any deferred GUI tool call has been paired with its official
+result, the model boundary writes one immutable `complete` Harness snapshot and
+returns only its run reference plus the `ModelMessagesTypeAdapter` digest. A
+new process restores that exact snapshot before fresh-World revalidation.
+Legacy checkpoints that embed an official `ModelMessagesTypeAdapter` payload
+remain readable for migration. Deferred external tool calls continue through
+the existing `DeferredToolResults`/`ToolReturn`/`ToolFailed` pairing. Harness
+step/tool-effect lifecycle is never interpreted as `NOT_SENT | SENT |
+SENT_UNKNOWN`, and it does not own Runtime status, checkpoint eligibility, or
+browser effects. The deployment must not define a parallel transcript JSON
+shape, summarize an unresolved tool call into prose, or use the UI conversation
+as ActionPolicy model history. Existing bounded history compaction remains the
+model-boundary owner.
 
 ### 11.3 Storage and commit ordering
 
@@ -1236,14 +1259,15 @@ GUI effect. An old epoch deterministically yields `resync_required` rather than 
 
 Implementation status (2026-08-26): implemented and verified for the bounded reconnectable-lease contract. The Runtime checkpoint contains the task revision,
 paused-from status, validated GoalPlan disposition, bounded counters/budgets/workspace, last closed step/receipt and
-pending interrupt identity, official PydanticAI message history, environment reconnect reference, pause command
-outcome, schema version, digest, and timestamp. It excludes complete World payloads, live tasks/locks/clients, Shell
+pending interrupt identity, a settled PydanticAI Harness snapshot reference and message digest, environment reconnect
+reference, pause command outcome, schema version, digest, and timestamp. It excludes complete World payloads, live tasks/locks/clients, Shell
 conversation/events, and Viewer/trace projections. SQLite uses WAL and commits the checkpoint and command outcome in
 one transaction. Injected command-outcome failure rolls both rows back, emits typed `pause_persistence_failed`, clears
 the internal pause, acquires a fresh current World when the run was active, and continues the original revision.
 Only after a successful commit does `RunState` enter authoritative `PAUSED` and the Shell receive `checkpoint_id` and
-`resume_eligible`. Restart recovery validates the exact session/schema/digest and one-shot resume outcome, restores
-official PydanticAI history and bounded Runtime facts, reconnects only the checkpoint's exact environment reference,
+`resume_eligible`. Restart recovery validates the exact session/schema/digest and one-shot resume outcome, loads and
+validates the referenced provider-valid Harness snapshot (or a legacy official message payload), restores bounded
+Runtime facts, reconnects only the checkpoint's exact environment reference,
 captures and evaluates a fresh World, then publishes one new-epoch `SESSION_RECOVERED` baseline while remaining
 `PAUSED`. `ResumeRun` consumes the checkpoint before any new policy/dispatch; duplicate or competing resume commands
 cannot replay it. Fresh terminal truth finishes directly after explicit resume, and a fresh confirmation action ID is

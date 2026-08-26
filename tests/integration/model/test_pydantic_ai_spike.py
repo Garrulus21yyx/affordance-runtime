@@ -207,6 +207,66 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
     assert restored_from_checkpoint.port.message_history == history
 
 
+def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
+    tmp_path,
+) -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        database = tmp_path / "model-steps.sqlite3"
+        store = step_persistence.SqliteStepStore(database=database)
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:checkpoint")
+        history = (
+            ModelRequest(parts=[UserPromptPart("current task")]),
+            ModelResponse(
+                parts=[ToolCallPart("activate", {"target": "E1"}, "call:settled")]
+            ),
+            ModelRequest(
+                parts=[ToolReturnPart("activate", {"status": "paused"}, "call:settled")]
+            ),
+        )
+        object.__setattr__(policy.port, "message_history", history)
+        object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+        reference = await policy.persist_checkpoint_history()
+
+        assert reference["format"] == "pydantic-ai.step-persistence.v1"
+        assert reference["conversation_id"] == "session:checkpoint"
+        assert "messages" not in reference
+        snapshot = await store.latest_snapshot(run_id=reference["run_id"])
+        assert snapshot is not None
+        assert snapshot.state == "complete"
+        assert snapshot.messages == list(history)
+
+        restored = _policy(ScriptedModel(["first_gui_action"]).build())
+        restarted_store = step_persistence.SqliteStepStore(database=database)
+        object.__setattr__(restored.port, "step_store", restarted_store)
+        object.__setattr__(
+            restored.port,
+            "step_conversation_id",
+            "session:checkpoint",
+        )
+        await restored.restore_persisted_checkpoint_history(
+            reference,
+            task_id="task:checkpoint",
+            task_revision=3,
+        )
+        assert restored.port.message_history == history
+
+        tampered = {**reference, "message_digest": "f" * 64}
+        with pytest.raises(ValueError, match="digest"):
+            await restored.restore_persisted_checkpoint_history(
+                tampered,
+                task_id="task:checkpoint",
+                task_revision=3,
+            )
+
+    asyncio.run(scenario())
+
+
 def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     object.__setattr__(
@@ -309,6 +369,83 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
         assert policy.last_metadata is not None
         assert policy.last_metadata.latency_ms >= attempt.latency_ms > 0
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_step_persistence_records_each_action_policy_run() -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        store = step_persistence.InMemoryStepStore()
+        scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:steps")
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("before", False),
+            post_observations=(shared_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("step_persistence_test"),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        runs = await store.list_runs(conversation_id="session:steps")
+        assert len(runs) == 1
+        assert runs[0].agent_name == "action-policy"
+        events = await store.list_events(run_id=runs[0].run_id)
+        assert [event.kind for event in events] == [
+            "run_started",
+            "model_request_started",
+            "model_request_completed",
+            "run_completed",
+        ]
+        assert policy.port.last_step_run_id == runs[0].run_id
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_action_policy_emits_native_open_telemetry_spans() -> None:
+    async def scenario() -> None:
+        trace_module = pytest.importorskip("opentelemetry.sdk.trace")
+        export_module = pytest.importorskip("opentelemetry.sdk.trace.export")
+        in_memory_module = pytest.importorskip(
+            "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+        )
+        exporter = in_memory_module.InMemorySpanExporter()
+        tracer_provider = trace_module.TracerProvider()
+        tracer_provider.add_span_processor(export_module.SimpleSpanProcessor(exporter))
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "tracer_provider", tracer_provider)
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("before", False),
+            post_observations=(shared_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("otel_test"),
+        ).run_task(environment, shared_task())
+
+        spans = exporter.get_finished_spans()
+        assert {span.name for span in spans} == {
+            "chat recording-scripted",
+            "invoke_agent action-policy",
+        }
+        chat_span = next(span for span in spans if span.name == "chat recording-scripted")
+        assert chat_span.attributes["gen_ai.agent.name"] == "action-policy"
+        assert chat_span.attributes["gen_ai.operation.name"] == "chat"
+        assert chat_span.attributes["gen_ai.usage.input_tokens"] > 0
 
     asyncio.run(scenario())
 

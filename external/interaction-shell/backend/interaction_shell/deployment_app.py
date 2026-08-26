@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
@@ -41,6 +43,9 @@ from .api import create_app
 from .core_runtime_port import CoreRuntimeSessionPort
 from .manager import RunSessionManager
 from .session_registry import SQLiteSessionRecoveryRegistry
+
+if TYPE_CHECKING:
+    from pydantic_ai_harness.step_persistence import StepStore
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +124,11 @@ class BrowserGymDeploymentSessionFactory:
             roles = model_roles_from_environment(
                 self.environment,
                 call_timeout_s=self.settings.call_timeout_s,
+                action_step_store=_model_step_store(
+                    self.checkpoint_store,
+                    session_id,
+                ),
+                conversation_id=session_id,
             )
             raw_trace_directory = self.environment.get("AFFORDANCE_TRACE_DIR", "").strip()
             trace_sink = trace_recorder_from_environment(
@@ -282,6 +292,24 @@ def _request_factory(goal: str, task_id: str, max_turns: int):
         )
 
     return create
+
+
+def _model_step_store(
+    checkpoint_store: SQLiteRuntimeCheckpointStore | None,
+    session_id: str,
+) -> StepStore | None:
+    if checkpoint_store is None:
+        return None
+    from pydantic_ai_harness.step_persistence import SqliteStepStore
+
+    session_digest = hashlib.sha256(session_id.encode()).hexdigest()
+    model_store_directory = checkpoint_store.path.parent / (
+        checkpoint_store.path.name + ".model-steps"
+    )
+    return SqliteStepStore(
+        database=model_store_directory / f"{session_digest}.sqlite3",
+        max_snapshots_per_run=2,
+    )
 
 
 def _bounded_int(

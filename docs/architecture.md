@@ -72,8 +72,21 @@ stores a canonical complete-command digest plus bounded result/message, exact
 retries replay before current-state validation, and changed payload under one
 ID fails as `command_identity_reused`. Shell forwards complete revision
 commands and only suppresses duplicate conversation turns; it owns no durable
-revision result. Prior GUI effects still return
-`effect_reconciliation_required`; Viewer, compensation, and takeover remain
+revision result. Model continuity is a separate authority: every PydanticAI
+ActionPolicy invocation records official Harness step events under the Web
+session conversation ID, and each Runtime safe checkpoint first writes one
+immutable, provider-valid Harness `ContinuableSnapshot` through the session's
+deterministically located `SqliteStepStore` file.
+The Runtime checkpoint contains only that run reference, conversation ID,
+message digest, and task identity; it does not embed or invent a parallel model
+transcript. Legacy `ModelMessagesTypeAdapter` checkpoints remain readable.
+Harness persistence never decides GUI dispatch truth, pause eligibility, or
+browser recovery. PydanticAI's native instrumentation emits model/tool spans
+to the configured OpenTelemetry provider, and the custom structured-model
+boundary used by GoalCompiler/TaskRevisionCompiler emits compatible bounded
+provider spans to the same provider. Runtime trace remains an observation of
+GUI owner facts, not model-history or control authority. Prior GUI effects
+still return `effect_reconciliation_required`; Viewer, compensation, and takeover remain
 unavailable. These deployment/control tests are not benchmark witnesses and do
 not alter the reopened overall project status.
 

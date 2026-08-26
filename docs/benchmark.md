@@ -31,6 +31,16 @@ The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.
 
+Model persistence and tracing do not enlarge that Runtime authority. The
+ActionPolicy now uses PydanticAI Harness `StepPersistence` with a per-session
+conversation ID and a deterministic per-session SQLite step-store file. A
+committed Runtime safe checkpoint refers to one immutable, provider-valid Harness snapshot by run ID and digest;
+it does not treat Harness tool effects as GUI execution receipts. PydanticAI
+native OpenTelemetry spans cover ActionPolicy model/tool calls, while the
+custom structured provider boundary used by the bounded compilers emits to the
+same configured tracer provider. These are continuity and diagnosis evidence,
+not benchmark success evidence; no live benchmark was run for this change.
+
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear

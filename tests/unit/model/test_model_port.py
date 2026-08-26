@@ -136,6 +136,52 @@ def test_openai_compatible_adapter_never_exposes_key_and_validates_schema() -> N
     assert port.last_transcript["llm.token_count.total"] == 11
 
 
+def test_structured_model_boundary_emits_one_open_telemetry_span() -> None:
+    trace_module = pytest.importorskip("opentelemetry.sdk.trace")
+    export_module = pytest.importorskip("opentelemetry.sdk.trace.export")
+    in_memory_module = pytest.importorskip(
+        "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+    )
+    exporter = in_memory_module.InMemorySpanExporter()
+    tracer_provider = trace_module.TracerProvider()
+    tracer_provider.add_span_processor(export_module.SimpleSpanProcessor(exporter))
+    server, thread, _requests = _serve(
+        {
+            "id": "response-traced",
+            "choices": [{"message": {"content": '{"value":"traced"}'}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+        }
+    )
+    try:
+        port = OpenAICompatibleModelPort(
+            base_url=f"http://127.0.0.1:{server.server_port}",
+            api_key="secret",
+            model="traced-test",
+            tracer_provider=tracer_provider,
+        )
+        answer = asyncio.run(
+            port.generate_structured(
+                [ModelMessage(role="user", content="answer")],
+                Answer,
+                ModelConfig(),
+            )
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert answer.value == "traced"
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "generate_structured Answer"
+    assert spans[0].attributes["gen_ai.provider.name"] == "openai-compatible"
+    assert spans[0].attributes["gen_ai.request.model"] == "traced-test"
+    assert spans[0].attributes["gen_ai.response.id"] == "response-traced"
+    assert spans[0].attributes["gen_ai.usage.input_tokens"] == 5
+    assert spans[0].attributes["gen_ai.usage.output_tokens"] == 2
+
+
 def test_openai_compatible_adapter_serializes_multimodal_content_parts() -> None:
     server, thread, requests = _serve(
         {

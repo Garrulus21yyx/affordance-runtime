@@ -105,6 +105,25 @@ class RecoverableAskPolicy(AskForAccountPolicy):
         self.active_task_identity = (task_id, revised_revision)
 
 
+class StepReferenceAskPolicy(RecoverableAskPolicy):
+    persist_calls: int = 0
+
+    async def persist_checkpoint_history(self):
+        self.persist_calls += 1
+        return {
+            "format": "pydantic-ai.step-persistence.v1",
+            "run_id": "action-policy-checkpoint-" + "a" * 32,
+            "conversation_id": "session:step-reference",
+            "message_digest": "b" * 64,
+            "active_task_identity": list(self.active_task_identity or ()),
+        }
+
+
+class FailingStepPersistenceAskPolicy(RecoverableAskPolicy):
+    async def persist_checkpoint_history(self):
+        raise OSError("injected model step persistence failure")
+
+
 @dataclass
 class ReadyRevisionCompiler:
     calls: int = 0
@@ -350,6 +369,83 @@ async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(
     assert restored_facts.status_before_pause.value == "waiting_user"
     assert restored_facts.last_decision is not None
     assert restored_facts.last_decision.question == "Which account should I use?"
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_pause_checkpoint_references_async_model_step_snapshot(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "runtime-checkpoints.sqlite3")
+    policy = StepReferenceAskPolicy()
+    environment = ScriptedEnvironment(initial_observation=_world())
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            environment,
+            reconnect_reference="browser-lease:step-reference",
+        ),
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:step-reference",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    for _ in range(100):
+        if (await handle.snapshot()).status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("step-reference fixture did not reach waiting-user")
+
+    paused = await handle.pause("pause:step-reference")
+    checkpoint = await store.load_latest("session:step-reference")
+
+    assert paused.status is PublicSessionStatus.PAUSED
+    assert paused.resume_eligible is True
+    assert policy.persist_calls == 1
+    assert checkpoint is not None
+    assert checkpoint.model_history == {
+        "format": "pydantic-ai.step-persistence.v1",
+        "run_id": "action-policy-checkpoint-" + "a" * 32,
+        "conversation_id": "session:step-reference",
+        "message_digest": "b" * 64,
+        "active_task_identity": ["session:step-reference", 1],
+    }
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_model_step_persistence_failure_never_publishes_paused(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "runtime-checkpoints.sqlite3")
+    policy = FailingStepPersistenceAskPolicy()
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            ScriptedEnvironment(initial_observation=_world()),
+            reconnect_reference="browser-lease:step-failure",
+        ),
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:step-failure",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    for _ in range(100):
+        if (await handle.snapshot()).status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("step-failure fixture did not reach waiting-user")
+
+    outcome = await handle.pause("pause:step-failure")
+
+    assert outcome.status is PublicSessionStatus.WAITING_USER
+    assert outcome.checkpoint_id is None
+    assert outcome.resume_eligible is False
+    assert outcome.last_control_outcome is not None
+    assert outcome.last_control_outcome.code == "pause_persistence_failed"
+    assert await store.load_latest("session:step-failure") is None
     await handle.close()
 
 

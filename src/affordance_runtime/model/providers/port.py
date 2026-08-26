@@ -9,6 +9,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from time import perf_counter
@@ -275,6 +276,7 @@ class OpenAICompatibleModelPort:
     thinking_mode: Literal["enabled", "disabled"] | None = None
     supports_thinking_control: bool = False
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
+    tracer_provider: object | None = field(default=None, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     last_transcript: Mapping[str, object] | None = field(default=None, init=False, repr=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
@@ -286,7 +288,23 @@ class OpenAICompatibleModelPort:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        return await asyncio.to_thread(self._generate, messages, output_schema, config)
+        self.last_call = None
+        self.last_transcript = None
+        with _structured_model_span(
+            self.provider,
+            self.model,
+            output_schema,
+            self.tracer_provider,
+        ) as span:
+            try:
+                return await asyncio.to_thread(
+                    self._generate,
+                    messages,
+                    output_schema,
+                    config,
+                )
+            finally:
+                _finish_structured_model_span(span, self.last_call, self.last_transcript)
 
     def _generate(
         self,
@@ -501,6 +519,7 @@ class OllamaModelPort:
     endpoint_class: str = "local"
     supports_multimodal: bool = field(default=False, init=False)
     private_capture: PrivateModelCapture | None = field(default=None, repr=False)
+    tracer_provider: object | None = field(default=None, repr=False)
     last_transcript: Mapping[str, object] | None = field(default=None, init=False, repr=False)
     last_call: ModelCallRecord | None = field(default=None, init=False)
     circuit_open_until_monotonic: float = field(default=0.0, init=False, repr=False)
@@ -512,7 +531,23 @@ class OllamaModelPort:
         output_schema: type[T],
         config: ModelConfig,
     ) -> T:
-        return await asyncio.to_thread(self._generate, messages, output_schema, config)
+        self.last_call = None
+        self.last_transcript = None
+        with _structured_model_span(
+            self.provider,
+            self.model,
+            output_schema,
+            self.tracer_provider,
+        ) as span:
+            try:
+                return await asyncio.to_thread(
+                    self._generate,
+                    messages,
+                    output_schema,
+                    config,
+                )
+            finally:
+                _finish_structured_model_span(span, self.last_call, self.last_transcript)
 
     def _generate(
         self,
@@ -657,6 +692,49 @@ class OllamaModelPort:
                 error=error,
                 response_metadata=_response_metadata(self.last_call),
             )
+
+
+def _structured_model_span(
+    provider: str,
+    model: str,
+    output_schema: type[BaseModel],
+    tracer_provider: object | None,
+):
+    """Use the same OpenTelemetry provider as PydanticAI without owning export."""
+
+    try:
+        from opentelemetry import trace
+    except ImportError:
+        return nullcontext(None)
+    tracer = trace.get_tracer(
+        "affordance_runtime.model.providers",
+        tracer_provider=tracer_provider,  # type: ignore[arg-type]
+    )
+    return tracer.start_as_current_span(
+        f"generate_structured {output_schema.__name__}",
+        attributes={
+            "gen_ai.operation.name": "generate_content",
+            "gen_ai.provider.name": provider,
+            "gen_ai.request.model": model,
+            "gen_ai.output.type": output_schema.__name__,
+        },
+    )
+
+
+def _finish_structured_model_span(
+    span: object | None,
+    record: ModelCallRecord | None,
+    transcript: Mapping[str, object] | None,
+) -> None:
+    if span is None or not callable(getattr(span, "set_attribute", None)):
+        return
+    status = str((transcript or {}).get("status", "unknown"))
+    span.set_attribute("affordance_runtime.model.status", status)  # type: ignore[attr-defined]
+    if record is None:
+        return
+    span.set_attribute("gen_ai.response.id", record.response_id)  # type: ignore[attr-defined]
+    span.set_attribute("gen_ai.usage.input_tokens", record.prompt_tokens)  # type: ignore[attr-defined]
+    span.set_attribute("gen_ai.usage.output_tokens", record.completion_tokens)  # type: ignore[attr-defined]
 
 
 def _first_choice(response: Mapping[str, Any]) -> Mapping[str, Any]:

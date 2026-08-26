@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from affordance_runtime.goals.compiler import GoalCompiler, UnavailableGoalCompiler
 from affordance_runtime.model.goal_compiler import (
@@ -24,6 +25,9 @@ from affordance_runtime.task.revision import (
     UnavailableTaskRevisionCompiler,
 )
 
+if TYPE_CHECKING:
+    from pydantic_ai_harness.step_persistence import StepStore
+
 
 @dataclass(frozen=True)
 class ConfiguredModelRoles:
@@ -41,6 +45,8 @@ def model_policy_from_environment(
     perception_profile: DecisionPerceptionProfile | str | None = None,
     model_port: ModelPort | None = None,
     provider_retry_budget: int = 1,
+    step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
     if provider_retry_budget not in {0, 1}:
         raise ValueError("ActionPolicy provider retry budget must be zero or one")
@@ -60,6 +66,8 @@ def model_policy_from_environment(
         env,
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
+        step_store=step_store,
+        conversation_id=conversation_id,
     )
 
 
@@ -69,6 +77,8 @@ def model_roles_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
     provider_retry_budget: int = 1,
+    action_step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ConfiguredModelRoles:
     """Compose the single policy plus bounded compilers from one model profile."""
 
@@ -87,6 +97,8 @@ def model_roles_from_environment(
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
         provider_retry_budget=provider_retry_budget,
+        step_store=action_step_store,
+        conversation_id=conversation_id,
     )
     compiler = (
         UnavailableGoalCompiler()

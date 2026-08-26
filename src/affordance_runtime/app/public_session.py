@@ -633,7 +633,7 @@ class TargetRuntimeSession:
                     session_id=self.session_id,
                     task=revised.task,
                     state=candidate,
-                    model_history=runtime.export_checkpoint_history(),
+                    model_history=await runtime.persist_checkpoint_history(),
                     environment_reference=self.lease.reconnect_reference,
                 )
             except Exception as exc:
@@ -758,7 +758,7 @@ class TargetRuntimeSession:
         checkpoint: RuntimeCheckpoint,
     ) -> None:
         task = checkpoint.restore_task()
-        runtime.restore_checkpoint_history(
+        await runtime.restore_persisted_checkpoint_history(
             checkpoint.model_history,
             task_id=task.task_id,
             task_revision=task.revision,
@@ -932,7 +932,7 @@ class TargetRuntimeSession:
                 session_id=self.session_id,
                 task=task,
                 state=state,
-                model_history=runtime.export_checkpoint_history(),
+                model_history=await runtime.persist_checkpoint_history(),
                 environment_reference=self.lease.reconnect_reference,
             )
             await store.commit_pause(
@@ -1246,7 +1246,7 @@ class TargetRuntimeSessionFactory:
         try:
             task = checkpoint.restore_task()
             facts = checkpoint.restore_run_facts()
-            runtime.restore_checkpoint_history(
+            await runtime.restore_persisted_checkpoint_history(
                 checkpoint.model_history,
                 task_id=task.task_id,
                 task_revision=task.revision,

@@ -59,6 +59,12 @@ from affordance_runtime.task.contracts import (
 RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v2"
 _MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024
 _LEGACY_REVISION_PAYLOAD_DIGEST = "0" * 64
+_RECOVERABLE_MODEL_HISTORY_FORMATS = frozenset(
+    {
+        "pydantic-ai.messages.v1",
+        "pydantic-ai.step-persistence.v1",
+    }
+)
 
 
 class RuntimeCheckpointError(RuntimeError):
@@ -108,7 +114,9 @@ class RuntimeCheckpoint:
             raise RuntimeCheckpointError("checkpoint_timestamp_invalid")
         if len(self.environment_reference) > 2_000:
             raise RuntimeCheckpointError("checkpoint_environment_reference_invalid")
-        recoverable_history = self.model_history.get("format") == "pydantic-ai.messages.v1"
+        recoverable_history = (
+            self.model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
+        )
         if self.resume_eligible != (bool(self.environment_reference) and recoverable_history):
             raise RuntimeCheckpointError("checkpoint_resume_eligibility_invalid")
         expected = _checkpoint_digest(self._unsigned_payload())
@@ -146,7 +154,9 @@ class RuntimeCheckpoint:
         timestamp = created_at or datetime.now(UTC)
         if timestamp.tzinfo is None:
             raise RuntimeCheckpointError("checkpoint_timestamp_invalid")
-        recoverable_history = model_history.get("format") == "pydantic-ai.messages.v1"
+        recoverable_history = (
+            model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
+        )
         resume_eligible = bool(environment_reference) and recoverable_history
         unsigned = {
             "schema_version": RUNTIME_CHECKPOINT_SCHEMA_VERSION,

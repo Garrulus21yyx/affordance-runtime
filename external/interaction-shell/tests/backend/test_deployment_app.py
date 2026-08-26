@@ -59,6 +59,7 @@ def _patch_composition(
     *,
     fail_composition: bool = False,
     trace_flush_fails: bool = False,
+    role_calls: list[dict[str, object]] | None = None,
 ):
     surfaces: list[FakeSurface] = []
     traces: list[FakeTrace] = []
@@ -75,15 +76,16 @@ def _patch_composition(
 
     monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", open_surface)
     monkeypatch.setattr(deployment_app, "UnifiedWorldEnvironment", lambda _sources: FakeWorld())
-    monkeypatch.setattr(
-        deployment_app,
-        "model_roles_from_environment",
-        lambda *_args, **_kwargs: SimpleNamespace(
+    def open_roles(*_args, **kwargs):
+        if role_calls is not None:
+            role_calls.append(dict(kwargs))
+        return SimpleNamespace(
             action_policy=object(),
             goal_compiler=object(),
             task_revision_compiler=object(),
-        ),
-    )
+        )
+
+    monkeypatch.setattr(deployment_app, "model_roles_from_environment", open_roles)
     monkeypatch.setattr(
         deployment_app,
         "trace_recorder_from_environment",
@@ -139,6 +141,79 @@ async def test_deployment_factory_opens_and_closes_disjoint_runtime_browser_sess
     await second.close()
     assert [surface.close_count for surface in surfaces] == [1, 1]
     assert [trace.flush_count for trace in traces] == [1, 1]
+
+
+@pytest.mark.asyncio
+async def test_deployment_sessions_use_disjoint_step_stores_and_conversation_ids(
+    monkeypatch,
+    tmp_path,
+):
+    role_calls: list[dict[str, object]] = []
+    _patch_composition(monkeypatch, role_calls=role_calls)
+    stores: list[object] = []
+
+    def open_step_store(_checkpoint_store, _session_id):
+        store = object()
+        stores.append(store)
+        return store
+
+    monkeypatch.setattr(deployment_app, "_model_step_store", open_step_store)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test", 7, 10, 90
+        ),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+        deployment_app.SQLiteRuntimeCheckpointStore(tmp_path / "checkpoints.sqlite3"),
+    )
+    expiry = datetime.now(UTC) + timedelta(minutes=5)
+
+    first, second = await asyncio.gather(
+        factory.open("session:steps:first", expiry),
+        factory.open("session:steps:second", expiry),
+    )
+
+    assert [call["conversation_id"] for call in role_calls] == [
+        "session:steps:first",
+        "session:steps:second",
+    ]
+    assert [call["action_step_store"] for call in role_calls] == stores
+    assert stores[0] is not stores[1]
+    await asyncio.gather(first.close(), second.close())
+
+
+@pytest.mark.asyncio
+async def test_model_step_store_is_deterministic_and_isolated_per_session(tmp_path):
+    step_persistence = pytest.importorskip(
+        "pydantic_ai_harness.step_persistence"
+    )
+    checkpoint_store = deployment_app.SQLiteRuntimeCheckpointStore(
+        tmp_path / "checkpoints.sqlite3"
+    )
+    first = deployment_app._model_step_store(checkpoint_store, "session:first")
+    second = deployment_app._model_step_store(checkpoint_store, "session:second")
+    assert first is not None
+    assert second is not None
+
+    await asyncio.gather(
+        first.register_run(
+            step_persistence.RunRecord(
+                run_id="run:first",
+                conversation_id="session:first",
+            )
+        ),
+        second.register_run(
+            step_persistence.RunRecord(
+                run_id="run:second",
+                conversation_id="session:second",
+            )
+        ),
+    )
+
+    assert [run.run_id for run in await first.list_runs()] == ["run:first"]
+    assert [run.run_id for run in await second.list_runs()] == ["run:second"]
+    reopened = deployment_app._model_step_store(checkpoint_store, "session:first")
+    assert reopened is not None
+    assert (await reopened.get_run(run_id="run:first")) is not None
 
 
 @pytest.mark.asyncio
