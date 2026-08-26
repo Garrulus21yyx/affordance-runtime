@@ -29,8 +29,9 @@ identity by comparing numbers across headings. It creates no fact store and make
 Control discovery also now gives a candidate's exact public label ownership of colliding query tokens before applying
 inventory-wide role/operation facets. Thus `Go button` finds the current `Go` button even though the same ActionSpace
 also contains `go_back`/`go_forward`; an explicit mismatching role still rejects the candidate, and every genuine
-match remains visible. The exhausted PydanticAI output-retry transcript strips only the exact supplied official
-history prefix, so old responses are no longer counted as physical calls from the current invocation.
+match remains visible. An exhausted PydanticAI output-retry capture records only the response suffix permitted by the
+invocation's existing `UsageLimits`; PydanticAI may merge adjacent historical request messages, but old responses can
+no longer be counted as physical calls from the current invocation.
 
 The authorized
 [`run37`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run37/run.json) crossed these contracts and ended
@@ -400,6 +401,11 @@ The positive owner contract is now:
 - title changes do not change the browser-context binding identity; current URL/index still own currentness;
 - the DeepSeek model profile explicitly tells PydanticAI to send the existing generic output budget as
   `max_tokens`;
+- every canonical ActionPolicy envelope sets `tool_choice=required` and `parallel_tool_calls=false`. The existing
+  single-step `Agent.run` supplies those settings through PydanticAI's per-step callable contract, so each physical
+  policy request must choose an offered tool while the SDK still owns `DeferredToolRequests`, argument validation,
+  call IDs, and the one bounded output-validation retry. DeepSeek V4 advertises `required` only together with the
+  already-configured disabled-thinking request mode;
 - the existing ActionPolicy Agent uses a PydanticAI output validator: a text-only response receives one same-context
   SDK output retry, while an exhausted pair returns typed `no_tool_call` or `output_budget_exhausted`. A pre-existing
   representation-repair request gets no nested output retry, so the output-validation sequence is bounded to two
@@ -479,6 +485,16 @@ data; a nonempty completed retrieval emits `SUCCESS` with the result list. This 
 Pydantic response codec remains validation-only, so no private evaluator answer, task identity, response rewrite,
 alternate prompt, or new Agent/Runtime authority was introduced. A fresh native Task8 result remains the acceptance
 witness for this benchmark-owner clarification.
+
+Task8
+[`run2`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run2/run.json) and
+[`run3`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run3/run.json) crossed the public zero-result rule but
+did not reach STOP. Run2 ended after a text-only ActionPolicy response and its one SDK retry both exhausted their
+output budgets. Run3 acquired the decisive CMU, Pittsburgh International Airport, and approximately 32.8 km OSRM
+facts, then continued searching; its last policy invocation again emitted two output-limited text responses instead
+of a ToolCall. The positive provider-boundary repair above prevents that legal-but-invalid wire choice rather than
+adding a repetition recognizer or Monitor control path. These two runs remain failed pre-repair evidence; a fresh
+native Task8 witness is still required.
 
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
 shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search
@@ -1204,8 +1220,9 @@ This cutover is implementation-complete only when all of the following agree:
     outcomes and transition lineage with honest truncation metadata rather than duplicate canonical Worlds.
 20. BrowserGym open-tab titles and routes are paired by position into one current browser subject; title-only changes
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
-21. DeepSeek receives the declared output budget through its supported wire parameter, and a text-only ActionPolicy
-    response is retried once by PydanticAI before a typed terminal failure, with no nested representation retry.
+21. DeepSeek receives the declared output budget through its supported wire parameter, disabled thinking, and
+    `tool_choice=required`; a provider violation still receives at most one PydanticAI output retry before a typed
+    terminal failure, with no nested representation retry or historical response miscount.
 22. GoalCompiler thinking control follows the selected provider capability, and ActionPolicy and Harness compaction
     receive one prompt-owned evidence-status rule without Runtime parsing summary prose into fact state.
 23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and

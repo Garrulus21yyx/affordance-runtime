@@ -215,6 +215,7 @@ def test_gate_0_records_text_request_and_executes_one_current_tool_call_through_
             "max_tokens": 1024,
             "temperature": 0.0,
             "parallel_tool_calls": False,
+            "tool_choice": "required",
             "timeout": 4.0,
         }
         assert policy.port.last_model_call_count == 1

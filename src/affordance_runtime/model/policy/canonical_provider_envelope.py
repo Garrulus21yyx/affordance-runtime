@@ -163,6 +163,8 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope user text is empty")
         if self.parallel_tool_calls or self.model_settings.get("parallel_tool_calls") is not False:
             raise ValueError("ActionPolicy canonical envelope must disable parallel tool calls")
+        if self.model_settings.get("tool_choice") != "required":
+            raise ValueError("ActionPolicy canonical envelope must require one offered tool call")
         if self.output_token_reserve < 0 or self.counting_method != DETERMINISTIC_COUNTING_METHOD:
             raise ValueError("canonical provider envelope counting contract is invalid")
         if self.catalog.context_id != self.context_id or self.catalog.delivery_id != self.delivery_id:
@@ -489,6 +491,7 @@ class CanonicalProviderEnvelopeBinder:
             "max_tokens": call_profile.max_output_tokens,
             "temperature": 0.0,
             "parallel_tool_calls": False,
+            "tool_choice": "required",
         }
         if request_timeout_s is not None:
             if request_timeout_s <= 0:

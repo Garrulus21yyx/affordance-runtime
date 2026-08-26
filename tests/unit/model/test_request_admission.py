@@ -385,7 +385,21 @@ def test_tool_order_schema_strictness_and_output_contract_are_closed_in_envelope
         )
         assert envelope.output_contract == CanonicalOutputContract()
         assert envelope.model_settings["parallel_tool_calls"] is False
+        assert envelope.model_settings["tool_choice"] == "required"
         assert envelope.media == ()
+
+    asyncio.run(scenario())
+
+
+def test_action_policy_envelope_rejects_optional_tool_choice() -> None:
+    async def scenario() -> None:
+        envelope = await _bound_envelope()
+
+        with pytest.raises(ValueError, match="must require one offered tool call"):
+            _replace_physical(
+                envelope,
+                model_settings={**dict(envelope.model_settings), "tool_choice": "auto"},
+            )
 
     asyncio.run(scenario())
 

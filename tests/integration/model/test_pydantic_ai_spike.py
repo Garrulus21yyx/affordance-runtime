@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 
 pytest.importorskip("pydantic_ai")
 
-from pydantic_ai import DeferredToolRequests
+from pydantic_ai import DeferredToolRequests, ToolDefinition
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     ModelRequest,
@@ -197,6 +197,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
                 "max_tokens": 1024,
                 "temperature": 0.0,
                 "parallel_tool_calls": False,
+                "tool_choice": "required",
                 "timeout": 4.0,
             }
         ]
@@ -204,6 +205,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
             "max_tokens": 1024,
             "temperature": 0.0,
             "parallel_tool_calls": False,
+            "tool_choice": "required",
             "timeout": 4.0,
         }
         assert state.last_step is not None
@@ -399,6 +401,14 @@ def test_exhausted_output_retry_trace_excludes_prior_official_history() -> None:
 
         first = await policy.port.generate(ModelDecisionRequest("request:output-retry-history:first", first_context))
         assert first.failure is None and first.output is not None
+        object.__setattr__(
+            policy.port,
+            "message_history",
+            (
+                ModelRequest(parts=[UserPromptPart("retained compaction summary")]),
+                *policy.port.message_history,
+            ),
+        )
         first_step = StepResult(
             first.output.decision,
             world,
@@ -3181,6 +3191,30 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
         "thinking": False,
     }
     assert selected.port.model.profile["openai_chat_supports_max_completion_tokens"] is False
+    assert selected.port.model.profile["openai_supports_tool_choice_required"] is True
+    prepared, parameters = selected.port.model.prepare_request(
+        {
+            "thinking": False,
+            "max_tokens": 1024,
+            "temperature": 0.0,
+            "parallel_tool_calls": False,
+            "tool_choice": "required",
+        },
+        ModelRequestParameters(
+            function_tools=[
+                ToolDefinition(
+                    name="fixture_action",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                )
+            ]
+        ),
+    )
+    assert prepared["tool_choice"] == "required"
+    assert parameters.thinking is False
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_from_environment(
             {

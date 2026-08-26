@@ -399,6 +399,14 @@ class PydanticAIGroundedDecisionPort:
                     raise ModelRetry("Return one offered tool call for the current World; text-only output is invalid.")
                 return output
 
+            def action_policy_model_settings(_context):
+                # This Agent invocation is deliberately one provider action,
+                # not a conversational run that eventually returns text.  A
+                # per-step callable is PydanticAI's supported contract for
+                # requiring a function tool without its static-setting guard
+                # reserving a later direct-output step.
+                return dict(current_envelope.model_settings)
+
             # PydanticAI owns the one bounded output-validation retry. Capture
             # its exact messages so an exhausted retry remains a typed,
             # observable provider-boundary failure rather than generic schema
@@ -412,7 +420,7 @@ class PydanticAIGroundedDecisionPort:
                             toolsets=[current_toolset],
                             usage=RunUsage(),
                             usage_limits=UsageLimits(request_limit=output_retry_budget + 1),
-                            model_settings=dict(current_envelope.model_settings),
+                            model_settings=action_policy_model_settings,
                             message_history=current_history,
                             deferred_tool_results=current_deferred_results,
                         ),
@@ -425,7 +433,7 @@ class PydanticAIGroundedDecisionPort:
                         tuple(captured_messages),
                         phase,
                         current_envelope,
-                        history_prefix=current_history,
+                        max_response_count=output_retry_budget + 1,
                         latency_ms=(time.perf_counter() - started) * 1000,
                     )
                     raise
@@ -1193,28 +1201,17 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         *,
-        history_prefix: tuple[object, ...] = (),
+        max_response_count: int,
         latency_ms: float,
     ) -> None:
         """Close one failed PydanticAI output-retry run from SDK-captured messages."""
 
         if not messages:
             return
-        # ``capture_run_messages`` includes the supplied official history on
-        # an exhausted run, while ``RunResult.new_messages()`` excludes it on
-        # success.  Trace only physical calls made by this invocation.  Strip
-        # the exact typed prefix when present; a non-matching capture is
-        # already fresh and remains untouched.
-        typed_history_prefix = tuple(history_prefix)
-        if (
-            typed_history_prefix
-            and len(messages) >= len(typed_history_prefix)
-            and messages[: len(typed_history_prefix)] == typed_history_prefix
-        ):
-            messages = messages[len(typed_history_prefix) :]
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
         serialized = json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
+        serialized = _captured_invocation_messages(serialized, max_response_count=max_response_count)
         if not any(message.get("kind") == "response" for message in serialized):
             return
         self._record_output_validation_exchanges(
@@ -1562,7 +1559,14 @@ def pydantic_ai_model_from_environment(
             # DeepSeek Chat Completions uses ``max_tokens``. PydanticAI's
             # OpenAI-compatible default otherwise maps the generic setting to
             # ``max_completion_tokens``, which this endpoint does not enforce.
-            profile={"openai_chat_supports_max_completion_tokens": False},
+            profile={
+                "openai_chat_supports_max_completion_tokens": False,
+                # ActionPolicy disables DeepSeek thinking and requires a tool
+                # call.  DeepSeek V4 accepts ``required`` in that mode even
+                # though PydanticAI's conservative provider profile disables
+                # it for every V4 model name.
+                "openai_supports_tool_choice_required": True,
+            },
             settings=model_settings,
         )
     elif profile in {"zhipu", "aliyun"}:
@@ -2623,6 +2627,29 @@ def _structured_output_failure_for_response(
     if not has_tool_call:
         return StructuredOutputFailureKind.NO_TOOL_CALL
     return StructuredOutputFailureKind.JSON_INVALID
+
+
+def _captured_invocation_messages(
+    captured: list[dict[str, object]],
+    *,
+    max_response_count: int,
+) -> list[dict[str, object]]:
+    """Drop historical responses from one failed PydanticAI capture.
+
+    PydanticAI includes normalized supplied history in the captured list, but
+    UsageLimits bounds this invocation to ``max_response_count`` physical
+    responses.  The current responses are therefore the bounded response
+    suffix regardless of history merging or compaction shape.
+    """
+
+    if max_response_count <= 0:
+        raise ValueError("captured invocation response bound must be positive")
+    response_indices = [index for index, message in enumerate(captured) if message.get("kind") == "response"]
+    if len(response_indices) <= max_response_count:
+        return captured
+    first_current_response = response_indices[-max_response_count]
+    first_current_request = max(0, first_current_response - 1)
+    return captured[first_current_request:]
 
 
 def _latest_structured_output_failure(

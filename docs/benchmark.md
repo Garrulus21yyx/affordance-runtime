@@ -24,10 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1775 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1772 passed / 25 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed. Focused typed-history verification reports `159 passed`, and the current TaskGoal/GoalCompiler/
-policy projection audit reports `54 passed`. `git diff --check` passes.
+modified or removed. Focused ActionPolicy envelope, PydanticAI bridge, provider-profile, and retry-trace verification
+reports `96 passed`; Ruff and `git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -61,6 +61,24 @@ byte-for-byte unchanged, `TaskGoal.constraints` projects the rule through the no
 upstream Pydantic response codec remains validation-only. There is no evaluator lookup, task-ID/text branch, response
 rewrite, alternate prompt, or production Agent change. A fresh Task8 native-evaluator witness is still required before
 the held-out cohort resumes.
+
+Task8
+[`run2`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run2/run.json) made 16 policy calls and eight
+executions but no STOP or native-evaluator call. Its final ordinary ActionPolicy response and the one PydanticAI
+output retry both selected text and exhausted the output budget. Task8
+[`run3`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run3/run.json) made 45 policy calls and 27 executions.
+It found CMU, Pittsburgh International Airport, and an OSRM route of approximately 32.8 km, but continued searching;
+the final invocation again exhausted two text-only responses and ended `invalid_response` with no STOP. These are
+failed pre-repair witnesses for one provider-boundary mismatch: the local ActionPolicy contract required a tool, but
+the physical provider request still allowed text.
+
+The canonical ActionPolicy envelope now requires `tool_choice=required` in addition to
+`parallel_tool_calls=false`. The one-step PydanticAI Agent receives that through the SDK's supported per-step settings
+callable, retains the existing external/deferred toolset and one output-validator retry, and uses DeepSeek V4 only
+with its existing disabled-thinking setting. There is no repetition detector, larger output budget, Monitor branch,
+alternate parser, or second Runtime path. Failed retry capture is bounded to the current invocation's existing
+`UsageLimits` response suffix, so normalized historical messages cannot be misreported as new retries. A fresh Task8
+native-evaluator result remains required.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
@@ -356,10 +374,12 @@ a URL recognizer, site rule, memory path, or larger case timeout.
 
 The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by index into the one browser-context
 subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
-World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's existing output budget
-is sent through `max_tokens`, and PydanticAI's output validator performs at most one same-context retry when the model
-returns text instead of a tool call. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`; rejected prose
-does not enter canonical history. Representation repair is not nested with this retry. Focused tests cover title/URL
+World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's
+existing output budget is sent through `max_tokens`. Canonical ActionPolicy requests now additionally use
+`tool_choice=required` with disabled thinking, while PydanticAI's output validator remains the one bounded defense
+when a provider violates that wire contract. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
+rejected prose does not enter canonical history. Representation repair is not nested with this retry. Focused tests
+cover title/URL
 pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
 typed exhaustion, exact retry history, and the DeepSeek model profile. Run31 below supplies the live witness.
 
@@ -1047,8 +1067,9 @@ The final read-only review for this cutover must answer:
     can any typed non-dispatch terminal failure still be projected as `failed=false` or omitted from its ToolReturn?
 26. Are BrowserGym tab titles and sanitized routes paired by their native index in the one current World, with route
     identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
-27. Does DeepSeek receive the declared output limit as `max_tokens`, and does text-only ActionPolicy output cause one
-    PydanticAI same-context retry followed by a typed bounded failure without polluting accepted history or nesting a
+27. Does DeepSeek receive the declared output limit as `max_tokens`, disabled thinking, and
+    `tool_choice=required`; and if a provider nevertheless returns text, does one PydanticAI same-context retry end in
+    a typed bounded failure without polluting accepted history, miscounting historical responses, or nesting a
     representation-repair retry?
 28. When a query token is both one control's exact label and another control's operation, does `find_controls`
     preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
