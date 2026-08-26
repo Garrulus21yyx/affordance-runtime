@@ -923,9 +923,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
         assert discarded_id in physical
         assert "Not executed" in physical
         assert "Do not emit a separate memory" in str(scripted.records[0].instructions)
-        assert "In the same response, briefly state a new evidence-backed conclusion" in str(
-            scripted.records[0].instructions
-        )
+        assert "In the same response, briefly state" not in str(scripted.records[0].instructions)
         assert "Return exactly one offered tool call" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())

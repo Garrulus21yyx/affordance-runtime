@@ -1098,9 +1098,9 @@ The boundary preserves each accepted model response exactly, including `Thinking
 reasoning metadata, and all tool proposals. Only the summarizer's throwaway input maps thinking to ordinary text
 because Harness 0.25 otherwise omits it; persisted and replayed messages remain exact. Raw ActionPolicy and compactor
 provider exchanges remain in Trace. This is same-actor semantic compaction, not Runtime fact authority or Workspace
-memory. The same ActionPolicy response states progress only when an evidence-backed conclusion, unresolved
-requirement, or strategy changes; unchanged atomic steps may remain tool-only. That trigger is model judgment inside
-the existing response, not a Runtime progress reducer.
+memory. ActionPolicy responses may contain provider-native optional reasoning/text, but they are not instructed to
+emit a progress artifact per step. Harness alone replaces an expired pair-safe history prefix with one cumulative
+summary under its existing low-frequency age/pressure schedule; no Runtime progress reducer is present.
 
 `TurnPacker` budgets the already-compacted history but does not summarize, edit, or rebuild ToolReturn content.
 Harness removes only a pair-safe expired prefix and produces the one replacement summary. The bridge verifies that the

@@ -92,11 +92,22 @@ response can contain both exact model text/reasoning and one ToolCall. Its exist
 rejects text-only output; the SDK's dynamic per-request settings use `RunContext.retry` to set only that one retry to
 `tool_choice=required`. The actual setting of each physical request is recorded in its provider transcript. No
 progress store, separate checkpoint, second policy, or custom retry loop was added. The ActionPolicy prompt asks for
-bounded prose only when a conclusion, unresolved requirement, or strategy changes; unchanged atomic steps may stay
-tool-only. The same `EpisodeMonitor` now
+no per-step progress artifact; provider-native optional text remains ordinary recent trajectory input, while the
+existing Harness compactor alone produces a low-frequency cumulative replacement for an expired pair-safe prefix.
+The same `EpisodeMonitor` now
 keeps sixteen ref-free signatures, detects every exact repeated suffix representable in that window, retains a recovered identity through a partial
 recurrence, and blocks the same phase-independent cycle when it continues. Typed new public information or expiry of
 the episode clears that identity. A fresh Task8 native-evaluator result remains required.
+
+Task8 [`run5`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run5/run.json) falsified an intermediate v36
+prompt that asked the ActionPolicy to state progress in the same response whenever a conclusion, unresolved
+requirement, or strategy changed. DeepSeek treated ordinary atomic steps as such changes: 100 policy turns produced
+verbose repeated narration, which scheduled nineteen `expired_model_prose` compactions and ended at the outer step
+limit despite a correct cumulative summary. That summary retained the two rejected airport candidates, their OSRM
+distances, and the known Nominatim limitation, so run5 is not evidence loss or a compactor-content failure. Run1 had
+already reached the sufficient `international airport Pittsburgh -> Aerodrome region -> empty qualifying set`
+strategy without a per-step progress instruction. The v36 instruction is therefore removed; optional native model
+text and low-frequency Harness compaction remain separate existing concerns.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture

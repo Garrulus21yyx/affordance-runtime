@@ -491,8 +491,8 @@ class CanonicalProviderEnvelopeBinder:
             "max_tokens": call_profile.max_output_tokens,
             "temperature": 0.0,
             "parallel_tool_calls": False,
-            # The ordinary request must permit one response to carry both the
-            # policy's bounded reasoning/progress text and its tool call.  The
+            # The ordinary request must permit one response to carry the
+            # provider's native optional text/reasoning and its tool call. The
             # PydanticAI output-retry boundary alone strengthens this to
             # ``required`` after a text-only provider violation.
             "tool_choice": "auto",

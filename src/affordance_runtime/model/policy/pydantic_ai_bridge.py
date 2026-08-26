@@ -404,8 +404,9 @@ class PydanticAIGroundedDecisionPort:
                 # ordinary request.  If output validation rejects text-only
                 # output, PydanticAI increments ``RunContext.retry`` before
                 # the next physical request; only that bounded retry forces a
-                # function call.  This keeps progress text without allowing a
-                # second text-only response to consume the invocation.
+                # function call.  This preserves provider-native optional
+                # text without assigning per-step memory/progress work to the
+                # ActionPolicy response.
                 settings = dict(current_envelope.model_settings)
                 settings["tool_choice"] = "required" if context.retry else "auto"
                 return settings
