@@ -13,8 +13,8 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
-_GENERATION_REF = re.compile(r"\b[ENFR][1-9][0-9]{0,3}\b")
-_LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]{0,3}>", re.IGNORECASE)
+_GENERATION_REF = re.compile(rf"\b{PublicRefCodec.token_pattern()}\b")
+_LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
 
 

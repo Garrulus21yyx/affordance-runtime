@@ -31,6 +31,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from affordance_runtime.immutable import to_json_compatible
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 
 @dataclass(frozen=True)
@@ -426,7 +427,8 @@ def _select_current_tool_call(
         if not isinstance(properties, Mapping) or "target" not in properties:
             continue
         match = re.search(
-            rf"\[(E[1-9][0-9]{{0,2}})\][^\n]*verbs=[^\n]*\b{re.escape(tool.name)}\b",
+            rf"\[({PublicRefCodec.token_pattern(PublicRefKind.EXECUTABLE)})\]"
+            rf"[^\n]*verbs=[^\n]*\b{re.escape(tool.name)}\b",
             observation,
         )
         if match is not None:
@@ -467,14 +469,19 @@ def _visible_action_routes(
     observation = str(public_payload["observation"])
     routes = []
     for line in observation.splitlines():
-        match = re.search(r"^\s*rank=[0-9]+\s+\[(E[1-9][0-9]{0,3})\].*?\bverbs=(\[[^\n]*?\])", line)
+        match = re.search(
+            rf"^\s*rank=[0-9]+\s+\[({PublicRefCodec.token_pattern(PublicRefKind.EXECUTABLE)})\]"
+            r".*?\bverbs=(\[[^\n]*?\])",
+            line,
+        )
         if match is None:
             continue
         operations = json.loads(match.group(2))
         if not isinstance(operations, list):
             continue
         destination = re.search(
-            r'destinations=.*?"target"\s*:\s*"(E[1-9][0-9]{0,3})"',
+            rf'destinations=.*?"target"\s*:\s*"'
+            rf'({PublicRefCodec.token_pattern(PublicRefKind.EXECUTABLE)})"',
             line,
         )
         routes.extend(

@@ -41,7 +41,8 @@ class ModelPolicyHttpEnvironment(ScriptedEnvironment):
                     operation = re.escape(option["name"])
                     context_text = "\n".join(_public_text_fragments(body["messages"]))
                     matches = re.findall(
-                        rf"\[(E[1-9][0-9]{{0,3}})\][^\n]*verbs=[^\n]*\b{operation}\b",
+                        rf"\[({PublicRefCodec.token_pattern(PublicRefKind.EXECUTABLE)})\]"
+                        rf"[^\n]*verbs=[^\n]*\b{operation}\b",
                         context_text,
                     )
                     target_ref = next(

@@ -31,7 +31,7 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1772 passed / 25 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1790 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
 modified or removed. Focused ActionPolicy envelope, PydanticAI bridge, provider-profile, and retry-trace verification
 reports `96 passed`; Ruff and `git diff --check` pass.
@@ -1049,8 +1049,43 @@ with complete current verbs while retaining every private route for Catalog reso
 `tool_grounding_gap` becomes the existing same-call `ToolRejectedResult` and reaches the next Recording FunctionModel
 turn without repair or GUI dispatch. Restricted `goto` rejection is now
 `NOT_SENT/destination_outside_environment`, distinct from malformed parameters. Prefix/property tests prove target
-uniqueness and verb completeness; vertical tests prove same-call pairing and zero dispatch. No post-repair live W2
-run has been executed, so Task267 remains empirically open pending explicit authorization.
+uniqueness and verb completeness; vertical tests prove same-call pairing and zero dispatch.
+
+Task267
+[`run2`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run2/run.json) is an environment-only diagnostic:
+`libwebarena==0.0.5` declares `beartype==0.12.0`, but an unrelated top-level package had upgraded the dedicated
+BrowserGym environment to `beartype==0.22.9`. WebArena failed during import before Agent construction, with zero model
+calls and zero executions. The unrelated package was removed and WebArena's declared dependency restored; no Agent
+code or benchmark semantics changed.
+
+Task267
+[`run3`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run3/run.json) is the accepted post-repair witness at
+commit `f20712bc`. It completed 41 valid single-call policy turns, 18 GUI executions, 20 observations, one STOP, and
+one native evaluation. The submitted result was relation `2176999` with duration `01:32:00`; the native evaluator
+returned `verified_success`. It recorded zero grounding gaps, representation repairs, fallbacks, waits, invalid tool
+arguments, multiple-call responses, and context-capacity rejections. Aggregate total tokens were `735,955` and wall
+latency was about 516 seconds. Task267 is therefore accepted, while the broader W2 cohort remains open until untouched
+cases pass without case-specific production changes.
+
+Task97
+[`run1`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run1/run.json) crossed the Task267 owner repairs in an
+untouched case. A schema-valid current-Catalog mismatch returned a same-call `ToolRejectedResult`, and a restricted
+destination returned `NOT_SENT/destination_outside_environment`; neither entered representation repair or dispatched
+the rejected action. The policy then identified MIT as the 2019 SCImago target and selected its Wiki result. The next
+fresh World failed during canonical projection with `ValueError: public reference capacity exceeded`. Formal status
+is `failed / harness_projection / case_projection_failed` after about 441 seconds. The trace contains 50 completed
+steps; zeroed case metrics are an unmeasured-result projection after the CoreLoop exception, not zero preceding work.
+
+The shared root was an algebra mismatch at the one public-ref owner. The lossless current World admits a finite
+inventory without a 9,999-record limit, while `PublicRefCodec` accepted only four-digit E/N/F/R ordinals. Task266's
+earlier semantic/structure alias repair reduced duplicate identities but did not make that independent ceiling valid
+for all accepted pages. The codec now represents every positive generated ordinal and owns one reusable token grammar
+consumed by history sanitization, benchmark support, and test recorders. Current Catalog resolution remains closed:
+`E10000` is schema-valid, but when absent from the current resolver it returns typed `GROUNDING_GAP` and cannot reach
+Binder or Executor. A full-owner regression projects 10,001 semantic targets, linked structure records, and public
+labels without truncation. No page-size branch, larger arbitrary threshold, World cap, evidence/cursor path, harness
+fallback, or task/site special case was added. Task97 remains empirically open until an authorized post-repair run
+crosses the original Wiki transition and completes native evaluation.
 
 ## Live-run authorization and execution
 
@@ -1141,6 +1176,8 @@ The final read-only review for this cutover must answer:
     failure?
 33. Does restricted BrowserGym navigation reject an out-of-scope destination as
     `NOT_SENT/destination_outside_environment`, preserve zero dispatch, and allow the same policy to reselect?
+34. Can every record in an accepted finite current World receive one generation-local E/N/F/R ordinal without an
+    independent smaller codec capacity, while an unknown well-shaped ref still fails at the current Catalog resolver?
 
 ## Exit statement
 

@@ -128,7 +128,7 @@ def test_single_target_uses_stable_operation_and_explicit_target() -> None:
     assert tool.public_spec.input_schema["properties"]["target"] == {
         "type": "string",
         "description": "current executable E-ref",
-        "pattern": "^(E)([1-9][0-9]{0,3})$",
+        "pattern": "^(E)([1-9][0-9]*)$",
     }
 
 
@@ -208,7 +208,7 @@ def test_unary_selector_schema_is_stable_while_private_resolution_is_closed(coun
     offered = tuple(item.selector_values["target"] for item in tool.private_resolutions)
 
     assert validate_value(
-        {"target": "E9999"},
+        {"target": "E10000"},
         tool.public_spec.input_schema,
         path="command",
     ) is None

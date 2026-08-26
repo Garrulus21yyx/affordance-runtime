@@ -1526,7 +1526,8 @@ def test_one_delivery_identity_owns_view_catalog_and_resolver_admission() -> Non
     assert catalog.delivery_id == delivery.delivery_id
 
     displayed = re.findall(
-        r"\[(E[1-9][0-9]{0,3})\].*?verbs=\[\"([a-z_]+)\"\]",
+        rf"\[({PublicRefCodec.token_pattern(PublicRefKind.EXECUTABLE)})\]"
+        r".*?verbs=\[\"([a-z_]+)\"\]",
         delivery.view.text,
     )
     assert displayed
@@ -1560,7 +1561,7 @@ def test_nonmanifest_ref_is_grounding_gap_and_new_world_rejects_old_delivery() -
     with pytest.raises(GroundedToolResolutionError) as gap:
         resolve_catalog_call(
             catalog,
-            ToolCall("activate", {"target": "E999"}),
+            ToolCall("activate", {"target": "E10000"}),
             expected_context_id=before_context.context_id,
         )
     assert gap.value.code is GroundedToolResolutionCode.GROUNDING_GAP

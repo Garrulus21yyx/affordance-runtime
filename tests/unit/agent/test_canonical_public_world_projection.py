@@ -32,7 +32,6 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
-from affordance_runtime.world.public_refs import PublicRefCodec
 
 
 def _task() -> TaskGoal:
@@ -259,9 +258,8 @@ def test_duplicate_semantic_structure_occurrences_keep_unique_refs() -> None:
     assert len(set(refs)) == 2
 
 
-def test_linked_structure_does_not_double_public_reference_capacity(monkeypatch) -> None:
-    monkeypatch.setattr(PublicRefCodec, "max_index", 9)
-    count = PublicRefCodec.max_index // 2 + 1
+def test_linked_structure_and_public_labels_cross_the_old_ref_limit_losslessly() -> None:
+    count = 10_001
     source_id = "source:large-linked-structure"
     revision = "revision:large-linked-structure"
     target_ids = tuple(f"target:{index}" for index in range(count))
@@ -291,6 +289,7 @@ def test_linked_structure_does_not_double_public_reference_capacity(monkeypatch)
     projection, _actions, _index = _projection(fused.observation)
 
     assert len(projection.ordered_target_records) == count
+    assert len(projection.ordered_fact_records) == count
     assert len(projection.private_structure_refs) == count
     assert set(projection.private_structure_refs.values()) == set(projection.target_refs.values())
 

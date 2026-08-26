@@ -1162,8 +1162,61 @@ The repaired contract keeps one authority for each concern:
 No World projection, history/cursor path, Monitor rule, fallback action, URL recognizer, task branch, second catalog,
 or alternate Runtime loop is added. Provider-free gates cover every admitted delivery prefix, multi-verb target
 coalescing, Catalog independence from visible-prefix size, same-call rejection pairing through a second Recording
-FunctionModel turn, and zero-dispatch URL-scope rejection. A fresh authorized W2 run is still required before claiming
-live closure for Task267.
+FunctionModel turn, and zero-dispatch URL-scope rejection.
+
+The first post-repair launch,
+[`run2`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run2/run.json), failed before Agent construction with
+`environment_factory_exception`: an unrelated top-level package installed into the dedicated BrowserGym virtual
+environment had upgraded `beartype` to `0.22.9`, conflicting with `libwebarena==0.0.5`'s declared
+`beartype==0.12.0`. It made zero model calls and zero executions, so it is an environment diagnostic rather than an
+Agent counterexample. Removing that unrelated package and restoring WebArena's declared version made the unmodified
+environment factory importable again.
+
+The subsequent authorized
+[`run3`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run3/run.json) kept Agent code at commit `f20712bc`,
+completed in 41 single-call policy turns and 18 GUI executions, and submitted Acadia relation `2176999` with OSRM
+duration `01:32:00`. BrowserGym's native evaluator returned `verified_success`; the run recorded zero grounding gaps,
+representation repairs, fallbacks, waits, invalid tool arguments, and multiple-call responses. This closes the live
+Task267 witness for the exercised delivery path. It does not establish stability across the remaining frozen W2
+cohort.
+
+## W2 Task97 generation-local reference convergence
+
+The first untouched Task97 run crossed both Task267 repairs: one current-Catalog semantic mismatch returned the
+existing same-call `ToolRejectedResult`, and one restricted destination returned
+`NOT_SENT/destination_outside_environment`; both reached the next ordinary policy turn without representation repair
+or browser dispatch. The run then identified MIT as the 2019 SCImago target and selected its Wiki result. Construction
+of the resulting fresh World failed before the next step with `ValueError: public reference capacity exceeded`.
+[`run1`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run1/run.json) therefore records
+`failed / harness_projection / case_projection_failed` after about 441 seconds. Its zeroed aggregate metrics are the
+harness's projection of an absent CoreLoop result; the exact trace retains 50 completed policy steps and the owner
+exception.
+
+This reopens the same generation-local identity subsystem that Task266 run3 exercised, but at a different cardinality
+boundary. `WorldObservation` and the lossless Actor projection admit the complete current finite target/structure
+inventory, while `CanonicalPublicWorldProjection` also assigns public refs to canonical facts and current public
+labels. `PublicRefCodec` nevertheless imposed an independent four-decimal-digit maximum. The Task266 alias repair
+removed duplicate target/structure identities but could not make every later valid page fit that unrelated ceiling.
+
+The positive contract is one generation-local namespace over positive ordinals:
+
+```text
+one accepted finite current World
+-> one deterministic E/N/F/R ordering of its supported public records
+-> every generated ordinal is representable
+
+model-supplied E/N/F/R ref
+-> exact current Catalog/Manifest resolution
+-> unknown ref returns typed grounding rejection
+```
+
+`PublicRefCodec` now owns both the anchored schema pattern and the reusable token pattern and no longer imposes a
+smaller cardinality than its source World. History sanitization, benchmark fixtures, and test recorders consume that
+one grammar instead of embedding four-digit variants. This does not make refs durable, expose private IDs, widen a
+current Catalog, or change World, evidence, cursor, Binder, Executor, BrowserGym, Monitor, or harness control flow.
+A full-owner test projects 10,001 semantic targets, linked structure records, and public-label facts losslessly;
+Catalog tests separately prove a well-shaped `E10000` absent from the current resolver still fails with
+`GROUNDING_GAP`.
 
 ## World, perception, and action boundaries
 
@@ -1263,8 +1316,9 @@ This cutover is implementation-complete only when all of the following agree:
 7. focused and full provider-free suites, Ruff, compileall, negative searches, and fresh diff review pass.
 8. every Manifest ref is present in the same admitted text/media for zero, partial, and full action-prefix selections;
 9. readable search cannot match or return DOM tag/class/ID scaffolding.
-10. a unique semantic/structure occurrence has one public identity, every accepted World fact/artifact remains
-    resolvable, and large-World derivation does not rescan complete entity/action inventories per item.
+10. a unique semantic/structure occurrence has one public identity, every accepted finite World public record has a
+    representable generation-local ordinal, every accepted World fact/artifact remains resolvable, and large-World
+    derivation does not rescan complete entity/action inventories per item.
 11. queried control discovery returns only query-qualified current routes, and same-World discovery loops cannot create
     information novelty that clears Monitor.
 12. WebArena-family browser navigation is published only through the existing ActionSpace/BrowserGym route, while

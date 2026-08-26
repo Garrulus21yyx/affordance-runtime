@@ -14,9 +14,6 @@ class PublicRefKind(StrEnum):
     REGION = "R"
 
 
-PUBLIC_REF_MAX_INDEX = 9_999
-
-
 @dataclass(frozen=True)
 class DecodedPublicRef:
     kind: PublicRefKind
@@ -24,21 +21,23 @@ class DecodedPublicRef:
 
 
 class PublicRefCodec:
-    """Closed encoder/decoder with one cardinality decision."""
+    """Closed encoder/decoder for one generation-local positive ordinal."""
 
-    max_index: int = PUBLIC_REF_MAX_INDEX
+    @classmethod
+    def token_pattern(cls, expected: PublicRefKind | str | None = None) -> str:
+        prefix = PublicRefKind(expected).value if expected is not None else "[ENFR]"
+        return rf"(?:{prefix})[1-9][0-9]*"
 
     @classmethod
     def pattern(cls, expected: PublicRefKind | str | None = None) -> str:
         prefix = PublicRefKind(expected).value if expected is not None else "[ENFR]"
-        digits = len(str(cls.max_index))
-        return rf"^({prefix})([1-9][0-9]{{0,{digits - 1}}})$"
+        return rf"^({prefix})([1-9][0-9]*)$"
 
     @classmethod
     def encode(cls, kind: PublicRefKind | str, index: int) -> str:
         selected = PublicRefKind(kind)
-        if type(index) is not int or not 1 <= index <= cls.max_index:
-            raise ValueError("public reference capacity exceeded")
+        if type(index) is not int or index < 1:
+            raise ValueError("public reference index is invalid")
         return f"{selected.value}{index}"
 
     @classmethod
@@ -47,8 +46,6 @@ class PublicRefCodec:
         if match is None:
             raise ValueError("public reference is invalid")
         decoded = DecodedPublicRef(PublicRefKind(match.group(1)), int(match.group(2)))
-        if decoded.index > cls.max_index:
-            raise ValueError("public reference capacity exceeded")
         if expected is not None and decoded.kind is not PublicRefKind(expected):
             raise ValueError("public reference kind is invalid")
         return decoded
