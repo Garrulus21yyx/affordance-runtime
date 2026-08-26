@@ -419,13 +419,15 @@ The positive owner contract is now:
   invented public domains;
 - title changes do not change the browser-context binding identity; current URL/index still own currentness;
 - the DeepSeek model profile explicitly tells PydanticAI to send the existing generic output budget as
-  `max_tokens`;
+  `max_tokens`. The canonical provider envelope also maps the already-selected per-call reasoning profile into
+  PydanticAI's DeepSeek `thinking` setting: ordinary and representation-repair calls remain disabled, while the first
+  call for one typed recovery event is enabled. PydanticAI owns the corresponding `reasoning_effort` wire field and
+  typed `ThinkingPart` parsing/replay;
 - every canonical ActionPolicy envelope disables parallel calls and starts with `tool_choice=auto`, allowing the one
   ActionPolicy response to retain its bounded text/reasoning together with one ToolCall. If output validation rejects
   a text-only response, PydanticAI increments `RunContext.retry`; the same SDK per-step settings callable strengthens
-  only that one bounded retry to `tool_choice=required`. The SDK still owns `DeferredToolRequests`, argument
-  validation, call IDs, and retry history. DeepSeek V4 advertises `required` only for this disabled-thinking repair
-  request;
+  only that one bounded retry to `tool_choice=required`, without changing that invocation's reasoning profile. The SDK
+  still owns `DeferredToolRequests`, argument validation, call IDs, reasoning/tool history, and retry history;
 - the existing ActionPolicy Agent uses a PydanticAI output validator: a text-only response receives one same-context
   SDK output retry, while an exhausted pair returns typed `no_tool_call` or `output_budget_exhausted`. A pre-existing
   representation-repair request gets no nested output retry, so the output-validation sequence is bounded to two
@@ -1283,6 +1285,23 @@ rejections. This accepts the exercised large-World lifecycle and Monitor recover
 broader W2 cohort, and its 1,142,228 aggregate tokens remain an explicit efficiency target rather than a correctness
 reason to alter the now-verified control contract.
 
+Task265 run1 is a failed pre-repair witness for the provider envelope, not evidence that the single ActionPolicy needs
+a Replanner. Its formal report records 60 valid policy turns, 19 GUI executions, 13 recovery calls, zero fallbacks,
+zero grounding gaps, and timeout before STOP/native evaluation. The exact provider trace contains eleven deliberate
+ActionPolicy attempts whose canonical profile requested enabled thinking, but whose physical DeepSeek settings and
+telemetry reported disabled thinking with no reasoning content. The shared cause was confined to the canonical
+provider conversion: `zhipu` and `aliyun` mapped the existing call profile into the SDK `thinking` field, while
+`deepseek` silently omitted that mapping and inherited the model's non-thinking default.
+
+The positive contract now has one owner and no new control path. `ActionPolicyReasoningPolicy` still selects ordinary,
+deliberate, or representation-repair once per invocation; `CanonicalProviderEnvelopeBinder` maps that selected value
+for every supported provider; PydanticAI translates DeepSeek's enabled value to its official wire setting and retains
+typed reasoning beside the ToolCall in SDK history. Attempt telemetry derives reasoning presence/tokens from the same
+typed response and normalized usage rather than hard-coding `false/0`. Provider-free wire, history-roundtrip, accepted,
+and output-retry tests close the implementation contract. Task265 remains empirically open until a separately
+authorized fresh live witness; Planner, Monitor, progress/history compaction, World, BrowserGym, and CoreLoop are
+unchanged.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1408,10 +1427,12 @@ This cutover is implementation-complete only when all of the following agree:
     outcomes and transition lineage with honest truncation metadata rather than duplicate canonical Worlds.
 20. BrowserGym open-tab titles and routes are paired by position into one current browser subject; title-only changes
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
-21. DeepSeek receives the declared output budget through its supported wire parameter and disabled thinking; the
-    ordinary request uses `tool_choice=auto` so exact model text can accompany one ToolCall, while only a text-only
-    output retry uses `required`. A repeated provider violation still ends in a typed terminal failure, with no nested
-    representation retry or historical response miscount, and Trace records the physical setting of both requests.
+21. DeepSeek receives the declared output budget through its supported wire parameter, disabled thinking for
+    ordinary/representation-repair calls, and enabled thinking for the existing deliberate recovery profile. The
+    initial request uses `tool_choice=auto` so exact model text/reasoning can accompany one ToolCall, while only a
+    text-only output retry uses `required` without changing the reasoning profile. A repeated provider violation still
+    ends in a typed terminal failure, with no nested representation retry or historical response miscount, and Trace
+    records the physical settings and returned reasoning observation of both requests.
 22. GoalCompiler thinking control follows the selected provider capability, and ActionPolicy and Harness compaction
     receive one prompt-owned evidence-status rule without Runtime parsing summary prose into fact state.
 23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and

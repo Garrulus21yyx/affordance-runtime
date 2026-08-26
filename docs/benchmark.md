@@ -31,11 +31,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1798 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1803 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed. Excluding that governance file reports `1796 passed / 19 skipped`. Focused Monitor/CoreLoop and
-ActionPolicy/PydanticAI vertical verification reports `189 passed / 3 skipped`; Ruff, compileall, and
-`git diff --check` pass.
+modified or removed; every other collected test passed. The focused provider-envelope/PydanticAI boundary reports
+`91 passed`; Ruff, compileall, and `git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -411,9 +410,10 @@ a URL recognizer, site rule, memory path, or larger case timeout.
 The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by index into the one browser-context
 subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
 World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's
-existing output budget is sent through `max_tokens`. Canonical ActionPolicy requests use disabled thinking and start
-with `tool_choice=auto`; PydanticAI's output validator changes only its one text-only retry to `required`. Exhaustion
-is typed as `no_tool_call` or `output_budget_exhausted`;
+existing output budget is sent through `max_tokens`. Ordinary and representation-repair ActionPolicy requests use
+disabled thinking; the existing deliberate recovery profile uses enabled thinking. Every invocation starts with
+`tool_choice=auto`, and PydanticAI's output validator changes only its one text-only retry to `required` without
+changing that invocation's reasoning profile. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
 rejected prose does not enter canonical history. Representation repair is not nested with this retry. Focused tests
 cover title/URL
 pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
@@ -1143,6 +1143,24 @@ run3 handoff that had been cut short: different recovery attempts no longer form
 Agent remains bounded and reaches native completion. The exercised Task97 path is accepted; broader W2 correctness
 and efficiency remain open.
 
+Task265
+[`run1`](../evidence/live/w2-task-265-deepseek-v4-flash-20260826-run1/run.json) is a failed pre-repair provider-boundary
+witness. It timed out after 60 valid policy calls, 19 executions, 20 observations, 13 recovery calls, zero waits,
+fallbacks, grounding gaps, invalid arguments, and context-capacity rejections, without STOP or native evaluation. Its
+exact provider trace contains eleven deliberate ActionPolicy attempts. Each requested enabled thinking, but every one
+was physically admitted and recorded as disabled with no reasoning content/tokens. The selected recovery profile was
+therefore not reaching DeepSeek; this run does not establish that a second planner, progress channel, memory, or
+Monitor semantic judgment is required.
+
+The owner repair adds DeepSeek to the existing canonical per-call thinking mapping. Ordinary and representation-repair
+calls stay non-thinking; the existing first-call-per-recovery-event deliberate profile reaches PydanticAI as
+`thinking=true`, which the installed SDK maps to DeepSeek's `reasoning_effort` wire field. PydanticAI continues to own
+typed reasoning/tool parsing and paired history replay. Trace observation now reads `ThinkingPart` and normalized
+reasoning usage instead of hard-coding `false/0`, including the bounded output-validation retry path. Mock-wire,
+history-roundtrip, profile-algebra, accepted-response, and retry-response tests cover the positive contract. No
+Task265-specific code, Replanner, Runtime branch, new state, or history/World/Monitor change was introduced. Task265
+remains open pending separately authorized live validation.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1213,10 +1231,11 @@ The final read-only review for this cutover must answer:
     can any typed non-dispatch terminal failure still be projected as `failed=false` or omitted from its ToolReturn?
 26. Are BrowserGym tab titles and sanitized routes paired by their native index in the one current World, with route
     identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
-27. Does DeepSeek receive the declared output limit as `max_tokens` and disabled thinking, allow exact model text with
-    a ToolCall on the initial `auto` request, and change only a text-only PydanticAI retry to `required`; and does retry
-    exhaustion remain a typed bounded failure without polluting accepted history, miscounting historical responses,
-    or nesting a representation-repair retry?
+27. Does DeepSeek receive the declared output limit as `max_tokens`, map ordinary/repair calls to disabled thinking and
+    the existing deliberate recovery profile to enabled thinking, allow exact model text/reasoning with a ToolCall on
+    the initial `auto` request, and change only a text-only PydanticAI retry to `required`; and does reasoning/tool
+    history round-trip while retry exhaustion remains a typed bounded failure without polluting accepted history,
+    miscounting historical responses, or nesting a representation-repair retry?
 28. When a query token is both one control's exact label and another control's operation, does `find_controls`
     preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
     genuine current match?

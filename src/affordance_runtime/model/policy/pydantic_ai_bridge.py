@@ -1154,6 +1154,8 @@ class PydanticAIGroundedDecisionPort:
             "output_tokens",
         )
         attempt_cached_input_tokens = _response_usage_int(response, "cache_read_tokens")
+        reasoning_content_present, reasoning_tokens = _response_reasoning_observation(response)
+        final_content_tokens = max(0, attempt_completion_tokens - reasoning_tokens)
         transcript = {
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
@@ -1174,6 +1176,9 @@ class PydanticAIGroundedDecisionPort:
             "llm.token_count.prompt": attempt_prompt_tokens,
             "llm.token_count.completion": attempt_completion_tokens,
             "llm.token_count.total": attempt_prompt_tokens + attempt_completion_tokens,
+            "llm.token_count.reasoning": reasoning_tokens,
+            "llm.token_count.final_content": final_content_tokens,
+            "llm.output.reasoning_content_present": reasoning_content_present,
             "estimated_request_tokens": 0,
             "attempt_input_tokens": attempt_prompt_tokens,
             "attempt_cached_input_tokens": attempt_cached_input_tokens,
@@ -1196,15 +1201,15 @@ class PydanticAIGroundedDecisionPort:
             finish_reason=str(response.get("finish_reason") or "")[:80],
             max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
             final_content_present=bool(getattr(result.output, "calls", ())),
-            reasoning_content_present=False,
+            reasoning_content_present=reasoning_content_present,
             role="action_policy",
             mode="single_action",
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             thinking_requested=envelope.thinking_requested,
             thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
             trigger=envelope.attempt_trigger,
-            reasoning_tokens=0,
-            final_content_tokens=attempt_completion_tokens,
+            reasoning_tokens=reasoning_tokens,
+            final_content_tokens=final_content_tokens,
             final_tool_call_present=bool(getattr(result.output, "calls", ())),
             envelope_id=envelope.envelope_id,
             envelope_projection=envelope.model_boundary_projection(),
@@ -1266,6 +1271,8 @@ class PydanticAIGroundedDecisionPort:
             is_final = ordinal == len(response_rows) - 1
             prompt_tokens = max(0, _response_usage_int(response, "input_tokens"))
             completion_tokens = max(0, _response_usage_int(response, "output_tokens"))
+            reasoning_content_present, reasoning_tokens = _response_reasoning_observation(response)
+            final_content_tokens = max(0, completion_tokens - reasoning_tokens)
             cumulative_prompt_tokens += prompt_tokens
             cumulative_completion_tokens += completion_tokens
             parts = response.get("parts")
@@ -1297,6 +1304,9 @@ class PydanticAIGroundedDecisionPort:
                 "llm.token_count.prompt": prompt_tokens,
                 "llm.token_count.completion": completion_tokens,
                 "llm.token_count.total": prompt_tokens + completion_tokens,
+                "llm.token_count.reasoning": reasoning_tokens,
+                "llm.token_count.final_content": final_content_tokens,
+                "llm.output.reasoning_content_present": reasoning_content_present,
                 "attempt_input_tokens": prompt_tokens,
                 "attempt_cached_input_tokens": max(0, _response_usage_int(response, "cache_read_tokens")),
                 "provider_raw_cumulative_input_tokens": cumulative_prompt_tokens,
@@ -1320,15 +1330,15 @@ class PydanticAIGroundedDecisionPort:
                     finish_reason=str(response.get("finish_reason") or "")[:80],
                     max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
                     final_content_present=has_text or has_tool_call,
-                    reasoning_content_present=False,
+                    reasoning_content_present=reasoning_content_present,
                     role="action_policy",
                     mode="single_action",
                     schema_version=GROUNDED_TOOLS_PROTOCOL,
                     thinking_requested=envelope.thinking_requested,
                     thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
                     trigger=envelope.attempt_trigger,
-                    reasoning_tokens=0,
-                    final_content_tokens=completion_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                    final_content_tokens=final_content_tokens,
                     final_tool_call_present=has_tool_call,
                     envelope_id=envelope.envelope_id,
                     envelope_projection=envelope.model_boundary_projection(),
@@ -1571,6 +1581,9 @@ def pydantic_ai_model_from_environment(
     model_settings = {
         "max_tokens": _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS,
         "temperature": 0.0,
+        # Compaction and ordinary ActionPolicy calls default to non-thinking.
+        # The canonical per-call envelope overrides this only for a deliberate
+        # recovery invocation.
         "thinking": False,
     }
     if profile == "deepseek":
@@ -1582,10 +1595,9 @@ def pydantic_ai_model_from_environment(
             # ``max_completion_tokens``, which this endpoint does not enforce.
             profile={
                 "openai_chat_supports_max_completion_tokens": False,
-                # ActionPolicy disables DeepSeek thinking and requires a tool
-                # call.  DeepSeek V4 accepts ``required`` in that mode even
-                # though PydanticAI's conservative provider profile disables
-                # it for every V4 model name.
+                # DeepSeek V4 accepts ``required`` with tools in its supported
+                # per-call thinking modes even though PydanticAI's conservative
+                # provider profile disables it for every V4 model name.
                 "openai_supports_tool_choice_required": True,
             },
             settings=model_settings,
@@ -2676,6 +2688,26 @@ def _response_usage_int(response: Mapping[str, object], field_name: str) -> int:
         return -1
     value = usage.get(field_name)
     return value if type(value) is int and value >= 0 else -1
+
+
+def _response_reasoning_observation(response: Mapping[str, object]) -> tuple[bool, int]:
+    """Read PydanticAI's typed reasoning part and normalized usage details."""
+
+    parts = response.get("parts")
+    reasoning_content_present = bool(
+        isinstance(parts, list)
+        and any(
+            isinstance(part, Mapping)
+            and part.get("part_kind") == "thinking"
+            and bool(str(part.get("content") or "").strip())
+            for part in parts
+        )
+    )
+    usage = response.get("usage")
+    details = usage.get("details") if isinstance(usage, Mapping) else None
+    value = details.get("reasoning_tokens") if isinstance(details, Mapping) else None
+    reasoning_tokens = value if type(value) is int and value >= 0 else 0
+    return reasoning_content_present, reasoning_tokens
 
 
 def _structured_output_failure_for_response(

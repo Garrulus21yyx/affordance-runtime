@@ -501,7 +501,7 @@ class CanonicalProviderEnvelopeBinder:
             if request_timeout_s <= 0:
                 raise ValueError("provider request timeout must be positive")
             settings["timeout"] = request_timeout_s
-        if identity.provider_id in {"zhipu", "aliyun"}:
+        if identity.provider_id in {"zhipu", "aliyun", "deepseek"}:
             settings["thinking"] = call_profile.thinking_mode == "enabled"
         output = CanonicalOutputContract()
         if isinstance(diagnostics, CanonicalProviderEnvelope):

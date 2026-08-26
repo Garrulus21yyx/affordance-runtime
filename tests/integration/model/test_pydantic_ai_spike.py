@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from dataclasses import replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
 import pytest
@@ -80,6 +82,7 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
 )
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
     PydanticAIGroundedDecisionPort,
+    pydantic_ai_model_from_environment,
     zhipu_pydantic_ai_policy_from_environment,
 )
 from affordance_runtime.model.policy.request_admission import (
@@ -108,6 +111,67 @@ from tests.support.model.recording_pydantic_model import (
 )
 
 ScriptedModel = RecordingPydanticModel
+
+
+def _serve_openai_chat_responses(
+    responses: tuple[dict[str, object], ...],
+) -> tuple[ThreadingHTTPServer, threading.Thread, list[dict[str, object]]]:
+    requests: list[dict[str, object]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+            length = int(self.headers["Content-Length"])
+            requests.append(json.loads(self.rfile.read(length)))
+            payload = json.dumps(responses[len(requests) - 1]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, requests
+
+
+def _deepseek_tool_response(
+    ordinal: int,
+    *,
+    reasoning: str,
+) -> dict[str, object]:
+    return {
+        "id": f"deepseek-response:{ordinal}",
+        "object": "chat.completion",
+        "created": ordinal,
+        "model": "deepseek-v4-flash",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": reasoning,
+                    "tool_calls": [
+                        {
+                            "id": f"deepseek-call:{ordinal}",
+                            "type": "function",
+                            "function": {"name": "act", "arguments": "{}"},
+                        }
+                    ],
+                },
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 8 + 2 * ordinal,
+            "completion_tokens": 4,
+            "total_tokens": 12 + 2 * ordinal,
+        },
+    }
 
 
 def _progress_text(
@@ -141,6 +205,93 @@ def _policy(model) -> ModelBackedAgentPolicy:
         transport_timeout_s=4.0,
     )
     return ModelBackedAgentPolicy(port, call_timeout_s=5.0)
+
+
+def test_deepseek_deliberate_thinking_uses_official_wire_and_roundtrips_tool_reasoning() -> None:
+    responses = (
+        _deepseek_tool_response(
+            1,
+            reasoning="The current route is exhausted; choose another source.",
+        ),
+        _deepseek_tool_response(
+            2,
+            reasoning="The alternative source is now active.",
+        ),
+    )
+    server, thread, requests = _serve_openai_chat_responses(responses)
+
+    async def scenario() -> None:
+        configured = pydantic_ai_model_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_DEEPSEEK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "LLM_DEEPSEEK_API_KEY": "test-secret",
+                "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            },
+            call_timeout_s=10.0,
+        )
+        parameters = ModelRequestParameters(
+            function_tools=[
+                ToolDefinition(
+                    name="act",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                    strict=True,
+                )
+            ],
+            allow_text_output=True,
+        )
+        first_request = ModelRequest(parts=[UserPromptPart("Recover with one action.")])
+        first = await configured.model.request(
+            [first_request],
+            {"thinking": True, "max_tokens": 64, "tool_choice": "auto"},
+            parameters,
+        )
+        first_thinking = next(part for part in first.parts if isinstance(part, ThinkingPart))
+        first_call = next(part for part in first.parts if isinstance(part, ToolCallPart))
+        assert first_thinking.content == "The current route is exhausted; choose another source."
+        assert first_call.tool_call_id == "deepseek-call:1"
+
+        tool_return = ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="act",
+                    content={"status": "complete"},
+                    tool_call_id=first_call.tool_call_id,
+                )
+            ]
+        )
+        second = await configured.model.request(
+            [first_request, first, tool_return],
+            {"thinking": True, "max_tokens": 64, "tool_choice": "auto"},
+            parameters,
+        )
+        assert any(isinstance(part, ThinkingPart) for part in second.parts)
+        assert any(isinstance(part, ToolCallPart) for part in second.parts)
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert len(requests) == 2
+    assert requests[0]["reasoning_effort"] == "medium"
+    assert requests[1]["reasoning_effort"] == "medium"
+    replayed_assistant = requests[1]["messages"][1]
+    assert replayed_assistant["reasoning_content"] == (
+        "The current route is exhausted; choose another source."
+    )
+    assert replayed_assistant["tool_calls"][0]["id"] == "deepseek-call:1"
+    assert requests[1]["messages"][2] == {
+        "role": "tool",
+        "tool_call_id": "deepseek-call:1",
+        "content": '{"status":"complete"}',
+    }
 
 
 async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
@@ -2538,6 +2689,141 @@ def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> N
         assert second.attempts[0].thinking_requested == "disabled"
         assert second.attempts[0].max_output_tokens == 1024
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 1024]
+
+    asyncio.run(scenario())
+
+
+def test_deepseek_deliberate_attempt_records_returned_reasoning() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("The previous route is exhausted, so inspect the current regions."),
+                        ToolCallPart("list_regions", {}, "recording-call:deliberate"),
+                    ],
+                    usage=RequestUsage(
+                        input_tokens=20,
+                        output_tokens=8,
+                        details={"reasoning_tokens": 3},
+                    ),
+                    provider_response_id="recording-response:deliberate",
+                )
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("deepseek-reasoning-observation", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "grounding_stall",
+                "stable_signature": "deepseek:reasoning:1",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:deepseek-reasoning", context))
+
+        assert result.failure is None and result.output is not None
+        attempt = result.attempts[0]
+        assert attempt.phase == "deliberate"
+        assert attempt.thinking_requested == "enabled"
+        assert attempt.thinking_effective == "enabled"
+        assert attempt.reasoning_content_present is True
+        assert attempt.reasoning_tokens == 3
+        assert attempt.final_content_tokens == 5
+        assert attempt.transcript["llm.output.reasoning_content_present"] is True
+        assert attempt.transcript["llm.token_count.reasoning"] == 3
+        assert attempt.transcript["llm.token_count.final_content"] == 5
+
+    asyncio.run(scenario())
+
+
+def test_deepseek_deliberate_output_retry_records_each_reasoning_response() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("The route needs reconsideration."),
+                        TextPart("I should use a current tool."),
+                    ],
+                    usage=RequestUsage(
+                        input_tokens=20,
+                        output_tokens=7,
+                        details={"reasoning_tokens": 2},
+                    ),
+                    provider_response_id="recording-response:deliberate-invalid",
+                ),
+                ModelResponse(
+                    parts=[
+                        ThinkingPart("Inspect the current regions instead."),
+                        ToolCallPart("list_regions", {}, "recording-call:deliberate-retry"),
+                    ],
+                    usage=RequestUsage(
+                        input_tokens=24,
+                        output_tokens=9,
+                        details={"reasoning_tokens": 4},
+                    ),
+                    provider_response_id="recording-response:deliberate-accepted",
+                ),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("deepseek-reasoning-output-retry", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "deepseek:reasoning:retry",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:deepseek-reasoning-retry", context))
+
+        assert result.failure is None and result.output is not None
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert [attempt.phase for attempt in result.attempts] == [
+            "deliberate",
+            "deliberate_output_retry",
+        ]
+        assert [attempt.reasoning_content_present for attempt in result.attempts] == [True, True]
+        assert [attempt.reasoning_tokens for attempt in result.attempts] == [2, 4]
+        assert [attempt.final_content_tokens for attempt in result.attempts] == [5, 5]
+        assert all(attempt.thinking_effective == "enabled" for attempt in result.attempts)
 
     asyncio.run(scenario())
 

@@ -40,7 +40,11 @@ class _EquivalentResolver:
         raise AssertionError((arguments, context_id, tool_call_id))
 
 
-async def _bound_envelope() -> CanonicalProviderEnvelope:
+async def _bound_envelope(
+    *,
+    identity: CanonicalProviderIdentity | None = None,
+    call_profile: ActionPolicyCallProfile | None = None,
+) -> CanonicalProviderEnvelope:
     task = _task()
     world = _world("request-admission", False)
     evaluation = await SharedTaskEvaluator().evaluate(task, world)
@@ -57,8 +61,9 @@ async def _bound_envelope() -> CanonicalProviderEnvelope:
         request,
         delivery,
         catalog,
-        identity=CanonicalProviderIdentity("fixture", "recording", "fixture.invalid", "text_only"),
-        call_profile=_profile(),
+        identity=identity
+        or CanonicalProviderIdentity("fixture", "recording", "fixture.invalid", "text_only"),
+        call_profile=call_profile or _profile(),
         output_token_reserve=4_096,
     )
 
@@ -70,6 +75,45 @@ def _profile(*, max_output_tokens: int = 1024) -> ActionPolicyCallProfile:
         max_output_tokens,
         "disabled",
     )
+
+
+@pytest.mark.parametrize(
+    ("thinking_mode", "expected"),
+    (("disabled", False), ("enabled", True)),
+)
+def test_deepseek_envelope_maps_each_call_profile_to_provider_thinking(
+    thinking_mode: str,
+    expected: bool,
+) -> None:
+    phase = (
+        ActionPolicyInvocationPhase.DELIBERATE
+        if thinking_mode == "enabled"
+        else ActionPolicyInvocationPhase.ORDINARY
+    )
+    trigger = (
+        ActionPolicyInvocationTrigger.CONTROL_STALL
+        if thinking_mode == "enabled"
+        else ActionPolicyInvocationTrigger.ORDINARY
+    )
+    envelope = asyncio.run(
+        _bound_envelope(
+            identity=CanonicalProviderIdentity(
+                "deepseek",
+                "deepseek-v4-flash",
+                "api.deepseek.com",
+                "text_only",
+            ),
+            call_profile=ActionPolicyCallProfile(
+                phase,
+                trigger,
+                2_048 if expected else 1_024,
+                thinking_mode,
+            ),
+        )
+    )
+
+    assert envelope.model_settings["thinking"] is expected
+    assert envelope.thinking_requested == thinking_mode
 
 
 def _replace_physical(envelope: CanonicalProviderEnvelope, **changes) -> CanonicalProviderEnvelope:
