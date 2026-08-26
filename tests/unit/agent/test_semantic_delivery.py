@@ -10,6 +10,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import affordance_runtime.agent.context.world_region_index as world_region_index_module
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent.context.compact_world_renderer import (
     CapacityExceeded,
@@ -583,6 +584,23 @@ def test_functional_partition_uses_landmarks_headings_lists_and_merges_empty_ico
     assert not any(item.root_structure_id in {"empty", "icon"} for item in index.regions)
     repeated = next(item for item in index.regions if item.role == "list")
     assert repeated.repeated_item_roots == ("row:0", "row:1", "row:2")
+    assert set(index.target_region_keys) == {item.target_id for item in world.targets}
+
+
+def test_functional_partition_indexes_each_source_order_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    world = _functional_world(rows=200)
+    original = world_region_index_module._source_order_map
+    indexed_sources: list[int] = []
+
+    def tracked(structure):
+        indexed_sources.append(len(structure))
+        return original(structure)
+
+    monkeypatch.setattr(world_region_index_module, "_source_order_map", tracked)
+
+    index = WorldDeliveryIndex.from_observation(world)
+
+    assert indexed_sources == [len(source.structure) for source in world.sources if source.structure]
     assert set(index.target_region_keys) == {item.target_id for item in world.targets}
 
 

@@ -22,7 +22,7 @@ from affordance_runtime.agent.context.observation_delivery import (
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
-from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
+from affordance_runtime.agent.context.world_transition import PublicWorldDelta, WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     Abort,
     AbortCategory,
@@ -377,9 +377,7 @@ class CoreAgentLoop:
                 result,
                 status_after=RunStatus.BLOCKED,
                 feedback="turn_budget_exhausted",
-                control_termination=ControlTermination(
-                    ControlTerminationKind.TURN_BUDGET_EXHAUSTED
-                ),
+                control_termination=ControlTermination(ControlTerminationKind.TURN_BUDGET_EXHAUSTED),
             )
         if delivery_transition is None:
             delivery_transition = state.delivery_store.reduce(
@@ -406,12 +404,8 @@ class CoreAgentLoop:
         )
         state.workspace = workspace
         if result.task_evaluation is not None and (
-            (
-                result.finalization is not None
-                and result.finalization.native_evaluation_status is not None
-            )
-            or result.task_evaluation.status
-            in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
+            (result.finalization is not None and result.finalization.native_evaluation_status is not None)
+            or result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
         ):
             self._record_official_outcome(result.task_evaluation)
         if trace_step:
@@ -426,21 +420,36 @@ class CoreAgentLoop:
     ) -> StepResult:
         """Orchestrate the World owner value; do not interpret its order or refs."""
 
-        if result.before_public_world is not None or result.feedback == PublicGroundingAmbiguousError.code:
+        if result.feedback == PublicGroundingAmbiguousError.code:
             return result
+        if result.before_public_world is not None:
+            if (
+                result.after_delivery_index is not None
+                or result.after_world.observation_id == result.before_world.observation_id
+            ):
+                return result
+            after_actions = self.action_space_builder.build(task, result.after_world)
+            after_index = WorldDeliveryIndex.from_observation(
+                result.after_world,
+                after_actions.options,
+                public_world_delta=result.public_world_delta,
+                previous_index=state.delivery_index or state.prior_delivery_index,
+            )
+            return replace(result, after_delivery_index=after_index)
         before = state.canonical_world
         if before is None:
             before_actions = self.action_space_builder.build(task, result.before_world)
             before_index = state.delivery_index or WorldDeliveryIndex.from_observation(
                 result.before_world, before_actions.options
             )
-            before = CanonicalPublicWorldProjection.build(
-                result.before_world, before_index, before_actions
-            )
+            before = CanonicalPublicWorldProjection.build(result.before_world, before_index, before_actions)
+        else:
+            before_index = state.delivery_index
         if result.after_world is result.before_world or (
             result.after_world.observation_id == result.before_world.observation_id
         ):
             after = before
+            after_index = before_index
         else:
             after_actions = self.action_space_builder.build(task, result.after_world)
             after_index = WorldDeliveryIndex.from_observation(
@@ -449,10 +458,13 @@ class CoreAgentLoop:
                 public_world_delta=result.public_world_delta,
                 previous_index=state.delivery_index or state.prior_delivery_index,
             )
-            after = CanonicalPublicWorldProjection.build(
-                result.after_world, after_index, after_actions
-            )
-        return replace(result, before_public_world=before, after_public_world=after)
+            after = CanonicalPublicWorldProjection.build(result.after_world, after_index, after_actions)
+        return replace(
+            result,
+            before_public_world=before,
+            after_public_world=after,
+            after_delivery_index=after_index,
+        )
 
     def _record_official_outcome(self, evaluation: TaskEvaluation) -> None:
         recorder = getattr(self.official_outcome_sink, "native_evaluator_returned", None)
@@ -468,12 +480,17 @@ class CoreAgentLoop:
         delivery_transition: DeliveryTransition,
     ) -> StepResult:
         monitor = self.episode_monitor
-        if monitor is None or result.task_evaluation is None or result.status_after in {
-            RunStatus.DONE,
-            RunStatus.WAITING_USER,
-            RunStatus.WAITING_CONFIRMATION,
-            RunStatus.CANCELLED,
-        }:
+        if (
+            monitor is None
+            or result.task_evaluation is None
+            or result.status_after
+            in {
+                RunStatus.DONE,
+                RunStatus.WAITING_USER,
+                RunStatus.WAITING_CONFIRMATION,
+                RunStatus.CANCELLED,
+            }
+        ):
             return result
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
@@ -567,8 +584,7 @@ class CoreAgentLoop:
         if (
             region_index is None
             or region_index.world_observation_id != state.current_world.observation_id
-            or set(region_index.action_region_keys)
-            != {item.action_id for item in action_space.options}
+            or set(region_index.action_region_keys) != {item.action_id for item in action_space.options}
         ):
             region_index = WorldDeliveryIndex.from_observation(
                 state.current_world,
@@ -581,6 +597,25 @@ class CoreAgentLoop:
                 previous_index=state.delivery_index or state.prior_delivery_index,
             )
         state.install_delivery_index(region_index)
+        canonical_world = state.canonical_world
+        if canonical_world is None:
+            canonical_world = CanonicalPublicWorldProjection.build(
+                state.current_world,
+                region_index,
+                action_space,
+            )
+            state.install_canonical_world(canonical_world)
+        observation_projection = state.observation_projection
+        if observation_projection is None:
+            observation_projection = self.context_builder.project_observation(
+                state.current_world,
+                action_space,
+                observation_capabilities=environment.observation_capabilities,
+                runtime_controls=self.runtime_controls,
+                region_index=region_index,
+                canonical_world=canonical_world,
+            )
+            state.install_observation_projection(observation_projection)
         action_page = (
             state.action_page
             if state.action_page is not None and state.action_page.action_space_id == action_space.action_space_id
@@ -604,10 +639,11 @@ class CoreAgentLoop:
                 goal_resolution=state.goal_resolution,
                 runtime_controls=self.runtime_controls,
                 region_index=region_index,
-                canonical_world=state.canonical_world,
+                canonical_world=canonical_world,
                 control_feedback=_recovery_feedback(state.recovery_signal),
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,
+                observation_projection=observation_projection,
             )
         except PublicGroundingAmbiguousError:
             return StepResult(
@@ -715,12 +751,8 @@ class CoreAgentLoop:
                 result = await self._observe(environment, task, state, decision)
             case DecisionKind.FIND_CONTROLS:
                 assert isinstance(decision, RequestActionPage)
-                result = self._action_page(task, state, action_space, decision)
-            case (
-                DecisionKind.READ_REGION
-                | DecisionKind.SEARCH_PAGE_CONTENT
-                | DecisionKind.TOOL_REJECTED
-            ):
+                result = self._action_page(task, state, action_space, context, decision)
+            case DecisionKind.READ_REGION | DecisionKind.SEARCH_PAGE_CONTENT | DecisionKind.TOOL_REJECTED:
                 assert isinstance(decision, LocalToolResult)
                 result = StepResult(
                     decision,
@@ -747,9 +779,7 @@ class CoreAgentLoop:
                     decision,
                     status,
                     f"agent_aborted:{decision.category}",
-                    control_termination=ControlTermination(
-                        ControlTerminationKind.AGENT_ABORTED
-                    ),
+                    control_termination=ControlTermination(ControlTerminationKind.AGENT_ABORTED),
                 )
             case unexpected:
                 assert_never(unexpected)
@@ -831,14 +861,11 @@ class CoreAgentLoop:
         if captured:
             assert post is not None and post.observation is not None
             native_evaluator_invoked = True
-            final_delta = WorldTransitionProjector().project(
-                state.current_world, post.observation
-            )
-            after_projection, _after_index = self._canonical_world_for(
+            final_delta, after_projection, after_index = self._canonical_transition_for(
                 task,
+                state.current_world,
                 post.observation,
                 previous_index=state.delivery_index,
-                delta=final_delta,
             )
             try:
                 attempt = await validated_task_evaluation_attempt(
@@ -865,6 +892,7 @@ class CoreAgentLoop:
                     public_world_delta=final_delta,
                     before_public_world=state.canonical_world,
                     after_public_world=after_projection,
+                    after_delivery_index=after_index,
                 )
             if isinstance(attempt, Evaluated):
                 evaluation = attempt.evaluation
@@ -886,7 +914,9 @@ class CoreAgentLoop:
                     feedback=attempt.code,
                     runtime_failure=RuntimeFailure(
                         FailureStage.EVALUATION,
-                        FailureKind.CAPABILITY_UNAVAILABLE if isinstance(attempt, Unavailable) else FailureKind.INTERNAL,
+                        FailureKind.CAPABILITY_UNAVAILABLE
+                        if isinstance(attempt, Unavailable)
+                        else FailureKind.INTERNAL,
                         attempt.code,
                         exception_class=attempt.diagnostic.exception_type,
                     ),
@@ -894,6 +924,7 @@ class CoreAgentLoop:
                     public_world_delta=final_delta,
                     before_public_world=state.canonical_world,
                     after_public_world=after_projection,
+                    after_delivery_index=after_index,
                 )
         facts = FinalizationProtocolResult(
             finalization.result.dispatch_status,
@@ -929,6 +960,7 @@ class CoreAgentLoop:
             public_world_delta=final_delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
+            after_delivery_index=after_index,
         )
 
     def _trace_finalization(self, facts: FinalizationProtocolResult) -> None:
@@ -950,13 +982,17 @@ class CoreAgentLoop:
                 diagnostic=outcome.diagnostic,
             )
 
-    def _action_page(self, task, state, action_space, decision: RequestActionPage) -> StepResult:
+    def _action_page(self, task, state, action_space, context, decision: RequestActionPage) -> StepResult:
         query = decision.query
+        region_index = context.region_index
+        if region_index is None:
+            raise ValueError("action discovery requires the current delivery index")
         try:
             page = self.context_builder.page(
                 action_space,
                 state.current_world,
                 query=query,
+                region_index=region_index,
             )
         except ValueError:
             return _same_world_step(state, decision, RunStatus.BLOCKED, "action_page_invalid")
@@ -964,7 +1000,9 @@ class CoreAgentLoop:
             action_space,
             state.current_world,
             page,
-            canonical_world=state.canonical_world,
+            region_index=region_index,
+            canonical_world=context.canonical_world,
+            grounding=context.grounding,
         )
         retained_page = page
         feedback = "action_page_ready"
@@ -974,13 +1012,21 @@ class CoreAgentLoop:
                 if state.action_page is not None
                 and state.action_page.action_space_id == action_space.action_space_id
                 and not state.action_page.query
-                else self.context_builder.page(action_space, state.current_world)
+                else self.context_builder.page(
+                    action_space,
+                    state.current_world,
+                    region_index=region_index,
+                )
             )
         if page.total_count == 0:
             retained_page = (
                 state.action_page
                 if state.action_page is not None and state.action_page.action_space_id == action_space.action_space_id
-                else self.context_builder.page(action_space, state.current_world)
+                else self.context_builder.page(
+                    action_space,
+                    state.current_world,
+                    region_index=region_index,
+                )
             )
             feedback = "action_page_empty"
         return StepResult(
@@ -1007,9 +1053,7 @@ class CoreAgentLoop:
                 decision,
                 RunStatus.BLOCKED,
                 "wait_budget_exhausted",
-                control_termination=ControlTermination(
-                    ControlTerminationKind.WAIT_BUDGET_EXHAUSTED
-                ),
+                control_termination=ControlTermination(ControlTerminationKind.WAIT_BUDGET_EXHAUSTED),
             )
         await self.wait_controller.wait(decision.max_wait_ms)
         acquisition = await environment.capture(
@@ -1029,9 +1073,11 @@ class CoreAgentLoop:
                 waited_ms=decision.max_wait_ms,
             )
         after = acquisition.observation
-        delta = WorldTransitionProjector().project(state.current_world, after)
-        after_projection, _after_index = self._canonical_world_for(
-            task, after, previous_index=state.delivery_index, delta=delta
+        delta, after_projection, after_index = self._canonical_transition_for(
+            task,
+            state.current_world,
+            after,
+            previous_index=state.delivery_index,
         )
         task_evaluation = await self._validated_task_evaluation(task, after, after_projection)
         return StepResult(
@@ -1045,6 +1091,7 @@ class CoreAgentLoop:
             public_world_delta=delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
+            after_delivery_index=after_index,
         )
 
     async def _observe(
@@ -1084,9 +1131,11 @@ class CoreAgentLoop:
                 f"observation_unavailable:{acquisition.reason_code}",
             )
         after = acquisition.observation
-        delta = WorldTransitionProjector().project(state.current_world, after)
-        after_projection, _after_index = self._canonical_world_for(
-            task, after, previous_index=state.delivery_index, delta=delta
+        delta, after_projection, after_index = self._canonical_transition_for(
+            task,
+            state.current_world,
+            after,
+            previous_index=state.delivery_index,
         )
         task_evaluation = await self._validated_task_evaluation(task, after, after_projection)
         return StepResult(
@@ -1099,6 +1148,7 @@ class CoreAgentLoop:
             public_world_delta=delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
+            after_delivery_index=after_index,
         )
 
     async def _select(
@@ -1184,6 +1234,20 @@ class CoreAgentLoop:
                 and cancelled_post.observation is not None
                 else state.current_world
             )
+            transition_fields = {}
+            if after.observation_id != state.current_world.observation_id:
+                delta, after_projection, after_index = self._canonical_transition_for(
+                    task,
+                    state.current_world,
+                    after,
+                    previous_index=state.delivery_index,
+                )
+                transition_fields = {
+                    "public_world_delta": delta,
+                    "before_public_world": state.canonical_world,
+                    "after_public_world": after_projection,
+                    "after_delivery_index": after_index,
+                }
             return StepResult(
                 decision,
                 state.current_world,
@@ -1196,6 +1260,7 @@ class CoreAgentLoop:
                     completion=ExecutionCompletion.CANCELLED,
                 ),
                 feedback="action_execution_cancelled",
+                **transition_fields,
             )
         if (
             execution.result.dispatch_status is DispatchStatus.NOT_SENT
@@ -1214,11 +1279,7 @@ class CoreAgentLoop:
                 state.current_world,
                 state.current_world,
                 state.current_task_evaluation,
-                (
-                    RunStatus.RUNNING
-                    if execution.result.permits_reselection
-                    else RunStatus.BLOCKED
-                ),
+                (RunStatus.RUNNING if execution.result.permits_reselection else RunStatus.BLOCKED),
                 execution_receipts=ExecutionReceiptBatch.from_atomic(
                     execution,
                     state.current_world.observation_id,
@@ -1254,12 +1315,11 @@ class CoreAgentLoop:
                 failure_code=failure_code,
             )
         after = post.observation
-        public_world_delta = WorldTransitionProjector().project(state.current_world, after)
-        after_projection, _after_index = self._canonical_world_for(
+        public_world_delta, after_projection, after_index = self._canonical_transition_for(
             task,
+            state.current_world,
             after,
             previous_index=state.delivery_index,
-            delta=public_world_delta,
         )
         try:
             action_outcome = await validated_action_outcome(
@@ -1272,34 +1332,46 @@ class CoreAgentLoop:
                 public_world_delta,
             )
         except asyncio.CancelledError:
-            return _post_dispatch_evaluation_failure(
-                state,
-                decision,
-                after,
-                ExecutionReceiptBatch.from_atomic(
-                    execution,
-                    after.observation_id,
-                    completion=ExecutionCompletion.CANCELLED,
-                    cancellation_phase=ExecutionCancellationPhase.EVALUATION,
+            return replace(
+                _post_dispatch_evaluation_failure(
+                    state,
+                    decision,
+                    after,
+                    ExecutionReceiptBatch.from_atomic(
+                        execution,
+                        after.observation_id,
+                        completion=ExecutionCompletion.CANCELLED,
+                        cancellation_phase=ExecutionCancellationPhase.EVALUATION,
+                    ),
+                    cancelled=True,
+                    code="action_outcome_cancelled",
+                    public_world_delta=public_world_delta,
                 ),
-                cancelled=True,
-                code="action_outcome_cancelled",
+                before_public_world=state.canonical_world,
+                after_public_world=after_projection,
+                after_delivery_index=after_index,
             )
         except Exception as exc:
-            return _post_dispatch_evaluation_failure(
-                state,
-                decision,
-                after,
-                ExecutionReceiptBatch.from_atomic(execution, after.observation_id),
-                cancelled=False,
-                code="action_outcome_failed",
-                exception_class=type(exc).__name__,
+            return replace(
+                _post_dispatch_evaluation_failure(
+                    state,
+                    decision,
+                    after,
+                    ExecutionReceiptBatch.from_atomic(execution, after.observation_id),
+                    cancelled=False,
+                    code="action_outcome_failed",
+                    public_world_delta=public_world_delta,
+                    exception_class=type(exc).__name__,
+                ),
+                before_public_world=state.canonical_world,
+                after_public_world=after_projection,
+                after_delivery_index=after_index,
             )
         if execution.result.dispatch_status is DispatchStatus.SENT_UNKNOWN:
             if action_outcome.local_postcondition is LocalPostconditionStatus.UNKNOWN:
                 batch = ExecutionReceiptBatch.from_atomic(execution, after.observation_id)
                 task_evaluation = await self._task_evaluation_after_dispatch(
-                    task, state, decision, after, batch, after_projection
+                    task, state, decision, after, batch, after_projection, after_index
                 )
                 if isinstance(task_evaluation, StepResult):
                     return task_evaluation
@@ -1315,10 +1387,11 @@ class CoreAgentLoop:
                     public_world_delta=public_world_delta,
                     before_public_world=state.canonical_world,
                     after_public_world=after_projection,
+                    after_delivery_index=after_index,
                 )
         batch = ExecutionReceiptBatch.from_atomic(execution, after.observation_id)
         task_evaluation = await self._task_evaluation_after_dispatch(
-            task, state, decision, after, batch, after_projection
+            task, state, decision, after, batch, after_projection, after_index
         )
         if isinstance(task_evaluation, StepResult):
             return task_evaluation
@@ -1337,6 +1410,7 @@ class CoreAgentLoop:
             public_world_delta=public_world_delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
+            after_delivery_index=after_index,
         )
 
     async def _recover_post_dispatch_observation(
@@ -1470,9 +1544,11 @@ class CoreAgentLoop:
                 feedback="binding_refresh_unavailable",
             )
         after = acquisition.observation
-        delta = WorldTransitionProjector().project(state.current_world, after)
-        after_projection, _after_index = self._canonical_world_for(
-            task, after, previous_index=state.delivery_index, delta=delta
+        delta, after_projection, after_index = self._canonical_transition_for(
+            task,
+            state.current_world,
+            after,
+            previous_index=state.delivery_index,
         )
         task_evaluation = await self._validated_task_evaluation(task, after, after_projection)
         return StepResult(
@@ -1493,6 +1569,7 @@ class CoreAgentLoop:
             public_world_delta=delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
+            after_delivery_index=after_index,
         )
 
     def _status_for_goal_resolution(self, task, evaluation, resolution) -> RunStatus:
@@ -1509,9 +1586,13 @@ class CoreAgentLoop:
         after: WorldObservation,
         batch: ExecutionReceiptBatch,
         after_projection: CanonicalPublicWorldProjection,
+        after_index: WorldDeliveryIndex,
     ) -> TaskEvaluation | StepResult:
         """Close evaluator failure without losing already-crossed dispatch truth."""
 
+        public_world_delta = after_index.public_world_delta
+        if not isinstance(public_world_delta, PublicWorldDelta):
+            raise TypeError("after-World delivery index requires its public transition")
         try:
             return await self._validated_task_evaluation(task, after, after_projection)
         except asyncio.CancelledError:
@@ -1526,11 +1607,13 @@ class CoreAgentLoop:
                 ),
                 cancelled=True,
                 code="task_evaluation_cancelled",
+                public_world_delta=public_world_delta,
             )
             return replace(
                 failure,
                 before_public_world=state.canonical_world,
                 after_public_world=after_projection,
+                after_delivery_index=after_index,
             )
         except (TaskEvaluationUnavailableError, TaskEvaluationInternalError) as exc:
             outcome = exc.outcome
@@ -1541,10 +1624,9 @@ class CoreAgentLoop:
                 batch,
                 cancelled=False,
                 code=outcome.code,
+                public_world_delta=public_world_delta,
                 failure_kind=(
-                    FailureKind.CAPABILITY_UNAVAILABLE
-                    if isinstance(outcome, Unavailable)
-                    else FailureKind.INTERNAL
+                    FailureKind.CAPABILITY_UNAVAILABLE if isinstance(outcome, Unavailable) else FailureKind.INTERNAL
                 ),
                 exception_class=outcome.diagnostic.exception_type,
             )
@@ -1552,6 +1634,7 @@ class CoreAgentLoop:
                 failure,
                 before_public_world=state.canonical_world,
                 after_public_world=after_projection,
+                after_delivery_index=after_index,
             )
 
     async def _validated_task_evaluation(
@@ -1560,9 +1643,7 @@ class CoreAgentLoop:
         observation: WorldObservation,
         canonical_world: CanonicalPublicWorldProjection,
     ) -> TaskEvaluation:
-        attempt = await validated_task_evaluation_attempt(
-            self.task_evaluator, task, observation, canonical_world
-        )
+        attempt = await validated_task_evaluation_attempt(self.task_evaluator, task, observation, canonical_world)
         if isinstance(attempt, Evaluated):
             return attempt.evaluation
         self._trace_native_evaluator_failure(attempt)
@@ -1587,6 +1668,31 @@ class CoreAgentLoop:
         )
         return CanonicalPublicWorldProjection.build(observation, index, action_space), index
 
+    def _canonical_transition_for(
+        self,
+        task: TaskGoal,
+        before: WorldObservation,
+        after: WorldObservation,
+        *,
+        previous_index: WorldDeliveryIndex | None,
+    ) -> tuple[PublicWorldDelta, CanonicalPublicWorldProjection, WorldDeliveryIndex]:
+        """Project one fresh World, its regions, and its delta from one shared index."""
+
+        action_space = self.action_space_builder.build(task, after)
+        index = WorldDeliveryIndex.from_observation(
+            after,
+            action_space.options,
+            previous_index=previous_index,
+        )
+        delta = WorldTransitionProjector().project(
+            before,
+            after,
+            before_index=previous_index,
+            after_index=index,
+        )
+        index = replace(index, public_world_delta=delta)
+        return delta, CanonicalPublicWorldProjection.build(after, index, action_space), index
+
     def _status_for_task(self, task: TaskGoal, evaluation: TaskEvaluation) -> RunStatus:
         return _status_for_evaluation(evaluation)
 
@@ -1599,6 +1705,7 @@ def _post_dispatch_evaluation_failure(
     *,
     cancelled: bool,
     code: str,
+    public_world_delta: PublicWorldDelta,
     failure_kind: FailureKind = FailureKind.INTERNAL,
     exception_class: str = "",
 ) -> StepResult:
@@ -1612,6 +1719,7 @@ def _post_dispatch_evaluation_failure(
         RunStatus.CANCELLED if cancelled else RunStatus.FAILED,
         execution_receipts=batch,
         feedback=code,
+        public_world_delta=public_world_delta,
         runtime_failure=(
             None
             if cancelled

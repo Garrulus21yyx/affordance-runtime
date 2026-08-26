@@ -14,6 +14,8 @@ from affordance_runtime.agent import (
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.decisions import AbortCategory
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
@@ -484,6 +486,95 @@ def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
     )
 
 
+def test_same_observation_reuses_one_expensive_context_projection(monkeypatch) -> None:
+    calls: list[str] = []
+    original = ContextBuilder.project_observation
+
+    def counted(self, observation, action_space, **kwargs):
+        calls.append(observation.observation_id)
+        return original(self, observation, action_space, **kwargs)
+
+    monkeypatch.setattr(ContextBuilder, "project_observation", counted)
+
+    async def scenario() -> None:
+        state = await _runtime("action_page").run_task(
+            ScriptedEnvironment(initial_observation=_world("same-world", False)),
+            _task(),
+        )
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.step_count == 2
+        assert state.observation_count == 1
+        assert state.observation_projection is not None
+
+    asyncio.run(scenario())
+
+    assert calls == ["same-world"]
+
+
+def test_fresh_observation_replaces_context_projection_once(monkeypatch) -> None:
+    calls: list[str] = []
+    index_calls: list[str] = []
+    original = ContextBuilder.project_observation
+    original_index = WorldDeliveryIndex.from_observation
+
+    def counted(self, observation, action_space, **kwargs):
+        calls.append(observation.observation_id)
+        return original(self, observation, action_space, **kwargs)
+
+    monkeypatch.setattr(ContextBuilder, "project_observation", counted)
+
+    def counted_index(observation, *args, **kwargs):
+        index_calls.append(observation.observation_id)
+        return original_index(observation, *args, **kwargs)
+
+    monkeypatch.setattr(
+        WorldDeliveryIndex,
+        "from_observation",
+        staticmethod(counted_index),
+    )
+
+    @dataclass
+    class OneActionPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id="provider-call:refresh-projection",
+                )
+            return Abort(context.context_id, "fresh projection observed", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(OneActionPolicy()),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("observation_projection_refresh_test"),
+        )
+        state = await runtime.run_task(
+            ScriptedEnvironment(
+                initial_observation=_world("projection-before", False),
+                post_observations=(_world("projection-after", False),),
+                results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+            ),
+            _task(),
+        )
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.observation_count == 2
+        assert state.observation_projection is not None
+        assert state.observation_projection.observation_id == "projection-after"
+
+    asyncio.run(scenario())
+
+    assert calls == ["projection-before", "projection-after"]
+    assert index_calls == ["projection-before", "projection-after"], index_calls
+
+
 @pytest.mark.parametrize("max_turns", (1, 30, 37, 100))
 def test_task_goal_is_the_only_total_turn_budget_owner(max_turns: int) -> None:
     async def scenario() -> None:
@@ -790,6 +881,7 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert snapshot.latest_control_reason_code == "control_stalled"
 
     asyncio.run(scenario())
+
 
 def test_failed_causal_post_acquisition_stops_before_next_policy_turn() -> None:
     async def scenario() -> None:
@@ -1098,10 +1190,7 @@ def test_removed_compound_cancellation_witness() -> None:
         assert state.last_step is not None
         assert state.last_step.execution_receipts is not None
         assert state.last_step.execution_receipts.completion is ExecutionCompletion.CANCELLED
-        assert (
-            state.last_step.execution_receipts.cancellation_phase
-            is ExecutionCancellationPhase.DISPATCH
-        )
+        assert state.last_step.execution_receipts.cancellation_phase is ExecutionCancellationPhase.DISPATCH
         assert snapshot.execution_count == 2
         assert snapshot.sent_unknown_count == 1
         assert snapshot.last_decision_kind == "removed_compound"
@@ -1188,10 +1277,7 @@ def test_post_dispatch_projector_failure_commits_receipt_before_terminal_state(
         assert state.last_step.execution_receipts is not None
         assert state.last_step.execution_receipts.execution_count == 1
         if expected_status is RunStatus.CANCELLED:
-            assert (
-                state.last_step.execution_receipts.cancellation_phase
-                is ExecutionCancellationPhase.EVALUATION
-            )
+            assert state.last_step.execution_receipts.cancellation_phase is ExecutionCancellationPhase.EVALUATION
         else:
             assert state.runtime_failure is not None
             assert state.runtime_failure.stage.value == "evaluation"
@@ -1291,9 +1377,7 @@ def test_sent_unknown_is_committed_once_without_automatic_replay() -> None:
         )
         environment = ScriptedEnvironment(
             initial_observation=_text_world("before", ""),
-            post_observations=(
-                _text_world("first-post", ""),
-            ),
+            post_observations=(_text_world("first-post", ""),),
             results=(
                 ActionResult(
                     "*",
@@ -1593,12 +1677,12 @@ def test_nonterminal_action_is_visible_before_the_next_decision() -> None:
             assert (
                 previous[0].transition.items()
                 >= {
-                        "role": "button",
-                        "label": "Enable shared state",
-                        "before_state": {"enabled": False},
-                        "after_state": {"enabled": False},
-                        "semantic_change": "unchanged",
-                        "observed_change": "unchanged",
+                    "role": "button",
+                    "label": "Enable shared state",
+                    "before_state": {"enabled": False},
+                    "after_state": {"enabled": False},
+                    "semantic_change": "unchanged",
+                    "observed_change": "unchanged",
                     "evidence_method": "structural",
                 }.items()
             )

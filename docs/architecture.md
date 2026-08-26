@@ -1218,6 +1218,42 @@ A full-owner test projects 10,001 semantic targets, linked structure records, an
 Catalog tests separately prove a well-shaped `E10000` absent from the current resolver still fails with
 `GROUNDING_GAP`.
 
+Task97 run2 crossed that identity repair, but timed out after 60 policy calls, 23 observations, and 22 valid GUI
+executions without reaching STOP or native evaluation. This reopened the earlier large-page claim at a lifecycle the
+Task266 replay had not exercised: one large fresh World followed by several policy and `find_controls` turns. The
+27.2-second Task266 measurement proved one construction chain, but did not prove that the resulting derivations were
+retained for the lifetime of that observation.
+
+The trace's final World contains 11,766 targets, 4,083 bindings, and 12,404 structure nodes. Exact replay showed two
+shared mechanisms. First, `WorldDeliveryIndex` looked up source order by scanning the complete structure for every
+candidate and repeated-item comparison; `_source_order` ran 618,890 times and consumed about 73.4 of 78.6 profiled
+seconds. Second, transition projection and later action discovery could independently reconstruct that index and the
+lossless model/grounding/actor projections, while `StepResult -> RunState` discarded the already constructed
+after-World index.
+
+The positive generation-lifecycle contract is now:
+
+```text
+fresh World + current ActionSpace
+-> one source-order map per source
+-> one WorldDeliveryIndex + canonical projection + observation context projection
+-> same-World policy/read/search/find turns reuse those immutable derivations
+-> next fresh World atomically replaces them
+```
+
+`WorldObservation` remains the only current environment authority. `ObservationContextProjection` is a disposable,
+non-serialized bundle of pure derivations keyed by the exact observation, ActionSpace, canonical lineage,
+capabilities, and Runtime controls; it is neither another World nor a progress or execution state machine.
+`WorldTransitionProjector` accepts the exact before/after indexes already owned by the transition, and `StepResult`
+carries the after index into `RunState`. Action discovery consumes the current context's index and grounding instead
+of rebuilding them.
+
+Source-order lookup is now a single O(N) map per source. On the exact run2 World, the full 4,083-action replay retains
+all 644 functional regions while `WorldDeliveryIndex` falls from about 71.9 to 1.7 seconds. Canonical projection takes
+1.7 seconds, the one-time static observation projection 2.7 seconds, and a subsequent same-World context turn 2.2
+seconds. No page cap, task/site rule, VLM, cursor, evidence path, fallback, retry, or alternate observation was added.
+Task97 remains empirically open until a fresh run crosses this repaired lifecycle and reaches native evaluation.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the

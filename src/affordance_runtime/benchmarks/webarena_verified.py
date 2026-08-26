@@ -1460,6 +1460,7 @@ def _delivery_probe_diagnostic(
             first_query_page,
             region_index=context.region_index,
             canonical_world=context.canonical_world,
+            grounding=context.grounding,
         )
         discovery_matches = list(discovery.matches)
         next_context = builder.build(

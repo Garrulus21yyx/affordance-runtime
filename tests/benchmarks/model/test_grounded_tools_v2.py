@@ -1193,7 +1193,13 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     base_page = ContextBuilder().page(action_space, world)
     state = RunState(world, evaluation, 4, action_page=base_page)
     state.install_canonical_world(context.canonical_world)
-    search_step = CoreAgentLoop(None, None, None)._action_page(task, state, action_space, request)
+    search_step = CoreAgentLoop(None, None, None)._action_page(
+        task,
+        state,
+        action_space,
+        context,
+        request,
+    )
     assert search_step.feedback == "action_page_empty"
     assert search_step.action_page == base_page
     assert search_step.action_page_result.result_coverage == "empty"

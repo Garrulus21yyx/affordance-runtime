@@ -14,6 +14,7 @@ from affordance_runtime.actions import ActionBinder, ActionBinding, ActionSpace,
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import DecisionKind, RequestActionPage, SelectAction
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context import context_builder as context_builder_module
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteFragment,
     DeliveryObligationKind,
@@ -104,13 +105,7 @@ def _pack(request, *, binder=None, supports_multimodal=False, perception_profile
     decision = getattr(committed, "decision", None)
     call_id = str(getattr(decision, "tool_call_id", ""))
     tool_name = str(getattr(decision, "tool_name", ""))
-    history_messages = (
-        (
-            ModelResponse(parts=[ToolCallPart(tool_name, {}, call_id)]),
-        )
-        if call_id and tool_name
-        else ()
-    )
+    history_messages = (ModelResponse(parts=[ToolCallPart(tool_name, {}, call_id)]),) if call_id and tool_name else ()
     return TurnPacker().pack(
         request,
         binder=binder,
@@ -523,9 +518,7 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert len(tuple(item for item in base.records if isinstance(item, ActionRouteFragment))) == len(
         context.complete_actions
     )
-    assert candidates == context.action_delivery_plan.projection(
-        dict(first.admitted_record_counts)
-    ).candidates
+    assert candidates == context.action_delivery_plan.projection(dict(first.admitted_record_counts)).candidates
     assert first.action_candidates.projection_id == second.action_candidates.projection_id
     assert candidates == second.action_candidates.candidates
     assert all(item.action_id in current for item in candidates)
@@ -560,11 +553,7 @@ def test_every_delivery_prefix_projects_one_subject_per_target_with_complete_cur
             include_images=False,
             admitted_records=counts,
         )
-        candidate_lines = tuple(
-            line
-            for line in delivery.view.text.splitlines()
-            if line.lstrip().startswith("rank=")
-        )
+        candidate_lines = tuple(line for line in delivery.view.text.splitlines() if line.lstrip().startswith("rank="))
         for candidate in projection.candidates:
             matching = tuple(line for line in candidate_lines if f"[{candidate.target_ref}]" in line)
             assert len(matching) == 1
@@ -617,9 +606,7 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
     )
     assert bound.intent.target_id == "target:card"
     assert bound.intent.destination_id == expected_destination_id
-    destination_records = context.action_delivery_plan.obligation(
-        DeliveryObligationKind.DESTINATION_ROUTES
-    ).records
+    destination_records = context.action_delivery_plan.obligation(DeliveryObligationKind.DESTINATION_ROUTES).records
     assert len(destination_records) == 2
     assert {item.public_route[2] for item in destination_records} == {
         item.grounding_ref for item in context.complete_actions[0].destinations.items
@@ -662,15 +649,13 @@ def test_sparse_public_schema_acceptance_equals_one_private_resolver_row() -> No
                 validate_value(arguments, sparse.public_spec.input_schema, path="command")
             except ValueError:
                 schema_accepts = False
-            matches = tuple(
-                row
-                for row in sparse.private_resolutions
-                if dict(row.selector_values) == arguments
-            )
+            matches = tuple(row for row in sparse.private_resolutions if dict(row.selector_values) == arguments)
             assert schema_accepts
             assert (len(matches) == 1) is ((source_ref, destination_ref) in expected)
             if matches:
-                assert sparse.resolve(arguments, drag_context.context_id, "call:sparse").action_id == matches[0].action_id
+                assert (
+                    sparse.resolve(arguments, drag_context.context_id, "call:sparse").action_id == matches[0].action_id
+                )
             else:
                 with pytest.raises(GroundedToolResolutionError):
                     sparse.resolve(arguments, drag_context.context_id, "call:cartesian-gap")
@@ -754,13 +739,17 @@ def test_find_controls_returns_one_owner_bounded_page_without_store_inventory() 
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     page = builder.page(actions, world, query="Zulu control")
     discovery = builder.discovery_result(
-        actions, world, page, canonical_world=context_value.canonical_world
+        actions,
+        world,
+        page,
+        canonical_world=context_value.canonical_world,
+        grounding=context_value.grounding,
     )
     state = RunState(world, evaluation, 2, action_page=builder.page(actions, world))
     state.install_canonical_world(context_value.canonical_world)
     request = RequestActionPage("context:test", "Zulu control")
     step = CoreAgentLoop(None, None, None, context_builder=builder)._action_page(
-        task, state, actions, request
+        task, state, actions, context_value, request
     )
     transition = state.delivery_store.reduce(step, step_index=1)
     state.apply(step, delivery_transition=transition)
@@ -779,6 +768,54 @@ def test_find_controls_returns_one_owner_bounded_page_without_store_inventory() 
     assert not hasattr(state.delivery_store, "action_query")
     assert query is not None
     assert len(query.records) == len(discovery.matches)
+
+
+def test_find_controls_reuses_current_world_derivations(monkeypatch) -> None:
+    task, world, actions, evaluation, context = _context()
+    builder = ContextBuilder()
+    page = builder.page(
+        actions,
+        world,
+        query="Settings",
+        region_index=context.region_index,
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("same-World discovery cannot rebuild the full model World")
+
+    monkeypatch.setattr(context_builder_module, "project_model_world", forbidden)
+    monkeypatch.setattr(context_builder_module, "project_actor_world_snapshot", forbidden)
+    monkeypatch.setattr(
+        context_builder_module.WorldDeliveryIndex,
+        "from_observation",
+        forbidden,
+    )
+
+    result = builder.discovery_result(
+        actions,
+        world,
+        page,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        grounding=context.grounding,
+    )
+
+    assert result.matches
+    assert {item.target_ref for item in result.matches} <= set(context.grounding.target_refs.values())
+
+    state = RunState(world, evaluation, 2, action_page=builder.page(actions, world, region_index=context.region_index))
+    state.install_canonical_world(context.canonical_world)
+    step = CoreAgentLoop(None, None, None, context_builder=builder)._action_page(
+        task,
+        state,
+        actions,
+        context,
+        RequestActionPage(context.context_id, "Settings"),
+    )
+
+    assert step.feedback == "action_page_ready"
+    assert step.action_page_result is not None
+    assert step.action_page_result.matches == result.matches
 
 
 def test_duplicate_label_path_match_survives_base_page_packing() -> None:
@@ -821,7 +858,7 @@ def test_find_controls_prioritizes_exact_result_without_replacing_base_inventory
     base_page = ContextBuilder().page(actions, world)
     state = RunState(world, evaluation, 1, action_page=base_page)
     state.install_canonical_world(context.canonical_world)
-    step = CoreAgentLoop(None, None, None)._action_page(task, state, actions, request)
+    step = CoreAgentLoop(None, None, None)._action_page(task, state, actions, context, request)
     found = ContextBuilder().build(
         task,
         world,
@@ -854,6 +891,7 @@ def test_find_controls_empty_result_does_not_redirect_to_readable_content_search
         world,
         page,
         canonical_world=context.canonical_world,
+        grounding=context.grounding,
     )
 
     assert discovery.matches == ()
@@ -871,6 +909,7 @@ def test_find_controls_projects_candidate_owned_unmatched_query_terms() -> None:
         world,
         page,
         canonical_world=context.canonical_world,
+        grounding=context.grounding,
     )
 
     assert discovery.matches
@@ -894,6 +933,7 @@ def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog()
         task,
         state,
         actions,
+        context,
         request,
     )
     assert step.action_page_result is not None
@@ -931,17 +971,14 @@ def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog()
     )
     query = found.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
     assert query is not None
-    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(
-        query.records
-    )
+    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(query.records)
     assert packed.delivery.tool_result is not None
     assert to_json_compatible(packed.delivery.tool_result.return_value) == to_json_compatible(
         step.action_page_result.to_public_value()
     )
 
     offered_routes = {
-        (route.operation, route.source_ref, route.destination_ref)
-        for route in packed.delivery.manifest.action_routes
+        (route.operation, route.source_ref, route.destination_ref) for route in packed.delivery.manifest.action_routes
     }
     returned_routes = {
         (match.operation, match.target_ref, destination_ref)
@@ -951,9 +988,7 @@ def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog()
     assert returned_routes <= offered_routes
     for operation, source_ref, destination_ref in returned_routes:
         arguments = (
-            {"source": source_ref, "destination": destination_ref}
-            if destination_ref
-            else {"target": source_ref}
+            {"source": source_ref, "destination": destination_ref} if destination_ref else {"target": source_ref}
         )
         resolution = resolve_grounded_tool_call(
             packed.catalog,
@@ -973,6 +1008,7 @@ def test_action_delivery_fails_closed_if_a_discovery_route_is_not_current() -> N
         world,
         page,
         canonical_world=context.canonical_world,
+        grounding=context.grounding,
     )
     corrupted = replace(
         discovery,
@@ -1125,15 +1161,13 @@ def test_exact_label_route_reaches_delivery_manifest_catalog_and_unique_resolver
     world = replace(
         world,
         targets=tuple(
-            replace(item, label=label) if item.target_id == "target:zulu" else item
-            for item in world.targets
+            replace(item, label=label) if item.target_id == "target:zulu" else item for item in world.targets
         ),
         sources=tuple(
             replace(
                 source,
                 targets=tuple(
-                    replace(item, label=label) if item.target_id == "target:zulu" else item
-                    for item in source.targets
+                    replace(item, label=label) if item.target_id == "target:zulu" else item for item in source.targets
                 ),
                 structure=tuple(
                     replace(item, label=label) if item.semantic_target_id == "target:zulu" else item
@@ -1148,7 +1182,11 @@ def test_exact_label_route_reaches_delivery_manifest_catalog_and_unique_resolver
     base = builder.build(task, world, actions, evaluation)
     page = builder.page(actions, world, query=query)
     discovery = builder.discovery_result(
-        actions, world, page, canonical_world=base.canonical_world
+        actions,
+        world,
+        page,
+        canonical_world=base.canonical_world,
+        grounding=base.grounding,
     )
     found = builder.build(
         task,
@@ -1354,9 +1392,7 @@ def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_overs
     assert plan is not None
     selections = tuple(
         dict(zip((item.kind.value for item in plan.obligations), counts, strict=True))
-        for counts in product(
-            *(range(len(item.remaining) + 1) for item in plan.obligations)
-        )
+        for counts in product(*(range(len(item.remaining) + 1) for item in plan.obligations))
     )
 
     for counts in selections:
@@ -1535,15 +1571,9 @@ def test_changed_action_fanout_uses_only_the_fresh_world_projection(count: int) 
     assert "ChangedRegions" not in packed.delivery.view.text
     assert "new_document" not in packed.delivery.view.text
     assert "read_next_page" not in {item.name for item in packed.catalog.specs}
-    assert (
-        packed.admitted_envelope.token_breakdown.estimated_input_tokens
-        <= ModelRequestBudget().soft_target_tokens
-    )
+    assert packed.admitted_envelope.token_breakdown.estimated_input_tokens <= ModelRequestBudget().soft_target_tokens
     assert packed.admitted_envelope.token_breakdown.estimated_input_tokens <= ModelRequestBudget().admission_limit
-    assert (
-        packed.admitted_envelope.token_breakdown.complete_request_tokens
-        <= ModelRequestBudget().model_context_window
-    )
+    assert packed.admitted_envelope.token_breakdown.complete_request_tokens <= ModelRequestBudget().model_context_window
 
 
 def test_complete_query_capability_set_is_admitted_before_other_groups(
@@ -1553,7 +1583,11 @@ def test_complete_query_capability_set_is_admitted_before_other_groups(
     builder = ContextBuilder()
     query_page = builder.page(actions, world, query="Settings")
     discovery = builder.discovery_result(
-        actions, world, query_page, canonical_world=context_value.canonical_world
+        actions,
+        world,
+        query_page,
+        canonical_world=context_value.canonical_world,
+        grounding=context_value.grounding,
     )
     context = builder.build(
         task,
@@ -1579,13 +1613,9 @@ def test_complete_query_capability_set_is_admitted_before_other_groups(
     )
 
     query_kind = DeliveryObligationKind.EXPLICIT_QUERY.value
-    query_record_count = len(
-        context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY).records
-    )
+    query_record_count = len(context.action_delivery_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY).records)
     required_index = next(
-        index
-        for index, counts in enumerate(attempts)
-        if counts.get(query_kind) == query_record_count
+        index for index, counts in enumerate(attempts) if counts.get(query_kind) == query_record_count
     )
     first_extension = attempts[required_index + 1]
     assert first_extension[query_kind] == query_record_count

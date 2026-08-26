@@ -23,16 +23,22 @@ from affordance_runtime.agent.context.action_candidate_projection import (
 from affordance_runtime.agent.context.actor_world_snapshot import project_actor_world_snapshot
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
-from affordance_runtime.agent.context.context import AgentContext, ContextIdentity
+from affordance_runtime.agent.context.context import (
+    AgentContext,
+    AgentGroundingIndexView,
+    ContextIdentity,
+)
 from affordance_runtime.agent.context.contracts import AgentActionPageView
 from affordance_runtime.agent.context.grounding_projection import (
     GroundingProjection,
     GroundingProjectionResult,
 )
+from affordance_runtime.agent.context.observation_context_projection import (
+    ObservationContextProjection,
+)
 from affordance_runtime.agent.context.projection import project_action_page, project_action_space
 from affordance_runtime.agent.context.task_projection import project_task
 from affordance_runtime.agent.context.world_projection import (
-    ModelWorldView,
     project_model_world,
 )
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -55,6 +61,83 @@ class ContextBuilder:
     grounding_projection: GroundingProjection = field(default_factory=GroundingProjection)
     include_public_text_evidence: bool = True
 
+    def project_observation(
+        self,
+        observation: WorldObservation,
+        action_space: ActionSpace,
+        *,
+        observation_capabilities: ObservationCapabilities = ObservationCapabilities(False, False),
+        runtime_controls: tuple[str, ...] = (),
+        region_index: WorldDeliveryIndex,
+        canonical_world: CanonicalPublicWorldProjection,
+    ) -> ObservationContextProjection:
+        """Build expensive immutable derivatives exactly once for one current World."""
+
+        canonical_world.assert_current(observation, region_index, action_space)
+        capabilities = project_acquisition_offers(observation_capabilities)
+        target_labels = {item.target_id: item.label for item in observation.targets}
+        complete_actions = project_action_space(action_space, target_labels)
+        if set(region_index.action_region_keys) != {item.action_id for item in complete_actions.options}:
+            raise ValueError("delivery index does not contain the complete current ActionSpace")
+        model_world = project_model_world(
+            observation,
+            self.budget,
+            observation_capabilities=capabilities,
+            observation_cursor="",
+            lossless_public=True,
+            canonical_projection=canonical_world,
+        )
+        grounding = self.grounding_projection.project(
+            observation,
+            canonical_world,
+            model_world,
+        )
+        complete_page = AgentActionPageView(
+            complete_actions.options,
+            len(complete_actions.options),
+            len(complete_actions.options),
+            False,
+            False,
+        )
+        projection = ObservationContextProjection(
+            observation.observation_id,
+            action_space.action_space_id,
+            canonical_world.projection_lineage,
+            capabilities,
+            runtime_controls,
+            model_world,
+            grounding,
+            project_actor_world_snapshot(
+                observation,
+                canonical_world,
+                model_world,
+                grounding.index,
+                grounding.images,
+                max_structure_nodes=None,
+                max_structure_bytes=None,
+            ),
+            _evidence_index(
+                observation,
+                include_public_text=self.include_public_text_evidence,
+            ),
+            complete_actions,
+            target_labels,
+            _tool_catalog_digest(
+                complete_page,
+                model_world,
+                grounding,
+                runtime_controls,
+            ),
+        )
+        projection.assert_current(
+            observation,
+            action_space,
+            canonical_world,
+            capabilities,
+            runtime_controls,
+        )
+        return projection
+
     def build(
         self,
         task: TaskGoal,
@@ -73,6 +156,7 @@ class ContextBuilder:
         control_feedback: dict[str, object] | None = None,
         action_discovery: ActionDiscoveryResult | None = None,
         last_step: StepResult | None = None,
+        observation_projection: ObservationContextProjection | None = None,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -84,6 +168,22 @@ class ContextBuilder:
             observation, current_region_index, action_space
         )
         canonical_world.assert_current(observation, current_region_index, action_space)
+        capabilities = project_acquisition_offers(observation_capabilities)
+        current_projection = observation_projection or self.project_observation(
+            observation,
+            action_space,
+            observation_capabilities=observation_capabilities,
+            runtime_controls=runtime_controls,
+            region_index=current_region_index,
+            canonical_world=canonical_world,
+        )
+        current_projection.assert_current(
+            observation,
+            action_space,
+            canonical_world,
+            capabilities,
+            runtime_controls,
+        )
         page = action_page or self.page(
             action_space,
             observation,
@@ -94,12 +194,9 @@ class ContextBuilder:
         projected_actions = project_action_page(
             action_space,
             page,
-            {item.target_id: item.label for item in observation.targets},
+            current_projection.target_labels,
         )
-        complete_projected_actions = project_action_space(
-            action_space,
-            {item.target_id: item.label for item in observation.targets},
-        )
+        complete_projected_actions = current_projection.complete_actions
         complete_action_ids = {item.action_id for item in complete_projected_actions.options}
         if set(current_region_index.action_region_keys) != complete_action_ids:
             raise ValueError("delivery index does not contain the complete current ActionSpace")
@@ -111,15 +208,7 @@ class ContextBuilder:
             observation,
             self.budget.observation_pinned_capacity(len(observation.targets)),
         )
-        world = project_model_world(
-            observation,
-            self.budget,
-            pinned_targets,
-            observation_capabilities=project_acquisition_offers(observation_capabilities),
-            observation_cursor="",
-            lossless_public=True,
-            canonical_projection=canonical_world,
-        )
+        world = current_projection.model_world
         visible_targets = {item.target_id for item in world.targets.items}
         if any(target_id not in visible_targets for target_id in pinned_targets):
             raise ValueError("current action page target is absent from ModelWorldView")
@@ -142,11 +231,7 @@ class ContextBuilder:
             False,
             False,
         )
-        grounding = self.grounding_projection.project(
-            observation,
-            canonical_world,
-            world,
-        )
+        grounding = current_projection.grounding
         goal_plan = _current_goal_plan(
             task,
             goal_resolution,
@@ -159,12 +244,7 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            _tool_catalog_digest(
-                complete_page,
-                world,
-                grounding,
-                runtime_controls,
-            ),
+            current_projection.tool_catalog_digest,
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         complete_page = close_action_candidates(
@@ -204,16 +284,13 @@ class ContextBuilder:
             goal_plan,
             observation,
             canonical_world,
-            world,
+            current_projection,
             actions,
             workspace,
-            grounding,
-            self.budget,
             current_step_index,
             runtime_controls,
             current_region_index,
             control_feedback or {},
-            self.include_public_text_evidence,
             complete_page.options,
             action_space.action_space_id,
             candidate_projection,
@@ -266,6 +343,7 @@ class ContextBuilder:
         *,
         region_index: WorldDeliveryIndex | None = None,
         canonical_world: CanonicalPublicWorldProjection,
+        grounding: AgentGroundingIndexView,
     ) -> ActionDiscoveryResult:
         """Close a page into its public typed result at the discovery owner."""
 
@@ -273,22 +351,10 @@ class ContextBuilder:
         if current_index.world_observation_id != observation.observation_id:
             raise ValueError("delivery index belongs to a previous observation")
         canonical_world.assert_current(observation, current_index, action_space)
+        if dict(grounding.target_refs) != dict(canonical_world.target_refs):
+            raise ValueError("action discovery grounding belongs to another World")
         targets = {item.target_id: item for item in observation.targets}
         labels = {target_id: item.label for target_id, item in targets.items()}
-        projected = project_action_page(action_space, page, labels)
-        pinned = _pinned_targets(
-            projected.options,
-            observation,
-            self.budget.observation_pinned_capacity(len(observation.targets)),
-        )
-        model_world = project_model_world(
-            observation,
-            self.budget,
-            pinned,
-            lossless_public=True,
-            canonical_projection=canonical_world,
-        )
-        grounding = self.grounding_projection.project(observation, canonical_world, model_world)
         query = canonical_action_query(page.query)
 
         def page_matches(current_page: InternalActionPage) -> tuple[ActionDiscoveryMatch, ...]:
@@ -304,7 +370,7 @@ class ContextBuilder:
                     current_page.query,
                     current_page.next_cursor,
                 ),
-                grounding.index,
+                grounding,
                 context_id="context:action-discovery",
             )
             values = []
@@ -421,26 +487,21 @@ def _fit_context(
     goal_plan,
     observation: WorldObservation,
     canonical_world: CanonicalPublicWorldProjection,
-    world: ModelWorldView,
+    observation_projection: ObservationContextProjection,
     actions: AgentActionPageView,
     workspace: AgentWorkspace,
-    grounding: GroundingProjectionResult,
-    budget: ContextProjectionBudget,
     current_step_index: int,
     runtime_controls: tuple[str, ...],
     region_index: WorldDeliveryIndex,
     control_feedback: dict[str, object],
-    include_public_text_evidence: bool,
     complete_actions,
     action_space_id: str,
     action_candidates,
     action_delivery_plan,
     last_step: StepResult | None,
 ) -> AgentContext:
-    evidence_index = _evidence_index(
-        observation,
-        include_public_text=include_public_text_evidence,
-    )
+    world = observation_projection.model_world
+    grounding = observation_projection.grounding
     task_view = project_task(
         task,
         task_evaluation,
@@ -455,21 +516,11 @@ def _fit_context(
         goal_plan,
         actions,
         workspace,
-        project_actor_world_snapshot(
-            observation,
-            canonical_world,
-            world,
-            grounding.index,
-            grounding.images,
-            # Actor is the lossless supported-public normalization. Model
-            # delivery fitting belongs only to WorldDeliveryView.
-            max_structure_nodes=None,
-            max_structure_bytes=None,
-        ),
+        observation_projection.actor_world,
         grounding.images,
         grounding.index,
         private_fact_bindings,
-        evidence_index,
+        observation_projection.evidence_index,
         observation,
         region_index,
         canonical_world,

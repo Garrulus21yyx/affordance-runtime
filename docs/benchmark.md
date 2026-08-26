@@ -1087,6 +1087,28 @@ labels without truncation. No page-size branch, larger arbitrary threshold, Worl
 fallback, or task/site special case was added. Task97 remains empirically open until an authorized post-repair run
 crosses the original Wiki transition and completes native evaluation.
 
+Task97
+[`run2`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run2/run.json) crossed the public-ref repair and retained
+ordinary typed control flow: 60 policy calls, 23 observations, 22 executions, zero grounding gaps, zero waits, and zero
+representation repairs. It nevertheless reached the 1,204-second case timeout before STOP or native evaluation and
+consumed 951,547 aggregate tokens. This is the failed pre-lifecycle-repair witness for the large-page subsystem, not
+evidence of a provider or BrowserGym hang.
+
+The final traced World has 11,766 targets, 4,083 actions, and 12,404 structure nodes. Exact profiling found
+`WorldDeliveryIndex._source_order` performing 618,890 complete-source scans, consuming about 73.4 of 78.6 seconds.
+The same index and the lossless model/grounding/actor projections could then be reconstructed in transition,
+same-World discovery, and fallback page paths because the constructed after-World index was not retained by
+`RunState`. The earlier Task266 local replay measured one full chain only and therefore did not verify this
+one-observation/many-turn lifecycle.
+
+The owner repair builds one source-order map and one immutable observation-scoped derivation bundle, carries the exact
+after index through `StepResult`, and reuses both for all same-World policy and local-tool turns. Fresh World identity
+atomically invalidates the bundle. On the exact run2 World with all 4,083 actions, index construction falls from about
+71.9 to 1.7 seconds while preserving 644 regions; canonical projection is 1.7 seconds, one-time static projection 2.7
+seconds, and a subsequent context turn 2.2 seconds. Lifecycle, discovery, and transition tests forbid redundant
+reconstruction. No threshold, truncation, VLM, cursor, evidence inventory, retry, or benchmark branch was introduced.
+Task97 remains open pending a fresh live witness.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:

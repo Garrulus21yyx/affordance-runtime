@@ -388,6 +388,7 @@ def _functional_partition(
         nodes = {item.structure_id: item for item in source.structure}
         if not nodes:
             continue
+        source_order = _source_order_map(source.structure)
         parents = _parents(nodes)
         roots = tuple(item.structure_id for item in source.structure if not parents.get(item.structure_id))
         candidates = _candidate_boundaries(nodes, roots, limits)
@@ -400,13 +401,14 @@ def _functional_partition(
         }
         if not candidates:
             candidates = set(roots[:1])
+        default_owner = min(candidates, key=source_order.__getitem__)
         assigned: dict[str, list[str]] = {item: [] for item in candidates}
         for structure_id in nodes:
             owner = _nearest_candidate(structure_id, candidates, parents)
             if owner is None:
-                owner = min(candidates, key=lambda item: _source_order(item, source.structure))
+                owner = default_owner
             assigned[owner].append(structure_id)
-        for root_id in sorted(candidates, key=lambda item: _source_order(item, source.structure)):
+        for root_id in sorted(candidates, key=source_order.__getitem__):
             member_structures = tuple(assigned[root_id])
             member_targets = tuple(
                 dict.fromkeys(
@@ -419,7 +421,7 @@ def _functional_partition(
             root = nodes[root_id]
             heading = _exact_heading(root_id, member_structures, nodes, target_by_id, canonical, source.observation_id)
             direct_labels = _direct_labels(root_id, nodes)
-            repeated_roots = _repeated_item_roots(root_id, member_structures, nodes)
+            repeated_roots = _repeated_item_roots(root_id, member_structures, nodes, source_order)
             state_badges = _state_badges(member_targets, target_by_id)
             seed_index = len(seeds)
             scope_path = _scope_path(root_id, nodes, parents)
@@ -710,8 +712,10 @@ def _nearest_candidate(structure_id: str, candidates: set[str], parents: Mapping
     return None
 
 
-def _source_order(structure_id: str, structure: Iterable[object]) -> int:
-    return next((index for index, item in enumerate(structure) if item.structure_id == structure_id), 10**9)
+def _source_order_map(structure: Iterable[object]) -> Mapping[str, int]:
+    """Index source order once for all functional-partition lookups."""
+
+    return {item.structure_id: index for index, item in enumerate(structure)}
 
 
 def _walk_ids(root_id: str, nodes) -> Iterable[str]:
@@ -801,7 +805,7 @@ def _scope_label(value: object) -> str:
     return label[:160]
 
 
-def _repeated_item_roots(root_id, member_ids, nodes) -> tuple[str, ...]:
+def _repeated_item_roots(root_id, member_ids, nodes, source_order: Mapping[str, int]) -> tuple[str, ...]:
     root = nodes[root_id]
     direct = tuple(
         item
@@ -822,7 +826,7 @@ def _repeated_item_roots(root_id, member_ids, nodes) -> tuple[str, ...]:
             if len(repeated) >= 2:
                 groups.append(repeated)
         if groups:
-            return max(groups, key=lambda items: (len(items), -_source_order(items[0], nodes.values())))
+            return max(groups, key=lambda items: (len(items), -source_order[items[0]]))
     return ()
 
 

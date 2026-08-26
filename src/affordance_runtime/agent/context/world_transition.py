@@ -114,9 +114,20 @@ class PublicWorldDelta:
 class WorldTransitionProjector:
     """Project one deterministic public delta; never infer task semantics."""
 
-    def project(self, before: WorldObservation, after: WorldObservation) -> PublicWorldDelta:
+    def project(
+        self,
+        before: WorldObservation,
+        after: WorldObservation,
+        *,
+        before_index: WorldDeliveryIndex | None = None,
+        after_index: WorldDeliveryIndex | None = None,
+    ) -> PublicWorldDelta:
         if not isinstance(before, WorldObservation) or not isinstance(after, WorldObservation):
             raise TypeError("World transition projection requires exact typed Worlds")
+        if before_index is not None and before_index.world_observation_id != before.observation_id:
+            raise ValueError("before-World delivery index belongs to another World")
+        if after_index is not None and after_index.world_observation_id != after.observation_id:
+            raise ValueError("after-World delivery index belongs to another World")
         if before is after:
             digest = public_world_semantic_digest(before)
             return PublicWorldDelta(
@@ -125,8 +136,8 @@ class WorldTransitionProjector:
                 digest,
                 digest,
             )
-        before_regions = WorldDeliveryIndex.from_observation(before)
-        after_regions = WorldDeliveryIndex.from_observation(after)
+        before_regions = before_index or WorldDeliveryIndex.from_observation(before)
+        after_regions = after_index or WorldDeliveryIndex.from_observation(after)
         return PublicWorldDelta(
             before.observation_id,
             after.observation_id,

@@ -133,6 +133,45 @@ def test_same_world_transition_does_not_rebuild_region_indexes(monkeypatch) -> N
     assert not delta.changed
 
 
+def test_fresh_world_transition_reuses_supplied_region_indexes(monkeypatch) -> None:
+    before = _world("source:indexed-before", {"target": 1})
+    after = _world("source:indexed-after", {"target": 2})
+    before_index = WorldDeliveryIndex.from_observation(before)
+    after_index = WorldDeliveryIndex.from_observation(after)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("transition projection cannot rebuild supplied World indexes")
+
+    monkeypatch.setattr(
+        world_transition_module.WorldDeliveryIndex,
+        "from_observation",
+        forbidden,
+    )
+
+    delta = WorldTransitionProjector().project(
+        before,
+        after,
+        before_index=before_index,
+        after_index=after_index,
+    )
+
+    assert delta.changed
+    assert delta.before_observation_id == before.observation_id
+    assert delta.after_observation_id == after.observation_id
+
+
+def test_same_world_transition_rejects_a_foreign_supplied_index() -> None:
+    world = _world("source:current", {"target": 1})
+    foreign = _world("source:foreign", {"target": 1})
+
+    with pytest.raises(ValueError, match="before-World delivery index belongs to another World"):
+        WorldTransitionProjector().project(
+            world,
+            world,
+            before_index=WorldDeliveryIndex.from_observation(foreign),
+        )
+
+
 @pytest.mark.parametrize(
     ("before_values", "after_values", "expected_changes"),
     (

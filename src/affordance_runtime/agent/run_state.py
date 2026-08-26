@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import ActionDiscoveryResult, InternalActionPage
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
+from affordance_runtime.agent.context.observation_context_projection import (
+    ObservationContextProjection,
+)
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import (
@@ -121,6 +124,9 @@ class StepResult:
     model_delivery: ModelTurnDelivery | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
+    after_delivery_index: WorldDeliveryIndex | None = field(
+        default=None, repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         delta = self.public_world_delta
@@ -136,9 +142,7 @@ class StepResult:
             raise ValueError("step public World delta must match its exact Worlds")
         if not isinstance(self.decision, AgentDecision | PolicyFailure):
             raise TypeError("step decision must belong to the closed decision algebra")
-        if self.action_page_result is not None and not isinstance(
-            self.action_page_result, ActionDiscoveryResult
-        ):
+        if self.action_page_result is not None and not isinstance(self.action_page_result, ActionDiscoveryResult):
             raise TypeError("action discovery output must be typed")
         if not isinstance(self.status_after, RunStatus):
             raise TypeError("step status must be typed")
@@ -154,6 +158,11 @@ class StepResult:
                 raise TypeError("step model delivery must be the admitted typed projection")
         if (self.before_public_world is None) != (self.after_public_world is None):
             raise ValueError("step canonical World projections must be supplied as a pair")
+        if self.after_delivery_index is not None:
+            if not isinstance(self.after_delivery_index, WorldDeliveryIndex):
+                raise TypeError("step after-World delivery index must be typed")
+            if self.after_delivery_index.world_observation_id != self.after_world.observation_id:
+                raise ValueError("step after-World delivery index belongs to another World")
         if self.waited_ms < 0:
             raise ValueError("step wait duration cannot be negative")
         if self.task_evaluation is not None and self.task_evaluation.observation_id != self.after_world.observation_id:
@@ -297,6 +306,11 @@ class RunState:
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
     control_termination: ControlTermination | None = None
     action_discovery: ActionDiscoveryResult | None = None
+    observation_projection: ObservationContextProjection | None = field(
+        default=None,
+        repr=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -347,9 +361,7 @@ class RunState:
                 raise TypeError("run delivery index must be typed")
             if self.delivery_index.world_observation_id != self.current_world.observation_id:
                 raise ValueError("run delivery index must belong to the current World")
-        if self.canonical_world is not None and not isinstance(
-            self.canonical_world, CanonicalPublicWorldProjection
-        ):
+        if self.canonical_world is not None and not isinstance(self.canonical_world, CanonicalPublicWorldProjection):
             raise TypeError("run canonical public World must be typed")
         if self.prior_delivery_index is not None and not isinstance(
             self.prior_delivery_index,
@@ -374,14 +386,20 @@ class RunState:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("run recovery signal must be typed")
-        if self.control_termination is not None and not isinstance(
-            self.control_termination, ControlTermination
-        ):
+        if self.control_termination is not None and not isinstance(self.control_termination, ControlTermination):
             raise TypeError("run control termination must be typed")
-        if self.action_discovery is not None and not isinstance(
-            self.action_discovery, ActionDiscoveryResult
-        ):
+        if self.action_discovery is not None and not isinstance(self.action_discovery, ActionDiscoveryResult):
             raise TypeError("run action discovery must be typed")
+        if self.observation_projection is not None:
+            if not isinstance(self.observation_projection, ObservationContextProjection):
+                raise TypeError("run observation context projection must be typed")
+            if self.observation_projection.observation_id != self.current_world.observation_id:
+                raise ValueError("run observation context projection belongs to another World")
+            if (
+                self.canonical_world is None
+                or self.observation_projection.canonical_projection_lineage != self.canonical_world.projection_lineage
+            ):
+                raise ValueError("run observation context projection requires its canonical World")
 
     @property
     def terminal(self) -> bool:
@@ -428,7 +446,22 @@ class RunState:
         self.prior_delivery_index = None
 
     def install_canonical_world(self, projection: CanonicalPublicWorldProjection) -> None:
+        if (
+            self.observation_projection is not None
+            and self.observation_projection.canonical_projection_lineage != projection.projection_lineage
+        ):
+            self.observation_projection = None
         self.canonical_world = projection
+
+    def install_observation_projection(self, projection: ObservationContextProjection) -> None:
+        if projection.observation_id != self.current_world.observation_id:
+            raise ValueError("cannot install an observation projection for another World")
+        if (
+            self.canonical_world is None
+            or projection.canonical_projection_lineage != self.canonical_world.projection_lineage
+        ):
+            raise ValueError("observation projection requires the installed canonical World")
+        self.observation_projection = projection
 
     def resume(self, expected: RunStatus) -> None:
         """Perform the sole non-StepResult transition back into the running loop."""
@@ -451,6 +484,7 @@ class RunState:
         if result.before_world.observation_id != self.current_world.observation_id:
             raise ValueError("step starts from a stale world")
         acquired_new_world = result.after_world.observation_id != result.before_world.observation_id
+        previous_delivery_index = self.delivery_index
         if delivery_transition is None:
             delivery_transition = self.delivery_store.reduce(
                 result,
@@ -463,7 +497,7 @@ class RunState:
         self.delivery_store = delivery_transition.next_store
         self.current_world = result.after_world
         if result.after_public_world is not None:
-            self.canonical_world = result.after_public_world
+            self.install_canonical_world(result.after_public_world)
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
         self.status = result.status_after
@@ -483,10 +517,11 @@ class RunState:
         if result.action_page_result is not None:
             self.action_discovery = result.action_page_result
         if acquired_new_world:
-            self.prior_delivery_index = self.delivery_index
-            self.delivery_index = None
+            self.prior_delivery_index = previous_delivery_index
+            self.delivery_index = result.after_delivery_index
             self.action_page = None
             self.action_discovery = None
+            self.observation_projection = None
         self.waited_ms += result.waited_ms
         self.recovery_signal = result.recovery_signal
         if result.finalization is not None:
