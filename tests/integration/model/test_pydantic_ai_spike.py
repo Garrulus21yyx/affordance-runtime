@@ -142,19 +142,23 @@ async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request
         await SharedTaskEvaluator().evaluate(task, world),
     )
     profile = port.reasoning_policy.select(context, frozenset())
-    return turn_packer_module.TurnPacker().pack(
-        ModelDecisionRequest(f"request:{request_id}", context),
-        binder=port.envelope_binder,
-        identity=pydantic_bridge.CanonicalProviderIdentity(
-            port.provider_id,
-            port.model_id,
-            port.endpoint_host,
-            port.perception_profile.value,
-        ),
-        call_profile=profile,
-        supports_multimodal=False,
-        perception_profile=port.perception_profile,
-    ).admitted_envelope.envelope
+    return (
+        turn_packer_module.TurnPacker()
+        .pack(
+            ModelDecisionRequest(f"request:{request_id}", context),
+            binder=port.envelope_binder,
+            identity=pydantic_bridge.CanonicalProviderIdentity(
+                port.provider_id,
+                port.model_id,
+                port.endpoint_host,
+                port.perception_profile.value,
+            ),
+            call_profile=profile,
+            supports_multimodal=False,
+            perception_profile=port.perception_profile,
+        )
+        .admitted_envelope.envelope
+    )
 
 
 def _runtime(model) -> TargetRuntime:
@@ -250,10 +254,7 @@ def test_multiple_provider_tool_calls_execute_first_and_preserve_every_proposal(
         assert result.diagnostics["discarded_protocol_call_count"] == 1
         assert len(policy.port.last_admitted_envelopes) == 1
         assert isinstance(policy.port.message_history[0], ModelRequest)
-        assert any(
-            isinstance(part, UserPromptPart)
-            for part in policy.port.message_history[0].parts
-        )
+        assert any(isinstance(part, UserPromptPart) for part in policy.port.message_history[0].parts)
         retained = policy.port.message_history[1]
         assert isinstance(retained, ModelResponse)
         assert [part.tool_call_id for part in retained.parts if isinstance(part, ToolCallPart)] == [
@@ -277,9 +278,7 @@ def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_
             await SharedTaskEvaluator().evaluate(task, world),
         )
 
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:text-only-output-retry", context)
-        )
+        result = await policy.port.generate(ModelDecisionRequest("request:text-only-output-retry", context))
 
         assert result.failure is None and result.output is not None
         assert isinstance(result.output.decision, SelectAction)
@@ -305,9 +304,7 @@ def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
         repeated_call_id = "recording-call:prohibited-read"
         scripted = ScriptedModel(
             [
-                ModelResponse(
-                    parts=[ToolCallPart("list_regions", {}, repeated_call_id)]
-                ),
+                ModelResponse(parts=[ToolCallPart("list_regions", {}, repeated_call_id)]),
             ]
         )
         policy = _policy(scripted.build())
@@ -336,9 +333,7 @@ def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
             },
         )
 
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:recovery-output-validator", context)
-        )
+        result = await policy.port.generate(ModelDecisionRequest("request:recovery-output-validator", context))
 
         assert result.failure is None
         assert result.output is not None
@@ -369,9 +364,7 @@ def test_text_only_output_retry_exhaustion_is_typed_no_tool_call() -> None:
             await SharedTaskEvaluator().evaluate(task, world),
         )
 
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:text-only-output-exhausted", context)
-        )
+        result = await policy.port.generate(ModelDecisionRequest("request:text-only-output-exhausted", context))
 
         assert result.failure is not None
         assert result.failure.kind is ModelFailureKind.INVALID_RESPONSE
@@ -379,8 +372,7 @@ def test_text_only_output_retry_exhaustion_is_typed_no_tool_call() -> None:
         assert scripted.calls == 2
         assert [attempt.status for attempt in result.attempts] == ["invalid", "failed"]
         assert all(
-            attempt.output_failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL
-            for attempt in result.attempts
+            attempt.output_failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL for attempt in result.attempts
         )
         assert result.diagnostics["policy_model_call_count"] == 2
         assert all(attempt.phase != "representation_repair" for attempt in result.attempts)
@@ -405,9 +397,7 @@ def test_exhausted_output_retry_trace_excludes_prior_official_history() -> None:
         builder = ContextBuilder()
         first_context = builder.build(task, world, actions, evaluation)
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:output-retry-history:first", first_context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:output-retry-history:first", first_context))
         assert first.failure is None and first.output is not None
         first_step = StepResult(
             first.output.decision,
@@ -471,17 +461,14 @@ def test_text_only_length_exhaustion_is_typed_output_budget_failure() -> None:
             await SharedTaskEvaluator().evaluate(task, world),
         )
 
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:text-output-budget-exhausted", context)
-        )
+        result = await policy.port.generate(ModelDecisionRequest("request:text-output-budget-exhausted", context))
 
         assert result.failure is not None
         assert result.failure.kind is ModelFailureKind.INVALID_RESPONSE
         assert result.failure.reason == "output_budget_exhausted"
         assert scripted.calls == 2
         assert all(
-            attempt.output_failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
-            for attempt in result.attempts
+            attempt.output_failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED for attempt in result.attempts
         )
 
     asyncio.run(scenario())
@@ -500,9 +487,7 @@ def test_wholly_unparseable_tool_call_fails_without_representation_repair() -> N
             await SharedTaskEvaluator().evaluate(task, world),
         )
 
-        result = await policy.port.generate(
-            ModelDecisionRequest("request:malformed-tool-call", context)
-        )
+        result = await policy.port.generate(ModelDecisionRequest("request:malformed-tool-call", context))
 
         assert result.failure is not None
         assert scripted.calls == 1
@@ -561,9 +546,7 @@ def test_unexecuted_second_proposal_can_be_reissued_after_the_fresh_world() -> N
         policy = _policy(scripted.build())
         context = builder.build(task, world, actions, evaluation)
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:multiple-reissue:first", context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:multiple-reissue:first", context))
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_name == "list_regions"
@@ -640,9 +623,7 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
         policy = _policy(scripted.build())
         first_context = builder.build(task, world, actions, evaluation)
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:pending-pair:first", first_context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:pending-pair:first", first_context))
         assert first.output is not None
         first_step = StepResult(
             first.output.decision,
@@ -667,9 +648,7 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
             )
         )
 
-        assert second.failure is None and second.output is not None, json.dumps(
-            second.diagnostics, default=str
-        )
+        assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert second.output.decision.tool_call_id == "recording-call:2"
         assert [attempt.phase for attempt in second.attempts] == ["ordinary"]
         assert second.diagnostics["multiple_tool_call_attempt_count"] == 1
@@ -749,10 +728,7 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         first_context = builder.build(task, world, actions, evaluation)
         raw_calls = [
             ("list_regions", {}),
-            *(
-                ("search_page_content", {"query": f"discarded-{index}"})
-                for index in range(1, call_count)
-            ),
+            *(("search_page_content", {"query": f"discarded-{index}"}) for index in range(1, call_count)),
         ]
         scripts: list[object] = [raw_calls]
         scripts.append(
@@ -764,9 +740,7 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         scripted = ScriptedModel(scripts)
         policy = _policy(scripted.build())
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:accepted-exchange:first", first_context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:accepted-exchange:first", first_context))
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_name == "list_regions"
@@ -774,13 +748,9 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         assert first.output.decision.tool_call_id == accepted_call_id
         history = policy.port.message_history
         assert len(history) == 2
-        assert pydantic_bridge._pending_call_from_history(history) == ToolCall(
-            "list_regions", {}, accepted_call_id
-        )
+        assert pydantic_bridge._pending_call_from_history(history) == ToolCall("list_regions", {}, accepted_call_id)
         raw_response_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
-        assert len(
-            [part for part in raw_response_parts if part["part_kind"] == "tool-call"]
-        ) == call_count
+        assert len([part for part in raw_response_parts if part["part_kind"] == "tool-call"]) == call_count
 
         step = StepResult(
             first.output.decision,
@@ -806,22 +776,12 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
             )
         )
 
-        assert second.failure is None and second.output is not None, json.dumps(
-            second.diagnostics, default=str
-        )
+        assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert isinstance(second.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[1])
         assert recorded == policy.port.last_admitted_envelopes[0].model_boundary_projection()
-        prior_calls = tuple(
-            part
-            for part in recorded["messages"][-2]["parts"]
-            if part["part_kind"] == "tool-call"
-        )
-        paired_results = tuple(
-            part
-            for part in recorded["messages"][-1]["parts"]
-            if part["part_kind"] == "tool-return"
-        )
+        prior_calls = tuple(part for part in recorded["messages"][-2]["parts"] if part["part_kind"] == "tool-call")
+        paired_results = tuple(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "tool-return")
         assert prior_calls[0] == {
             "part_kind": "tool-call",
             "tool_name": "list_regions",
@@ -830,21 +790,14 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         }
         assert len(prior_calls) == call_count
         assert len(paired_results) == call_count
-        assert tuple(
-            (item["tool_name"], item["tool_call_id"]) for item in paired_results
-        ) == tuple((item["tool_name"], item["tool_call_id"]) for item in prior_calls)
+        assert tuple((item["tool_name"], item["tool_call_id"]) for item in paired_results) == tuple(
+            (item["tool_name"], item["tool_call_id"]) for item in prior_calls
+        )
         physical = json.dumps(recorded, sort_keys=True)
         if call_count > 1:
-            assert all(
-                f"discarded-{index}" in physical for index in range(1, call_count)
-            )
-            assert all(
-                f"recording-call:1:discarded:{index}" in physical
-                for index in range(1, call_count)
-            )
-            assert all(
-                "Not executed" in item["content"] for item in paired_results[1:]
-            )
+            assert all(f"discarded-{index}" in physical for index in range(1, call_count))
+            assert all(f"recording-call:1:discarded:{index}" in physical for index in range(1, call_count))
+            assert all("Not executed" in item["content"] for item in paired_results[1:])
         assert scripted.calls == 2
 
     asyncio.run(scenario())
@@ -886,9 +839,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
         )
         policy = _policy(scripted.build())
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:progress:first", first_context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:progress:first", first_context))
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_call_id == "recording-call:progress"
@@ -902,10 +853,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
         ]
         assert retained.parts[1].content == progress
         raw_parts = first.attempts[0].transcript["llm.output_messages"][0]["parts"]
-        assert any(
-            part["part_kind"] == "thinking" and "private deliberation" in part["content"]
-            for part in raw_parts
-        )
+        assert any(part["part_kind"] == "thinking" and "private deliberation" in part["content"] for part in raw_parts)
 
         step = StepResult(
             first.output.decision,
@@ -925,14 +873,10 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
             ModelDecisionRequest("request:progress:second", second_context, last_step=step)
         )
 
-        assert second.failure is None and second.output is not None, json.dumps(
-            second.diagnostics, default=str
-        )
+        assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert isinstance(second.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[1])
-        prior_response = next(
-            message for message in recorded["messages"] if message["kind"] == "response"
-        )
+        prior_response = next(message for message in recorded["messages"] if message["kind"] == "response")
         assert prior_response["parts"] == (
             {
                 "part_kind": "thinking",
@@ -1001,9 +945,7 @@ def test_action_narration_and_fresh_world_prompts_remain_in_official_history() -
         policy = _policy(scripted.build())
         first_context = builder.build(task, world, actions, evaluation)
 
-        first = await policy.port.generate(
-            ModelDecisionRequest("request:progress-carry:first", first_context)
-        )
+        first = await policy.port.generate(ModelDecisionRequest("request:progress-carry:first", first_context))
         assert first.failure is None and first.output is not None
         first_step = StepResult(
             first.output.decision,
@@ -1033,26 +975,39 @@ def test_action_narration_and_fresh_world_prompts_remain_in_official_history() -
         assert len(history) == 4
         assert isinstance(history[0], ModelRequest)
         assert isinstance(history[1], ModelResponse)
-        assert [part.content for part in history[1].parts if isinstance(part, TextPart)] == [
-            progress
-        ]
+        assert [part.content for part in history[1].parts if isinstance(part, TextPart)] == [progress]
         assert isinstance(history[2], ModelRequest)
-        assert sum(
-            isinstance(part, UserPromptPart)
+        assert (
+            sum(
+                isinstance(part, UserPromptPart)
+                for message in history
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+            )
+            == 3
+        )
+        prompt_payloads = tuple(
+            json.loads(part.content)
             for message in history
             if isinstance(message, ModelRequest)
             for part in message.parts
-        ) == 2
+            if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        )
+        assert sum(set(payload) == {"task", "goal_plan"} for payload in prompt_payloads) == 1
+        assert sum(set(payload) == {"observation"} for payload in prompt_payloads) == 2
         assert isinstance(history[-1], ModelResponse)
         assert [part.content for part in history[-1].parts if isinstance(part, TextPart)] == [
             "I will switch back to the Portland tab now."
         ]
-        assert sum(
-            isinstance(part, TextPart)
-            for message in history
-            if isinstance(message, ModelResponse)
-            for part in message.parts
-        ) == 2
+        assert (
+            sum(
+                isinstance(part, TextPart)
+                for message in history
+                if isinstance(message, ModelResponse)
+                for part in message.parts
+            )
+            == 2
+        )
         assert "hidden tool-only deliberation" in json.dumps(history, default=str)
         assert "switch back to the Portland tab" in json.dumps(history, default=str)
         assert "switch back to the Portland tab" in json.dumps(
@@ -1104,9 +1059,7 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             evaluation,
             last_step=step,
         )
-        second = await policy.port.generate(
-            ModelDecisionRequest("request:read", second_context, last_step=step)
-        )
+        second = await policy.port.generate(ModelDecisionRequest("request:read", second_context, last_step=step))
 
         assert second.failure is None
         assert second.output is not None
@@ -1127,9 +1080,7 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             evaluation,
             last_step=second_step,
         )
-        third = await policy.port.generate(
-            ModelDecisionRequest("request:answer", third_context, last_step=second_step)
-        )
+        third = await policy.port.generate(ModelDecisionRequest("request:answer", third_context, last_step=second_step))
 
         assert third.failure is None
         assert third.output is not None
@@ -1155,18 +1106,24 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         )
         assert history_parts[1]["content"] == first.output.decision.result
         assert history_parts[3]["content"] == second.output.decision.result
-        assert sum(
-            part["part_kind"] == "user-prompt"
-            for message in recorded["messages"]
-            for part in message["parts"]
-        ) == 3
+        user_prompts = tuple(
+            part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "user-prompt"
+        )
+        assert len(user_prompts) == 4
+        anchor_payload = json.loads(user_prompts[0]["content"][0]["content"])
+        assert set(anchor_payload) == {"task", "goal_plan"}
+        assert anchor_payload["task"]["instruction"] == task.instruction
+        assert sum("task" in json.loads(item["content"][0]["content"]) for item in user_prompts) == 1
+        assert all(
+            set(json.loads(item["content"][0]["content"])) in ({"task", "goal_plan"}, {"observation"})
+            for item in user_prompts
+        )
         current_prompt_part = next(
-            part
-            for part in recorded["messages"][-1]["parts"]
-            if part["part_kind"] == "user-prompt"
+            part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt"
         )
         user_text = current_prompt_part["content"][0]["content"]
         payload = json.loads(user_text)
+        assert set(payload) == {"observation"}
         assert "latest_public_results" not in payload
         assert scripted.calls == 3
         assert policy.port.message_history == ()
@@ -1197,20 +1154,99 @@ def _official_history_with_pending_actions(turns: int) -> tuple[object, ...]:
                             {"status": "stable", "page": index + 1},
                             f"call:{index}",
                         ),
-                        UserPromptPart(
-                            f"World {index + 1}: fresh observation after action {index}"
-                        ),
+                        UserPromptPart(f"World {index + 1}: fresh observation after action {index}"),
                     ]
                 )
             )
     return tuple(messages)
 
 
+def _assert_summary_keeps_task_anchor_and_exact_suffix(
+    compacted: tuple[object, ...],
+    original: tuple[object, ...],
+) -> None:
+    assert compacted[1] == original[0]
+    suffix = compacted[2:]
+    assert suffix
+    assert suffix == original[-len(suffix) :]
+
+
+@given(turns=st.integers(min_value=5, max_value=12))
+@settings(max_examples=12)
+def test_history_projection_keeps_one_task_anchor_recent_world_and_all_pairs(
+    turns: int,
+) -> None:
+    original = list(_official_history_with_pending_actions(turns))
+    for index, message in enumerate(tuple(original)):
+        if not isinstance(message, ModelRequest):
+            continue
+        parts = tuple(
+            replace(
+                part,
+                content=json.dumps(
+                    {
+                        "task": {"instruction": "old duplicated task"},
+                        "observation": f"World {index}",
+                        "goal_plan": {"items": ["old duplicated plan"]},
+                    },
+                    separators=(",", ":"),
+                ),
+            )
+            if isinstance(part, UserPromptPart)
+            else part
+            for part in message.parts
+        )
+        original[index] = replace(message, parts=parts)
+    task_plan = {
+        "task": {"instruction": "current task"},
+        "goal_plan": {"items": ["current plan"]},
+    }
+
+    normalized = pydantic_bridge._normalize_pydantic_history_for_current_task(
+        tuple(original),
+        task_plan=task_plan,
+    )
+    folded = pydantic_bridge._fold_expired_world_prompts(
+        normalized,
+        max_estimated_tokens=1,
+    )
+
+    prompts = tuple(
+        part
+        for message in folded
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    )
+    assert len(prompts) == 2
+    assert json.loads(prompts[0].content) == task_plan
+    assert set(json.loads(prompts[1].content)) == {"observation"}
+    original_returns = tuple(
+        part
+        for message in normalized
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    folded_returns = tuple(
+        part
+        for message in folded
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    assert folded_returns == original_returns
+    assert pydantic_bridge._pending_call_from_history(folded) == ToolCall(
+        "activate",
+        {"target": f"E{turns - 1}"},
+        f"call:{turns - 1}",
+    )
+    canonical_envelope_module._project_pydantic_history(folded)
+
+
 def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None:
     history = _official_history_with_pending_actions(7)
-    scripted = ScriptedModel(
-        [ModelResponse(parts=[TextPart("Verified Portland facts; next open Acadia.")])]
-    )
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart("Verified Portland facts; next open Acadia.")])])
     model = scripted.build()
 
     run = asyncio.run(
@@ -1228,12 +1264,8 @@ def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None
     assert isinstance(run.messages[0], ModelRequest)
     assert isinstance(run.messages[0].parts[0], SystemPromptPart)
     assert "Verified Portland facts" in run.messages[0].parts[0].content
-    preserved_count = len(run.messages) - 1
-    assert 0 < preserved_count < len(history)
-    assert run.messages[1:] == history[-preserved_count:]
-    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
-        "activate", {"target": "E6"}, "call:6"
-    )
+    _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history)
+    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall("activate", {"target": "E6"}, "call:6")
     summary_input = normalize_recorded_provider_input(scripted.records[0])
     serialized_input = json.dumps(summary_input, sort_keys=True)
     assert "World 0" in serialized_input
@@ -1246,54 +1278,61 @@ def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None
 def test_harness_summary_contract_keeps_conclusions_without_action_narration() -> None:
     prompt = pydantic_bridge._HISTORY_COMPACTION_SUMMARY_PROMPT
 
-    assert "## Task progress" in prompt
-    assert "At most three completed user-requirement outcomes" in prompt
+    assert "## Completed outcomes" in prompt
+    assert "At most three stable user-requirement outcomes" in prompt
     assert "## Verified facts" in prompt
     assert "At most eight exact facts" in prompt
-    assert "## Remaining questions" in prompt
-    assert "## Next intent" in prompt
-    assert "Exactly one semantic next intent" in prompt
     assert "## Failed strategies" in prompt
     assert "At most two terse strategy-level failures" in prompt
+    assert "## Remaining questions" not in prompt
+    assert "## Next intent" not in prompt
+    assert "Do not write\nremaining questions" in prompt
+    assert "the continuing ActionPolicy derives its next action" in prompt
     assert "## Action outcomes" not in prompt
     assert "Never enumerate attempted URLs" in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
     assert "destination is unavailable" in MODEL_POLICY_EVIDENCE_STATUS
     assert "must not also appear unresolved" in MODEL_POLICY_EVIDENCE_STATUS
-    assert pydantic_bridge._HISTORY_COMPACTION_KEEP_TOKENS_RATIO == 0.12
+    assert pydantic_bridge._HISTORY_RECENT_EXACT_TOKENS_RATIO == 0.12
     assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
 
 
 def test_exact_link_identity_survives_destination_load_failure_compaction_boundary() -> None:
     history = list(_official_history_with_pending_actions(7))
-    history[0] = ModelRequest(parts=[
-        UserPromptPart("Return relation_id and driving distance for the selected place"),
-    ])
-    history[2] = ModelRequest(parts=[
-        ToolReturnPart(
-            "activate",
-            {
-                "status": "stable",
-                "result_label": "Selected national park",
-                "resolved_link_target": "/relation/2176999",
-            },
-            "call:0",
-        ),
-        UserPromptPart("World 1: selected result is now current"),
-    ])
-    history[4] = ModelRequest(parts=[
-        ToolReturnPart(
-            "activate",
-            {
-                "status": "stable",
-                "route": "/relation/2176999",
-                "page_title": "Not Found",
-            },
-            "call:1",
-        ),
-        UserPromptPart("World 2: destination page is unavailable"),
-    ])
+    history[0] = ModelRequest(
+        parts=[
+            UserPromptPart("Return relation_id and driving distance for the selected place"),
+        ]
+    )
+    history[2] = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                "activate",
+                {
+                    "status": "stable",
+                    "result_label": "Selected national park",
+                    "resolved_link_target": "/relation/2176999",
+                },
+                "call:0",
+            ),
+            UserPromptPart("World 1: selected result is now current"),
+        ]
+    )
+    history[4] = ModelRequest(
+        parts=[
+            ToolReturnPart(
+                "activate",
+                {
+                    "status": "stable",
+                    "route": "/relation/2176999",
+                    "page_title": "Not Found",
+                },
+                "call:1",
+            ),
+            UserPromptPart("World 2: destination page is unavailable"),
+        ]
+    )
     expected_summary = """## Verified facts
 - relation_id = 2176999 (resolved result link)
 
@@ -1321,14 +1360,16 @@ Compute the driving distance from the established coordinates."""
     )
     assert "An exact identifier encoded in a resolved link target" in recorded
     assert "must not also appear unresolved under Remaining" in recorded
+    assert "## Completed outcomes" in recorded
+    assert "## Remaining questions" not in recorded
+    assert "## Next intent" not in recorded
+    assert "remaining questions, working hypotheses" in recorded
     assert "/relation/2176999" in recorded
     assert "Not Found" in recorded
-    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
-        "activate", {"target": "E6"}, "call:6"
-    )
+    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall("activate", {"target": "E6"}, "call:6")
 
 
-def test_compaction_fails_safe_when_an_exact_verified_value_is_also_unresolved() -> None:
+def test_compaction_does_not_treat_summary_text_as_runtime_fact_state() -> None:
     history = _official_history_with_pending_actions(7)
     invalid_summary = """## Verified facts
 - The resolved link target encodes relation ID 2176999.
@@ -1350,8 +1391,12 @@ def test_compaction_fails_safe_when_an_exact_verified_value_is_also_unresolved()
     )
 
     assert run.attempted is True
-    assert run.messages == history
-    assert "repeats an exact verified value" in run.error
+    assert run.error == ""
+    assert invalid_summary in run.messages[0].parts[0].content
+    _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history)
+    assert pydantic_bridge._pending_call_from_history(run.messages) == pydantic_bridge._pending_call_from_history(
+        history
+    )
     assert len(scripted.records) == 1
 
 
@@ -1387,9 +1432,7 @@ def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() 
             ]
         ),
     )
-    scripted = ScriptedModel(
-        [ModelResponse(parts=[TextPart(f"Verified Portland coordinates: {coordinate}.")])]
-    )
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart(f"Verified Portland coordinates: {coordinate}.")])])
 
     run = asyncio.run(
         pydantic_bridge._compact_pydantic_history(
@@ -1409,7 +1452,7 @@ def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() 
     assert coordinate in summary_input
     assert "Completed tool result [read_region] call_id=call:read" in summary_input
     assert "Coverage or pagination metadata limits the result's scope" in summary_input
-    assert run.messages[1:] == history[-(len(run.messages) - 1) :]
+    _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history)
     assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
         "wait", {"reason": "fixture"}, "call:pending"
     )
@@ -1545,9 +1588,7 @@ def test_action_envelope_recomputes_timeout_after_actual_compaction_elapsed(monk
         monkeypatch.setattr(pydantic_bridge, "_compact_pydantic_history", preserve_history)
         monkeypatch.setattr(pydantic_bridge, "_remaining_action_attempt_timeout", remaining_timeout)
 
-        second = await port.generate(
-            ModelDecisionRequest("request:deadline-second", second_context, last_step=step)
-        )
+        second = await port.generate(ModelDecisionRequest("request:deadline-second", second_context, last_step=step))
 
         assert second.failure is None and second.output is not None
         assert isinstance(second.output.decision, FinalResponse)
@@ -1575,9 +1616,7 @@ def test_harness_summary_failure_keeps_the_exact_raw_history() -> None:
     assert run.messages == history
     assert run.attempted is True
     assert "summary provider unavailable" in run.error
-    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
-        "activate", {"target": "E6"}, "call:6"
-    )
+    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall("activate", {"target": "E6"}, "call:6")
 
 
 @given(turns=st.integers(min_value=5, max_value=12))
@@ -1586,9 +1625,7 @@ def test_harness_compaction_keeps_an_exact_pair_safe_suffix_and_pending_call(
     turns: int,
 ) -> None:
     history = _official_history_with_pending_actions(turns)
-    model = ScriptedModel(
-        [ModelResponse(parts=[TextPart(f"summary for {turns} turns")])]
-    ).build()
+    model = ScriptedModel([ModelResponse(parts=[TextPart(f"summary for {turns} turns")])]).build()
 
     run = asyncio.run(
         pydantic_bridge._compact_pydantic_history(
@@ -1600,9 +1637,7 @@ def test_harness_compaction_keeps_an_exact_pair_safe_suffix_and_pending_call(
     )
 
     assert run.error == ""
-    preserved_count = len(run.messages) - 1
-    assert 0 < preserved_count < len(history)
-    assert run.messages[1:] == history[-preserved_count:]
+    _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history)
     assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
         "activate",
         {"target": f"E{turns - 1}"},
@@ -2166,9 +2201,7 @@ def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_co
                         )
                     ]
                 ),
-                ModelResponse(
-                    parts=[ToolCallPart("submit_final_response", {"content": content}, call_id)]
-                ),
+                ModelResponse(parts=[ToolCallPart("submit_final_response", {"content": content}, call_id)]),
             ]
         )
         policy = _policy(scripted.build())
@@ -2193,11 +2226,7 @@ def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_co
             "ordinary",
             "representation_repair",
         ]
-        final_spec = next(
-            tool
-            for tool in scripted.records[0].function_tools
-            if tool.name == "submit_final_response"
-        )
+        final_spec = next(tool for tool in scripted.records[0].function_tools if tool.name == "submit_final_response")
         assert set(final_spec.parameters_json_schema["properties"]) == {"content"}
 
     asyncio.run(scenario())
@@ -2312,11 +2341,11 @@ def test_representation_repair_cannot_delete_legal_optional_operands() -> None:
             "type": "object",
             "properties": {
                 "question": {"type": "string"},
-                    "requested_fields": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "maxItems": 32,
-                    },
+                "requested_fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 32,
+                },
             },
             "required": ["question"],
             "additionalProperties": False,
@@ -2613,9 +2642,7 @@ def test_multiple_deferred_calls_resolve_only_the_first_and_record_discarded_cou
     assert exchange.decision is resolved_decision
     assert exchange.discarded_call_count == 1
     assert [
-        (part.tool_name, part.tool_call_id)
-        for part in exchange.response.parts
-        if isinstance(part, ToolCallPart)
+        (part.tool_name, part.tool_call_id) for part in exchange.response.parts if isinstance(part, ToolCallPart)
     ] == [
         ("read_region", "call:1"),
         ("search_page_content", "call:2"),
@@ -2779,21 +2806,27 @@ def test_compaction_and_provider_recovery_fit_one_policy_deadline() -> None:
 
     assert (compaction, retry, transport) == (42.25, 5.0, 42.25)
     assert retry + (2 * transport) + 0.5 == 90.0
-    assert pydantic_bridge._remaining_action_attempt_timeout(
-        deadline_s=89.5,
-        now_s=0.0,
-        retry_delay_reserve_s=retry,
-        maximum_timeout_s=transport,
-    ) == 42.25
+    assert (
+        pydantic_bridge._remaining_action_attempt_timeout(
+            deadline_s=89.5,
+            now_s=0.0,
+            retry_delay_reserve_s=retry,
+            maximum_timeout_s=transport,
+        )
+        == 42.25
+    )
     # run25's final compactor used 23 seconds. The old static partition still
     # limited each action attempt to 21.125 seconds; deadline propagation gives
     # both remaining attempts 30.75 seconds without exceeding the same total.
-    assert pydantic_bridge._remaining_action_attempt_timeout(
-        deadline_s=89.5,
-        now_s=23.0,
-        retry_delay_reserve_s=retry,
-        maximum_timeout_s=transport,
-    ) == 30.75
+    assert (
+        pydantic_bridge._remaining_action_attempt_timeout(
+            deadline_s=89.5,
+            now_s=23.0,
+            retry_delay_reserve_s=retry,
+            maximum_timeout_s=transport,
+        )
+        == 30.75
+    )
 
 
 def test_pydantic_ai_factory_selects_separate_aliyun_profile() -> None:

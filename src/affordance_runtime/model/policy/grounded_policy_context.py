@@ -81,16 +81,26 @@ class GroundedPolicyContextBinder:
             "observation": observation,
             "goal_plan": _goal_plan(context),
         }
+        current_turn: dict[str, object] = {"observation": observation}
         if context.control_feedback:
-            public["control_feedback"] = project_public_value(context.control_feedback)
+            control_feedback = project_public_value(context.control_feedback)
+            public["control_feedback"] = control_feedback
+            current_turn["control_feedback"] = control_feedback
         return {
             "public": public,
             "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
             "actor_world": {"observation": observation},
+            "current_turn": current_turn,
             "history": {"control_feedback": context.control_feedback},
             "delivery_view": view,
             "delivery_id": delivery.delivery_id,
         }
+
+    @staticmethod
+    def public_task_plan(context: AgentContext) -> dict[str, object]:
+        """Return the one task/plan anchor reused across model turns."""
+
+        return {"task": _task(context), "goal_plan": _goal_plan(context)}
 
     def model_turn_delivery(
         self,
@@ -115,7 +125,6 @@ class GroundedPolicyContextBinder:
         if include_images and (not supports_multimodal or not request.agent_context.image_inputs):
             raise ValueError("selected grounded perception requires a current image input")
         return include_images
-
 
 
 def _task(context: AgentContext) -> dict[str, object]:

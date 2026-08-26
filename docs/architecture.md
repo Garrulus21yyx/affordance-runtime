@@ -22,10 +22,9 @@ The latest Task266 convergence repair closes three owner contracts without addin
 or control-flow path. `GoalCompiler` now requests disabled thinking whenever the selected provider declares that
 wire capability; providers without the capability remain unchanged. ActionPolicy and Harness compaction consume one
 prompt-owned evidence-status rule: an exact identifier encoded by a resolved link remains identity evidence when the
-destination later fails to load, and an exact value cannot be both verified and unresolved. Because a prompt is not
-an enforcement boundary, the PydanticAI history owner rejects a summary that places the same exact value in
-`Verified facts` and `Remaining questions` and preserves the official raw history instead. It creates no fact store
-and makes no independent task judgment.
+destination later fails to load, and a verified claim should not remain unresolved. The summary is non-authoritative
+model text: the PydanticAI history owner validates only its typed message/call-result shape and does not infer claim
+identity by comparing numbers across headings. It creates no fact store and makes no independent task judgment.
 
 Control discovery also now gives a candidate's exact public label ownership of colliding query tokens before applying
 inventory-wide role/operation facets. Thus `Go button` finds the current `Go` button even though the same ActionSpace
@@ -38,7 +37,50 @@ The authorized
 `done` with native `verified_success`, returning relation `2176999` and driving distance `287km`. It made one
 GoalCompiler call, 39 ordinary ActionPolicy calls, zero recovery calls, and exactly one STOP, post-STOP capture, and
 native evaluation. This is a live correctness witness for this Task266 causal line, not closure of the Planner gap or
-the broader benchmark campaign.
+the broader benchmark campaign. Its 870,289 accumulated history tokens also falsified the efficiency claim that
+pressure-only semantic compaction was sufficient: 135 historical user prompts replayed the same TaskGoal/GoalPlan and
+large expired Worlds, while only 39 prompts represented the authoritative current turn.
+
+The history owner now performs a cheap structural projection before deciding whether semantic compaction is needed.
+One metadata-marked SDK `UserPromptPart` anchors the current `TaskGoal + GoalPlan`; each other user prompt contains
+only that turn's World and optional control feedback. The initial World remains a separate prompt part in the same
+PydanticAI request, preserving multimodal content and matching the SDK's physical request coalescing. Expired World
+prompts are removed oldest-first until the recent raw World tail fits 12% of the admission-derived history capacity;
+at least the newest historical World remains. Model text/thinking and every ToolCall/ToolReturn stay exact. Only the
+remaining complete canonical request may cross the existing 80% pressure threshold and call Harness
+`SummarizingCompaction`, which preserves the task anchor and exact unresolved suffix. This is one projection inside
+the existing PydanticAI history owner, not a memory, progress reducer, evidence path, cursor, or second current-state
+authority.
+
+[`run38`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run38/run.json) remained behaviorally correct—native
+`verified_success`, 43 valid policy calls, zero waits, zero invalid calls, and one STOP—but falsified the first
+efficiency implementation. Six pressured summaries were semantically rejected because a Runtime regex treated any
+number repeated under `Verified facts` and `Remaining questions` as the same contradictory claim. Every rejection
+restored raw history, so the run paid both 198,783 compactor input tokens and the ordinary ActionPolicy requests;
+prompt tokens rose to 1,379,172. Claim identity is open-world semantics, not a deterministic history invariant. The
+history owner now accepts Harness summary prose after typed message and exact suffix validation; the shared prompt
+remains guidance, and the current task, recent raw tail, and exact call/result history remain available to the single
+ActionPolicy. No retry or alternate summary path was added. A post-repair live efficiency witness was required.
+
+[`run39`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run39/run.json) crossed that scheduling repair: one
+28,734-token summary was accepted, later ActionPolicy requests fell from about 33k to 13--20k, and the native evaluator
+again returned `verified_success`. It also isolated the remaining semantic pollution. The accepted summary preserved
+relation `2176999` under verified facts while simultaneously placing it under `Remaining questions` and setting
+re-verification as `Next intent`; the policy then repeated coordinate and name searches. The summary contract now
+contains only stable completed outcomes, verified facts, and failed strategies. It cannot publish current stage,
+working hypotheses, remaining work, or next intent. Those prospective decisions are recalculated by the one
+ActionPolicy from the current TaskGoal, static GoalPlan, fresh World, and recent exact suffix. This removes mutable
+planning from long-term compaction rather than adding a validator or second progress owner. A fresh witness for this
+final prompt contract remained required.
+
+[`run40`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run40/run.json) is the final same-task witness. It
+ended with native `verified_success`, 34 valid policy calls, zero waits, zero invalid arguments, one STOP, and no
+compactor call. The structural history tier kept every complete request below semantic pressure, so Harness correctly
+did no model-backed work; the model used relation `2176999`, found `Distance: 287km`, and submitted directly rather
+than reopening relation verification. Prompt tokens fell from run37's 1,008,148 to 847,397 (160,751 / 15.9%), and
+model latency fell from about 127.7s to 98.9s. End-to-end wall time was about 350s versus 325s because BrowserGym
+transition time varied, so no wall-time improvement is claimed. The stable-only summary contract remains covered by
+provider-boundary tests for cases that genuinely cross pressure; run40 demonstrates the preferred cheap path.
 
 The latest repair keeps the generic BrowserGym browser profile unrestricted, while an environment may explicitly
 provide a navigation scope. WebArena is the only current selector of that restricted profile: its runner reads the
@@ -193,8 +235,12 @@ read/search records omitted the action--observation trajectory that explained th
 The converged owner is the official PydanticAI message history, using Harness
 [`SummarizingCompaction`](https://pydantic.dev/docs/ai/harness/compaction/) directly:
 
-- every accepted turn persists the SDK-produced fresh-World `UserPromptPart`, ordinary `TextPart`, `ThinkingPart`,
-  provider metadata, every proposed `ToolCallPart`, and the next same-ID `ToolReturnPart`;
+- every accepted turn initially persists the SDK-produced fresh-World `UserPromptPart`, ordinary `TextPart`,
+  `ThinkingPart`, provider metadata, every proposed `ToolCallPart`, and the next same-ID `ToolReturnPart`;
+- one current task/plan prompt part is preserved as the only historical anchor. Other historical user prompts are
+  World-only. Before any model-backed compaction decision, the history owner removes only expired World prompt parts
+  outside a 12%-of-history-capacity recent tail. It never edits model responses, ToolCalls, ToolReturns, or the newest
+  historical World, and it preserves non-text media on retained Worlds;
 - only a canonical request whose existing `RequestAdmission` breakdown reaches 80% of effective provider input can
   trigger compaction. That same breakdown already counts SDK history, pending ToolReturn, fresh World, tools, and
   protocol overhead; read/search type, Monitor recovery, task revision, semantic novelty, and the provider usage
@@ -202,8 +248,8 @@ The converged owner is the official PydanticAI message history, using Harness
 - Harness summarizes only a pair-safe expired prefix and keeps the newest pair-safe suffix fitting 12% of that history
   capacity at full fidelity. This token-bound tail adapts to variable-size GUI Worlds instead of assuming that eight
   messages are small. Its plain `SystemPromptPart` summary retains at most three completed user outcomes plus the
-  current stage, eight task-critical verified facts, three remaining questions, one next intent, and two failed
-  strategies. It does not retain an action-by-action log, old URLs, or stale current-state references;
+  eight task-critical verified facts, and two failed strategies. It does not retain current stage, remaining work,
+  next intent, an action-by-action log, old URLs, or stale current-state references;
 - Harness 0.25's formatter does not render `ThinkingPart`. The history owner therefore maps accepted thinking to
   ordinary text only in the throwaway summarizer input, then restores Harness's preserved suffix from the exact
   official messages. Provider reasoning metadata and signatures are never rewritten in persisted or replayed history;
@@ -901,7 +947,9 @@ proposals remain visible long enough for PydanticAI to close them as not execute
 queue. The next ActionPolicy call alone decides whether to reissue one after seeing the fresh World. PydanticAI
 Harness performs pair-safe semantic compaction before provider invocation only when the complete canonical request's
 existing admission breakdown reaches pressure. Neither the provider's cumulative usage anchor nor the current-World
-soft target is treated as history capacity. Harness replaces an expired prefix
+soft target is treated as history capacity. Before that pressure test, the same history owner retains one task/plan
+anchor, removes repeated task/plan fields from historical Worlds, and keeps only an admission-derived recent raw World
+tail. This structural projection does not change responses or call/result pairs. Harness then replaces an expired prefix
 with one historical `SystemPromptPart` summary and retains the newest pair-safe token-bounded suffix exactly. Summary
 failure preserves raw history and lets the existing hard-capacity gate fail closed. The unresolved response and all
 its calls remain present. A terminal decision consumes the last results and clears transport history so it cannot leak
@@ -919,7 +967,7 @@ into another episode.
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
 | delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
-| bounded typed call/result history, correlation, and Harness compaction | PydanticAI boundary | Store, Workspace, Monitor |
+| task anchor, recent-World projection, typed call/result history, correlation, and Harness compaction | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -940,7 +988,8 @@ The model context contains only:
 - current typed control feedback;
 - at most one Harness-produced, visible, non-authoritative historical summary;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
-  not selected for execution, plus the newest exact pair-safe suffix including fresh Worlds and `ThinkingPart`.
+  not selected for execution, plus one task/plan anchor and a token-bounded recent raw World tail. Harness additionally
+  preserves its newest exact pair-safe suffix, including `ThinkingPart`.
 
 The boundary preserves each accepted model response exactly, including `ThinkingPart`, ordinary text, provider
 reasoning metadata, and all tool proposals. Only the summarizer's throwaway input maps thinking to ordinary text
@@ -1090,10 +1139,13 @@ This cutover is implementation-complete only when all of the following agree:
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
 21. DeepSeek receives the declared output budget through its supported wire parameter, and a text-only ActionPolicy
     response is retried once by PydanticAI before a typed terminal failure, with no nested representation retry.
-22. GoalCompiler thinking control follows the selected provider capability; ActionPolicy and Harness compaction share
-    one evidence-status rule; an exact value cannot survive in both verified and unresolved summary sections.
+22. GoalCompiler thinking control follows the selected provider capability, and ActionPolicy and Harness compaction
+    receive one prompt-owned evidence-status rule without Runtime parsing summary prose into fact state.
 23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and
     exhausted output-retry tracing cannot count responses from the supplied official history as new physical calls.
+24. SDK history exposes the current task/plan exactly once, retains an admission-token-bounded recent raw World tail
+    with media intact, and expires older World prompts without altering model progress, thinking, calls, returns, or
+    the unresolved suffix; only the remaining request can trigger Harness semantic compaction.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

@@ -10,11 +10,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from affordance_runtime.agent.attempt_signature import (
@@ -95,20 +94,18 @@ _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
-_HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.12
+_HISTORY_RECENT_EXACT_TOKENS_RATIO = 0.12
 _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
-_SUMMARY_EXACT_VALUE = re.compile(
-    r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)*(?:[A-Za-z°′″%]+)?(?![A-Za-z0-9_])"
-)
+_TASK_ANCHOR_METADATA_KEY = "affordance_runtime.task_anchor"
 _HISTORY_COMPACTION_SUMMARY_PROMPT = f"""
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
 
 Use these exact headings, omitting empty sections:
 
-## Task progress
-At most three completed user-requirement outcomes, followed by one sentence naming the current
-stage. Record outcomes, not actions taken.
+## Completed outcomes
+At most three stable user-requirement outcomes already completed. Record outcomes, not actions
+taken, current stage, or a future plan.
 
 ## Verified facts
 At most eight exact facts necessary for unfinished requirements or the final answer. Include a
@@ -123,27 +120,25 @@ not retract an already supported fact unless it explicitly disproves that fact.
 Shared evidence-status rule:
 {MODEL_POLICY_EVIDENCE_STATUS}
 
-## Remaining questions
-At most three unresolved user requirements or values that still need verification.
-
-## Next intent
-Exactly one semantic next intent that advances the current stage.
-
 ## Failed strategies
 At most two terse strategy-level failures worth avoiding. Never enumerate attempted URLs,
 individual clicks, reads, tab switches, or other action history.
 
 Fresh World supplied to the continuing agent is authoritative. Focus on conclusions and
 outcomes rather than narrating steps. Do not preserve current URLs, stale loading state,
-selectors, call-local E/R/F/N refs, old control IDs, or incidental page metadata. Keep the
-summary concise and respond with only the summary.
+selectors, call-local E/R/F/N refs, old control IDs, or incidental page metadata. Do not write
+remaining questions, working hypotheses, current stage, next intent, or any other prospective
+task state: the continuing ActionPolicy derives its next action from the current TaskGoal,
+GoalPlan, fresh World, and recent exact suffix. Keep the summary concise and respond with only
+the summary.
 
 <messages>
 {{messages}}
 </messages>
 """.strip()
 _HISTORY_COMPACTION_INSTRUCTIONS = (
-    "Summarize an expired GUI-agent trajectory prefix without inventing facts or current state."
+    "Summarize only stable completed outcomes, verified facts, and failed strategies from an expired "
+    "GUI-agent trajectory prefix; do not invent current or prospective task state."
 )
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
@@ -204,15 +199,10 @@ class AcceptedToolExchange:
             or self.discarded_call_count < 0
         ):
             raise TypeError("accepted tool exchange is not typed")
-        response_calls = tuple(
-            part for part in self.response.parts if isinstance(part, ToolCallPart)
-        )
+        response_calls = tuple(part for part in self.response.parts if isinstance(part, ToolCallPart))
         response_call_ids = tuple(part.tool_call_id for part in response_calls)
         if (
-            any(
-                not isinstance(part, (ThinkingPart, TextPart, ToolCallPart))
-                for part in self.response.parts
-            )
+            any(not isinstance(part, (ThinkingPart, TextPart, ToolCallPart)) for part in self.response.parts)
             or len(response_calls) != self.discarded_call_count + 1
             or len(set(response_call_ids)) != len(response_call_ids)
             or any(not call_id for call_id in response_call_ids)
@@ -261,14 +251,10 @@ class PydanticAIGroundedDecisionPort:
         default=None, init=False, compare=False
     )
     message_history: tuple[object, ...] = field(default=(), init=False, compare=False, repr=False)
-    active_task_identity: tuple[str, int] | None = field(
-        default=None, init=False, compare=False, repr=False
-    )
+    active_task_identity: tuple[str, int] | None = field(default=None, init=False, compare=False, repr=False)
     last_history_compaction_status: str = field(default="not_triggered", init=False, compare=False)
     last_history_compaction_error: str = field(default="", init=False, compare=False)
-    last_model_delivery: ModelTurnDelivery | None = field(
-        default=None, init=False, compare=False, repr=False
-    )
+    last_model_delivery: ModelTurnDelivery | None = field(default=None, init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
@@ -333,10 +319,7 @@ class PydanticAIGroundedDecisionPort:
             request.agent_context.goal_plan.task_revision,
         )
         previous_task_identity = self.active_task_identity
-        if (
-            previous_task_identity is not None
-            and previous_task_identity[0] != task_identity[0]
-        ):
+        if previous_task_identity is not None and previous_task_identity[0] != task_identity[0]:
             object.__setattr__(self, "message_history", ())
         object.__setattr__(self, "active_task_identity", task_identity)
         call_profile = self.reasoning_policy.select(
@@ -384,11 +367,7 @@ class PydanticAIGroundedDecisionPort:
             agent_name: str,
             phase: str,
         ):
-            output_retry_budget = (
-                0
-                if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
-                else 1
-            )
+            output_retry_budget = 0 if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value else 1
             (
                 current_instructions,
                 current_prompt,
@@ -415,9 +394,7 @@ class PydanticAIGroundedDecisionPort:
             @current_agent.output_validator
             def require_action_policy_tool_call(output: str | DeferredToolRequests):
                 if isinstance(output, str):
-                    raise ModelRetry(
-                        "Return one offered tool call for the current World; text-only output is invalid."
-                    )
+                    raise ModelRetry("Return one offered tool call for the current World; text-only output is invalid.")
                 return output
 
             # PydanticAI owns the one bounded output-validation retry. Capture
@@ -459,6 +436,11 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "last_tool_resolution_detail", "")
         object.__setattr__(self, "last_multiple_tool_call_attempt_count", 0)
         history_messages = self.message_history
+        if history_messages:
+            history_messages = _normalize_pydantic_history_for_current_task(
+                history_messages,
+                task_plan=self.envelope_binder.context_binder.public_task_plan(request.agent_context),
+            )
         pending_call_parts: tuple[object, ...] = ()
         pending_call: ToolCall | None = None
         if history_messages:
@@ -475,8 +457,7 @@ class PydanticAIGroundedDecisionPort:
             last_step = request.last_step
             if (
                 last_step is None
-                or str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
-                != pending_call.call_id
+                or str(getattr(getattr(last_step, "decision", None), "tool_call_id", "")) != pending_call.call_id
             ):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
@@ -524,6 +505,24 @@ class PydanticAIGroundedDecisionPort:
                 raw_breakdown = raw_packed.admitted_envelope.token_breakdown
             except ModelRequestCapacityError as raw_capacity:
                 raw_breakdown = raw_capacity.breakdown
+            projected_history = _fold_expired_world_prompts(
+                history_messages,
+                max_estimated_tokens=max(
+                    1,
+                    int(_available_history_tokens(raw_breakdown) * _HISTORY_RECENT_EXACT_TOKENS_RATIO),
+                ),
+            )
+            if projected_history != history_messages:
+                history_messages = projected_history
+                raw_packed = None
+                try:
+                    raw_packed = pack_history(
+                        history_messages,
+                        request_timeout_s=initial_request_timeout_s,
+                    )
+                    raw_breakdown = raw_packed.admitted_envelope.token_breakdown
+                except ModelRequestCapacityError as projected_capacity:
+                    raw_breakdown = projected_capacity.breakdown
             compaction_required = _history_compaction_required(
                 raw_breakdown,
                 has_history=bool(history_messages),
@@ -545,8 +544,7 @@ class PydanticAIGroundedDecisionPort:
                 "last_history_compaction_count",
                 max(
                     0,
-                    _completed_exchange_count(before_compaction)
-                    - _completed_exchange_count(history_messages),
+                    _completed_exchange_count(before_compaction) - _completed_exchange_count(history_messages),
                 ),
             )
             if compaction_required:
@@ -636,15 +634,12 @@ class PydanticAIGroundedDecisionPort:
                     request.context_id,
                     source_response=_latest_model_response(repair_result),
                 )
-                if (
-                    repair_exchange is not None
-                    and (
-                        not _repair_preserves_rejected_semantics(
-                            resolution_error,
-                            initial_calls,
-                            repair_exchange.call,
-                            catalog.specs,
-                        )
+                if repair_exchange is not None and (
+                    not _repair_preserves_rejected_semantics(
+                        resolution_error,
+                        initial_calls,
+                        repair_exchange.call,
+                        catalog.specs,
                     )
                 ):
                     repair_exchange = None
@@ -791,10 +786,7 @@ class PydanticAIGroundedDecisionPort:
                 delivery,
             )
         decision = accepted_exchange.decision
-        if (
-            str(getattr(decision, "tool_call_id", ""))
-            and decision.kind is not DecisionKind.ABORT
-        ):
+        if str(getattr(decision, "tool_call_id", "")) and decision.kind is not DecisionKind.ABORT:
             object.__setattr__(
                 self,
                 "message_history",
@@ -939,9 +931,7 @@ class PydanticAIGroundedDecisionPort:
         )
         object.__setattr__(self, "last_history_compaction_error", run.error)
         responses = tuple(
-            (index, message)
-            for index, message in enumerate(run.transcript)
-            if isinstance(message, ModelResponse)
+            (index, message) for index, message in enumerate(run.transcript) if isinstance(message, ModelResponse)
         )
         if not responses:
             attempt = ModelGenerationAttempt(
@@ -974,11 +964,7 @@ class PydanticAIGroundedDecisionPort:
             return
         for response_index, response in responses:
             request = next(
-                (
-                    message
-                    for message in reversed(run.transcript[:response_index])
-                    if isinstance(message, ModelRequest)
-                ),
+                (message for message in reversed(run.transcript[:response_index]) if isinstance(message, ModelRequest)),
                 None,
             )
             usage = response.usage
@@ -1241,9 +1227,7 @@ class PydanticAIGroundedDecisionPort:
         if not self.last_generation_attempts or self.last_generation_attempts[-1].status != "started":
             raise RuntimeError("PydanticAI output retry has no active provider attempt")
         response_rows = tuple(
-            (index, message)
-            for index, message in enumerate(messages)
-            if message.get("kind") == "response"
+            (index, message) for index, message in enumerate(messages) if message.get("kind") == "response"
         )
         if not response_rows:
             return
@@ -1260,14 +1244,9 @@ class PydanticAIGroundedDecisionPort:
             cumulative_completion_tokens += completion_tokens
             parts = response.get("parts")
             parts = parts if isinstance(parts, list) else []
-            has_tool_call = any(
-                isinstance(part, Mapping) and part.get("part_kind") == "tool-call"
-                for part in parts
-            )
+            has_tool_call = any(isinstance(part, Mapping) and part.get("part_kind") == "tool-call" for part in parts)
             has_text = any(
-                isinstance(part, Mapping)
-                and part.get("part_kind") == "text"
-                and bool(part.get("content"))
+                isinstance(part, Mapping) and part.get("part_kind") == "text" and bool(part.get("content"))
                 for part in parts
             )
             output_failure_kind = (
@@ -1289,45 +1268,43 @@ class PydanticAIGroundedDecisionPort:
                 "llm.token_count.completion": completion_tokens,
                 "llm.token_count.total": prompt_tokens + completion_tokens,
                 "attempt_input_tokens": prompt_tokens,
-                "attempt_cached_input_tokens": max(
-                    0, _response_usage_int(response, "cache_read_tokens")
-                ),
+                "attempt_cached_input_tokens": max(0, _response_usage_int(response, "cache_read_tokens")),
                 "provider_raw_cumulative_input_tokens": cumulative_prompt_tokens,
                 "provider_raw_cumulative_output_tokens": cumulative_completion_tokens,
                 "response.id": str(response.get("provider_response_id") or ""),
                 "status": status,
                 "error.code": output_failure_kind.value if output_failure_kind else "",
             }
-            attempts.append(ModelGenerationAttempt(
-                attempt=len(prefix) + ordinal + 1,
-                phase=phase if ordinal == 0 else f"{phase}_output_retry",
-                schema_name=GROUNDED_TOOLS_PROTOCOL,
-                status=status,
-                response_id=str(response.get("provider_response_id") or ""),
-                latency_ms=latency_ms if is_final else 0.0,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
-                output_failure_kind=output_failure_kind,
-                finish_reason=str(response.get("finish_reason") or "")[:80],
-                max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
-                final_content_present=has_text or has_tool_call,
-                reasoning_content_present=False,
-                role="action_policy",
-                mode="single_action",
-                schema_version=GROUNDED_TOOLS_PROTOCOL,
-                thinking_requested=envelope.thinking_requested,
-                thinking_effective=(
-                    "enabled" if envelope.model_settings.get("thinking") is True else "disabled"
-                ),
-                trigger=envelope.attempt_trigger,
-                reasoning_tokens=0,
-                final_content_tokens=completion_tokens,
-                final_tool_call_present=has_tool_call,
-                envelope_id=envelope.envelope_id,
-                envelope_projection=envelope.model_boundary_projection(),
-                transcript=transcript,
-            ))
+            attempts.append(
+                ModelGenerationAttempt(
+                    attempt=len(prefix) + ordinal + 1,
+                    phase=phase if ordinal == 0 else f"{phase}_output_retry",
+                    schema_name=GROUNDED_TOOLS_PROTOCOL,
+                    status=status,
+                    response_id=str(response.get("provider_response_id") or ""),
+                    latency_ms=latency_ms if is_final else 0.0,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
+                    output_failure_kind=output_failure_kind,
+                    finish_reason=str(response.get("finish_reason") or "")[:80],
+                    max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
+                    final_content_present=has_text or has_tool_call,
+                    reasoning_content_present=False,
+                    role="action_policy",
+                    mode="single_action",
+                    schema_version=GROUNDED_TOOLS_PROTOCOL,
+                    thinking_requested=envelope.thinking_requested,
+                    thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
+                    trigger=envelope.attempt_trigger,
+                    reasoning_tokens=0,
+                    final_content_tokens=completion_tokens,
+                    final_tool_call_present=has_tool_call,
+                    envelope_id=envelope.envelope_id,
+                    envelope_projection=envelope.model_boundary_projection(),
+                    transcript=transcript,
+                )
+            )
         object.__setattr__(
             self,
             "last_generation_attempts",
@@ -1465,9 +1442,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     selected_perception = DecisionPerceptionProfile(
         perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
-    compaction_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
-        call_timeout_s
-    )
+    compaction_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(call_timeout_s)
     port = PydanticAIGroundedDecisionPort(
         model=configured.model,
         provider_id=configured.provider_id,
@@ -1552,9 +1527,7 @@ def pydantic_ai_model_from_environment(
         if profile == "local"
         else _required(env, f"{prefix}_MODEL")
     )
-    compaction_timeout_s, _retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(
-        call_timeout_s
-    )
+    compaction_timeout_s, _retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(call_timeout_s)
     client = AsyncOpenAI(
         api_key=(env.get("LLM_LOCAL_API_KEY", "local") or "local")
         if profile == "local"
@@ -1715,17 +1688,21 @@ def _resolve_deferred(
                 (reconciliation.exact_call,),
             )
         accepted_call = reconciliation.exact_call
-        return AcceptedToolExchange(
-            accepted_call,
-            resolution.decision,
-            _accepted_model_response(
-                source_response,
+        return (
+            AcceptedToolExchange(
                 accepted_call,
-                proposed_calls=tuple(output.calls),
-                discarded_call_count=max(0, len(output.calls) - 1),
+                resolution.decision,
+                _accepted_model_response(
+                    source_response,
+                    accepted_call,
+                    proposed_calls=tuple(output.calls),
+                    discarded_call_count=max(0, len(output.calls) - 1),
+                ),
+                max(0, len(output.calls) - 1),
             ),
-            max(0, len(output.calls) - 1),
-        ), None, ()
+            None,
+            (),
+        )
     if repair_anchor is not None:
         return None, repair_anchor[1], (repair_anchor[0],)
     return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
@@ -1809,9 +1786,7 @@ def _latest_model_response(result):
 
     from pydantic_ai.messages import ModelResponse
 
-    responses = tuple(
-        message for message in result.all_messages() if isinstance(message, ModelResponse)
-    )
+    responses = tuple(message for message in result.all_messages() if isinstance(message, ModelResponse))
     if not responses:
         raise ValueError("PydanticAI produced no model response")
     return responses[-1]
@@ -1832,9 +1807,7 @@ def _accepted_model_response(
         raise TypeError("source response is not a PydanticAI ModelResponse")
     calls = tuple(proposed_calls)
     if not calls and source_response is not None:
-        calls = tuple(
-            part for part in source_response.parts if isinstance(part, ToolCallPart)
-        )
+        calls = tuple(part for part in source_response.parts if isinstance(part, ToolCallPart))
     if (
         len(calls) != discarded_call_count + 1
         or any(not isinstance(part, ToolCallPart) for part in calls)
@@ -1853,15 +1826,9 @@ def _accepted_model_response(
                 *calls[1:],
             ]
         )
-    source_calls = tuple(
-        part for part in source_response.parts if isinstance(part, ToolCallPart)
-    )
-    source_identities = tuple(
-        (part.tool_name, part.args_as_dict(), part.tool_call_id) for part in source_calls
-    )
-    proposed_identities = tuple(
-        (part.tool_name, part.args_as_dict(), part.tool_call_id) for part in calls
-    )
+    source_calls = tuple(part for part in source_response.parts if isinstance(part, ToolCallPart))
+    source_identities = tuple((part.tool_name, part.args_as_dict(), part.tool_call_id) for part in source_calls)
+    proposed_identities = tuple((part.tool_name, part.args_as_dict(), part.tool_call_id) for part in calls)
     if source_identities != proposed_identities:
         raise ValueError("source response and deferred calls disagree")
     return source_response
@@ -1892,6 +1859,206 @@ def _pending_call_from_history(messages: tuple[object, ...]) -> ToolCall | None:
         return None
     call = calls[0]
     return ToolCall(call.tool_name, call.args_as_dict(raise_if_invalid=True), call.tool_call_id)
+
+
+def _normalize_pydantic_history_for_current_task(
+    messages: tuple[object, ...],
+    *,
+    task_plan: Mapping[str, object],
+) -> tuple[object, ...]:
+    """Keep one current task anchor and make all other user turns World-only.
+
+    PydanticAI history is the sole conversation owner.  The ActionPolicy's
+    current request still carries the sole fresh World; this projection merely
+    removes copies of TaskGoal/GoalPlan from older SDK user turns.  It does not
+    synthesize task progress or rewrite any call/result part.
+    """
+
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+
+    anchor_text = json.dumps(task_plan, ensure_ascii=False, separators=(",", ":"))
+    normalized = list(messages)
+    anchor_index = next(
+        (
+            index
+            for index, message in enumerate(normalized)
+            if isinstance(message, ModelRequest) and bool((message.metadata or {}).get(_TASK_ANCHOR_METADATA_KEY))
+        ),
+        None,
+    )
+    if anchor_index is None:
+        first_user_index = next(
+            (
+                index
+                for index, message in enumerate(normalized)
+                if isinstance(message, ModelRequest) and any(isinstance(part, UserPromptPart) for part in message.parts)
+            ),
+            None,
+        )
+        if first_user_index is not None:
+            first_request = normalized[first_user_index]
+            assert isinstance(first_request, ModelRequest)
+            normalized[first_user_index] = replace(
+                first_request,
+                parts=(UserPromptPart(anchor_text), *first_request.parts),
+                metadata={
+                    **(first_request.metadata or {}),
+                    _TASK_ANCHOR_METADATA_KEY: True,
+                },
+            )
+            anchor_index = first_user_index
+        else:
+            insertion = 0
+            while insertion < len(normalized):
+                message = normalized[insertion]
+                if (
+                    not isinstance(message, ModelRequest)
+                    or not message.parts
+                    or not all(isinstance(part, SystemPromptPart) for part in message.parts)
+                ):
+                    break
+                insertion += 1
+            normalized.insert(
+                insertion,
+                ModelRequest(
+                    parts=[UserPromptPart(anchor_text)],
+                    metadata={_TASK_ANCHOR_METADATA_KEY: True},
+                ),
+            )
+            anchor_index = insertion
+
+    for index, message in enumerate(tuple(normalized)):
+        if not isinstance(message, ModelRequest):
+            continue
+        prompts = tuple(part for part in message.parts if isinstance(part, UserPromptPart))
+        if not prompts:
+            continue
+        if index == anchor_index:
+            if len(prompts) not in {1, 2}:
+                raise ValueError("task anchor request has an invalid prompt count")
+            anchor = prompts[0]
+            parts = tuple(replace(part, content=anchor_text) if part is anchor else part for part in message.parts)
+            metadata = {**(message.metadata or {}), _TASK_ANCHOR_METADATA_KEY: True}
+            message = replace(message, parts=parts, metadata=metadata)
+            normalized[index] = message
+            prompts = tuple(part for part in message.parts if isinstance(part, UserPromptPart))[1:]
+        elif len(prompts) != 1:
+            raise ValueError("PydanticAI history request has multiple World prompts")
+        for prompt in prompts:
+            payload = _prompt_json_object(prompt)
+            if payload is None or "observation" not in payload:
+                continue
+            current_turn = {"observation": payload["observation"]}
+            if payload.get("control_feedback"):
+                current_turn["control_feedback"] = payload["control_feedback"]
+            current_text = json.dumps(current_turn, ensure_ascii=False, separators=(",", ":"))
+            message = normalized[index]
+            assert isinstance(message, ModelRequest)
+            parts = tuple(
+                _replace_prompt_text(part, current_text) if part is prompt else part for part in message.parts
+            )
+            normalized[index] = replace(message, parts=parts)
+    return tuple(normalized)
+
+
+def _fold_expired_world_prompts(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> tuple[object, ...]:
+    """Retain a token-bounded recent World tail and exact completed exchanges."""
+
+    if max_estimated_tokens < 1:
+        raise ValueError("recent World history target must be positive")
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai_harness.compaction import estimate_token_count
+
+    candidates: list[tuple[int, UserPromptPart, int]] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, ModelRequest):
+            continue
+        prompts = tuple(part for part in message.parts if isinstance(part, UserPromptPart))
+        if not prompts:
+            continue
+        if bool((message.metadata or {}).get(_TASK_ANCHOR_METADATA_KEY)):
+            if len(prompts) not in {1, 2}:
+                raise ValueError("task anchor request has an invalid prompt count")
+            prompts = prompts[1:]
+        elif len(prompts) != 1:
+            raise ValueError("PydanticAI history request has multiple World prompts")
+        for prompt in prompts:
+            prompt_tokens = estimate_token_count([ModelRequest(parts=[prompt])])
+            candidates.append((index, prompt, prompt_tokens))
+    if len(candidates) <= 1:
+        return messages
+
+    retained: set[int] = set()
+    used = 0
+    for index, _prompt, prompt_tokens in reversed(candidates):
+        if retained and used + prompt_tokens > max_estimated_tokens:
+            break
+        retained.add(index)
+        used += prompt_tokens
+    if len(retained) == len(candidates):
+        return messages
+
+    expired = {id(prompt) for index, prompt, _tokens in candidates if index not in retained}
+    folded: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            folded.append(message)
+            continue
+        parts = tuple(part for part in message.parts if not (isinstance(part, UserPromptPart) and id(part) in expired))
+        if parts:
+            folded.append(replace(message, parts=parts))
+    return tuple(folded)
+
+
+def _prompt_json_object(prompt: object) -> dict[str, object] | None:
+    from pydantic_ai.messages import TextContent, UserPromptPart
+
+    if not isinstance(prompt, UserPromptPart):
+        return None
+    content = prompt.content
+    items = (content,) if isinstance(content, str) else tuple(content)
+    text = next(
+        (
+            item if isinstance(item, str) else item.content if isinstance(item, TextContent) else None
+            for item in items
+            if isinstance(item, (str, TextContent))
+        ),
+        None,
+    )
+    if not isinstance(text, str):
+        return None
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _replace_prompt_text(prompt: object, text: str):
+    from pydantic_ai.messages import TextContent, UserPromptPart
+
+    if not isinstance(prompt, UserPromptPart):
+        return prompt
+    if isinstance(prompt.content, str):
+        return replace(prompt, content=text)
+    replaced_text = False
+    content: list[Any] = []
+    for item in prompt.content:
+        if not replaced_text and isinstance(item, str):
+            content.append(text)
+            replaced_text = True
+        elif not replaced_text and isinstance(item, TextContent):
+            content.append(replace(item, content=text))
+            replaced_text = True
+        else:
+            content.append(item)
+    if not replaced_text:
+        content.insert(0, text)
+    return replace(prompt, content=content)
 
 
 def _accepted_message_history(
@@ -1935,36 +2102,23 @@ def _accepted_message_history(
     if rejected_response_count != retry_prompt_count or rejected_response_count > 1:
         raise ValueError("PydanticAI output retry history is incomplete or unbounded")
     requests_tuple = tuple(requests)
-    if not any(
-        isinstance(part, UserPromptPart)
-        for message in requests_tuple
-        for part in message.parts
-    ):
+    if not any(isinstance(part, UserPromptPart) for message in requests_tuple for part in message.parts):
         raise ValueError("PydanticAI current turn lost its fresh World prompt")
     if not pending_calls:
         if prior_history:
             raise ValueError("history without a pending call cannot accept a new exchange")
-        if any(
-            isinstance(part, ToolReturnPart)
-            for message in requests_tuple
-            for part in message.parts
-        ):
+        if any(isinstance(part, ToolReturnPart) for message in requests_tuple for part in message.parts):
             raise ValueError("initial PydanticAI turn cannot contain a deferred result")
         return (*requests_tuple, accepted.response)
 
-    pending_identities = tuple(
-        (part.tool_name, part.tool_call_id) for part in pending_calls
-    )
+    pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
     matching_parts = tuple(
         part
         for message in requests_tuple
         for part in message.parts
-        if isinstance(part, ToolReturnPart)
-        and (part.tool_name, part.tool_call_id) in set(pending_identities)
+        if isinstance(part, ToolReturnPart) and (part.tool_name, part.tool_call_id) in set(pending_identities)
     )
-    returned_by_identity = {
-        (part.tool_name, part.tool_call_id): part for part in matching_parts
-    }
+    returned_by_identity = {(part.tool_name, part.tool_call_id): part for part in matching_parts}
     if (
         len(matching_parts) != len(pending_identities)
         or len(returned_by_identity) != len(pending_identities)
@@ -1986,9 +2140,7 @@ def _completed_tool_exchanges(
     completed: list[tuple[object, tuple[object, ...]]] = []
     pending_response = None
     for message in messages:
-        if isinstance(message, ModelResponse) and any(
-            isinstance(part, ToolCallPart) for part in message.parts
-        ):
+        if isinstance(message, ModelResponse) and any(isinstance(part, ToolCallPart) for part in message.parts):
             pending_response = message
             continue
         if pending_response is None or not isinstance(message, ModelRequest):
@@ -2030,8 +2182,7 @@ def _summary_visible_history(messages: tuple[object, ...]) -> tuple[object, ...]
         if isinstance(message, ModelRequest):
             parts = tuple(
                 SystemPromptPart(
-                    "Completed tool result "
-                    f"[{part.tool_name}] call_id={part.tool_call_id}:\n{part.content}"
+                    f"Completed tool result [{part.tool_name}] call_id={part.tool_call_id}:\n{part.content}"
                 )
                 if isinstance(part, ToolReturnPart)
                 else part
@@ -2041,9 +2192,7 @@ def _summary_visible_history(messages: tuple[object, ...]) -> tuple[object, ...]
             continue
         if isinstance(message, ModelResponse):
             parts = tuple(
-                TextPart(f"Model reasoning:\n{part.content}")
-                if isinstance(part, ThinkingPart)
-                else part
+                TextPart(f"Model reasoning:\n{part.content}") if isinstance(part, ThinkingPart) else part
                 for part in message.parts
             )
             visible.append(replace(message, parts=parts))
@@ -2104,9 +2253,7 @@ async def _compact_pydantic_history(
         int(max_estimated_tokens * _HISTORY_COMPACTION_PRESSURE_RATIO),
     )
     estimated_tokens = (
-        estimate_token_count(messages)
-        if observed_estimated_tokens is None
-        else observed_estimated_tokens
+        estimate_token_count(messages) if observed_estimated_tokens is None else observed_estimated_tokens
     )
     if estimated_tokens < pressure_threshold:
         return _HistoryCompactionRun(messages)
@@ -2115,11 +2262,11 @@ async def _compact_pydantic_history(
         max_tokens=pressure_threshold,
         keep_tokens=max(
             1,
-            int(max_estimated_tokens * _HISTORY_COMPACTION_KEEP_TOKENS_RATIO),
+            int(max_estimated_tokens * _HISTORY_RECENT_EXACT_TOKENS_RATIO),
         ),
         summary_prompt=_HISTORY_COMPACTION_SUMMARY_PROMPT,
         instructions=_HISTORY_COMPACTION_INSTRUCTIONS,
-        preserve_first_user_message=False,
+        preserve_first_user_message=True,
         incremental=True,
         receipts=False,
     )
@@ -2135,23 +2282,35 @@ async def _compact_pydantic_history(
                     usage=RunUsage(),
                 )
             if transcript:
-                _validate_history_summary_consistency(compacted[0])
-                preserved_count = len(compacted) - 1
-                if preserved_count < 0 or preserved_count > len(messages):
-                    raise ValueError("Harness compaction returned an invalid preserved suffix")
+                preserved_count = _shared_history_suffix_count(
+                    tuple(summary_visible),
+                    tuple(compacted[1:]),
+                )
+                extra_end = len(compacted) - preserved_count
+                preserved_extras = tuple(compacted[1:extra_end])
+                if len(preserved_extras) > 1:
+                    raise ValueError("Harness compaction returned unsupported preserved messages")
+                exact_extras: list[object] = []
+                for extra in preserved_extras:
+                    source_index = next(
+                        (index for index, item in enumerate(summary_visible) if item is extra or item == extra),
+                        None,
+                    )
+                    if source_index is None:
+                        raise ValueError("Harness compaction invented a preserved message")
+                    exact_extras.append(messages[source_index])
                 compacted = [
                     compacted[0],
+                    *exact_extras,
                     *(messages[-preserved_count:] if preserved_count else ()),
                 ]
             else:
                 compacted = list(messages)
             before_pending = tuple(
-                (part.tool_name, part.tool_call_id)
-                for part in _pending_tool_parts_from_history(messages)
+                (part.tool_name, part.tool_call_id) for part in _pending_tool_parts_from_history(messages)
             )
             after_pending = tuple(
-                (part.tool_name, part.tool_call_id)
-                for part in _pending_tool_parts_from_history(tuple(compacted))
+                (part.tool_name, part.tool_call_id) for part in _pending_tool_parts_from_history(tuple(compacted))
             )
             if before_pending != after_pending:
                 raise ValueError("Harness compaction changed the unresolved tool-call suffix")
@@ -2173,48 +2332,17 @@ async def _compact_pydantic_history(
     )
 
 
-def _validate_history_summary_consistency(summary_message: object) -> None:
-    """Fail safe when one exact value is both verified and still unresolved."""
+def _shared_history_suffix_count(
+    source: tuple[object, ...],
+    candidate: tuple[object, ...],
+) -> int:
+    """Return the exact tail Harness preserved after its optional task anchor."""
 
-    from pydantic_ai.messages import ModelRequest, SystemPromptPart
-
-    if not isinstance(summary_message, ModelRequest):
-        raise ValueError("Harness compaction did not return a summary request")
-    summaries = tuple(
-        part.content
-        for part in summary_message.parts
-        if isinstance(part, SystemPromptPart)
-        and part.content.startswith("Summary of previous conversation:")
-    )
-    if len(summaries) != 1:
-        raise ValueError("Harness compaction did not return exactly one summary")
-    verified = _summary_section(summaries[0], "Verified facts")
-    remaining = _summary_section(summaries[0], "Remaining questions")
-    if not verified or not remaining:
-        return
-    conflicts = _summary_exact_values(verified) & _summary_exact_values(remaining)
-    if conflicts:
-        raise ValueError(
-            "history summary repeats an exact verified value under Remaining questions"
-        )
-
-
-def _summary_section(summary: str, heading: str) -> str:
-    match = re.search(
-        rf"(?ms)^## {re.escape(heading)}\s*\n(.*?)(?=^## |\Z)",
-        summary,
-    )
-    return match.group(1).strip() if match is not None else ""
-
-
-def _summary_exact_values(section: str) -> frozenset[str]:
-    values = set()
-    for match in _SUMMARY_EXACT_VALUE.finditer(section):
-        value = match.group(0).casefold().rstrip(".,")
-        digits = sum(char.isdigit() for char in value)
-        if digits >= 3 or any(char in value for char in (".", ",", "°", "′", "″", "%")):
-            values.add(value)
-    return frozenset(values)
+    maximum = min(len(source), len(candidate))
+    for count in range(maximum, -1, -1):
+        if count == 0 or source[-count:] == candidate[-count:]:
+            return count
+    return 0
 
 
 def _repair_preserves_rejected_semantics(
@@ -2256,8 +2384,7 @@ def _is_representation_pruning(
         if any(key in properties and key not in repaired for key in rejected):
             return False
         return all(
-            key in rejected
-            and _is_representation_pruning(rejected[key], value, properties.get(key, {}))
+            key in rejected and _is_representation_pruning(rejected[key], value, properties.get(key, {}))
             for key, value in repaired.items()
         )
     if isinstance(rejected, (list, tuple)) and isinstance(repaired, (list, tuple)):
@@ -2271,8 +2398,7 @@ def _is_representation_pruning(
 
 def _representation_repair_prompt(rejected_calls, error, specs) -> str:
     calls = tuple(
-        {"name": call.name, "arguments": to_json_compatible(call.arguments)}
-        for call in tuple(rejected_calls)[:1]
+        {"name": call.name, "arguments": to_json_compatible(call.arguments)} for call in tuple(rejected_calls)[:1]
     )
     schema = tuple(
         {
@@ -2335,10 +2461,7 @@ def _pydantic_model_boundary_codec(
     if envelope.media:
         prompt = [
             envelope.user_text,
-            *(
-                binary_content_type(data=item.data, media_type=item.mime_type)
-                for item in envelope.media
-            ),
+            *(binary_content_type(data=item.data, media_type=item.mime_type) for item in envelope.media),
         ]
     else:
         prompt = envelope.user_text
@@ -2366,15 +2489,9 @@ def _pydantic_model_boundary_codec(
                 continue
             calls[call_id] = tool_return_type(
                 return_value=to_json_compatible(item["return_value"]),
-                metadata=(
-                    to_json_compatible(envelope.tool_result_metadata)
-                    if call_id == actual_call_id
-                    else None
-                ),
+                metadata=(to_json_compatible(envelope.tool_result_metadata) if call_id == actual_call_id else None),
             )
-        deferred_results = deferred_tool_results_type(
-            calls=calls
-        )
+        deferred_results = deferred_tool_results_type(calls=calls)
     return envelope.instructions[0], prompt, toolset, message_history, deferred_results
 
 
@@ -2419,11 +2536,7 @@ def _latest_structured_output_failure(
     attempts: tuple[ModelGenerationAttempt, ...],
 ) -> StructuredOutputFailureKind | None:
     return next(
-        (
-            attempt.output_failure_kind
-            for attempt in reversed(attempts)
-            if attempt.output_failure_kind is not None
-        ),
+        (attempt.output_failure_kind for attempt in reversed(attempts) if attempt.output_failure_kind is not None),
         None,
     )
 

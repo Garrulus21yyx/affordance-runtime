@@ -74,12 +74,9 @@ class CanonicalMediaRecord:
         if len(self.dimensions) != 2 or any(type(item) is not int or item <= 0 for item in self.dimensions):
             raise ValueError("canonical media dimensions are invalid")
         object.__setattr__(self, "marks", tuple((ref, tuple(box)) for ref, box in self.marks))
-        if (
-            any(
-                not PublicRefCodec.accepts(ref)
-                or ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
-                for ref, _bbox in self.marks
-            )
+        if any(
+            not PublicRefCodec.accepts(ref) or ref[:1] not in {PublicRefKind.EXECUTABLE.value, PublicRefKind.NODE.value}
+            for ref, _bbox in self.marks
         ):
             raise ValueError("canonical media marks are invalid")
 
@@ -108,9 +105,7 @@ class CanonicalProviderEnvelope:
     instructions: tuple[str, ...]
     user_text: str
     history_messages: tuple[Mapping[str, object], ...]
-    pydantic_history: tuple[object, ...] = field(
-        repr=False, compare=False, metadata={"serialize": False}
-    )
+    pydantic_history: tuple[object, ...] = field(repr=False, compare=False, metadata={"serialize": False})
     tool_result: Mapping[str, object] | None
     tool_result_metadata: Mapping[str, object] = field(repr=False, compare=False)
     media: tuple[CanonicalMediaRecord, ...]
@@ -151,11 +146,7 @@ class CanonicalProviderEnvelope:
                 if tuple(self.history_messages) != _project_pydantic_history(self.pydantic_history):
                     raise ValueError("canonical history projection differs from exact PydanticAI messages")
                 response_message = self.history_messages[-1]
-                prior_call = next(
-                    part
-                    for part in tuple(response_message["parts"])
-                    if part["part_kind"] == "tool-call"
-                )
+                prior_call = next(part for part in tuple(response_message["parts"]) if part["part_kind"] == "tool-call")
                 current_result = self.tool_result
                 assert current_result is not None
                 valid_exchange = (
@@ -200,11 +191,7 @@ class CanonicalProviderEnvelope:
         if self.tool_result is None:
             return ()
         response = self.history_messages[-1]
-        calls = tuple(
-            part
-            for part in tuple(response["parts"])
-            if part["part_kind"] == "tool-call"
-        )
+        calls = tuple(part for part in tuple(response["parts"]) if part["part_kind"] == "tool-call")
         return (
             self.tool_result,
             *(
@@ -365,7 +352,13 @@ class CanonicalProviderEnvelopeBinder:
             bool(delivery.media),
             delivery,
         )
-        user_text = json.dumps(sections["public"], separators=(",", ":"), ensure_ascii=False)
+        # The first accepted SDK turn is later normalized into the sole
+        # task/plan anchor.  Once that anchor exists, each new user turn owns
+        # only the authoritative fresh World and ephemeral control feedback;
+        # replaying TaskGoal and GoalPlan inside every historical World is both
+        # redundant and attention-distorting.
+        user_payload = sections["current_turn"] if history_messages else sections["public"]
+        user_text = json.dumps(user_payload, separators=(",", ":"), ensure_ascii=False)
         return self._create(
             request,
             delivery,
@@ -617,6 +610,7 @@ def _project_pydantic_history(
     projected: list[Mapping[str, object]] = []
     pending: tuple[tuple[str, str], ...] | None = None
     summary_seen = False
+    task_anchor_seen = False
     for index, message in enumerate(messages):
         if isinstance(message, ModelResponse):
             if pending is not None:
@@ -627,10 +621,7 @@ def _project_pydantic_history(
                 not calls
                 or len(set(call_ids)) != len(call_ids)
                 or any(not call_id for call_id in call_ids)
-                or any(
-                    not isinstance(part, (TextPart, ThinkingPart, ToolCallPart))
-                    for part in message.parts
-                )
+                or any(not isinstance(part, (TextPart, ThinkingPart, ToolCallPart)) for part in message.parts)
             ):
                 raise ValueError("accepted PydanticAI response must retain unique tool calls")
             pending = tuple((call.tool_name, call.tool_call_id) for call in calls)
@@ -670,13 +661,7 @@ def _project_pydantic_history(
             raise ValueError("compact PydanticAI history expected a tool-result request")
         summaries = tuple(part for part in message.parts if isinstance(part, SystemPromptPart))
         if summaries:
-            if (
-                index != 0
-                or pending is not None
-                or summary_seen
-                or len(summaries) != 1
-                or len(message.parts) != 1
-            ):
+            if index != 0 or pending is not None or summary_seen or len(summaries) != 1 or len(message.parts) != 1:
                 raise ValueError("compact PydanticAI history has an invalid summary position")
             summary_seen = True
             projected.append(
@@ -693,11 +678,13 @@ def _project_pydantic_history(
             continue
         prompts = tuple(part for part in message.parts if isinstance(part, UserPromptPart))
         returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
-        returned_identities = tuple(
-            (returned.tool_name, returned.tool_call_id) for returned in returns
-        )
-        if len(prompts) != 1 or len(message.parts) != len(prompts) + len(returns):
-            raise ValueError("PydanticAI history request must contain one fresh World prompt")
+        returned_identities = tuple((returned.tool_name, returned.tool_call_id) for returned in returns)
+        marked_anchor = bool((message.metadata or {}).get("affordance_runtime.task_anchor"))
+        maximum_prompts = 2 if marked_anchor else 1
+        if len(prompts) > maximum_prompts or len(message.parts) != len(prompts) + len(returns):
+            raise ValueError("PydanticAI history request contains unsupported parts")
+        if not prompts and not returns:
+            raise ValueError("PydanticAI history request is empty")
         if returns:
             if (
                 pending is None
@@ -707,8 +694,22 @@ def _project_pydantic_history(
             ):
                 raise ValueError("completed PydanticAI request must close every proposed tool call")
             pending = None
-        elif pending is not None:
-            raise ValueError("PydanticAI history request omitted a pending tool result")
+        else:
+            if pending is not None:
+                raise ValueError("PydanticAI history request omitted a pending tool result")
+            if not prompts:
+                raise ValueError("PydanticAI history request without results needs a prompt")
+            if marked_anchor:
+                if task_anchor_seen:
+                    raise ValueError("compact PydanticAI history has multiple task anchors")
+                if len(prompts) not in {1, 2}:
+                    raise ValueError("compact PydanticAI history has an invalid task anchor")
+                task_anchor_seen = True
+            elif not task_anchor_seen:
+                # Backward-compatible official histories and direct Harness
+                # tests begin with one unmarked user request.  Production
+                # histories mark the separate task anchor explicitly.
+                task_anchor_seen = True
         request_parts: list[Mapping[str, object]] = []
         for part in message.parts:
             if isinstance(part, UserPromptPart):
@@ -719,9 +720,7 @@ def _project_pydantic_history(
                     if isinstance(item, str):
                         projected_content.append({"part_kind": "text", "content": item})
                     elif isinstance(item, TextContent):
-                        projected_content.append(
-                            {"part_kind": "text", "content": item.content}
-                        )
+                        projected_content.append({"part_kind": "text", "content": item.content})
                     elif isinstance(item, BinaryContent):
                         binary_projection: dict[str, object] = {
                             "part_kind": "binary",
@@ -732,9 +731,7 @@ def _project_pydantic_history(
                             binary_projection["data"] = item.data
                         projected_content.append(binary_projection)
                     else:
-                        raise ValueError(
-                            "PydanticAI history contains unsupported user content"
-                        )
+                        raise ValueError("PydanticAI history contains unsupported user content")
                 request_parts.append(
                     {
                         "part_kind": "user-prompt",
