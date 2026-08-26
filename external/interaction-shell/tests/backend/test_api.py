@@ -58,6 +58,31 @@ async def test_session_open_unavailable_is_typed_service_response():
 
 
 @pytest.mark.asyncio
+async def test_http_revision_uses_dedicated_typed_endpoint():
+    app = create_app(RunSessionManager(ContractDemoPort()))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = (await client.post("/sessions", json={})).json()
+        snapshot = created["snapshot"]
+        response = await client.post(
+            f"/sessions/{snapshot['session_id']}/commands/revise",
+            headers={"X-Session-Key": created["session_key"]},
+            json={
+                "kind": "revise_task",
+                "command_id": "revise:http",
+                "expected_task_revision": 0,
+                "expected_run_status": "idle",
+                "expected_checkpoint_id": None,
+                "text": "Inspect the account and its owner",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kind"] == "unsupported"
+    assert body["capability"] == "revise_task"
+
+
+@pytest.mark.asyncio
 async def test_http_restart_recovery_authenticates_and_old_epoch_requires_resync(tmp_path):
     checkpoint_id = "runtime-checkpoint:" + "c" * 64
     registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")

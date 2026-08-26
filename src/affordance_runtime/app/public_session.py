@@ -486,11 +486,6 @@ class TargetRuntimeSession:
                     and self._admitted.task.revision == existing.task_revision
                 ):
                     return self._project()
-                if existing.source_checkpoint_id != expected_checkpoint_id:
-                    raise PublicSessionConflict(
-                        "revision_command_conflict",
-                        self._project(),
-                    )
                 self._set_revision_outcome(existing.outcome, command_id)
                 raise PublicSessionConflict(existing.outcome, self._project())
             if self._admitted is None or self._state is None:

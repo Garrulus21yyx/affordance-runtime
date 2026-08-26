@@ -130,8 +130,12 @@ export function useShellSession() {
           request_id: snapshot.pending_question.request_id,
           answer: message,
         });
-      } else {
-        await send("commands/optional", { ...commandBase("revise_task"), message });
+      } else if (snapshot.capabilities.includes("revise_task")) {
+        await send("commands/revise", {
+          ...commandBase("revise_task"),
+          expected_checkpoint_id: snapshot.checkpoint_id ?? null,
+          text: message,
+        });
       }
     },
     [commandBase, send, snapshot],

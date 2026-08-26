@@ -6,6 +6,7 @@ from datetime import datetime
 
 from .contracts import (
     Capability,
+    ReviseTask,
     RuntimeSessionSnapshot,
     ShellCommand,
     Unsupported,
@@ -59,6 +60,9 @@ class UnavailableRuntimeSessionPort:
             ),
             (),
         )
+
+    async def revise(self, handle: UnavailableHandle, command: ReviseTask):
+        return await self.command(handle, command)
 
     async def close(self, handle: UnavailableHandle) -> None:
         return None

@@ -30,6 +30,7 @@ from .contracts import (
     PublicStep,
     RejectAction,
     ResumeTask,
+    ReviseTask,
     RunStatus,
     RuntimeSessionSnapshot,
     ShellCommand,
@@ -69,6 +70,7 @@ class CoreRuntimeSessionPort:
                 Capability.CANCEL_TASK,
                 Capability.PAUSE_TASK,
                 Capability.RESUME_TASK,
+                Capability.REVISE_TASK,
                 Capability.CLOSE_SESSION,
             }
         )
@@ -116,6 +118,8 @@ class CoreRuntimeSessionPort:
                 current = await handle.pause(command.command_id)
             elif isinstance(command, ResumeTask):
                 current = await handle.resume(command.command_id, command.checkpoint_id)
+            elif isinstance(command, ReviseTask):
+                raise TypeError("ReviseTask must use RuntimeSessionPort.revise")
             else:
                 raise TypeError("Core Runtime port received an unsupported command")
         except PublicSessionConflict as exc:
@@ -123,6 +127,27 @@ class CoreRuntimeSessionPort:
                 Conflict(
                     command_id=command.command_id,
                     code="runtime_conflict",
+                    snapshot=_snapshot(exc.snapshot, self.viewer_projector(handle)),
+                ),
+                (),
+            )
+        viewer = self.viewer_projector(handle)
+        events = tuple(_event(event, viewer) for event in await handle.events(before))
+        return Accepted(command_id=command.command_id, snapshot=_snapshot(current, viewer)), events
+
+    async def revise(self, handle: PublicRuntimeSessionHandle, command: ReviseTask):
+        before = (await handle.snapshot()).event_cursor
+        try:
+            current = await handle.revise(
+                command.command_id,
+                command.expected_checkpoint_id,
+                command.text,
+            )
+        except PublicSessionConflict as exc:
+            return (
+                Conflict(
+                    command_id=command.command_id,
+                    code=exc.code,
                     snapshot=_snapshot(exc.snapshot, self.viewer_projector(handle)),
                 ),
                 (),
@@ -174,6 +199,7 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
             outcome=source.last_control_outcome.outcome,
             code=source.last_control_outcome.code,
             checkpoint_id=source.last_control_outcome.checkpoint_id,
+            message=source.last_control_outcome.message,
         )
         if source.last_control_outcome is not None
         else None
@@ -228,6 +254,7 @@ _SUPPORTED_PUBLIC_CAPABILITIES = frozenset(
         PublicSessionCapability.CANCEL_TASK,
         PublicSessionCapability.PAUSE_TASK,
         PublicSessionCapability.RESUME_TASK,
+        PublicSessionCapability.REVISE_TASK,
         PublicSessionCapability.CLOSE_SESSION,
     }
 )

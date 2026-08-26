@@ -103,10 +103,20 @@ class PublicStep(StrictModel):
 
 class ControlOutcome(StrictModel):
     command_id: str = Field(min_length=1, max_length=128)
-    kind: Literal["pause"]
-    outcome: Literal["paused", "failed"]
+    kind: Literal["pause", "revise"]
+    outcome: Literal[
+        "paused",
+        "failed",
+        "revised",
+        "needs_input",
+        "no_change",
+        "new_task_suggested",
+        "unsupported",
+        "effect_reconciliation_required",
+    ]
     code: str = Field(min_length=1, max_length=128)
     checkpoint_id: str | None = Field(default=None, max_length=200)
+    message: str = Field(default="", max_length=2000)
 
 
 class RuntimeSessionSnapshot(StrictModel):
@@ -214,7 +224,6 @@ class OptionalCommand(CommandBase):
     kind: Literal[
         "cancel_task",
         "pause_task",
-        "revise_task",
         "start_new_task",
         "take_over",
         "return_control",
@@ -227,6 +236,12 @@ class ResumeTask(CommandBase):
     checkpoint_id: str = Field(min_length=1, max_length=200)
 
 
+class ReviseTask(CommandBase):
+    kind: Literal["revise_task"] = "revise_task"
+    expected_checkpoint_id: str | None = Field(default=None, max_length=200)
+    text: str = Field(min_length=1, max_length=8000)
+
+
 ShellCommand = Annotated[
     StartTask
     | AnswerQuestion
@@ -234,6 +249,7 @@ ShellCommand = Annotated[
     | RejectAction
     | CloseSession
     | ResumeTask
+    | ReviseTask
     | OptionalCommand,
     Field(discriminator="kind"),
 ]
@@ -255,6 +271,21 @@ class Conflict(StrictModel):
         "pending_request_mismatch",
         "session_closed",
         "runtime_conflict",
+        "checkpoint_mismatch",
+        "run_not_revisable",
+        "control_request_conflict",
+        "control_boundary_failed",
+        "revision_pause_failed",
+        "revision_unavailable",
+        "checkpoint_not_found",
+        "revision_needs_input",
+        "revision_no_change",
+        "revision_new_task_suggested",
+        "revision_unsupported",
+        "revision_failed",
+        "revision_persistence_failed",
+        "revision_command_conflict",
+        "effect_reconciliation_required",
     ]
     snapshot: RuntimeSessionSnapshot
 

@@ -78,7 +78,11 @@ def _patch_composition(
     monkeypatch.setattr(
         deployment_app,
         "model_roles_from_environment",
-        lambda *_args, **_kwargs: SimpleNamespace(action_policy=object(), goal_compiler=object()),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            action_policy=object(),
+            goal_compiler=object(),
+            task_revision_compiler=object(),
+        ),
     )
     monkeypatch.setattr(
         deployment_app,

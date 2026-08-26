@@ -69,6 +69,11 @@ function ResumeProbe() {
   return <button onClick={shell.resume}>resume</button>;
 }
 
+function ReviseProbe() {
+  const shell = useShellSession();
+  return <button onClick={() => shell.submitMessage("Inspect the account and its owner")}>revise</button>;
+}
+
 describe("session acquisition", () => {
   beforeEach(() => {
     api.createSession.mockReset();
@@ -191,6 +196,61 @@ describe("session acquisition", () => {
         expected_task_revision: 1,
         expected_run_status: "paused",
       }),
+    );
+  });
+
+  it("revises through the dedicated endpoint and remains paused", async () => {
+    const checkpointId = `runtime-checkpoint:${"d".repeat(64)}`;
+    const active = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Inspect the account",
+        run_status: "running" as const,
+        capabilities: ["revise_task", "close_session"] as const,
+        checkpoint_id: checkpointId,
+      },
+    } as CreatedSession;
+    const revised = {
+      ...active.snapshot,
+      task_revision: 2,
+      task_text: "Inspect the account and its owner",
+      run_status: "paused" as const,
+      capabilities: ["resume_task", "revise_task", "close_session"] as const,
+      checkpoint_id: `runtime-checkpoint:${"e".repeat(64)}`,
+      resume_eligible: true,
+    };
+    api.createSession.mockResolvedValue(active);
+    api.postCommand.mockResolvedValue({
+      kind: "accepted",
+      command_id: "revise",
+      snapshot: revised,
+    });
+    render(<ReviseProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "revise" }));
+
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
+    expect(api.postCommand).toHaveBeenCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/revise",
+      expect.objectContaining({
+        kind: "revise_task",
+        expected_checkpoint_id: checkpointId,
+        expected_task_revision: 1,
+        expected_run_status: "running",
+        text: "Inspect the account and its owner",
+      }),
+    );
+    expect(api.postCommand).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "commands/resume",
+      expect.anything(),
     );
   });
 

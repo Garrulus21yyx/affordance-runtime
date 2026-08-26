@@ -16,11 +16,13 @@ from .contracts import (
     PendingQuestion,
     PublicStep,
     RejectAction,
+    ReviseTask,
     RunStatus,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
     StartTask,
+    Unsupported,
     UsageSummary,
 )
 
@@ -153,6 +155,17 @@ class ContractDemoPort:
             handle.events.append(event)
         handle.snapshot = snapshot.model_copy(update={"event_cursor": cursor})
         return Accepted(command_id=command.command_id, snapshot=handle.snapshot), tuple(events)
+
+    async def revise(self, handle: DemoHandle, command: ReviseTask):
+        return (
+            Unsupported(
+                command_id=command.command_id,
+                capability=Capability.REVISE_TASK,
+                reason="Synthetic demo does not implement Runtime task revision",
+                snapshot=await self.snapshot(handle),
+            ),
+            (),
+        )
 
     async def close(self, handle: DemoHandle) -> None:
         if handle.closed:

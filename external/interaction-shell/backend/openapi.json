@@ -309,7 +309,22 @@
               "stale_command",
               "pending_request_mismatch",
               "session_closed",
-              "runtime_conflict"
+              "runtime_conflict",
+              "checkpoint_mismatch",
+              "run_not_revisable",
+              "control_request_conflict",
+              "control_boundary_failed",
+              "revision_pause_failed",
+              "revision_unavailable",
+              "checkpoint_not_found",
+              "revision_needs_input",
+              "revision_no_change",
+              "revision_new_task_suggested",
+              "revision_unsupported",
+              "revision_failed",
+              "revision_persistence_failed",
+              "revision_command_conflict",
+              "effect_reconciliation_required"
             ],
             "title": "Code",
             "type": "string"
@@ -410,14 +425,29 @@
             "type": "string"
           },
           "kind": {
-            "const": "pause",
+            "enum": [
+              "pause",
+              "revise"
+            ],
             "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Message",
             "type": "string"
           },
           "outcome": {
             "enum": [
               "paused",
-              "failed"
+              "failed",
+              "revised",
+              "needs_input",
+              "no_change",
+              "new_task_suggested",
+              "unsupported",
+              "effect_reconciliation_required"
             ],
             "title": "Outcome",
             "type": "string"
@@ -659,7 +689,6 @@
             "enum": [
               "cancel_task",
               "pause_task",
-              "revise_task",
               "start_new_task",
               "take_over",
               "return_control"
@@ -975,6 +1004,57 @@
           "checkpoint_id"
         ],
         "title": "ResumeTask",
+        "type": "object"
+      },
+      "ReviseTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Checkpoint Id"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "revise_task",
+            "default": "revise_task",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "text"
+        ],
+        "title": "ReviseTask",
         "type": "object"
       },
       "RunStatus": {
@@ -2323,6 +2403,94 @@
           }
         },
         "summary": "Resume"
+      }
+    },
+    "/sessions/{session_id}/commands/revise": {
+      "post": {
+        "operationId": "revise_sessions__session_id__commands_revise_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseTask"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Revise Sessions  Session Id  Commands Revise Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revise"
       }
     },
     "/sessions/{session_id}/events": {

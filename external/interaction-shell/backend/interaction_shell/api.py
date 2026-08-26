@@ -24,6 +24,7 @@ from .contracts import (
     RecoverSessionResponse,
     RejectAction,
     ResumeTask,
+    ReviseTask,
     RuntimeSessionSnapshot,
     ShellEvent,
     StartTask,
@@ -231,6 +232,10 @@ def create_app(
 
     @app.post("/sessions/{session_id}/commands/resume", response_model=CommandAdmission)
     async def resume(session_id: str, body: ResumeTask, session_key: str = Depends(key)):
+        return await command(session_id, session_key, body)
+
+    @app.post("/sessions/{session_id}/commands/revise", response_model=CommandAdmission)
+    async def revise(session_id: str, body: ReviseTask, session_key: str = Depends(key)):
         return await command(session_id, session_key, body)
 
     @app.post("/sessions/{session_id}/commands/close", response_model=CommandAdmission)

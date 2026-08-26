@@ -1015,7 +1015,7 @@ async def test_revision_nonready_outcome_is_durable_and_keeps_old_checkpoint(tmp
     with pytest.raises(PublicSessionConflict, match="revision_no_change"):
         await handle.revise(
             "revise:no-change",
-            source.checkpoint_id,
+            None,
             "Do not call the compiler twice",
         )
     assert compiler.calls == 1

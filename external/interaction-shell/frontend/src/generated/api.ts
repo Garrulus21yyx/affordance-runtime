@@ -212,6 +212,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/commands/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revise */
+        post: operations["revise_sessions__session_id__commands_revise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}/events": {
         parameters: {
             query?: never;
@@ -387,7 +404,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict";
+            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "effect_reconciliation_required";
             /** Command Id */
             command_id: string;
             /**
@@ -426,14 +443,19 @@ export interface components {
             command_id: string;
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "pause";
+            kind: "pause" | "revise";
+            /**
+             * Message
+             * @default
+             */
+            message: string;
             /**
              * Outcome
              * @enum {string}
              */
-            outcome: "paused" | "failed";
+            outcome: "paused" | "failed" | "revised" | "needs_input" | "no_change" | "new_task_suggested" | "unsupported" | "effect_reconciliation_required";
         };
         /** CreateSessionRequest */
         CreateSessionRequest: {
@@ -544,7 +566,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "cancel_task" | "pause_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
+            kind: "cancel_task" | "pause_task" | "start_new_task" | "take_over" | "return_control";
             /** Message */
             message?: string | null;
         };
@@ -669,6 +691,24 @@ export interface components {
              * @constant
              */
             kind: "resume_task";
+        };
+        /** ReviseTask */
+        ReviseTask: {
+            /** Command Id */
+            command_id: string;
+            /** Expected Checkpoint Id */
+            expected_checkpoint_id?: string | null;
+            expected_run_status: components["schemas"]["RunStatus"];
+            /** Expected Task Revision */
+            expected_task_revision: number;
+            /**
+             * Kind
+             * @default revise_task
+             * @constant
+             */
+            kind: "revise_task";
+            /** Text */
+            text: string;
         };
         /**
          * RunStatus
@@ -1337,6 +1377,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ResumeTask"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"] | components["schemas"]["Conflict"] | components["schemas"]["Unsupported"] | components["schemas"]["Rejected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_sessions__session_id__commands_revise_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Session-Key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviseTask"];
             };
         };
         responses: {

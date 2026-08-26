@@ -17,6 +17,7 @@ from .contracts import (
     CreateSessionResponse,
     RecoverSessionResponse,
     RejectAction,
+    ReviseTask,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
@@ -165,6 +166,14 @@ class RunSessionManager:
             await self._expire_if_needed(managed)
             snapshot = await self._snapshot(managed)
             if command.command_id in managed.commands:
+                if isinstance(command, ReviseTask):
+                    admission, _events = await self._port.revise(
+                        managed.runtime_handle,
+                        command,
+                    )
+                    return admission.model_copy(
+                        update={"snapshot": await self._snapshot(managed)}
+                    )
                 return Conflict(
                     command_id=command.command_id,
                     code="duplicate_command",
@@ -197,9 +206,24 @@ class RunSessionManager:
                 await self._cleanup_once(managed)
                 closed_snapshot = await self._snapshot(managed)
                 return Accepted(command_id=command.command_id, snapshot=closed_snapshot)
-            admission, _events = await self._port.command(managed.runtime_handle, command)
-            if isinstance(command, (StartTask, AnswerQuestion)):
-                text = command.task if isinstance(command, StartTask) else command.answer
+            if isinstance(command, ReviseTask):
+                admission, _events = await self._port.revise(
+                    managed.runtime_handle,
+                    command,
+                )
+            else:
+                admission, _events = await self._port.command(
+                    managed.runtime_handle,
+                    command,
+                )
+            if isinstance(command, (StartTask, AnswerQuestion, ReviseTask)):
+                text = (
+                    command.task
+                    if isinstance(command, StartTask)
+                    else command.answer
+                    if isinstance(command, AnswerQuestion)
+                    else command.text
+                )
                 managed.conversation.append(ConversationTurn(role="user", text=text))
             current = await self._snapshot(managed)
             if current.run_status.value in {"done", "failed", "blocked", "cancelled"}:

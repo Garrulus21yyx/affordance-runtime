@@ -10,6 +10,7 @@ from interaction_shell.contracts import (
     Capability,
     OptionalCommand,
     ResumeTask,
+    ReviseTask,
     RunStatus,
     StartTask,
     ViewerState,
@@ -42,6 +43,7 @@ class FakePublicHandle:
         self.recorded: list[PublicRuntimeSessionEvent] = []
         self.release = asyncio.Event()
         self.cleanup_count = 0
+        self.revise_calls: list[tuple[str, str | None, str]] = []
 
     async def snapshot(self):
         return self.current
@@ -128,6 +130,43 @@ class FakePublicHandle:
                 pending_question=PublicPendingQuestion("ask:choice", "Which option?"),
             ),
             "RUN_RESUMED",
+        )
+        return self.current
+
+    async def revise(
+        self,
+        command_id: str,
+        expected_checkpoint_id: str | None,
+        text: str,
+    ):
+        self.revise_calls.append((command_id, expected_checkpoint_id, text))
+        if (
+            self.current.last_control_outcome is not None
+            and self.current.last_control_outcome.command_id == command_id
+        ):
+            return self.current
+        checkpoint_id = "runtime-checkpoint:" + "b" * 64
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.PAUSED,
+                task_revision=self.current.task_revision + 1,
+                task_text=text,
+                checkpoint_id=checkpoint_id,
+                resume_eligible=True,
+                capabilities=self.current.capabilities
+                | {PublicSessionCapability.RESUME_TASK},
+                pending_question=None,
+                pending_confirmation=None,
+                last_control_outcome=PublicControlOutcome(
+                    command_id,
+                    "revise",
+                    "revised",
+                    "revised",
+                    checkpoint_id,
+                ),
+            ),
+            "TASK_REVISED",
         )
         return self.current
 
@@ -321,3 +360,62 @@ async def test_core_adapter_projects_durable_pause_without_terminal_cleanup() ->
     assert resumed.snapshot.run_status is RunStatus.WAITING_USER
     assert resumed.snapshot.resume_eligible is False
     assert Capability.RESUME_TASK not in resumed.snapshot.capabilities
+
+
+@pytest.mark.asyncio
+async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> None:
+    factory = FakePublicFactory()
+    manager = RunSessionManager(CoreRuntimeSessionPort(cast(Any, factory)))
+    created = await manager.create()
+    started = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        StartTask(
+            command_id="start:revise",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.IDLE,
+            task="Inspect the account",
+        ),
+    )
+    assert Capability.REVISE_TASK in started.snapshot.capabilities
+
+    revised = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:1",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.RUNNING,
+            expected_checkpoint_id=None,
+            text="Inspect the account and its owner",
+        ),
+    )
+
+    assert revised.kind == "accepted"
+    assert revised.snapshot.run_status is RunStatus.PAUSED
+    assert revised.snapshot.task_revision == 2
+    assert revised.snapshot.last_control_outcome is not None
+    assert revised.snapshot.last_control_outcome.kind == "revise"
+    assert factory.handle is not None
+    assert factory.handle.revise_calls == [
+        ("revise:1", None, "Inspect the account and its owner")
+    ]
+
+    duplicate = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:1",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.RUNNING,
+            expected_checkpoint_id=None,
+            text="Inspect the account and its owner",
+        ),
+    )
+
+    assert duplicate.kind == "accepted"
+    assert duplicate.snapshot.task_revision == 2
+    assert factory.handle.revise_calls == [
+        ("revise:1", None, "Inspect the account and its owner"),
+        ("revise:1", None, "Inspect the account and its owner"),
+    ]

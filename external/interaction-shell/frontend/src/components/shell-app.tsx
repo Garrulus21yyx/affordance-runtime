@@ -54,7 +54,11 @@ function Conversation({ snapshot, submitMessage, confirm }: {
           input={{
             addMenuButton: HiddenSlot,
             textArea: {
-              placeholder: snapshot?.run_status === "waiting_user" ? "Answer the question…" : "Describe a task…",
+              placeholder: snapshot?.run_status === "waiting_user"
+                ? "Answer the question…"
+                : snapshot?.capabilities.includes("revise_task")
+                  ? "Revise the current task…"
+                  : "Describe a task…",
             },
             toolsMenu: [],
           }}

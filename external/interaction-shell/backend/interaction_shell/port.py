@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from .contracts import (
     Capability,
     CommandAdmission,
+    ReviseTask,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
@@ -39,5 +40,9 @@ class RuntimeSessionPort(Protocol):
     async def events(self, handle: Any, after: int) -> tuple[ShellEvent, ...]: ...
 
     async def command(self, handle: Any, command: ShellCommand) -> tuple[CommandAdmission, tuple[ShellEvent, ...]]: ...
+
+    async def revise(
+        self, handle: Any, command: ReviseTask
+    ) -> tuple[CommandAdmission, tuple[ShellEvent, ...]]: ...
 
     async def close(self, handle: Any) -> None: ...
