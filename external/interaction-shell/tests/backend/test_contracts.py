@@ -22,7 +22,13 @@ from pydantic import ValidationError
 )
 def test_public_events_reject_private_fields_recursively(field):
     with pytest.raises(ValidationError):
-        ShellEvent(session_id="s", cursor=1, type="STEP_FINISHED", data={"nested": {field: "x"}})
+        ShellEvent(
+            session_id="s",
+            event_epoch="contract-test-epoch",
+            cursor=1,
+            type="STEP_FINISHED",
+            data={"nested": {field: "x"}},
+        )
 
 
 def test_viewer_requires_secret_free_same_origin_read_only_route():

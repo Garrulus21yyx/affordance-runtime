@@ -40,12 +40,14 @@ export async function postCommand(
 export function subscribeEvents(
   sessionId: string,
   key: string,
+  eventEpoch: string,
   cursor: number,
   onEvent: (event: ShellEvent) => void,
   onOpen: () => void,
   signal: AbortSignal,
 ) {
-  return fetchEventSource(`${API}/sessions/${sessionId}/events?cursor=${cursor}`, {
+  const position = new URLSearchParams({ event_epoch: eventEpoch, cursor: String(cursor) });
+  return fetchEventSource(`${API}/sessions/${sessionId}/events?${position}`, {
     headers: { "X-Session-Key": key },
     signal,
     openWhenHidden: true,

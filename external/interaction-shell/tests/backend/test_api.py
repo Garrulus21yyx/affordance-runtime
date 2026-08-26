@@ -13,6 +13,13 @@ async def test_http_admission_is_not_task_success_and_auth_is_isolated():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = (await client.post("/sessions", json={})).json()
         snapshot = created["snapshot"]
+        assert snapshot["event_epoch"]
+        mismatched_epoch = await client.get(
+            f"/sessions/{snapshot['session_id']}/events",
+            headers={"X-Session-Key": created["session_key"]},
+            params={"event_epoch": "wrong-event-epoch", "cursor": 0},
+        )
+        assert mismatched_epoch.status_code == 409
         response = await client.post(
             f"/sessions/{snapshot['session_id']}/tasks",
             headers={"X-Session-Key": created["session_key"]},

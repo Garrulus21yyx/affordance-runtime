@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from .contracts import (
 class UnavailableHandle:
     session_id: str
     expires_at: datetime
+    event_epoch: str
 
 
 class UnavailableRuntimeSessionPort:
@@ -23,12 +25,13 @@ class UnavailableRuntimeSessionPort:
     capabilities = frozenset({Capability.CLOSE_SESSION})
 
     async def open(self, session_id: str, expires_at: datetime) -> UnavailableHandle:
-        return UnavailableHandle(session_id, expires_at)
+        return UnavailableHandle(session_id, expires_at, secrets.token_urlsafe(18))
 
     async def snapshot(self, handle: UnavailableHandle) -> RuntimeSessionSnapshot:
         return RuntimeSessionSnapshot(
             session_id=handle.session_id,
             expires_at=handle.expires_at,
+            event_epoch=handle.event_epoch,
             capabilities=self.capabilities,
         )
 

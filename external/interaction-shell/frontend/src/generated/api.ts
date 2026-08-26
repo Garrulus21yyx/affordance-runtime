@@ -607,6 +607,8 @@ export interface components {
              * @default 0
              */
             event_cursor: number;
+            /** Event Epoch */
+            event_epoch: string;
             /**
              * Expires At
              * Format: date-time
@@ -674,6 +676,8 @@ export interface components {
              * Format: date-time
              */
             emitted_at?: string;
+            /** Event Epoch */
+            event_epoch: string;
             /**
              * Schema Version
              * @default interaction-shell.v1
@@ -1237,6 +1241,7 @@ export interface operations {
         parameters: {
             query?: {
                 cursor?: number;
+                event_epoch?: string | null;
             };
             header?: {
                 "Last-Event-ID"?: string | null;

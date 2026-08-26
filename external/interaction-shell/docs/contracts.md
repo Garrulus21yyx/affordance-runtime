@@ -7,7 +7,7 @@ The shell has exactly four public concepts:
 - `RuntimeSessionPort` owns the only coarse shell-to-Runtime boundary.
 - `ShellCommand` is a closed discriminated union.
 - `RuntimeSessionSnapshot` is the current owner-projected public view.
-- `ShellEvent` is an ordered, cursor-addressed public AG-UI event envelope.
+- `ShellEvent` is an ordered, epoch-and-cursor-addressed public AG-UI event envelope.
 
 Commands return `Accepted`, `Conflict`, `Unsupported`, or `Rejected`. An
 accepted HTTP command is never interpreted as GUI task success. Only the
@@ -18,7 +18,8 @@ The Runtime now publishes `affordance-runtime.session.v1`. When a deployment
 composes `CoreRuntimeSessionPort` with a `TargetRuntimeSessionFactory`, the
 supported commands are start, AskUser answer, confirmation approve/reject, and
 close. The opaque Core handle owns resumable `RunState`; the external manager
-stores only that handle and drains owner-projected events by cursor. Without a
+stores only that handle and drains owner-projected events by epoch/cursor without
+retaining a second event list, timestamp, or envelope projection. Without a
 configured Runtime/environment factory, the production-safe default remains
 typed `Unsupported`. `INTERACTION_SHELL_DEMO=true` enables a contract-only
 local/E2E port; it emits no GUI action, has no agent loop, and labels its

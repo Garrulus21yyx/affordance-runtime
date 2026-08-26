@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from .contracts import (
@@ -28,7 +29,9 @@ from .contracts import (
 class DemoHandle:
     session_id: str
     expires_at: datetime
+    event_epoch: str
     snapshot: RuntimeSessionSnapshot
+    events: list[ShellEvent] = field(default_factory=list)
     closed: bool = False
     cleanup_count: int = 0
 
@@ -45,18 +48,24 @@ class ContractDemoPort:
     )
 
     async def open(self, session_id: str, expires_at: datetime) -> DemoHandle:
+        event_epoch = secrets.token_urlsafe(18)
         return DemoHandle(
             session_id,
             expires_at,
-            RuntimeSessionSnapshot(session_id=session_id, expires_at=expires_at, capabilities=self.capabilities),
+            event_epoch,
+            RuntimeSessionSnapshot(
+                session_id=session_id,
+                expires_at=expires_at,
+                event_epoch=event_epoch,
+                capabilities=self.capabilities,
+            ),
         )
 
     async def snapshot(self, handle: DemoHandle) -> RuntimeSessionSnapshot:
         return handle.snapshot
 
     async def events(self, handle: DemoHandle, after: int) -> tuple[ShellEvent, ...]:
-        del handle, after
-        return ()
+        return tuple(event for event in handle.events if event.cursor > after)
 
     async def command(self, handle: DemoHandle, command: ShellCommand):
         old = handle.snapshot
@@ -124,17 +133,21 @@ class ContractDemoPort:
             raise TypeError("demo port received unsupported command")
         for event_type in event_types:
             cursor += 1
-            events.append(
-                ShellEvent(
-                    session_id=handle.session_id,
-                    cursor=cursor,
-                    type=event_type,
-                    data={"snapshot": snapshot.model_dump(mode="json")},
-                )
+            event_snapshot = snapshot.model_copy(update={"event_cursor": cursor})
+            event = ShellEvent(
+                session_id=handle.session_id,
+                event_epoch=handle.event_epoch,
+                cursor=cursor,
+                type=event_type,
+                data={"snapshot": event_snapshot.model_dump(mode="json")},
             )
+            events.append(event)
+            handle.events.append(event)
         handle.snapshot = snapshot.model_copy(update={"event_cursor": cursor})
         return Accepted(command_id=command.command_id, snapshot=handle.snapshot), tuple(events)
 
     async def close(self, handle: DemoHandle) -> None:
+        if handle.closed:
+            return
         handle.cleanup_count += 1
         handle.closed = True

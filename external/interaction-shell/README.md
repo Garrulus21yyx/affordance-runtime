@@ -40,11 +40,13 @@ For the contract-only UI demo and E2E flow:
 INTERACTION_SHELL_DEMO=true .venv/bin/uvicorn interaction_shell.api:app --host 127.0.0.1 --port 8100
 ```
 
-For a real session, the deployment composition supplies one `TargetRuntime` and
-one per-session `RuntimeEnvironmentLease` factory, then calls
+For a real session, the deployment composition supplies a per-session
+`runtime_factory(session_id)` and `RuntimeEnvironmentLease` factory, then calls
 `interaction_shell.runtime_app.create_runtime_app(factory)`. This is deliberately
 explicit: browser/provider credentials and the product's stable task boundary
 stay with the deployment, while the returned handle keeps `RunState` private.
+The Runtime/public port owns one event epoch and cursor; the Shell manager only
+forwards `events(after)` and never keeps a second event log.
 The configured port supports start, AskUser answer, confirmation approve/reject,
 and close. Cancel, revise, new task, and takeover remain typed unavailable.
 

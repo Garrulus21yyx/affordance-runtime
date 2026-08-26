@@ -36,6 +36,15 @@ class DiagnosisRequest(BenchmarkResultExport):
     trace: PublicTraceExport
 
 
+def _event_position(value: str) -> tuple[str | None, int]:
+    epoch, separator, raw_cursor = value.rpartition(":")
+    if not separator:
+        epoch, raw_cursor = "", value
+    if not raw_cursor.isdecimal():
+        raise ValueError("event position cursor must be a nonnegative integer")
+    return (epoch or None), int(raw_cursor)
+
+
 def create_app(manager: RunSessionManager | None = None) -> FastAPI:
     shell = manager or RunSessionManager(UnavailableRuntimeSessionPort())
     app = FastAPI(title="Affordance Interaction Shell", version="0.1.0")
@@ -57,7 +66,12 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
     @app.get("/schemas/shell-event", response_model=ShellEvent)
     async def shell_event_schema() -> ShellEvent:
         """Concrete versioned schema anchor used by OpenAPI TypeScript generation."""
-        return ShellEvent(session_id="schema", cursor=1, type="schema.example")
+        return ShellEvent(
+            session_id="schema",
+            event_epoch="schema-event-epoch",
+            cursor=1,
+            type="schema.example",
+        )
 
     @app.get("/diagnostics", response_model=list[CaseDiagnosis])
     async def list_diagnostics():
@@ -93,13 +107,18 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
         session_id: str,
         session_key: str = Depends(key),
         cursor: int = 0,
+        event_epoch: str | None = None,
         last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
     ):
-        after = int(last_event_id) if last_event_id else cursor
         try:
-            shell.authenticate(session_id, session_key)
+            requested_epoch, after = _event_position(last_event_id) if last_event_id else (event_epoch, cursor)
+            snapshot = await shell.snapshot(session_id, session_key)
         except (SessionNotFound, SessionUnauthorized) as exc:
             raise map_auth(exc) from exc
+        except ValueError as exc:
+            raise HTTPException(400, "invalid event position") from exc
+        if requested_epoch is not None and requested_epoch != snapshot.event_epoch:
+            raise HTTPException(409, "event epoch mismatch; snapshot resync required")
 
         async def stream():
             current = after
@@ -115,7 +134,10 @@ def create_app(manager: RunSessionManager | None = None) -> FastAPI:
                             name=event.type,
                             value=event.model_dump(mode="json"),
                         )
-                        yield f"id: {event.cursor}\nevent: {event.type}\n{encoder.encode(agui)}"
+                        yield (
+                            f"id: {event.event_epoch}:{event.cursor}\n"
+                            f"event: {event.type}\n{encoder.encode(agui)}"
+                        )
                 else:
                     idle += 1
                     if idle >= 15:

@@ -26,6 +26,7 @@ class FakePublicHandle:
             session_id,
             expires_at,
             PublicSessionStatus.IDLE,
+            "fake-public-event-epoch",
             0,
             PUBLIC_SESSION_CAPABILITIES,
         )
@@ -76,7 +77,15 @@ class FakePublicHandle:
     def _emit(self, snapshot: PublicRuntimeSessionSnapshot, event_type: str) -> None:
         cursor = len(self.recorded) + 1
         self.current = replace(snapshot, event_cursor=cursor)
-        self.recorded.append(PublicRuntimeSessionEvent(self.current.session_id, cursor, event_type, self.current))
+        self.recorded.append(
+            PublicRuntimeSessionEvent(
+                self.current.session_id,
+                self.current.event_epoch,
+                cursor,
+                event_type,
+                self.current,
+            )
+        )
 
 
 class FakePublicFactory:
@@ -125,6 +134,7 @@ async def test_core_adapter_drains_background_owner_events_in_cursor_order() -> 
     )
     snapshot = await manager.snapshot(session_id, created.session_key)
     assert tuple(event.cursor for event in events) == (1, 2)
+    assert all(event.event_epoch == snapshot.event_epoch for event in events)
     assert concurrent_events == events
     assert tuple(event.type for event in events) == ("RUN_STARTED", "RUN_FINISHED")
     assert snapshot.run_status is RunStatus.WAITING_USER

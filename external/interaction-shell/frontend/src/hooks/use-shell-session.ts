@@ -10,6 +10,7 @@ export function useShellSession() {
   const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
   const [notice, setNotice] = useState("");
   const cursor = useRef(0);
+  const eventEpoch = useRef("");
   const sessionId = snapshot?.session_id;
 
   useEffect(() => {
@@ -19,6 +20,8 @@ export function useShellSession() {
         if (!active) return;
         setSessionKey(created.session_key);
         setSnapshot(created.snapshot);
+        eventEpoch.current = created.snapshot.event_epoch;
+        cursor.current = created.snapshot.event_cursor;
       })
       .catch(() => setConnection("offline"));
     return () => {
@@ -32,8 +35,12 @@ export function useShellSession() {
     subscribeEvents(
       sessionId,
       sessionKey,
+      eventEpoch.current,
       cursor.current,
       (event) => {
+        if (event.event_epoch !== eventEpoch.current) {
+          throw new Error("shell_event_epoch_changed");
+        }
         cursor.current = event.cursor;
         const projected = event.data?.snapshot as Snapshot | undefined;
         if (projected) setSnapshot(projected);

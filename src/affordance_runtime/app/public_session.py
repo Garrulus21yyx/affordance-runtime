@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Literal, Protocol
 
@@ -85,6 +86,7 @@ class PublicRuntimeSessionSnapshot:
     session_id: str
     expires_at: datetime
     status: PublicSessionStatus
+    event_epoch: str
     event_cursor: int
     capabilities: frozenset[PublicSessionCapability] = PUBLIC_SESSION_CAPABILITIES
     task_id: str | None = None
@@ -100,9 +102,11 @@ class PublicRuntimeSessionSnapshot:
 @dataclass(frozen=True)
 class PublicRuntimeSessionEvent:
     session_id: str
+    event_epoch: str
     cursor: int
     type: str
     snapshot: PublicRuntimeSessionSnapshot
+    emitted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
 
 
@@ -113,6 +117,21 @@ class PublicSessionConflict(RuntimeError):
         super().__init__(code)
 
 
+class PublicSessionOpenStage(StrEnum):
+    RUNTIME = "runtime"
+    ENVIRONMENT = "environment"
+    SESSION = "session"
+
+
+class PublicSessionOpenError(RuntimeError):
+    """Typed session-construction failure without leaking private resources."""
+
+    def __init__(self, stage: PublicSessionOpenStage, code: str) -> None:
+        self.stage = stage
+        self.code = code
+        super().__init__(f"{stage.value}:{code}")
+
+
 @dataclass(frozen=True)
 class RuntimeEnvironmentLease:
     environment: WorldEnvironment
@@ -121,6 +140,10 @@ class RuntimeEnvironmentLease:
 
 class RuntimeEnvironmentFactory(Protocol):
     def __call__(self, session_id: str) -> RuntimeEnvironmentLease | Awaitable[RuntimeEnvironmentLease]: ...
+
+
+class TargetRuntimeFactory(Protocol):
+    def __call__(self, session_id: str) -> TargetRuntime | Awaitable[TargetRuntime]: ...
 
 
 class PublicTaskRequestFactory(Protocol):
@@ -140,6 +163,10 @@ class PublicRuntimeSessionHandle(Protocol):
     async def close(self) -> None: ...
 
 
+class PublicRuntimeSessionFactory(Protocol):
+    async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle: ...
+
+
 @dataclass
 class TargetRuntimeSession:
     """Own the private resumable state; callers receive public values only."""
@@ -149,6 +176,7 @@ class TargetRuntimeSession:
     session_id: str
     expires_at: datetime
     request_factory: PublicTaskRequestFactory = default_public_task_request
+    _event_epoch: str = field(default_factory=lambda: secrets.token_urlsafe(18), init=False, repr=False)
     _request: NaturalLanguageTaskRequest | None = field(default=None, init=False, repr=False)
     _admitted: ReadyTask | None = field(default=None, init=False, repr=False)
     _state: RunState | None = field(default=None, init=False, repr=False)
@@ -161,6 +189,20 @@ class TargetRuntimeSession:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
     _cleanup_started: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime, TargetRuntime):
+            raise TypeError("public Runtime session requires a TargetRuntime")
+        if not isinstance(self.lease, RuntimeEnvironmentLease):
+            raise TypeError("public Runtime session requires a typed environment lease")
+        required_environment_methods = ("reset", "revise_task", "capture", "is_current", "execute")
+        if any(
+            not callable(getattr(self.lease.environment, method, None))
+            for method in required_environment_methods
+        ):
+            raise TypeError("public Runtime session environment does not implement WorldEnvironment")
+        if not callable(self.request_factory):
+            raise TypeError("public Runtime session requires a task request factory")
 
     async def snapshot(self) -> PublicRuntimeSessionSnapshot:
         return self._project()
@@ -340,7 +382,15 @@ class TargetRuntimeSession:
     def _emit(self, event_type: str) -> None:
         cursor = len(self._events) + 1
         snapshot = self._project(event_cursor=cursor)
-        self._events.append(PublicRuntimeSessionEvent(self.session_id, cursor, event_type, snapshot))
+        self._events.append(
+            PublicRuntimeSessionEvent(
+                self.session_id,
+                self._event_epoch,
+                cursor,
+                event_type,
+                snapshot,
+            )
+        )
 
     def _project(self, *, event_cursor: int | None = None) -> PublicRuntimeSessionSnapshot:
         state = self._state
@@ -366,6 +416,7 @@ class TargetRuntimeSession:
             self.session_id,
             self.expires_at,
             status,
+            self._event_epoch,
             len(self._events) if event_cursor is None else event_cursor,
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
@@ -395,23 +446,61 @@ class TargetRuntimeSession:
 
 @dataclass(frozen=True)
 class TargetRuntimeSessionFactory:
-    runtime: TargetRuntime
+    runtime_factory: TargetRuntimeFactory
     environment_factory: RuntimeEnvironmentFactory
     request_factory: PublicTaskRequestFactory = default_public_task_request
 
     async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
-        lease = self.environment_factory(session_id)
-        if inspect.isawaitable(lease):
-            lease = await lease
-        if not isinstance(lease, RuntimeEnvironmentLease):
-            raise TypeError("Runtime environment factory must return a typed lease")
-        return TargetRuntimeSession(
-            self.runtime,
-            lease,
-            session_id,
-            expires_at,
-            self.request_factory,
-        )
+        if not callable(self.request_factory):
+            raise PublicSessionOpenError(PublicSessionOpenStage.SESSION, "request_factory_invalid")
+        try:
+            runtime = self.runtime_factory(session_id)
+            if inspect.isawaitable(runtime):
+                runtime = await runtime
+            if not isinstance(runtime, TargetRuntime):
+                raise TypeError("Runtime factory must return TargetRuntime")
+        except Exception as exc:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.RUNTIME,
+                "runtime_factory_failed",
+            ) from exc
+
+        lease: RuntimeEnvironmentLease | None = None
+        try:
+            candidate = self.environment_factory(session_id)
+            if inspect.isawaitable(candidate):
+                candidate = await candidate
+            if not isinstance(candidate, RuntimeEnvironmentLease):
+                raise TypeError("Runtime environment factory must return a typed lease")
+            lease = candidate
+        except Exception as exc:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.ENVIRONMENT,
+                "environment_factory_failed",
+            ) from exc
+
+        try:
+            return TargetRuntimeSession(
+                runtime,
+                lease,
+                session_id,
+                expires_at,
+                self.request_factory,
+            )
+        except Exception as exc:
+            await _cleanup_environment_lease(lease)
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "session_initialization_failed",
+            ) from exc
+
+
+async def _cleanup_environment_lease(lease: RuntimeEnvironmentLease) -> None:
+    if lease.cleanup is None:
+        return
+    result = lease.cleanup()
+    if inspect.isawaitable(result):
+        await result
 
 
 @dataclass(frozen=True)

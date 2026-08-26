@@ -8,11 +8,11 @@ from typing import Protocol
 
 from affordance_runtime.app.public_session import (
     PublicRuntimeSessionEvent,
+    PublicRuntimeSessionFactory,
     PublicRuntimeSessionHandle,
     PublicRuntimeSessionSnapshot,
     PublicSessionCapability,
     PublicSessionConflict,
-    TargetRuntimeSessionFactory,
 )
 
 from .contracts import (
@@ -50,7 +50,7 @@ def unavailable_viewer(handle: PublicRuntimeSessionHandle) -> ViewerState:
 class CoreRuntimeSessionPort:
     """Use only Core-owned public values; no Runtime state is retained here."""
 
-    factory: TargetRuntimeSessionFactory
+    factory: PublicRuntimeSessionFactory
     viewer_projector: ViewerStateProjector = unavailable_viewer
 
     @property
@@ -145,6 +145,7 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         task_revision=source.task_revision,
         task_text=source.task_text,
         run_status=RunStatus(source.status.value),
+        event_epoch=source.event_epoch,
         event_cursor=source.event_cursor,
         pending_question=pending_question,
         pending_confirmation=pending_confirmation,
@@ -168,8 +169,10 @@ def _event(source: PublicRuntimeSessionEvent, viewer: ViewerState) -> ShellEvent
     snapshot = _snapshot(source.snapshot, viewer)
     return ShellEvent(
         session_id=source.session_id,
+        event_epoch=source.event_epoch,
         cursor=source.cursor,
         type=source.type,
+        emitted_at=source.emitted_at,
         data={"snapshot": snapshot.model_dump(mode="json")},
     )
 

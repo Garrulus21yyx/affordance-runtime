@@ -16,6 +16,7 @@ def snapshot():
         task_id="task",
         task_revision=3,
         run_status=RunStatus.WAITING_USER,
+        event_epoch="conversation-test-epoch",
         pending_question=PendingQuestion(request_id="q-2", prompt="Which topping?"),
         capabilities=frozenset({Capability.ANSWER_QUESTION}),
         expires_at=datetime.now(timezone.utc),

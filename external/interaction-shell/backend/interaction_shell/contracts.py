@@ -104,6 +104,7 @@ class RuntimeSessionSnapshot(StrictModel):
     task_revision: int = Field(default=0, ge=0)
     task_text: str | None = Field(default=None, max_length=8000)
     run_status: RunStatus = RunStatus.IDLE
+    event_epoch: str = Field(min_length=16, max_length=128)
     event_cursor: int = Field(default=0, ge=0)
     pending_question: PendingQuestion | None = None
     pending_confirmation: PendingConfirmation | None = None
@@ -125,6 +126,7 @@ class RuntimeSessionSnapshot(StrictModel):
 class ShellEvent(StrictModel):
     schema_version: Literal["interaction-shell.v1"] = SCHEMA_VERSION
     session_id: str
+    event_epoch: str = Field(min_length=16, max_length=128)
     cursor: int = Field(ge=1)
     type: str = Field(min_length=1, max_length=120)
     emitted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

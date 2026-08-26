@@ -315,13 +315,12 @@ and terminal facts come from the Runtime snapshot.
 
 ### 3.3 Per-session Runtime isolation
 
-The current factory shape accepts one `TargetRuntime` and reuses it for every opened session. That is unsuitable for the
-configured PydanticAI policy because the provider bridge currently retains `message_history`, active task identity,
-compaction state, recovery-event consumption, and last-invocation diagnostics on the policy instance. Sharing that
-instance can mix histories or overwrite diagnostics across concurrent sessions.
+The public session factory now accepts `runtime_factory(session_id)` and creates one Runtime/provider-policy instance
+per opened session. This is required because the configured PydanticAI provider bridge retains `message_history`,
+active task identity, compaction state, recovery-event consumption, and last-invocation diagnostics on the policy
+instance. The factory also creates one environment lease per session and returns only the existing opaque handle.
 
-The first real deployment must therefore accept a small `runtime_factory(session_id)` behind the private session
-constructor above and create one Runtime/provider-policy instance per session. Provider clients,
+Provider clients,
 immutable model configuration, HTTP connection pools proven concurrency-safe, schemas, and stateless builders may be
 shared; task identity, model history, mutable diagnostics, Runtime trace fanout, World environment, browser context,
 and cleanup state may not be shared.
@@ -363,8 +362,10 @@ reference, persistence handle, and cleanup. A real deployment must start that ex
 ### 4.2 Current state is process-local
 
 The public Core session currently retains request, admitted task, private `RunState`, progress, events, active asyncio
-task, locks, and cleanup flags in memory. `RunSessionManager` likewise retains session-key material, Runtime handles,
-command IDs, bounded conversation, events, and expiry in an in-memory dictionary. A service restart loses both layers.
+task, locks, and cleanup flags in memory. It owns the event epoch, cursor, timestamp, and retained envelope source;
+`RunSessionManager` forwards `events(after)` without retaining or renumbering a second list. The Manager still retains
+session-key material, opaque Runtime handles, in-process command IDs, bounded conversation, and expiry. A service
+restart loses both layers.
 
 This is acceptable for the implemented contract/demo scope and is not a deadlock. It is insufficient for a claim of
 durable pause/resume or multi-process deployment. Trace and Langfuse must not be used to reconstruct this state because
@@ -1086,6 +1087,8 @@ the public shell imports no private Core loop, Binder, Executor, World, or provi
 ### Phase 1 — correct session-scoped composition ownership
 
 Owner: Core public-session boundary plus deployment composition.
+
+Status: implemented and provider-free verified after the Phase 0 baseline.
 
 1. Replace the singleton `TargetRuntime` assumption with one private session constructor using
    `runtime_factory(session_id)`; keep the Shell-facing result as the existing opaque handle.

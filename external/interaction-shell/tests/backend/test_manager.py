@@ -72,7 +72,11 @@ async def test_snapshot_event_consistency_and_reconnect_cursor():
     )
     snapshot = await manager.snapshot(session_id, created.session_key)
     events = await manager.events(session_id, created.session_key, 0)
+    managed = manager.authenticate(session_id, created.session_key)
+    assert not hasattr(managed, "events")
+    assert events == tuple(managed.runtime_handle.events)
     assert tuple(event.cursor for event in events) == tuple(range(1, len(events) + 1))
+    assert all(event.event_epoch == snapshot.event_epoch for event in events)
     assert snapshot.event_cursor == events[-1].cursor
     assert await manager.events(session_id, created.session_key, events[-2].cursor) == (events[-1],)
     assert events[-1].data["snapshot"]["run_status"] == snapshot.run_status.value
@@ -93,6 +97,28 @@ async def test_external_cleanup_exactly_once_on_close_and_expiry():
     session.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     await manager.expire()
     assert session.runtime_handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_session_create_snapshot_failure_cleans_opaque_handle_once():
+    class SnapshotFailurePort(ContractDemoPort):
+        handle = None
+
+        async def open(self, session_id, expires_at):
+            self.handle = await super().open(session_id, expires_at)
+            return self.handle
+
+        async def snapshot(self, handle):
+            raise RuntimeError("snapshot unavailable after open")
+
+    port = SnapshotFailurePort()
+    manager = RunSessionManager(port)
+    with pytest.raises(RuntimeError, match="snapshot unavailable"):
+        await manager.create()
+    assert port.handle is not None
+    assert port.handle.cleanup_count == 1
+    assert port.handle.closed is True
+    assert manager._sessions == {}
 
 
 @pytest.mark.asyncio

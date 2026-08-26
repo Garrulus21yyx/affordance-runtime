@@ -118,13 +118,26 @@ Constraints:
       and explicit synthetic Demo labeling.
     - Record exact commands and outcomes without architecture changes.
     - Files: this plan and a baseline evidence record only.
-12. **pending — Phase 1: isolate Runtime sessions and move event ownership.**
+12. **done — Phase 1: isolate Runtime sessions and move event ownership.**
     - Establish the current shared-state mechanism and owners before editing.
     - Open one independent Runtime, model policy/history, environment/browser,
       public port, and event epoch/cursor per session behind an opaque handle.
     - Keep only the opaque handle, TTL, command lock, and bounded conversation in
       `RunSessionManager`; make cleanup idempotent and partial-open safe.
     - Verify concurrent isolation and independent close behavior.
+    - Root cause: `TargetRuntimeSessionFactory.runtime` currently reuses one
+      `TargetRuntime`, whose `ModelBackedAgentPolicy` and
+      `PydanticAIGroundedDecisionPort.message_history` are mutable; the Shell
+      manager separately retains and renumbers a second copy of port events.
+    - Positive contract: each `open(session_id)` creates a distinct Runtime and
+      environment lease; the opaque handle alone owns task/run/World/event state;
+      snapshot and event epoch/cursor originate at that handle/port; Manager event
+      reads are direct passthrough; close and failed open clean known resources once.
+    - Evidence: 40 combined Core/backend/architecture tests passed; the concurrent
+      two-session witness observed distinct policy histories, environments, task
+      identities, event epochs, and cleanup counters; concurrent readers received
+      identical owner timestamps/envelopes. Ruff, MyPy, Pyright, frontend unit,
+      lint, typecheck, production build, and Demo E2E passed.
 13. **pending — Phase 2: add the real deployment entrypoint.**
     - Add thin `interaction_shell.deployment_app` composition over existing
       provider/runtime configuration and per-session BrowserGym/Playwright.
@@ -137,3 +150,7 @@ Constraints:
 - `.codex-plans/interaction-shell-implementation.md` — Phase 0-2 progress ledger.
 - `.codex-plans/interaction-shell-phase0-baseline.md` — exact Phase 0 commands,
   outcomes, contract fingerprints, and corrected invocation notes.
+- `src/affordance_runtime/app/public_session.py` — per-session Runtime factory,
+  typed open stages, epoch/cursor/timestamp ownership, and partial-open cleanup.
+- `external/interaction-shell/backend/interaction_shell/manager.py` — direct
+  owner-event passthrough with no Shell event list or cursor override.
