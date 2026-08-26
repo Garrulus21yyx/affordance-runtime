@@ -448,6 +448,12 @@ Constraints:
       only failure remains the pre-existing five-document count rejecting this
       user-required implementation document. No live benchmark ran. Phase 7,
       Viewer, takeover, and deployment OTel exporter wiring remain unstarted.
+    - Post-push full provider-free regression: 1816 passed, 19 skipped, and one
+      governance test was explicitly deselected for the same required-document
+      conflict. The only executed failure was the known semantic-delivery replay
+      whose historical `evidence/live/.../trace.jsonl` is absent from this
+      worktree; it failed at file open before exercising production code. No
+      `.env` or live provider/benchmark profile was loaded.
 
 ## Current-work produced files
 
