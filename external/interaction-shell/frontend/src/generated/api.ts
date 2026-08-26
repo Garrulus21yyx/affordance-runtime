@@ -282,7 +282,7 @@ export interface components {
          * Capability
          * @enum {string}
          */
-        Capability: "start_task" | "answer_question" | "approve_action" | "reject_action" | "close_session" | "cancel_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
+        Capability: "start_task" | "answer_question" | "approve_action" | "reject_action" | "close_session" | "cancel_task" | "pause_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
         /** CaseDiagnosis */
         CaseDiagnosis: {
             /** Case Id */
@@ -381,6 +381,25 @@ export interface components {
             fill_ratio?: number | null;
         } & {
             [key: string]: unknown;
+        };
+        /** ControlOutcome */
+        ControlOutcome: {
+            /** Checkpoint Id */
+            checkpoint_id?: string | null;
+            /** Code */
+            code: string;
+            /** Command Id */
+            command_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "pause";
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "paused" | "failed";
         };
         /** CreateSessionRequest */
         CreateSessionRequest: {
@@ -491,7 +510,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "cancel_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
+            kind: "cancel_task" | "pause_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
             /** Message */
             message?: string | null;
         };
@@ -596,11 +615,13 @@ export interface components {
          * RunStatus
          * @enum {string}
          */
-        RunStatus: "idle" | "running" | "waiting_user" | "waiting_confirmation" | "done" | "cancelled" | "failed" | "blocked";
+        RunStatus: "idle" | "running" | "paused" | "waiting_user" | "waiting_confirmation" | "done" | "cancelled" | "failed" | "blocked";
         /** RuntimeSessionSnapshot */
         RuntimeSessionSnapshot: {
             /** Capabilities */
             capabilities: components["schemas"]["Capability"][];
+            /** Checkpoint Id */
+            checkpoint_id?: string | null;
             completion?: components["schemas"]["Completion"] | null;
             /**
              * Event Cursor
@@ -614,6 +635,7 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            last_control_outcome?: components["schemas"]["ControlOutcome"] | null;
             pending_confirmation?: components["schemas"]["PendingConfirmation"] | null;
             pending_question?: components["schemas"]["PendingQuestion"] | null;
             /**
@@ -621,6 +643,11 @@ export interface components {
              * @default []
              */
             public_steps: components["schemas"]["PublicStep"][];
+            /**
+             * Resume Eligible
+             * @default false
+             */
+            resume_eligible: boolean;
             /** @default idle */
             run_status: components["schemas"]["RunStatus"];
             /**

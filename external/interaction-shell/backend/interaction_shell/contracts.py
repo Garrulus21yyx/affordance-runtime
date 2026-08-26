@@ -16,6 +16,7 @@ class StrictModel(BaseModel):
 class RunStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
+    PAUSED = "paused"
     WAITING_USER = "waiting_user"
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
@@ -31,6 +32,7 @@ class Capability(StrEnum):
     REJECT_ACTION = "reject_action"
     CLOSE_SESSION = "close_session"
     CANCEL_TASK = "cancel_task"
+    PAUSE_TASK = "pause_task"
     REVISE_TASK = "revise_task"
     START_NEW_TASK = "start_new_task"
     TAKE_OVER = "take_over"
@@ -98,6 +100,14 @@ class PublicStep(StrictModel):
     evidence_refs: tuple[str, ...] = ()
 
 
+class ControlOutcome(StrictModel):
+    command_id: str = Field(min_length=1, max_length=128)
+    kind: Literal["pause"]
+    outcome: Literal["paused", "failed"]
+    code: str = Field(min_length=1, max_length=128)
+    checkpoint_id: str | None = Field(default=None, max_length=200)
+
+
 class RuntimeSessionSnapshot(StrictModel):
     schema_version: Literal["interaction-shell.v1"] = SCHEMA_VERSION
     session_id: str
@@ -114,6 +124,9 @@ class RuntimeSessionSnapshot(StrictModel):
     viewer: ViewerState = ViewerState()
     usage: UsageSummary = UsageSummary()
     public_steps: tuple[PublicStep, ...] = ()
+    checkpoint_id: str | None = Field(default=None, max_length=200)
+    resume_eligible: bool = False
+    last_control_outcome: ControlOutcome | None = None
     expires_at: datetime
 
     @field_validator("expires_at")
@@ -197,7 +210,14 @@ class CloseSession(CommandBase):
 
 
 class OptionalCommand(CommandBase):
-    kind: Literal["cancel_task", "revise_task", "start_new_task", "take_over", "return_control"]
+    kind: Literal[
+        "cancel_task",
+        "pause_task",
+        "revise_task",
+        "start_new_task",
+        "take_over",
+        "return_control",
+    ]
     message: str | None = Field(default=None, max_length=8000)
 
 

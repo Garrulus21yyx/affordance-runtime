@@ -308,6 +308,23 @@ class PydanticAIGroundedDecisionPort:
             (*history, ModelRequest(parts=list(returns))),
         )
 
+    def export_checkpoint_history(self) -> Mapping[str, object]:
+        """Serialize the SDK-owned history through its official typed adapter."""
+
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+        if _pending_tool_parts_from_history(self.message_history):
+            raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
+        messages = json.loads(ModelMessagesTypeAdapter.dump_json(list(self.message_history)))
+        if not isinstance(messages, list):
+            raise TypeError("PydanticAI checkpoint history must serialize as a message list")
+        identity = self.active_task_identity
+        return {
+            "format": "pydantic-ai.messages.v1",
+            "messages": messages,
+            "active_task_identity": list(identity) if identity is not None else None,
+        }
+
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES

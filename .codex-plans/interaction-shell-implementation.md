@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 3 cooperative control/dispatch closure in progress; persistence not started
+Status: Phase 4 durable checkpoint complete; Phase 5 restart resume pending
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -200,6 +200,45 @@ Constraints:
       deselecting the two pre-existing non-Phase-3 witnesses: documentation
       governance rejects this required implementation document, and one
       semantic-delivery test depends on a historical live trace absent here.
+15. **done — Phase 4: SQLite checkpoint and durable pause.**
+    - Persist only Runtime-owned state reached through the Phase 3 cooperative
+      pause boundary; do not use SQLite as an interruption or dispatch owner.
+    - Atomically commit checkpoint plus pause command outcome before projecting
+      public `PAUSED`, `checkpoint_id`, or `resume_eligible`.
+    - Store the bounded recovery contract: task goal/revision, authoritative run
+      state, validated GoalPlan, required counters/budgets, last closed step and
+      receipt, pending interrupt identity, model history, reconnect reference,
+      Runtime command idempotency outcome, schema version, digest, and timestamp.
+    - Exclude live tasks/locks/clients, complete World payloads, Shell transcript,
+      trace/view projections, and duplicate Shell events.
+    - Fail typed as `pause_persistence_failed` without publishing durable
+      `PAUSED`; acquire fresh World and continue the original revision when
+      currentness can be recovered.
+    - Keep ReviseTask, reconciliation/compensation, Viewer, and takeover out of
+      this phase. Commit and push each coherent milestone.
+    - Implemented one immutable versioned Runtime checkpoint, official
+      PydanticAI message serialization with unclosed-tool-call rejection, and a
+      SQLite WAL store that commits checkpoint plus pause-command outcome in one
+      transaction. `RunState` enters authoritative `PAUSED` only after commit.
+    - Public Runtime/Shell/OpenAPI/UI advertise `PauseRun` only for sessions with
+      a store and project `checkpoint_id`, `resume_eligible`, and the typed
+      command outcome. Local BrowserGym honestly reports durable pause available
+      and restart resume unavailable.
+    - Verification so far: 152 focused Core/model/public/backend/architecture
+      tests passed with 3 optional skips and 2 live-name deselections; the wider
+      agent/app/architecture slice passed 303 tests with 3 optional skips.
+      External backend/architecture passed 50 tests; frontend 5 unit tests,
+      ESLint, TypeScript, OpenAPI generation, and production build passed;
+      backend Pyright and touched-owner MyPy passed. No benchmark was run.
+16. **pending — Phase 5: process restart recovery and explicit ResumeRun.**
+    - On restart validate session/schema/digest, reconnect the same environment,
+      restore model history, capture a fresh World, create a new event epoch and
+      baseline snapshot, then wait for explicit `ResumeRun` without replaying an
+      old action.
+    - Fail typed as `environment_not_reconnectable` rather than opening and
+      replaying against a replacement browser.
+    - Add authenticated same-session recovery, old-epoch resync behavior,
+      corrupted/stale checkpoint rejection, and restart fault-injection tests.
 
 ## Current-work produced files
 
@@ -216,6 +255,10 @@ Constraints:
   thin local BrowserGym deployment composition.
 - `src/affordance_runtime/surfaces/browsergym/task_evaluator.py` — reusable
   native task-state interpretation and fresh-World TaskEvaluator.
+- `src/affordance_runtime/app/checkpoint.py` — Runtime-owned immutable
+  checkpoint contract and atomic SQLite WAL store.
+- `tests/unit/app/test_runtime_checkpoint.py` — safe-boundary ordering,
+  transaction rollback, currentness recovery, idempotency, and cancel witnesses.
 
 ## Phase 2 final verification
 

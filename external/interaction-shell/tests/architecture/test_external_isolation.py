@@ -60,8 +60,9 @@ def test_deployment_composition_imports_only_named_core_owners():
     }
     assert imports == {
         "affordance_runtime.agent.decision_capability",
-        "affordance_runtime.agent.observability",
-        "affordance_runtime.app.composition",
+            "affordance_runtime.agent.observability",
+            "affordance_runtime.app.checkpoint",
+            "affordance_runtime.app.composition",
         "affordance_runtime.app.public_session",
         "affordance_runtime.evaluation",
         "affordance_runtime.model.policy",

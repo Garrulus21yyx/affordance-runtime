@@ -51,10 +51,20 @@ events reach the Next.js UI incrementally.
 A held-out local real-execution run opened one Web session, made one real
 BrowserGym dispatch, captured two observations, terminated from native
 `verified_success`, updated the Shell to `done` through SSE, accepted explicit
-close, and completed application shutdown. Viewer, checkpoint/pause/resume,
-revision, compensation, and takeover remain unavailable. This deployment smoke
-is not a benchmark witness and does not alter the reopened overall project
-status.
+close, and completed application shutdown. The subsequent control milestone
+adds one Runtime-private SQLite WAL checkpoint store: a cooperative pause first
+closes policy/dispatch/history truth, then atomically commits the checkpoint and
+pause-command outcome, and only then changes the sole `RunState` to `PAUSED`
+and projects `checkpoint_id`. A failed commit rolls back both rows, reports
+typed `pause_persistence_failed`, refreshes current World when execution was
+active, and continues the original task revision. Checkpoints retain bounded
+task/plan/run counters, last receipt, pending interrupt identity, official
+PydanticAI history, and an opaque environment reference; they exclude complete
+Worlds, Shell events/conversation, Viewer/trace projections, tasks, locks, and
+clients. Restart hydration, environment reconnect, `ResumeRun`, revision,
+Viewer, compensation, and takeover remain unavailable. These deployment and
+persistence tests are not benchmark witnesses and do not alter the reopened
+overall project status.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

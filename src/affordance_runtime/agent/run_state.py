@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 
 class RunStatus(StrEnum):
     RUNNING = "running"
+    PAUSED = "paused"
     WAITING_USER = "waiting_user"
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
@@ -320,6 +321,8 @@ class RunState:
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
     control_termination: ControlTermination | None = None
     control_boundary: RunControlOutcome | None = None
+    durable_checkpoint_id: str = ""
+    paused_from_status: RunStatus | None = None
     action_discovery: ActionDiscoveryResult | None = None
 
     def __post_init__(self) -> None:
@@ -404,6 +407,21 @@ class RunState:
             raise TypeError("run control termination must be typed")
         if self.control_boundary is not None:
             self._validate_control_boundary(self.control_boundary)
+        if self.status is RunStatus.PAUSED:
+            if (
+                self.control_boundary is None
+                or self.control_boundary.kind is not RunControlKind.PAUSE
+                or not self.durable_checkpoint_id.startswith("runtime-checkpoint:")
+                or self.paused_from_status
+                not in {
+                    RunStatus.RUNNING,
+                    RunStatus.WAITING_USER,
+                    RunStatus.WAITING_CONFIRMATION,
+                }
+            ):
+                raise ValueError("durable paused run requires its committed checkpoint boundary")
+        elif self.durable_checkpoint_id or self.paused_from_status is not None:
+            raise ValueError("only a durable paused run may retain a checkpoint identity")
         if self.action_discovery is not None and not isinstance(
             self.action_discovery, ActionDiscoveryResult
         ):
@@ -473,6 +491,8 @@ class RunState:
         self._validate_control_boundary(outcome)
         self.control_boundary = outcome
         if outcome.kind is RunControlKind.CANCEL:
+            self.durable_checkpoint_id = ""
+            self.paused_from_status = None
             self.status = RunStatus.CANCELLED
             self.control_termination = ControlTermination(
                 ControlTerminationKind.USER_CANCELLED
@@ -485,7 +505,30 @@ class RunState:
             or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
         ):
             raise ValueError("run has no internal pause boundary")
+        if self.status is RunStatus.PAUSED:
+            assert self.paused_from_status is not None
+            self.status = self.paused_from_status
+            self.durable_checkpoint_id = ""
+            self.paused_from_status = None
         self.control_boundary = None
+
+    def commit_durable_pause(self, checkpoint_id: str) -> None:
+        boundary = self.control_boundary
+        if (
+            boundary is None
+            or boundary.kind is not RunControlKind.PAUSE
+            or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+            or self.status not in {
+                RunStatus.RUNNING,
+                RunStatus.WAITING_USER,
+                RunStatus.WAITING_CONFIRMATION,
+            }
+            or not checkpoint_id.startswith("runtime-checkpoint:")
+        ):
+            raise ValueError("durable pause requires one committed pause checkpoint")
+        self.paused_from_status = self.status
+        self.status = RunStatus.PAUSED
+        self.durable_checkpoint_id = checkpoint_id
 
     def _validate_control_boundary(self, outcome: RunControlOutcome) -> None:
         if not isinstance(outcome, RunControlOutcome):

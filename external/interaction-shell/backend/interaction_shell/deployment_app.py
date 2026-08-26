@@ -10,8 +10,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
 from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
+from affordance_runtime.app.checkpoint import SQLiteRuntimeCheckpointStore
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.app.public_session import (
     PublicSessionOpenError,
@@ -33,12 +36,10 @@ from affordance_runtime.task import (
     TaskBoundary,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
-from dotenv import load_dotenv
 
 from .api import create_app
 from .core_runtime_port import CoreRuntimeSessionPort
 from .manager import RunSessionManager
-
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class BrowserGymDeploymentSettings:
 class BrowserGymDeploymentSessionFactory:
     settings: BrowserGymDeploymentSettings
     environment: Mapping[str, str]
+    checkpoint_store: SQLiteRuntimeCheckpointStore | None = None
 
     async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
         try:
@@ -167,6 +169,7 @@ class BrowserGymDeploymentSessionFactory:
                     self.settings.task_id,
                     self.settings.max_turns,
                 ),
+                self.checkpoint_store,
             )
         except Exception as exc:
             try:
@@ -214,7 +217,11 @@ class BrowserGymDeploymentSessionFactory:
             },
             "durable_resume": {
                 "status": "unavailable",
-                "reason_code": "checkpoint_store_not_configured",
+                "reason_code": "environment_reconnect_not_implemented",
+            },
+            "durable_pause": {
+                "status": "available" if self.checkpoint_store is not None else "unavailable",
+                "reason_code": "" if self.checkpoint_store is not None else "checkpoint_store_not_configured",
             },
         }
 
@@ -312,7 +319,21 @@ def _load_project_environment() -> None:
 _load_project_environment()
 _deployment_environment = dict(os.environ)
 settings = BrowserGymDeploymentSettings.from_environment(_deployment_environment)
-session_factory = BrowserGymDeploymentSessionFactory(settings, _deployment_environment)
+_configured_checkpoint_path = _deployment_environment.get(
+    "INTERACTION_SHELL_CHECKPOINT_DB", ""
+).strip()
+_checkpoint_path = (
+    Path(_configured_checkpoint_path)
+    if _configured_checkpoint_path
+    else Path(__file__).resolve().parents[4]
+    / ".runtime"
+    / "interaction-shell-checkpoints.sqlite3"
+)
+session_factory = BrowserGymDeploymentSessionFactory(
+    settings,
+    _deployment_environment,
+    SQLiteRuntimeCheckpointStore(_checkpoint_path),
+)
 app = create_app(
     RunSessionManager(CoreRuntimeSessionPort(session_factory)),
     health_provider=session_factory.health,

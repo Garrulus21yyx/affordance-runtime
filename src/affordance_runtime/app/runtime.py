@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
@@ -23,7 +24,7 @@ from affordance_runtime.agent.run_control import (
     RunControlKind,
     RunControlOutcome,
 )
-from affordance_runtime.agent.run_state import RunState
+from affordance_runtime.agent.run_state import RunState, RunStatus
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
 from affordance_runtime.risk.policy import RiskPolicy
@@ -129,6 +130,17 @@ class TargetRuntime:
     ) -> RunControlAdmission:
         return self.run_control.request(command_id, kind)
 
+    def export_checkpoint_history(self) -> Mapping[str, object]:
+        """Read model history at the policy owner after a closed safe boundary."""
+
+        exporter = getattr(self.decision_ports.action_policy, "export_checkpoint_history", None)
+        if not callable(exporter):
+            return {"format": "unavailable", "messages": []}
+        history = exporter()
+        if not isinstance(history, Mapping):
+            raise TypeError("Runtime checkpoint history must be a mapping")
+        return history
+
     def apply_waiting_control(
         self,
         state: RunState,
@@ -177,6 +189,25 @@ class TargetRuntime:
             {"command_id": command_id, "outcome": outcome.outcome.value},
         )
         return outcome
+
+    async def recover_pause_persistence_failure(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        command_id: str,
+    ) -> RunState:
+        """Clear an uncommitted pause and recover a fresh current World."""
+
+        prior_status = state.status
+        self.resume_control(state, command_id)
+        if prior_status is RunStatus.RUNNING:
+            return await self.build_loop().refresh_after_pause_persistence_failure(
+                environment,
+                task,
+                state,
+            )
+        return state
 
     def with_runtime_controls(
         self,

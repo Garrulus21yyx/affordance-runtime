@@ -118,6 +118,7 @@
           "reject_action",
           "close_session",
           "cancel_task",
+          "pause_task",
           "revise_task",
           "start_new_task",
           "take_over",
@@ -380,6 +381,56 @@
         "title": "ContextHealth",
         "type": "object"
       },
+      "ControlOutcome": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "pause",
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "paused",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "kind",
+          "outcome",
+          "code"
+        ],
+        "title": "ControlOutcome",
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -606,6 +657,7 @@
           "kind": {
             "enum": [
               "cancel_task",
+              "pause_task",
               "revise_task",
               "start_new_task",
               "take_over",
@@ -860,6 +912,7 @@
         "enum": [
           "idle",
           "running",
+          "paused",
           "waiting_user",
           "waiting_confirmation",
           "done",
@@ -880,6 +933,18 @@
             "title": "Capabilities",
             "type": "array",
             "uniqueItems": true
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
           },
           "completion": {
             "anyOf": [
@@ -908,6 +973,16 @@
             "title": "Expires At",
             "type": "string"
           },
+          "last_control_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "pending_confirmation": {
             "anyOf": [
               {
@@ -935,6 +1010,11 @@
             },
             "title": "Public Steps",
             "type": "array"
+          },
+          "resume_eligible": {
+            "default": false,
+            "title": "Resume Eligible",
+            "type": "boolean"
           },
           "run_status": {
             "$ref": "#/components/schemas/RunStatus",

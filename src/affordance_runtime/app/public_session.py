@@ -31,6 +31,11 @@ from affordance_runtime.task.intake import (
 )
 from affordance_runtime.world.environment import WorldEnvironment
 
+from .checkpoint import (
+    RuntimeCheckpoint,
+    RuntimeCheckpointCommandOutcome,
+    RuntimeCheckpointStore,
+)
 from .runtime import TargetRuntime
 
 PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v1"
@@ -39,6 +44,7 @@ PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v1"
 class PublicSessionStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
+    PAUSED = "paused"
     WAITING_USER = "waiting_user"
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
@@ -53,10 +59,14 @@ class PublicSessionCapability(StrEnum):
     APPROVE_ACTION = "approve_action"
     REJECT_ACTION = "reject_action"
     CANCEL_TASK = "cancel_task"
+    PAUSE_TASK = "pause_task"
     CLOSE_SESSION = "close_session"
 
 
 PUBLIC_SESSION_CAPABILITIES = frozenset(PublicSessionCapability)
+BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
+    PublicSessionCapability.PAUSE_TASK
+}
 
 
 @dataclass(frozen=True)
@@ -89,13 +99,22 @@ class PublicProgressStep:
 
 
 @dataclass(frozen=True)
+class PublicControlOutcome:
+    command_id: str
+    kind: Literal["pause"]
+    outcome: Literal["paused", "failed"]
+    code: str
+    checkpoint_id: str | None = None
+
+
+@dataclass(frozen=True)
 class PublicRuntimeSessionSnapshot:
     session_id: str
     expires_at: datetime
     status: PublicSessionStatus
     event_epoch: str
     event_cursor: int
-    capabilities: frozenset[PublicSessionCapability] = PUBLIC_SESSION_CAPABILITIES
+    capabilities: frozenset[PublicSessionCapability] = BASE_PUBLIC_SESSION_CAPABILITIES
     task_id: str | None = None
     task_revision: int = 0
     task_text: str | None = None
@@ -103,6 +122,9 @@ class PublicRuntimeSessionSnapshot:
     pending_confirmation: PublicPendingConfirmation | None = None
     completion: PublicCompletion | None = None
     progress: tuple[PublicProgressStep, ...] = ()
+    checkpoint_id: str | None = None
+    resume_eligible: bool = False
+    last_control_outcome: PublicControlOutcome | None = None
     schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
 
 
@@ -143,6 +165,7 @@ class PublicSessionOpenError(RuntimeError):
 class RuntimeEnvironmentLease:
     environment: WorldEnvironment
     cleanup: Callable[[], object] | None = None
+    reconnect_reference: str = ""
 
 
 class RuntimeEnvironmentFactory(Protocol):
@@ -168,6 +191,7 @@ class PublicRuntimeSessionHandle(Protocol):
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot: ...
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
     async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
 
@@ -184,6 +208,7 @@ class TargetRuntimeSession:
     session_id: str
     expires_at: datetime
     request_factory: PublicTaskRequestFactory = default_public_task_request
+    checkpoint_store: RuntimeCheckpointStore | None = None
     _event_epoch: str = field(default_factory=lambda: secrets.token_urlsafe(18), init=False, repr=False)
     _request: NaturalLanguageTaskRequest | None = field(default=None, init=False, repr=False)
     _admitted: ReadyTask | None = field(default=None, init=False, repr=False)
@@ -191,6 +216,11 @@ class TargetRuntimeSession:
     _status: PublicSessionStatus = field(default=PublicSessionStatus.IDLE, init=False, repr=False)
     _intake_question: PublicPendingQuestion | None = field(default=None, init=False, repr=False)
     _failure: PublicCompletion | None = field(default=None, init=False, repr=False)
+    _checkpoint_id: str | None = field(default=None, init=False, repr=False)
+    _resume_eligible: bool = field(default=False, init=False, repr=False)
+    _last_control_outcome: PublicControlOutcome | None = field(
+        default=None, init=False, repr=False
+    )
     _progress: list[PublicProgressStep] = field(default_factory=list, init=False, repr=False)
     _events: list[PublicRuntimeSessionEvent] = field(default_factory=list, init=False, repr=False)
     _active: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -293,7 +323,46 @@ class TargetRuntimeSession:
                 if outcome is None or outcome.outcome is not RunControlOutcomeKind.CANCELLED:
                     raise PublicSessionConflict("control_boundary_failed", self._project())
                 self._status = PublicSessionStatus.CANCELLED
+                self._resume_eligible = False
                 self._emit("RUN_FINISHED")
+            return self._project()
+
+    async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot:
+        async with self._lock:
+            if self._closed:
+                raise PublicSessionConflict("session_closed", self._project())
+            if self.checkpoint_store is None:
+                raise PublicSessionConflict("pause_unavailable", self._project())
+            state = self._state
+            if state is not None and state.status is RunStatus.PAUSED:
+                existing = await self.checkpoint_store.command_outcome(
+                    self.session_id, command_id
+                )
+                if existing is not None and existing.checkpoint_id == state.durable_checkpoint_id:
+                    return self._project()
+                raise PublicSessionConflict("run_not_active", self._project())
+            if (
+                (state is not None and state.terminal)
+                or (state is None and self._active is None)
+            ):
+                raise PublicSessionConflict("run_not_active", self._project())
+            admission = self.runtime.request_control(command_id, RunControlKind.PAUSE)
+            if admission.outcome is RunControlAdmissionKind.CONFLICT:
+                raise PublicSessionConflict("control_request_conflict", self._project())
+            if admission.outcome is RunControlAdmissionKind.DUPLICATE:
+                return self._project()
+            self._last_control_outcome = None
+            self._emit("CONTROL_REQUESTED")
+            if self._active is None:
+                if state is None or self._admitted is None:
+                    raise PublicSessionConflict("run_not_active", self._project())
+                outcome = self.runtime.apply_waiting_control(state)
+                if (
+                    outcome is None
+                    or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+                ):
+                    raise PublicSessionConflict("control_boundary_failed", self._project())
+                await self._settle_pause_boundary(self.runtime, self._admitted.task, state)
             return self._project()
 
     async def close(self) -> None:
@@ -315,6 +384,10 @@ class TargetRuntimeSession:
             if isinstance(outcome.intake, ReadyTask):
                 self._admitted = outcome.intake
                 self._state = outcome.state
+                if outcome.state is not None:
+                    await self._settle_pause_boundary(
+                        session_runtime, outcome.intake.task, outcome.state
+                    )
             elif isinstance(outcome.intake, TaskInputRequired):
                 self._fail(outcome.intake.reason_code, outcome.intake.question)
             else:
@@ -342,6 +415,9 @@ class TargetRuntimeSession:
             else:
                 self._admitted = outcome.intake
                 self._state = outcome.state
+                await self._settle_pause_boundary(
+                    self._runtime_with_projection(), outcome.intake.task, outcome.state
+                )
         except BaseException as exc:
             self._fail("runtime_session_resume_failed", type(exc).__name__)
         finally:
@@ -358,6 +434,9 @@ class TargetRuntimeSession:
                 self._state,
                 approved=approved,
             )
+            await self._settle_pause_boundary(
+                self._runtime_with_projection(), self._admitted.task, self._state
+            )
         except BaseException as exc:
             self._fail("runtime_session_confirmation_failed", type(exc).__name__)
         finally:
@@ -371,6 +450,79 @@ class TargetRuntimeSession:
             self.runtime,
             trace_sink=FanoutRunTraceSink((self.runtime.trace_sink, projection)),
         )
+
+    async def _settle_pause_boundary(
+        self,
+        runtime: TargetRuntime,
+        task: TaskGoal,
+        state: RunState,
+    ) -> None:
+        boundary = state.control_boundary
+        if (
+            boundary is None
+            or boundary.kind is not RunControlKind.PAUSE
+            or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+        ):
+            return
+        store = self.checkpoint_store
+        if store is None:
+            raise RuntimeError("Runtime reached a pause boundary without a checkpoint store")
+        try:
+            checkpoint = RuntimeCheckpoint.capture(
+                session_id=self.session_id,
+                task=task,
+                state=state,
+                model_history=runtime.export_checkpoint_history(),
+                environment_reference=self.lease.reconnect_reference,
+            )
+            await store.commit_pause(
+                checkpoint,
+                RuntimeCheckpointCommandOutcome(
+                    self.session_id,
+                    boundary.command_id,
+                    checkpoint.checkpoint_id,
+                ),
+            )
+        except Exception:
+            self._last_control_outcome = PublicControlOutcome(
+                boundary.command_id,
+                "pause",
+                "failed",
+                "pause_persistence_failed",
+            )
+            self._emit("CONTROL_FAILED")
+            try:
+                await runtime.recover_pause_persistence_failure(
+                    self.lease.environment,
+                    task,
+                    state,
+                    f"pause-persistence-failed:{boundary.command_id}",
+                )
+            except Exception as exc:
+                self._fail(
+                    "pause_persistence_failed",
+                    str(getattr(exc, "reason_code", "")) or type(exc).__name__,
+                )
+                return
+            if state.status is RunStatus.RUNNING:
+                self._state = await runtime.continue_task(
+                    self.lease.environment,
+                    task,
+                    state,
+                )
+            return
+        state.commit_durable_pause(checkpoint.checkpoint_id)
+        self._checkpoint_id = checkpoint.checkpoint_id
+        self._resume_eligible = checkpoint.resume_eligible
+        self._last_control_outcome = PublicControlOutcome(
+            boundary.command_id,
+            "pause",
+            "paused",
+            "pause_checkpoint_committed",
+            checkpoint.checkpoint_id,
+        )
+        self._status = PublicSessionStatus.PAUSED
+        self._emit("RUN_PAUSED")
 
     def _observe_started(self, task: TaskGoal, state: RunState) -> None:
         self._admitted = ReadyTask(task.task_id, task)
@@ -452,6 +604,10 @@ class TargetRuntimeSession:
             status,
             self._event_epoch,
             len(self._events) if event_cursor is None else event_cursor,
+            capabilities=(
+                BASE_PUBLIC_SESSION_CAPABILITIES
+                | ({PublicSessionCapability.PAUSE_TASK} if self.checkpoint_store is not None else set())
+            ),
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
             task_text=task.instruction if task is not None else (request.instruction if request else None),
@@ -459,6 +615,9 @@ class TargetRuntimeSession:
             pending_confirmation=pending_confirmation,
             completion=completion,
             progress=tuple(self._progress),
+            checkpoint_id=self._checkpoint_id,
+            resume_eligible=self._resume_eligible,
+            last_control_outcome=self._last_control_outcome,
         )
 
     def _require_open(self) -> None:
@@ -483,6 +642,7 @@ class TargetRuntimeSessionFactory:
     runtime_factory: TargetRuntimeFactory
     environment_factory: RuntimeEnvironmentFactory
     request_factory: PublicTaskRequestFactory = default_public_task_request
+    checkpoint_store: RuntimeCheckpointStore | None = None
 
     async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
         if not callable(self.request_factory):
@@ -520,6 +680,7 @@ class TargetRuntimeSessionFactory:
                 session_id,
                 expires_at,
                 self.request_factory,
+                self.checkpoint_store,
             )
         except Exception as exc:
             await _cleanup_environment_lease(lease)
@@ -569,6 +730,7 @@ class _SessionProjectionSink(NullRunTraceSink):
 def _public_status(status: RunStatus) -> PublicSessionStatus:
     return {
         RunStatus.RUNNING: PublicSessionStatus.RUNNING,
+        RunStatus.PAUSED: PublicSessionStatus.PAUSED,
         RunStatus.WAITING_USER: PublicSessionStatus.WAITING_USER,
         RunStatus.WAITING_CONFIRMATION: PublicSessionStatus.WAITING_CONFIRMATION,
         RunStatus.DONE: PublicSessionStatus.DONE,

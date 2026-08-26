@@ -43,6 +43,7 @@ const created = {
       runtime_latency_ms: 0,
     },
     public_steps: [],
+    resume_eligible: false,
     expires_at: "2026-08-26T13:00:00Z",
   },
 } as CreatedSession;
@@ -57,10 +58,16 @@ function CancelProbe() {
   return <button onClick={shell.cancel}>cancel</button>;
 }
 
+function PauseProbe() {
+  const shell = useShellSession();
+  return <button onClick={shell.pause}>pause</button>;
+}
+
 describe("session acquisition", () => {
   beforeEach(() => {
     api.createSession.mockReset();
     api.createSession.mockResolvedValue(created);
+    api.postCommand.mockReset();
     api.subscribeEvents.mockReset();
     api.subscribeEvents.mockReturnValue(new Promise(() => undefined));
   });
@@ -102,6 +109,38 @@ describe("session acquisition", () => {
       "commands/optional",
       expect.objectContaining({
         kind: "cancel_task",
+        expected_task_revision: 1,
+        expected_run_status: "running",
+      }),
+    );
+  });
+
+  it("sends the advertised durable pause command through the optional route", async () => {
+    const active = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Choose an option",
+        run_status: "running" as const,
+        capabilities: ["start_task", "pause_task", "close_session"] as const,
+      },
+    } as CreatedSession;
+    api.createSession.mockResolvedValue(active);
+    api.postCommand.mockResolvedValue({ kind: "accepted", command_id: "pause", snapshot: active.snapshot });
+    render(<PauseProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "pause" }));
+
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
+    expect(api.postCommand).toHaveBeenCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/optional",
+      expect.objectContaining({
+        kind: "pause_task",
         expected_task_revision: 1,
         expected_run_status: "running",
       }),

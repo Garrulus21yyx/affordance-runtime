@@ -117,5 +117,10 @@ export function useShellSession() {
     await send("commands/optional", commandBase("cancel_task"));
   }, [commandBase, send, snapshot]);
 
-  return { snapshot, connection, notice, submitMessage, confirm, cancel };
+  const pause = useCallback(async () => {
+    if (!snapshot?.capabilities.includes("pause_task")) return;
+    await send("commands/optional", commandBase("pause_task"));
+  }, [commandBase, send, snapshot]);
+
+  return { snapshot, connection, notice, submitMessage, confirm, cancel, pause };
 }

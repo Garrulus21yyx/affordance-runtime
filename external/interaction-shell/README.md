@@ -66,13 +66,16 @@ set +a
 export PYTHONPATH="$PWD/src:$PWD/external/interaction-shell/backend"
 export MINIWOB_URL=http://127.0.0.1:18888/miniwob/
 export INTERACTION_SHELL_BROWSERGYM_TASK_ID=browsergym/miniwob.click-test
+export INTERACTION_SHELL_CHECKPOINT_DB="$PWD/.runtime/interaction-shell-checkpoints.sqlite3"
 "$DEPLOYMENT_PYTHON" -m uvicorn interaction_shell.deployment_app:app \
   --host 127.0.0.1 --port 8200
 ```
 
-`/health` reports `runtime_execution`, `viewer`, and `durable_resume`
-independently. The first real profile uses local BrowserGym/Playwright;
-Viewer and durable resume intentionally remain typed unavailable.
+`/health` reports `runtime_execution`, `viewer`, `durable_pause`, and
+`durable_resume` independently. The first real profile uses local
+BrowserGym/Playwright. Runtime-private SQLite WAL checkpoints make cooperative
+pause durable; Viewer and process-restart resume intentionally remain typed
+unavailable until an environment reconnect contract exists.
 
 Start the frontend in another shell:
 

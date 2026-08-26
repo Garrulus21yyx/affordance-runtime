@@ -94,11 +94,12 @@ The following states must not be collapsed into one label such as "implemented":
 | Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
-| Core public session adapter | Implemented but in-memory | It wraps currently supported start, answer, confirmation, cooperative cancel, snapshot/event, and close operations. |
+| Core public session adapter | Implemented with durable pause | It wraps start, answer, confirmation, cooperative pause/cancel, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
 | Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
-| Durable pause/revise/resume | Unavailable | Internal pause boundaries exist, but public `PAUSED` and pause/resume/revision capabilities remain disabled until checkpoint commit and restart recovery are real. |
+| Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
+| Restart resume/revision | Unavailable | Environment reconnect, checkpoint hydration, `ResumeRun`, and `ReviseTask` have not been implemented. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
 | Delivery hygiene | Closed through Phase 2 | Phase 0–2 changes are committed and synchronized with the branch origin. |
 
@@ -108,6 +109,7 @@ single-process run unavailable. The UI and deployment health response must repor
 ```text
 runtime_execution
 viewer
+durable_pause
 durable_resume
 ```
 
@@ -1200,8 +1202,8 @@ is not yet advertised.
 Implementation status (2026-08-26): complete for this bounded phase. Core owns a per-session cooperative request and
 commits the reached boundary into the sole `RunState`; accepted-but-undispatched PydanticAI calls receive a terminal
 ToolReturn; held policy and dispatch races cover `NOT_SENT`, `SENT`, and `SENT_UNKNOWN`; the public Runtime/Shell/API/UI
-advertise only `CancelRun` and project a distinct terminal `CANCELLED`. Internal Pause/Resume remain unadvertised and no
-SQLite/checkpoint code has been introduced.
+project a distinct terminal `CANCELLED`. `PauseRun` is now advertised only by sessions with a checkpoint store; the
+safe-boundary substrate itself remains independent of persistence.
 
 ### Phase 5 — durable checkpoint and process-boundary resume
 
@@ -1220,12 +1222,23 @@ Owner: Runtime snapshot boundary, `RunResumeCheckpointStore`, and deployment bro
 6. Add restart tests at every supported safe point, corrupted/stale checkpoint tests, missing/lost browser tests, and
    injected persistence failures.
 7. Keep in-flight crash recovery outside the supported scope: unknown dispatch stays unknown and is never replayed.
-8. Add public `PAUSED`, project `pause_requested → PAUSED + checkpoint_id`, and advertise `PauseRun`/`ResumeRun` only
-   after checkpoint commit ordering and restart recovery gates pass.
+8. Add public `PAUSED` and advertise `PauseRun` after checkpoint commit ordering passes. Advertise `ResumeRun` only
+   after restart recovery gates pass.
 
 Exit evidence: stop service after a committed pause, restart it, authenticate the same session, reconnect the same
 environment, hydrate an equivalent public snapshot under a new event epoch, and resume without replaying a committed
 GUI effect. An old epoch deterministically yields `resync_required` rather than fabricated event replay.
+
+Checkpoint milestone status (2026-08-26): implemented and verified. The Runtime checkpoint contains the task revision,
+paused-from status, validated GoalPlan disposition, bounded counters/budgets/workspace, last closed step/receipt and
+pending interrupt identity, official PydanticAI message history, environment reconnect reference, pause command
+outcome, schema version, digest, and timestamp. It excludes complete World payloads, live tasks/locks/clients, Shell
+conversation/events, and Viewer/trace projections. SQLite uses WAL and commits the checkpoint and command outcome in
+one transaction. Injected command-outcome failure rolls both rows back, emits typed `pause_persistence_failed`, clears
+the internal pause, acquires a fresh current World when the run was active, and continues the original revision.
+Only after a successful commit does `RunState` enter authoritative `PAUSED` and the Shell receive `checkpoint_id` and
+`resume_eligible`. Process restart hydration, environment reconnection, new event epoch, and `ResumeRun` remain the
+next unimplemented milestone; local BrowserGym therefore reports durable resume unavailable.
 
 ### Phase 6 — bounded running-task revision
 

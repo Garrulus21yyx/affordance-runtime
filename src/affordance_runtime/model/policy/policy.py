@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -125,6 +126,15 @@ class ModelBackedAgentPolicy:
         close = getattr(self.port, "close_deferred_call", None)
         if callable(close):
             close(step)
+
+    def export_checkpoint_history(self) -> Mapping[str, object]:
+        exporter = getattr(self.port, "export_checkpoint_history", None)
+        if not callable(exporter):
+            raise TypeError("model port does not support checkpoint history")
+        history = exporter()
+        if not isinstance(history, Mapping):
+            raise TypeError("model checkpoint history must be a mapping")
+        return history
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:

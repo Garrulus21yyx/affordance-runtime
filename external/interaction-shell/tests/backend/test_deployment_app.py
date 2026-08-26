@@ -238,3 +238,32 @@ def test_deployment_health_separates_runtime_viewer_and_durable_resume(monkeypat
     assert health["runtime_execution"]["status"] == "available"
     assert health["viewer"]["status"] == "unavailable"
     assert health["durable_resume"]["status"] == "unavailable"
+    assert health["durable_pause"]["status"] == "unavailable"
+
+
+def test_deployment_health_advertises_configured_durable_pause_only(monkeypatch, tmp_path):
+    _patch_composition(monkeypatch)
+    monkeypatch.setattr(
+        deployment_app,
+        "browsergym_api_inventory",
+        lambda: SimpleNamespace(
+            available=True,
+            accepted=True,
+            registered_task_ids=("browsergym/miniwob.click-test",),
+        ),
+    )
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test", 7, 10, 90
+        ),
+        {"MINIWOB_URL": "http://example.test/miniwob/"},
+        deployment_app.SQLiteRuntimeCheckpointStore(tmp_path / "checkpoints.sqlite3"),
+    )
+
+    health = factory.health()
+
+    assert health["durable_pause"] == {"status": "available", "reason_code": ""}
+    assert health["durable_resume"] == {
+        "status": "unavailable",
+        "reason_code": "environment_reconnect_not_implemented",
+    }

@@ -3,7 +3,7 @@
 import { CopilotChatView, CopilotKitProvider } from "@copilotkit/react-core/v2";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { Badge, Button, Card, Flex, Heading, Text, Theme } from "@radix-ui/themes";
-import { Activity, CircleOff, Eye, Radio, ShieldCheck, Square } from "lucide-react";
+import { Activity, CircleOff, Eye, Pause, Radio, ShieldCheck, Square } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useShellSession } from "@/hooks/use-shell-session";
 import type { Snapshot } from "@/lib/types";
@@ -124,6 +124,10 @@ export function Progress({ snapshot }: { snapshot: Snapshot | null }) {
 
 export function ShellApp() {
   const shell = useShellSession();
+  const pausable = Boolean(
+    shell.snapshot?.capabilities.includes("pause_task")
+    && ["running", "waiting_user", "waiting_confirmation"].includes(shell.snapshot.run_status),
+  );
   const cancellable = Boolean(
     shell.snapshot?.capabilities.includes("cancel_task")
     && ["running", "waiting_user", "waiting_confirmation"].includes(shell.snapshot.run_status),
@@ -136,6 +140,11 @@ export function ShellApp() {
             <div className="wordmark"><Activity /><span>INTERACTION</span><strong>FLIGHT DECK</strong></div>
             <div className="topology"><span>CONVERSATION</span><i /><span>LIVE VIEW</span><i /><span>PROGRESS</span></div>
             <div className="connection">
+              {pausable && (
+                <Button size="1" variant="soft" color="orange" onClick={shell.pause}>
+                  <Pause size={11} /> Pause task
+                </Button>
+              )}
               {cancellable && (
                 <Button size="1" variant="soft" color="red" onClick={shell.cancel}>
                   <Square size={11} /> Cancel task

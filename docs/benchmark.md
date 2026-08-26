@@ -19,6 +19,11 @@ task-state classifier now belongs to the surface package, while the existing
 benchmark verifier is a compatibility projection of that result. These were
 deployment smokes only: no benchmark cohort was launched, no benchmark artifact
 was accepted, and the reopened/non-closed benchmark status below is unchanged.
+The interaction shell has subsequently verified cooperative durable pause with
+a Runtime-private SQLite WAL store, including atomic checkpoint/command outcome
+commit and rollback plus fresh-World continuation after injected persistence
+failure. This is control-plane verification only; restart resume is still
+unavailable and no benchmark case was run for the checkpoint change.
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action

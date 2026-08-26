@@ -162,6 +162,47 @@ def _runtime(model) -> TargetRuntime:
     )
 
 
+def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    history = (
+        ModelRequest(parts=[UserPromptPart("current task")]),
+        ModelResponse(
+            parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:checkpoint")]
+        ),
+    )
+    object.__setattr__(policy.port, "message_history", history)
+    object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+    serialized = policy.export_checkpoint_history()
+
+    assert serialized["format"] == "pydantic-ai.messages.v1"
+    assert serialized["active_task_identity"] == ["task:checkpoint", 3]
+    assert [message["kind"] for message in serialized["messages"]] == [
+        "request",
+        "response",
+        "request",
+    ]
+
+
+def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    object.__setattr__(
+        policy.port,
+        "message_history",
+        (
+            ModelResponse(
+                parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unclosed tool call"):
+        policy.export_checkpoint_history()
+
+
 def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])

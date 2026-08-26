@@ -13,6 +13,7 @@ from interaction_shell.manager import RunSessionManager
 from affordance_runtime.app.public_session import (
     PUBLIC_SESSION_CAPABILITIES,
     PublicCompletion,
+    PublicControlOutcome,
     PublicPendingQuestion,
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionSnapshot,
@@ -82,6 +83,26 @@ class FakePublicHandle:
                 ),
             ),
             "RUN_FINISHED",
+        )
+        return self.current
+
+    async def pause(self, command_id: str):
+        checkpoint_id = "runtime-checkpoint:" + "a" * 64
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.PAUSED,
+                checkpoint_id=checkpoint_id,
+                resume_eligible=True,
+                last_control_outcome=PublicControlOutcome(
+                    command_id,
+                    "pause",
+                    "paused",
+                    "pause_checkpoint_committed",
+                    checkpoint_id,
+                ),
+            ),
+            "RUN_PAUSED",
         )
         return self.current
 
@@ -208,3 +229,42 @@ async def test_core_adapter_advertises_cancel_and_projects_distinct_terminal_sta
     assert cancelled.snapshot.completion.outcome == "cancelled"
     assert factory.handle is not None
     assert factory.handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_core_adapter_projects_durable_pause_without_terminal_cleanup() -> None:
+    factory = FakePublicFactory()
+    manager = RunSessionManager(CoreRuntimeSessionPort(cast(Any, factory)))
+    created = await manager.create()
+    session_id = created.snapshot.session_id
+    assert Capability.PAUSE_TASK in created.snapshot.capabilities
+    started = await manager.admit(
+        session_id,
+        created.session_key,
+        StartTask(
+            command_id="start:pause",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.IDLE,
+            task="Choose an option",
+        ),
+    )
+
+    paused = await manager.admit(
+        session_id,
+        created.session_key,
+        OptionalCommand(
+            kind="pause_task",
+            command_id="pause:1",
+            expected_task_revision=1,
+            expected_run_status=started.snapshot.run_status,
+        ),
+    )
+
+    assert paused.kind == "accepted"
+    assert paused.snapshot.run_status is RunStatus.PAUSED
+    assert paused.snapshot.checkpoint_id == "runtime-checkpoint:" + "a" * 64
+    assert paused.snapshot.resume_eligible is True
+    assert paused.snapshot.last_control_outcome is not None
+    assert paused.snapshot.last_control_outcome.outcome == "paused"
+    assert factory.handle is not None
+    assert factory.handle.cleanup_count == 0

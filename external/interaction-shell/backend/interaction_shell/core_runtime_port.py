@@ -23,9 +23,10 @@ from .contracts import (
     Capability,
     Completion,
     Conflict,
+    ControlOutcome,
+    OptionalCommand,
     PendingConfirmation,
     PendingQuestion,
-    OptionalCommand,
     PublicStep,
     RejectAction,
     RunStatus,
@@ -65,6 +66,7 @@ class CoreRuntimeSessionPort:
                 Capability.APPROVE_ACTION,
                 Capability.REJECT_ACTION,
                 Capability.CANCEL_TASK,
+                Capability.PAUSE_TASK,
                 Capability.CLOSE_SESSION,
             }
         )
@@ -97,6 +99,8 @@ class CoreRuntimeSessionPort:
                 current = await handle.confirm(command.request_id, approved=False)
             elif isinstance(command, OptionalCommand) and command.kind == "cancel_task":
                 current = await handle.cancel(command.command_id)
+            elif isinstance(command, OptionalCommand) and command.kind == "pause_task":
+                current = await handle.pause(command.command_id)
             else:
                 raise TypeError("Core Runtime port received an unsupported command")
         except PublicSessionConflict as exc:
@@ -148,6 +152,17 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         if source.completion is not None
         else None
     )
+    control_outcome = (
+        ControlOutcome(
+            command_id=source.last_control_outcome.command_id,
+            kind=source.last_control_outcome.kind,
+            outcome=source.last_control_outcome.outcome,
+            code=source.last_control_outcome.code,
+            checkpoint_id=source.last_control_outcome.checkpoint_id,
+        )
+        if source.last_control_outcome is not None
+        else None
+    )
     return RuntimeSessionSnapshot(
         session_id=source.session_id,
         task_id=source.task_id,
@@ -170,6 +185,9 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
             )
             for step in source.progress
         ),
+        checkpoint_id=source.checkpoint_id,
+        resume_eligible=source.resume_eligible,
+        last_control_outcome=control_outcome,
         expires_at=source.expires_at,
     )
 
@@ -193,6 +211,7 @@ _SUPPORTED_PUBLIC_CAPABILITIES = frozenset(
         PublicSessionCapability.APPROVE_ACTION,
         PublicSessionCapability.REJECT_ACTION,
         PublicSessionCapability.CANCEL_TASK,
+        PublicSessionCapability.PAUSE_TASK,
         PublicSessionCapability.CLOSE_SESSION,
     }
 )

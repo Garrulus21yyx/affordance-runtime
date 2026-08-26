@@ -25,7 +25,6 @@ from .contracts import (
 from .conversation import BoundedConversation, ConversationTurn
 from .port import RuntimeSessionPort
 
-
 logger = logging.getLogger(__name__)
 
 

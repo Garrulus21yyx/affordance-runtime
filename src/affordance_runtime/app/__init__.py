@@ -1,5 +1,13 @@
 """Product façade, composition, and command entrypoint."""
 
+from affordance_runtime.app.checkpoint import (
+    RUNTIME_CHECKPOINT_SCHEMA_VERSION,
+    RuntimeCheckpoint,
+    RuntimeCheckpointCommandOutcome,
+    RuntimeCheckpointError,
+    RuntimeCheckpointStore,
+    SQLiteRuntimeCheckpointStore,
+)
 from affordance_runtime.app.composition import (
     compose_target_runtime,
     compose_target_runtime_from_environment,
@@ -30,6 +38,12 @@ from affordance_runtime.app.runtime import (
 __all__ = [
     "TargetRuntime",
     "TargetRuntimeRunOutcome",
+    "RUNTIME_CHECKPOINT_SCHEMA_VERSION",
+    "RuntimeCheckpoint",
+    "RuntimeCheckpointCommandOutcome",
+    "RuntimeCheckpointError",
+    "RuntimeCheckpointStore",
+    "SQLiteRuntimeCheckpointStore",
     "PUBLIC_SESSION_SCHEMA_VERSION",
     "PublicRuntimeSessionFactory",
     "PublicRuntimeSessionEvent",
