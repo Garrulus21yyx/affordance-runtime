@@ -1355,6 +1355,29 @@ def test_route_selector_is_deterministic_and_model_never_selects_private_route()
     assert selected.binding.surface == "wot"  # type: ignore[union-attr]
     assert alternate.binding.surface == "dom"  # type: ignore[union-attr]
     assert set(option.eligible_binding_ids) == {"dom:binding", "wot:binding"}
+    assert option.resource_ref == option.target_id
+
+
+def test_fusion_preserves_explicit_resource_identity_while_rewriting_default_identity() -> None:
+    dom = _source("dom", local_id="dom")
+    wot = _source(
+        "wot",
+        profile=ObservationSourceProfile.wot(),
+        local_id="wot",
+        align_to=SourceEntityEndpoint(dom.observation_id, "dom"),
+    )
+    explicit = replace(
+        wot.bindings[0],
+        resource_ref="account:stable",
+    )
+
+    world = WorldFusion().fuse((dom, replace(wot, bindings=(explicit,)))).observation
+
+    assert world is not None
+    dom_binding = next(item for item in world.bindings if item.surface == "dom")
+    wot_binding = next(item for item in world.bindings if item.surface == "wot")
+    assert dom_binding.resource_ref == dom_binding.target_id
+    assert wot_binding.resource_ref == "account:stable"
 
 
 def _png() -> bytes:

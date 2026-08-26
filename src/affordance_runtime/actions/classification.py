@@ -25,6 +25,7 @@ class ActionClassification:
     semantic_effects: tuple[str, ...]
     risk: ActionRisk
     observation_barrier: bool
+    reversibility: Reversibility
 
 
 def classify_dom_action(
@@ -56,7 +57,13 @@ def classify_dom_action(
     if bool(getattr(affordance, "risk_asserted", False)) and authored_risk:
         risk = max((risk, ActionRisk(authored_risk)), key=_risk_rank)
     effects = _business_effects(task, str(getattr(affordance, "effect_class", "")).strip(), category)
-    return ActionClassification(category, effects, risk, category != EffectCategory.OBSERVATION)
+    return ActionClassification(
+        category,
+        effects,
+        risk,
+        category != EffectCategory.OBSERVATION,
+        _declared_reversibility(reversibility, operation_semantics),
+    )
 
 
 def classify_surface_action(task: TaskGoal, role: str, semantic_action: str) -> ActionClassification:
@@ -68,6 +75,11 @@ def classify_surface_action(task: TaskGoal, role: str, semantic_action: str) -> 
         _business_effects(task, "", category),
         _category_risk(category),
         category != EffectCategory.OBSERVATION,
+        (
+            Reversibility.REVERSIBLE
+            if category is EffectCategory.OBSERVATION
+            else Reversibility.UNKNOWN
+        ),
     )
 
 
@@ -98,7 +110,45 @@ def classify_wot_action(
         _business_effects(task, "", category),
         risk,
         category != EffectCategory.OBSERVATION,
+        (
+            Reversibility.REVERSIBLE
+            if category is EffectCategory.OBSERVATION
+            or str(deployment_scope) == "local_simulation"
+            else Reversibility.UNKNOWN
+        ),
     )
+
+
+def _declared_reversibility(
+    authored: str,
+    operation_semantics: object | None,
+) -> Reversibility:
+    registered = getattr(operation_semantics, "reversibility", None)
+    if not authored:
+        return registered if isinstance(registered, Reversibility) else Reversibility.UNKNOWN
+    try:
+        declared = Reversibility(authored)
+    except ValueError:
+        return registered if isinstance(registered, Reversibility) else Reversibility.UNKNOWN
+    if not isinstance(registered, Reversibility):
+        # Page-authored metadata may conservatively mark an effect irreversible,
+        # but cannot establish that an otherwise unknown external effect is safe
+        # to undo or compensate.
+        return (
+            Reversibility.IRREVERSIBLE
+            if declared is Reversibility.IRREVERSIBLE
+            else Reversibility.UNKNOWN
+        )
+    return max((registered, declared), key=_reversibility_rank)
+
+
+def _reversibility_rank(value: Reversibility) -> int:
+    return {
+        Reversibility.REVERSIBLE: 0,
+        Reversibility.COMPENSATABLE: 1,
+        Reversibility.IRREVERSIBLE: 2,
+        Reversibility.UNKNOWN: 3,
+    }[value]
 
 
 def _base_category(semantic_action: str, role: str) -> EffectCategory:

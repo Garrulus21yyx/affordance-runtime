@@ -371,6 +371,8 @@ def _binding_pair(
         classification.observation_barrier,
         confidence=region.confidence,
         risk=classification.risk,
+        resource_ref=region.region_id,
+        reversibility=classification.reversibility,
     )
     return public, BrowserGymVisualBinding(binding_id, page_identity, episode_identity, region)
 

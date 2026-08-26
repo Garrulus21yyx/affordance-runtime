@@ -16,6 +16,7 @@ from affordance_runtime.actions.capabilities import (
     VerificationContract,
     verification_contract_for_action,
 )
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.actions.space_contracts import (
     ActionRisk,
     canonical_destination_ids,
@@ -473,6 +474,8 @@ class ActionBinding:
     eligible_destination_ids: tuple[str, ...] = ()
     verification_contract_digest: str = ""
     verification_family: str = ""
+    resource_ref: str = ""
+    reversibility: Reversibility = Reversibility.UNKNOWN
 
     def __post_init__(self) -> None:
         required = (
@@ -500,6 +503,9 @@ class ActionBinding:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "payload", freeze_json(self.payload))
         object.__setattr__(self, "eligible_destination_ids", canonical_destination_ids(self.eligible_destination_ids))
+        object.__setattr__(self, "resource_ref", self.resource_ref.strip() or self.target_id)
+        if not isinstance(self.reversibility, Reversibility):
+            raise TypeError("action binding reversibility must be typed")
         if self.destination_required and not self.eligible_destination_ids:
             raise ValueError("destination-required binding must offer semantic destination IDs")
         destination_mode = (

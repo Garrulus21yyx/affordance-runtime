@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 6/6.5 reopened for two bounded main-chain gaps; Phase 7 not started
+Status: Phase 6/6.5 closed; Phase 7 bounded effect reconciliation in progress
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -490,6 +490,63 @@ Constraints:
       Documentation now identifies this as a Shell language projection rather
       than a Runtime checkpoint or command-result authority. No live benchmark,
       Viewer, OTel exporter, Phase 7, or compensation work ran.
+21. **in progress — Phase 7 bounded effect reconciliation and compensation.**
+    - Owner model: `Reversibility` and operation semantics classify the original
+      effect; the immutable execution receipt owns dispatch truth; fresh World
+      owns currentness; `RunState` owns one bounded reconciliation requirement;
+      the existing ActionPolicy chooses any ordinary compensation action; the
+      existing Binder/Risk/Confirmation/Executor/ActionOutcome chain executes
+      and verifies it. Shell and Viewer remain projections only.
+    - Positive supported contract: a revision with no sent receipt follows the
+      existing Phase 6 path; one uniquely retained latest `SENT` effect is
+      classified as compatible, reversible/compensatable, irreversible, or
+      unknown. Compatible effects are preserved. Reversible/compensatable
+      effects commit revision `n+1` paused with one bounded reconciliation fact
+      and may dispatch only a current ordinary action against the same resource
+      before normal goal execution continues. `SENT_UNKNOWN`, missing or
+      ambiguous receipt lineage, multiple unrepresented effects, irreversible
+      effects, unavailable compensation, and unverifiable compensation close
+      as typed paused/needs-input/unsupported outcomes without retrying the old
+      action.
+    - Preserve the original receipt and append a new compensation receipt. Do
+      not mutate receipt history, roll back checkpoints, add a compensation or
+      manager Agent, add a second Binder/loop/checkpoint/database, infer undo
+      from page strings, or grant authority from the Viewer/API key.
+    - First migrate the owner contracts end to end: carry typed reversibility
+      and stable public resource identity through binding → ActionOption →
+      admitted selection → execution receipt; persist/restore the bounded
+      reconciliation fact in Runtime checkpoint; expose only its public summary
+      to the same ActionPolicy against fresh World.
+    - Then replace the coarse `execution_count > 0` revision rejection with the
+      closed reconciliation algebra, wire ordinary compensation through current
+      ActionSpace and existing risk/confirmation/dispatch verification, and
+      keep successful revision/compensation paused until the existing explicit
+      Resume boundary permits continuation.
+    - Acceptance properties: compatible effect retained without a dispatch;
+      reversible and compensatable effects use the ordinary pipeline and append
+      receipts; confirmation remains mandatory where Risk requires it;
+      irreversible and `SENT_UNKNOWN` stay paused and typed; restart preserves
+      reconciliation without replay; stale action/binding/confirmation cannot
+      dispatch; no production branch keys on fixture/page/task text. Run
+      provider-free owner/Runtime/external/architecture gates, update docs,
+      commit and push coherent milestones promptly. Do not run live benchmark
+      or implement Viewer/takeover in this phase.
+    - Owner-contract milestone implemented: dependency-free typed
+      `Reversibility` and canonical `resource_ref` now survive binding,
+      ActionSpace grouping/admission, model projection, bound-request identity,
+      execution receipt, and one deterministic `CommittedEffect` projection.
+      Ambiguous route semantics fail closed; page-authored metadata cannot
+      downgrade registered irreversibility; ordinary BrowserGym effects remain
+      `UNKNOWN`. WorldFusion rewrites only default source-local resource IDs to
+      canonical target identity while preserving explicit stable resource IDs.
+      Focused evidence passed 122 existing owner tests, then 81 new/affected
+      tests and 39 fusion/conservation witnesses; root architecture passed 91.
+      The wide provider-free run passed 1324 with 12 skips after the new fusion
+      regression was repaired; its only remaining failures are the same two
+      documented baseline witnesses (absent historical live trace and the
+      user-required sixth maintained Markdown document). Ruff and diff checks
+      pass. Repository-wide MyPy still reports 46 pre-existing inference errors
+      outside changed lines, so it is not claimed as a passing gate.
 
 ## Current-work produced files
 

@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from affordance_runtime.actions.contracts import RiskLevel
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.immutable import FrozenDict, freeze_json, to_json_compatible
 from affordance_runtime.verification.contracts import AssuranceLevel
 
@@ -36,13 +37,6 @@ class Externality(StrEnum):
     CROSS_ORIGIN = "cross_origin"
     EXTERNAL_SYSTEM = "external_system"
     PHYSICAL_WORLD = "physical_world"
-    UNKNOWN = "unknown"
-
-
-class Reversibility(StrEnum):
-    REVERSIBLE = "reversible"
-    COMPENSATABLE = "compensatable"
-    IRREVERSIBLE = "irreversible"
     UNKNOWN = "unknown"
 
 

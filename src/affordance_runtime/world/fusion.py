@@ -150,10 +150,16 @@ class WorldFusion:
         for source in ordered_sources:
             for binding in source.bindings:
                 endpoint = SourceEntityEndpoint(source.observation_id, binding.target_id)
+                canonical_target_id = plan.mapping[endpoint]
                 bindings.append(replace(
                     binding,
                     world_observation_id=world_id,
-                    target_id=plan.mapping[endpoint],
+                    target_id=canonical_target_id,
+                    resource_ref=(
+                        canonical_target_id
+                        if binding.resource_ref == binding.target_id
+                        else binding.resource_ref
+                    ),
                     eligible_destination_ids=tuple(
                         plan.mapping[SourceEntityEndpoint(source.observation_id, item)]
                         for item in binding.eligible_destination_ids

@@ -273,6 +273,8 @@ class WotSurfaceAdapter:
             route.expires_at_s,
             affordance.confidence,
             risk=classification.risk,
+            resource_ref=target_id,
+            reversibility=classification.reversibility,
         )
 
     def _rate_limited(self, route: WotAffordanceBinding) -> bool:

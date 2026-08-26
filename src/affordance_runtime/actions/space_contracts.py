@@ -17,6 +17,7 @@ from affordance_runtime.actions.capabilities import (
     VerificationFamily,
     verification_contract_for_action,
 )
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 
 _PRIVATE_DESTINATION_MARKERS = (
@@ -76,6 +77,8 @@ class ActionOption:
     observation_barrier: bool = True
     verification_contract_digest: str = ""
     verification_family: str = ""
+    resource_ref: str = ""
+    reversibility: Reversibility = Reversibility.UNKNOWN
 
     def __post_init__(self) -> None:
         if (
@@ -105,6 +108,9 @@ class ActionOption:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "resource_ref", self.resource_ref.strip() or self.target_id)
+        if not isinstance(self.reversibility, Reversibility):
+            raise TypeError("action option reversibility must be typed")
         object.__setattr__(
             self,
             "eligible_destination_ids",
@@ -160,6 +166,8 @@ class AdmittedActionSelection:
     verification_contract_digest: str = ""
     verification_family: str = ""
     expected_outcome: str = ""
+    resource_ref: str = ""
+    reversibility: Reversibility = Reversibility.UNKNOWN
 
     def __post_init__(self) -> None:
         required = (
@@ -173,6 +181,9 @@ class AdmittedActionSelection:
         if not all(value.strip() for value in required) or not self.eligible_binding_ids:
             raise ValueError("admitted selection requires exact option and binding-group identity")
         object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        object.__setattr__(self, "resource_ref", self.resource_ref.strip() or self.target_id)
+        if not isinstance(self.reversibility, Reversibility):
+            raise TypeError("admitted selection reversibility must be typed")
         object.__setattr__(self, "eligible_binding_ids", tuple(self.eligible_binding_ids))
         object.__setattr__(self, "parameters", freeze_json(self.parameters))
         if not isinstance(self.expected_outcome, str) or len(self.expected_outcome) > 240:
