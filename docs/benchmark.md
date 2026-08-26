@@ -30,7 +30,14 @@ canonical complete-command digest including the immutable, at-most-six-turn,
 changed text or context under one ID fails typed before compiler/environment
 mutation. The sole Runtime compiler receives the Shell language snapshot plus
 Runtime-owned current goal and pending interruption facts; no Shell compiler or
-ActionPolicy-history injection remains.
+ActionPolicy-history injection remains. The existing Shell recovery SQLite row
+now also carries a versioned bounded language projection: at most six recent
+turns and 64 immutable revision contexts. A revision context is committed before
+the Runtime call, restored before the Runtime handle, and deleted with session
+recovery credentials. Held-out process-boundary tests cover a first post-restart
+contextual revision, lost-response exact replay with one compiler invocation,
+and same-ID changed-payload rejection. This is not a second command-result store
+or a Runtime checkpoint.
 The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.

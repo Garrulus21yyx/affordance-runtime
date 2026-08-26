@@ -32,6 +32,11 @@ most six turns and 16 KiB, ending at exactly one identified latest user turn.
 Runtime supplies the authoritative current goal and pending interruption facts,
 and the complete command/context participates in Runtime idempotency digesting.
 Conversation never authorizes actions or enters ActionPolicy model history. A
+versioned Shell-private recovery projection retains at most six recent turns and
+64 immutable revision contexts in the existing recovery credential row. The
+Shell persists a new context before invoking `RuntimeSessionPort.revise`, restores
+it before recovering the Runtime handle, and deletes it with the session. It is
+not a command-result store or Runtime checkpoint. A
 prior `SENT` or `SENT_UNKNOWN` receipt returns typed
 `effect_reconciliation_required`; compensation, new-task replacement, takeover,
 and return-control remain unavailable. Viewer interaction likewise remains

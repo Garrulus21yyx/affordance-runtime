@@ -76,9 +76,15 @@ GUI effects. Runtime also owns revision command identity: the existing outcome
 row stores a canonical digest covering the complete command and conversation
 plus bounded result/message, exact retries replay before current-state
 validation, and changed text/context under one ID fails as
-`command_identity_reused`. Shell only caches the bounded snapshot and owns no
-durable revision result; the unused external Shell revision compiler has been
-removed. Model continuity is a separate authority: admitted task identity is
+`command_identity_reused`. Shell owns no durable revision result; its existing
+recovery-registry row durably projects only the last six conversation turns and
+last 64 immutable revision contexts. The Shell commits a new context before
+calling Runtime, restores it before installing the recovered opaque handle, and
+can therefore reproduce the same complete digest after a Shell restart.
+Start/answer turns use the same bounded projection, while TTL, terminal cleanup,
+or explicit revoke deletes it with the recovery credential. The unused external
+Shell revision compiler has been removed. Model continuity is a separate
+authority: admitted task identity is
 bound before environment reset, GoalCompiler, or the first ActionPolicy call,
 so an empty history can be committed as an official settled Harness snapshot.
 Every PydanticAI ActionPolicy invocation records official Harness step events under the Web

@@ -2,12 +2,41 @@ from __future__ import annotations
 
 from collections import OrderedDict, deque
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .contracts import (
     REVISION_CONVERSATION_MAX_TEXT_BYTES,
     ConversationTurn,
     RevisionConversationContext,
 )
+
+
+@dataclass(frozen=True)
+class BoundedConversationProjection:
+    """Shell-only restart projection; never Runtime or command-result authority."""
+
+    turns: tuple[ConversationTurn, ...] = ()
+    revision_contexts: tuple[RevisionConversationContext, ...] = ()
+
+    def __post_init__(self) -> None:
+        turns = tuple(self.turns)
+        contexts = tuple(self.revision_contexts)
+        object.__setattr__(self, "turns", turns)
+        object.__setattr__(self, "revision_contexts", contexts)
+        if len(turns) > 6 or len(contexts) > 64:
+            raise ValueError("conversation recovery projection exceeds its item bounds")
+        if any(not isinstance(turn, ConversationTurn) for turn in turns):
+            raise TypeError("conversation recovery turns must be typed")
+        if any(not isinstance(context, RevisionConversationContext) for context in contexts):
+            raise TypeError("revision recovery contexts must be typed")
+        if len({turn.turn_id for turn in turns}) != len(turns):
+            raise ValueError("conversation recovery turn identities must be unique")
+        if len({context.latest_turn_id for context in contexts}) != len(contexts):
+            raise ValueError("revision recovery command identities must be unique")
+        if sum(len(turn.text.encode("utf-8")) for turn in turns) > (
+            REVISION_CONVERSATION_MAX_TEXT_BYTES
+        ):
+            raise ValueError("conversation recovery turns exceed their byte bound")
 
 
 class BoundedConversation:
@@ -17,6 +46,39 @@ class BoundedConversation:
         self._max_turns = max_turns
         self._turns: deque[ConversationTurn] = deque(maxlen=max_turns)
         self._revision_contexts: OrderedDict[str, RevisionConversationContext] = OrderedDict()
+
+    @classmethod
+    def from_projection(
+        cls,
+        projection: BoundedConversationProjection,
+        *,
+        max_turns: int = 6,
+    ) -> BoundedConversation:
+        if not isinstance(projection, BoundedConversationProjection):
+            raise TypeError("bounded conversation recovery requires a typed projection")
+        if len(projection.turns) > max_turns:
+            raise ValueError("conversation projection exceeds the configured window")
+        conversation = cls(max_turns)
+        conversation._turns.extend(projection.turns)
+        conversation._revision_contexts.update(
+            (context.latest_turn_id, context) for context in projection.revision_contexts
+        )
+        return conversation
+
+    def projection(self) -> BoundedConversationProjection:
+        return BoundedConversationProjection(
+            turns=tuple(self._turns),
+            revision_contexts=tuple(self._revision_contexts.values()),
+        )
+
+    def clone(self) -> BoundedConversation:
+        return self.from_projection(
+            self.projection(),
+            max_turns=self._max_turns,
+        )
+
+    def has_revision_context(self, command_id: str) -> bool:
+        return command_id in self._revision_contexts
 
     def append(self, turn: ConversationTurn) -> None:
         existing = next(
@@ -81,6 +143,7 @@ class BoundedConversation:
 
 __all__ = [
     "BoundedConversation",
+    "BoundedConversationProjection",
     "ConversationTurn",
     "RevisionConversationContext",
 ]

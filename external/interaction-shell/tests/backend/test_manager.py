@@ -304,6 +304,38 @@ async def test_restart_authenticates_same_session_without_persisting_reusable_ke
         )
         is None
     )
+    with pytest.raises(LookupError, match="projection is unavailable"):
+        await registry.load_projection(created.snapshot.session_id)
+
+
+@pytest.mark.asyncio
+async def test_recovery_registry_migrates_existing_credential_rows_to_empty_projection(
+    tmp_path,
+) -> None:
+    path = tmp_path / "shell-recovery.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE shell_session_recovery ("
+            "session_id TEXT PRIMARY KEY, salt TEXT NOT NULL, verifier TEXT NOT NULL, "
+            "expires_at TEXT NOT NULL)"
+        )
+    registry = SQLiteSessionRecoveryRegistry(path)
+
+    await registry.register(
+        "new-session",
+        "new-session-key",
+        datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+
+    projection = await registry.load_projection("new-session")
+    assert projection.turns == ()
+    assert projection.revision_contexts == ()
+    with sqlite3.connect(path) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(shell_session_recovery)")
+        }
+    assert "projection_json" in columns
 
 
 @pytest.mark.asyncio

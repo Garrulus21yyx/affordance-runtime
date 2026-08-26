@@ -213,6 +213,8 @@ def create_app(
             return await shell.admit(session_id, session_key, body)
         except (SessionNotFound, SessionUnauthorized) as exc:
             raise map_auth(exc) from exc
+        except RuntimeSessionUnavailable as exc:
+            raise HTTPException(503, exc.code) from exc
 
     @app.post("/sessions/{session_id}/tasks", response_model=CommandAdmission)
     async def start(session_id: str, body: StartTask, session_key: str = Depends(key)):

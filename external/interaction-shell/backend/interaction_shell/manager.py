@@ -119,6 +119,13 @@ class RunSessionManager:
         if datetime.now(UTC) >= credential.expires_at:
             await registry.revoke(session_id)
             raise SessionNotFound(session_id)
+        try:
+            projection = await registry.load_projection(session_id)
+            conversation = BoundedConversation.from_projection(projection)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeSessionUnavailable("shell_recovery_projection_invalid") from exc
+        except Exception as exc:
+            raise RuntimeSessionUnavailable("shell_recovery_projection_unavailable") from exc
         handle = await self._port.recover(
             session_id,
             checkpoint_id,
@@ -129,6 +136,7 @@ class RunSessionManager:
             session_key,
             handle,
             credential.expires_at,
+            conversation=conversation,
         )
         try:
             snapshot = await self._snapshot(managed)
@@ -174,19 +182,22 @@ class RunSessionManager:
                         code="session_closed",
                         snapshot=snapshot,
                     )
-                first_seen = command.command_id not in managed.commands
-                managed.commands.add(command.command_id)
-                context = managed.conversation.revision_context(
+                candidate = managed.conversation.clone()
+                first_seen = not candidate.has_revision_context(command.command_id)
+                context = candidate.revision_context(
                     command.command_id,
                     command.text,
                 )
+                if first_seen:
+                    candidate.append(context.turns[-1])
+                await self._save_conversation_projection(managed, candidate)
+                managed.conversation = candidate
+                managed.commands.add(command.command_id)
                 runtime_command = command.model_copy(update={"conversation": context})
                 admission, _events = await self._port.revise(
                     managed.runtime_handle,
                     runtime_command,
                 )
-                if first_seen:
-                    managed.conversation.append(context.turns[-1])
                 current = await self._snapshot(managed)
                 if current.run_status.value in {
                     "done",
@@ -240,13 +251,16 @@ class RunSessionManager:
             )
             if isinstance(command, (StartTask, AnswerQuestion)):
                 text = command.task if isinstance(command, StartTask) else command.answer
-                managed.conversation.append(
+                candidate = managed.conversation.clone()
+                candidate.append(
                     ConversationTurn(
                         turn_id=command.command_id,
                         role="user",
                         text=text,
                     )
                 )
+                managed.conversation = candidate
+                await self._save_conversation_projection(managed, candidate)
             current = await self._snapshot(managed)
             if current.run_status.value in {"done", "failed", "blocked", "cancelled"}:
                 await self._cleanup_if_terminal(managed, current)
@@ -296,6 +310,22 @@ class RunSessionManager:
     ) -> None:
         if snapshot.run_status.value in {"done", "failed", "blocked", "cancelled"}:
             await self._cleanup_once(managed)
+
+    async def _save_conversation_projection(
+        self,
+        managed: ManagedSession,
+        conversation: BoundedConversation,
+    ) -> None:
+        registry = self._recovery_registry
+        if registry is None:
+            return
+        try:
+            await registry.save_projection(
+                managed.session_id,
+                conversation.projection(),
+            )
+        except Exception as exc:
+            raise RuntimeSessionUnavailable("shell_recovery_projection_persistence_failed") from exc
 
     async def _cleanup_once(
         self,

@@ -454,6 +454,42 @@ Constraints:
       whose historical `evidence/live/.../trace.jsonl` is absent from this
       worktree; it failed at file open before exercising production code. No
       `.env` or live provider/benchmark profile was loaded.
+20. **complete — Persist bounded Shell revision recovery projection.**
+    - Repair only the existing Shell recovery-registry owner. Persist the latest
+      at-most-six/16-KiB conversation turns and at-most-64 immutable revision
+      command contexts in its current SQLite database; do not add a database,
+      Agent, Runtime checkpoint field, command-result authority, GUI state, model
+      history, receipt, Viewer, OTel exporter, or Phase 7 behavior.
+    - For StartTask/AnswerQuestion, persist the resulting bounded turn after the
+      port admission path closes. For ReviseTask, construct the immutable
+      context, persist it before `RuntimeSessionPort.revise`, then call Runtime;
+      a projection-write failure must prevent Runtime admission.
+    - Recover and validate the bounded projection after Shell authentication and
+      before installing/using the recovered Runtime handle. Session revoke/TTL
+      cleanup must delete the projection with the existing recovery credential.
+    - Verify three held-out properties: a new revision after Shell restart sees
+      pre-restart turns; a committed revision with lost HTTP response replays
+      after restart without a second compiler call; changed text/context under
+      that command ID remains typed `command_identity_reused`.
+    - Update architecture/benchmark/interaction-shell status only after owner,
+      failure-ordering, restart, TTL/revoke, and existing gates agree. Commit and
+      push this coherent repair before Phase 7; do not run live benchmark.
+    - Implemented in the existing `shell_session_recovery` row with an in-place
+      migration and versioned canonical JSON. The projection validates and
+      retains at most six/16-KiB turns and 64 immutable command contexts. New
+      revision context plus latest turn commits before the Runtime port call;
+      restore validates it before Runtime recovery; explicit/terminal/TTL revoke
+      deletes the row and projection together. Projection failures are typed,
+      and the pre-dispatch failure witness records zero Runtime revise calls.
+    - Closure evidence: held-out Shell-restart tests prove pre-restart context in
+      the first new revision, exact lost-response replay with compiler count one,
+      and same-ID changed text/context conflict. Bounds, legacy-table migration,
+      and revoke deletion are also covered. External backend/architecture passed
+      63 tests, Runtime/checkpoint/model revision passed 112, root architecture
+      passed 91, backend Pyright plus touched Ruff/compileall/diff checks passed.
+      Documentation now identifies this as a Shell language projection rather
+      than a Runtime checkpoint or command-result authority. No live benchmark,
+      Viewer, OTel exporter, Phase 7, or compensation work ran.
 
 ## Current-work produced files
 

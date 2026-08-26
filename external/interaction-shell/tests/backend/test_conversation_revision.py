@@ -66,3 +66,19 @@ def test_revision_context_replays_exact_snapshot_and_changes_only_latest_turn() 
     assert conflict_payload.turns[:-1] == original.turns[:-1]
     assert conflict_payload.turns[-1].text == "还是周五"
     assert conflict_payload != original
+
+
+def test_restart_projection_keeps_only_the_bounded_revision_identity_window() -> None:
+    conversation = BoundedConversation()
+    conversation.append(ConversationTurn(turn_id="start:1", role="user", text="Inspect both accounts"))
+    contexts = [conversation.revision_context(f"revise:{index}", f"Use option {index}") for index in range(70)]
+
+    projection = conversation.projection()
+    restored = BoundedConversation.from_projection(projection)
+
+    assert len(projection.revision_contexts) == 64
+    assert tuple(context.latest_turn_id for context in projection.revision_contexts) == tuple(
+        f"revise:{index}" for index in range(6, 70)
+    )
+    assert restored.revision_context("revise:69", "Use option 69") == contexts[-1]
+    assert restored.projection() == projection

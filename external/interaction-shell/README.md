@@ -56,7 +56,13 @@ For revision, the manager attaches an immutable language-only snapshot of at
 most six turns and 16 KiB to the single Runtime command. Runtime adds its own
 current goal and pending question/confirmation before invoking the sole
 TaskRevisionCompiler. The snapshot participates in Runtime command identity but
-never enters ActionPolicy history or grants GUI-effect authority.
+never enters ActionPolicy history or grants GUI-effect authority. The existing
+Shell recovery SQLite row stores only the last six turns and last 64 immutable
+revision contexts alongside its salted verifier and TTL. A new revision context
+is persisted before the Runtime call and restored before the opaque Runtime
+handle, so an exact lost-response retry survives Shell restart. This bounded
+projection stores no Runtime outcome, TaskGoal, GUI state, receipt, or model
+history, and is deleted with session revoke/expiry.
 
 Install the deployment profile alongside the Runtime worktree, then start its
 dedicated app (the example interpreter is the repository's pinned BrowserGym

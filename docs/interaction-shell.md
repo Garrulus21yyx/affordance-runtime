@@ -66,7 +66,8 @@ implementation details behind those boundaries, not additional cross-layer APIs:
 1. `RuntimeSessionPort`: one thin translation boundary over supported public Runtime capabilities;
 2. `RunSessionManager`: external session authentication/TTL, serialized commands, in-process duplicate protection,
    bounded conversation, and exactly-once invocation of port cleanup; for restart recovery its Shell-private SQLite
-   registry stores only a salted session-key verifier and the original TTL, never Runtime state or a reusable key; it
+   registry stores a salted session-key verifier, original TTL, and a versioned projection of at most six recent
+   turns plus 64 immutable revision contexts, never Runtime state, command results, or a reusable key; it
    streams port-owned events without retaining or renumbering a second event log;
 3. deployment-private session construction: per-session Runtime, environment/browser lease, optional viewer reference,
    Runtime-owned checkpoint persistence, and idempotent cleanup, returned only as one opaque public handle;
@@ -102,11 +103,11 @@ The following states must not be collapsed into one label such as "implemented":
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
-| Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
+| Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
 | Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
 | Effect reconciliation/compensation | Unavailable | Phase 6 preserves and blocks on prior dispatched truth; Phase 7 has not implemented observation/compensation or automatic undo. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Closed through Phase 6.5 | Phase 0–6 plus the bounded persistence/trace/idempotency convergence, tests, documentation, and milestone evidence agree in the current commit. |
+| Delivery hygiene | Closed through Phase 6.5 | Phase 0–6 plus checkpoint identity, bounded cross-restart conversation projection, Runtime-owned idempotency, tests, documentation, and milestone evidence agree in the current commit. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1275,7 +1276,8 @@ captures and evaluates a fresh World, then publishes one new-epoch `SESSION_RECO
 `PAUSED`. `ResumeRun` consumes the checkpoint before any new policy/dispatch; duplicate or competing resume commands
 cannot replay it. Fresh terminal truth finishes directly after explicit resume, and a fresh confirmation action ID is
 rebased only when its canonical confirmation subject has exactly one current semantic match. Shell restart auth stores
-only a salted key verifier plus the original TTL; old epochs return snapshot resync required. Restart tests cover
+a salted key verifier, original TTL, and only the bounded language projection needed to reproduce revision input;
+old epochs return snapshot resync required. Restart tests cover
 RUNNING, waiting-user, waiting-confirmation, a committed `SENT` receipt with zero replay, corrupt checkpoints,
 already-consumed checkpoints, auth isolation, and missing environments. Local BrowserGym cannot reconnect the same
 Playwright context after process death, so its health remains durable-resume unavailable and recovery returns typed
@@ -1324,8 +1326,11 @@ The latest user message appears once in the compiler payload, conversation never
 and the unused external Shell compiler has been removed. The stored row contains a canonical digest of the complete
 command including conversation plus a bounded outcome/message summary: an exact retry replays without compilation or
 environment mutation, while reuse of the same identity for different expected values, text, or context returns typed
-`command_identity_reused`. The Shell always forwards revision attempts under its per-session lock and uses its command
-set only to avoid duplicating conversation turns; it does not decide revision idempotency or staleness. Task admission
+`command_identity_reused`. The Shell recovery registry persists at most six recent turns and 64 immutable command
+contexts in the same credential row. It commits a newly constructed context before forwarding the revision, restores
+the projection before recovering the Runtime handle, and deletes the projection with TTL/revoke; a projection write
+failure prevents the Runtime call. This projection owns neither Runtime outcome nor TaskGoal/GUI state. The Shell
+always forwards revision attempts under its per-session lock and does not decide revision idempotency or staleness. Task admission
 also binds model-history identity before initialization, so a pre-policy pause can persist and recover an empty settled
 Harness snapshot. Prior dispatched truth fails closed as
 `effect_reconciliation_required` while keeping revision `n`; effect reconciliation, compensation, Viewer, and

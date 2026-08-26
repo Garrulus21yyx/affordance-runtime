@@ -17,6 +17,8 @@ from interaction_shell.contracts import (
 )
 from interaction_shell.core_runtime_port import CoreRuntimeSessionPort
 from interaction_shell.manager import RunSessionManager
+from interaction_shell.port import RuntimeSessionUnavailable
+from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 
 from affordance_runtime.app.public_session import (
     PUBLIC_SESSION_CAPABILITIES,
@@ -225,6 +227,49 @@ class FakePublicFactory:
             capabilities=self.handle.current.capabilities | {PublicSessionCapability.RESUME_TASK},
         )
         return self.handle
+
+
+class RestartingFakePublicHandle(FakePublicHandle):
+    def __init__(self, session_id: str, expires_at: datetime, factory: Any) -> None:
+        super().__init__(session_id, expires_at)
+        self._factory = factory
+
+    async def revise(self, command: PublicTaskRevisionCommand):
+        was_committed = command.command_id in self.revision_digests
+        result = await super().revise(command)
+        if not was_committed:
+            self._factory.revision_compile_count += 1
+        return result
+
+
+class RestartingFakePublicFactory:
+    """One fake Runtime authority exposed through process-local replacement handles."""
+
+    handle: RestartingFakePublicHandle | None = None
+
+    def __init__(self) -> None:
+        self.revision_compile_count = 0
+        self.recovery_count = 0
+
+    async def open(self, session_id: str, expires_at: datetime):
+        self.handle = RestartingFakePublicHandle(session_id, expires_at, self)
+        return self.handle
+
+    async def recover(self, session_id: str, checkpoint_id: str, expires_at: datetime):
+        prior = self.handle
+        assert prior is not None
+        assert prior.current.checkpoint_id == checkpoint_id
+        recovered = RestartingFakePublicHandle(session_id, expires_at, self)
+        recovered.current = replace(
+            prior.current,
+            expires_at=expires_at,
+            event_epoch=f"recovered-event-epoch:{self.recovery_count}",
+            event_cursor=0,
+        )
+        recovered.revision_digests = prior.revision_digests
+        self.recovery_count += 1
+        self.handle = recovered
+        return recovered
 
 
 @pytest.mark.asyncio
@@ -575,3 +620,227 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
         "This stale command must be rejected by Runtime",
         "Inspect the account and its owner",
     )
+
+
+async def _start_and_pause_for_restart(
+    manager: RunSessionManager,
+    session_id: str,
+    session_key: str,
+):
+    started = await manager.admit(
+        session_id,
+        session_key,
+        StartTask(
+            command_id="start:accounts",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.IDLE,
+            task="检查两个账号",
+        ),
+    )
+    return await manager.admit(
+        session_id,
+        session_key,
+        OptionalCommand(
+            kind="pause_task",
+            command_id="pause:accounts",
+            expected_task_revision=1,
+            expected_run_status=started.snapshot.run_status,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_restart_restores_preexisting_turns_for_first_new_revision(tmp_path) -> None:
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
+    factory = RestartingFakePublicFactory()
+    port = CoreRuntimeSessionPort(cast(Any, factory))
+    first_manager = RunSessionManager(port, registry)
+    created = await first_manager.create()
+    paused = await _start_and_pause_for_restart(
+        first_manager,
+        created.snapshot.session_id,
+        created.session_key,
+    )
+    assert paused.snapshot.checkpoint_id is not None
+    assert await first_manager.close_all() == ()
+
+    second_manager = RunSessionManager(port, registry)
+    recovered = await second_manager.recover(
+        created.snapshot.session_id,
+        created.session_key,
+        paused.snapshot.checkpoint_id,
+    )
+    revised = await second_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:second",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            expected_checkpoint_id=recovered.snapshot.checkpoint_id,
+            text="用第二个",
+        ),
+    )
+
+    assert revised.kind == "accepted"
+    assert factory.handle is not None
+    assert factory.handle.revise_calls[-1][5] == ("检查两个账号", "用第二个")
+    assert factory.revision_compile_count == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_replays_committed_revision_with_exact_original_payload(tmp_path) -> None:
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
+    factory = RestartingFakePublicFactory()
+    port = CoreRuntimeSessionPort(cast(Any, factory))
+    first_manager = RunSessionManager(port, registry)
+    created = await first_manager.create()
+    paused = await _start_and_pause_for_restart(
+        first_manager,
+        created.snapshot.session_id,
+        created.session_key,
+    )
+    command = ReviseTask(
+        command_id="revise:lost-response",
+        expected_task_revision=1,
+        expected_run_status=RunStatus.PAUSED,
+        expected_checkpoint_id=paused.snapshot.checkpoint_id,
+        text="用第二个",
+    )
+    committed = await first_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        command,
+    )
+    assert committed.kind == "accepted"
+    assert committed.snapshot.checkpoint_id is not None
+    assert factory.revision_compile_count == 1
+    assert await first_manager.close_all() == ()
+
+    second_manager = RunSessionManager(port, registry)
+    await second_manager.recover(
+        created.snapshot.session_id,
+        created.session_key,
+        committed.snapshot.checkpoint_id,
+    )
+    replayed = await second_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        command,
+    )
+
+    assert replayed.kind == "accepted"
+    assert replayed.snapshot.task_revision == 2
+    assert factory.revision_compile_count == 1
+    assert factory.handle is not None
+    assert factory.handle.revise_calls[-1][5] == ("检查两个账号", "用第二个")
+
+
+@pytest.mark.asyncio
+async def test_restart_rejects_reused_revision_identity_with_changed_payload(tmp_path) -> None:
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
+    factory = RestartingFakePublicFactory()
+    port = CoreRuntimeSessionPort(cast(Any, factory))
+    first_manager = RunSessionManager(port, registry)
+    created = await first_manager.create()
+    paused = await _start_and_pause_for_restart(
+        first_manager,
+        created.snapshot.session_id,
+        created.session_key,
+    )
+    committed = await first_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:fixed-identity",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            expected_checkpoint_id=paused.snapshot.checkpoint_id,
+            text="用第二个",
+        ),
+    )
+    assert committed.snapshot.checkpoint_id is not None
+    assert await first_manager.close_all() == ()
+
+    second_manager = RunSessionManager(port, registry)
+    await second_manager.recover(
+        created.snapshot.session_id,
+        created.session_key,
+        committed.snapshot.checkpoint_id,
+    )
+    conflict = await second_manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:fixed-identity",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            expected_checkpoint_id=paused.snapshot.checkpoint_id,
+            text="改用第一个",
+        ),
+    )
+
+    assert conflict.kind == "conflict"
+    assert conflict.code == "command_identity_reused"
+    assert factory.revision_compile_count == 1
+    assert factory.handle is not None
+    assert factory.handle.revise_calls[-1][5] == ("检查两个账号", "改用第一个")
+
+
+@pytest.mark.asyncio
+async def test_revision_is_not_sent_when_projection_persistence_fails(tmp_path) -> None:
+    class FailingProjectionRegistry:
+        def __init__(self, delegate) -> None:
+            self.delegate = delegate
+            self.fail_saves = False
+
+        async def register(self, *args):
+            return await self.delegate.register(*args)
+
+        async def authenticate(self, *args):
+            return await self.delegate.authenticate(*args)
+
+        async def load_projection(self, *args):
+            return await self.delegate.load_projection(*args)
+
+        async def save_projection(self, *args):
+            if self.fail_saves:
+                raise OSError("simulated durable projection failure")
+            return await self.delegate.save_projection(*args)
+
+        async def revoke(self, *args):
+            return await self.delegate.revoke(*args)
+
+    registry = FailingProjectionRegistry(SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3"))
+    factory = RestartingFakePublicFactory()
+    manager = RunSessionManager(
+        CoreRuntimeSessionPort(cast(Any, factory)),
+        cast(Any, registry),
+    )
+    created = await manager.create()
+    paused = await _start_and_pause_for_restart(
+        manager,
+        created.snapshot.session_id,
+        created.session_key,
+    )
+    registry.fail_saves = True
+
+    with pytest.raises(
+        RuntimeSessionUnavailable,
+        match="shell_recovery_projection_persistence_failed",
+    ):
+        await manager.admit(
+            created.snapshot.session_id,
+            created.session_key,
+            ReviseTask(
+                command_id="revise:not-admitted",
+                expected_task_revision=1,
+                expected_run_status=RunStatus.PAUSED,
+                expected_checkpoint_id=paused.snapshot.checkpoint_id,
+                text="用第二个",
+            ),
+        )
+
+    assert factory.handle is not None
+    assert factory.handle.revise_calls == []
+    assert factory.revision_compile_count == 0
