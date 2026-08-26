@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -29,6 +30,7 @@ _PROFILE_ID = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
 _STATIC_TYPES = {".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
 _DEFAULT_ACTION_MODELS = ("glm-4.6", "glm-4.1v-thinking-flashx")
 _DEFAULT_GOAL_MODELS = ("glm-4.7-flash", "glm-4.6")
+_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,24 @@ class ConsoleRun:
         }
 
 
+@dataclass(frozen=True)
+class ConsoleBrowserFrame:
+    """One trace-owned browser frame safe to expose through the local viewer."""
+
+    data: bytes
+    media_type: str
+    sha256: str
+    observation_id: str
+
+    def __post_init__(self) -> None:
+        if self.media_type not in _IMAGE_TYPES:
+            raise ValueError("console browser frame media type is unsupported")
+        if not self.data or hashlib.sha256(self.data).hexdigest() != self.sha256:
+            raise ValueError("console browser frame digest does not match bytes")
+        if not self.observation_id.strip():
+            raise ValueError("console browser frame requires an observation identity")
+
+
 class ConsoleRunManager:
     """Own one local formal-run subprocess; never owns Runtime state."""
 
@@ -109,6 +129,7 @@ class ConsoleRunManager:
         self._runs: dict[str, ConsoleRun] = {}
         self._active_id = ""
         self._lock = threading.Lock()
+        self._frame_cache: dict[str, tuple[int, int, ConsoleBrowserFrame | None]] = {}
 
     def configuration(self) -> dict[str, object]:
         action_models = _model_choices(
@@ -206,6 +227,12 @@ class ConsoleRunManager:
     def current(self) -> ConsoleRun | None:
         return self._runs.get(self._active_id)
 
+    def list_runs(self) -> list[dict[str, object]]:
+        """Return bounded local run summaries, newest first."""
+
+        runs = sorted(self._runs.values(), key=lambda item: item.started_at, reverse=True)
+        return [item.public_payload() for item in runs[:100]]
+
     def events(self, run_id: str, after: int = 0) -> dict[str, object]:
         if after < 0:
             raise ValueError("event cursor must be nonnegative")
@@ -224,6 +251,30 @@ class ConsoleRunManager:
                 events.append(event)
                 next_cursor = index
         return {"events": events, "next_cursor": next_cursor, "run": run.public_payload()}
+
+    def activity(self, run_id: str, after: int = 0) -> dict[str, object]:
+        """Project trace facts once into the bounded ordinary-user activity stream."""
+
+        payload = self.events(run_id, after)
+        payload["events"] = [_public_activity_event(item) for item in payload["events"]]
+        return payload
+
+    def browser_frame(self, run_id: str) -> ConsoleBrowserFrame | None:
+        """Return the latest complete screenshot artifact recorded by the Runtime trace."""
+
+        run = self.get(run_id)
+        trace_path = run.evidence_dir / "traces" / run.spec.case_id / "trace.jsonl"
+        try:
+            stat = trace_path.stat()
+        except FileNotFoundError:
+            return None
+        cached = self._frame_cache.get(run_id)
+        cache_key = (stat.st_mtime_ns, stat.st_size)
+        if cached is not None and cached[:2] == cache_key:
+            return cached[2]
+        frame = _latest_browser_frame(trace_path)
+        self._frame_cache[run_id] = (*cache_key, frame)
+        return frame
 
     def stop(self, run_id: str) -> ConsoleRun:
         run = self.get(run_id)
@@ -272,6 +323,9 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
             run = self.manager.current()
             self._json(HTTPStatus.OK, run.public_payload() if run else None)
             return
+        if parsed.path == "/api/runs":
+            self._json(HTTPStatus.OK, {"runs": self.manager.list_runs()})
+            return
         match = re.fullmatch(r"/api/runs/([^/]+)", parsed.path)
         if match:
             self._run_payload(match.group(1))
@@ -283,6 +337,34 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.manager.events(match.group(1), after))
             except (KeyError, ValueError) as exc:
                 self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        match = re.fullmatch(r"/api/runs/([^/]+)/activity", parsed.path)
+        if match:
+            try:
+                after = int(parse_qs(parsed.query).get("after", ["0"])[0])
+                self._json(HTTPStatus.OK, self.manager.activity(match.group(1), after))
+            except (KeyError, ValueError) as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        match = re.fullmatch(r"/api/runs/([^/]+)/browser-frame", parsed.path)
+        if match:
+            try:
+                frame = self.manager.browser_frame(match.group(1))
+            except KeyError as exc:
+                self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+                return
+            if frame is None:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "browser frame is not available yet"})
+                return
+            self._binary(
+                HTTPStatus.OK,
+                frame.data,
+                frame.media_type,
+                extra_headers={
+                    "ETag": f'"{frame.sha256}"',
+                    "X-Observation-Id": frame.observation_id,
+                },
+            )
             return
         self._static(parsed.path)
 
@@ -327,9 +409,21 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
 
     def _json(self, status: HTTPStatus, payload: object) -> None:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+        self._binary(status, body, "application/json; charset=utf-8")
+
+    def _binary(
+        self,
+        status: HTTPStatus,
+        body: bytes,
+        media_type: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> None:
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", media_type)
         self.send_header("Cache-Control", "no-store")
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -402,6 +496,110 @@ def _read_json(path: Path) -> object | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _public_activity_event(event: dict[str, object]) -> dict[str, object]:
+    """Expose user-legible owner facts without private World or binding payloads."""
+
+    kind = str(event.get("event") or "trace")
+    public: dict[str, object] = {
+        "event": kind,
+        "sequence": int(event.get("sequence") or 0),
+    }
+    if kind == "run_started":
+        task = event.get("task") if isinstance(event.get("task"), dict) else {}
+        public.update(
+            instruction=str(task.get("instruction") or ""),
+            initial_status=str(event.get("initial_status") or "running"),
+            max_steps=int(event.get("max_steps") or 0),
+        )
+    elif kind == "goal_compiler_completed":
+        diagnostic = event.get("diagnostic") if isinstance(event.get("diagnostic"), dict) else {}
+        public.update(
+            disposition=str(diagnostic.get("final_disposition") or "unknown"),
+            provider_attempt_count=int(diagnostic.get("provider_attempt_count") or 0),
+        )
+    elif kind == "model_turn":
+        attempts = event.get("generation_attempts") if isinstance(event.get("generation_attempts"), list) else []
+        public.update(
+            outcome=str(event.get("outcome") or "unknown"),
+            attempt_count=len(attempts),
+            latency_ms=round(sum(float(item.get("latency_ms") or 0) for item in attempts if isinstance(item, dict)), 3),
+        )
+    elif kind == "step_completed":
+        result = event.get("result") if isinstance(event.get("result"), dict) else {}
+        execution = result.get("execution") if isinstance(result.get("execution"), dict) else None
+        request = execution.get("request") if isinstance(execution, dict) and isinstance(execution.get("request"), dict) else {}
+        intent = request.get("intent") if isinstance(request.get("intent"), dict) else {}
+        receipt = execution.get("result") if isinstance(execution, dict) and isinstance(execution.get("result"), dict) else {}
+        evaluation = result.get("task_evaluation") if isinstance(result.get("task_evaluation"), dict) else {}
+        public.update(
+            step=int(event.get("step") or 0),
+            status_after=str(result.get("status_after") or "running"),
+            feedback=str(result.get("feedback") or ""),
+            semantic_action=str(intent.get("semantic_action") or ""),
+            dispatch_status=str(receipt.get("dispatch_status") or ""),
+            execution_completed=execution is not None,
+            evaluation_status=str(evaluation.get("status") or ""),
+        )
+    elif kind == "observation":
+        public.update(
+            observation_id=str(event.get("observation_id") or ""),
+            browser_frame_available=bool(event.get("image_inputs")),
+        )
+    elif kind == "run_finished":
+        public.update(
+            status=str(event.get("status") or "failed"),
+            step_count=int(event.get("step_count") or 0),
+            observation_count=int(event.get("observation_count") or 0),
+            execution_count=int(event.get("execution_count") or 0),
+        )
+    elif kind == "run_paused":
+        public["status"] = str(event.get("status") or "waiting_user")
+    elif kind == "run_error":
+        public["exception_class"] = str(event.get("exception_class") or "RuntimeError")
+    return public
+
+
+def _latest_browser_frame(trace_path: Path) -> ConsoleBrowserFrame | None:
+    trace_root = trace_path.parent.resolve()
+    latest: ConsoleBrowserFrame | None = None
+    try:
+        lines = trace_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            break
+        if event.get("event") != "observation":
+            continue
+        image_inputs = event.get("image_inputs")
+        if not isinstance(image_inputs, list):
+            continue
+        for image in image_inputs:
+            if not isinstance(image, dict) or image.get("mime_type") not in _IMAGE_TYPES:
+                continue
+            artifact = image.get("data", {}).get("artifact", {}) if isinstance(image.get("data"), dict) else {}
+            relative = artifact.get("path") if isinstance(artifact, dict) else None
+            digest = str(image.get("sha256") or artifact.get("sha256") or "")
+            if not isinstance(relative, str) or not relative or not digest:
+                continue
+            candidate = (trace_root / relative).resolve()
+            if not candidate.is_relative_to(trace_root) or not candidate.is_file():
+                continue
+            try:
+                data = candidate.read_bytes()
+                latest = ConsoleBrowserFrame(
+                    data,
+                    str(image["mime_type"]),
+                    digest,
+                    str(event.get("observation_id") or ""),
+                )
+            except (OSError, TypeError, ValueError):
+                continue
+    return latest
 
 
 if __name__ == "__main__":

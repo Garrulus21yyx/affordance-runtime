@@ -2,6 +2,13 @@
 
 ## Current status
 
+The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
+task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,
+raw evidence, and runner output. Focused Console verification covers bounded newest-first run summaries, public
+activity projection and private-field exclusion, trace-root confinement and digest verification for browser frames,
+desktop/mobile rendering, Labs navigation, and hidden-drawer focus isolation. No live benchmark was launched for this
+UI change, so it contributes no new task witness and does not alter any benchmark acceptance or closure claim.
+
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear

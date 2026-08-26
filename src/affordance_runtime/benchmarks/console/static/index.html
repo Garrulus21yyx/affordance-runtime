@@ -4,122 +4,242 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
-    <title>Affordance Flight Recorder</title>
+    <title>Affordance</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="masthead">
-      <div class="wordmark">
-        <span class="wordmark-kicker">AFFORDANCE / RUNTIME</span>
-        <h1>Flight recorder</h1>
-      </div>
-      <div class="system-state" aria-live="polite">
-        <span class="signal" id="systemSignal"></span>
-        <div><b id="systemLabel">Connecting</b><small id="systemDetail">Reading local configuration</small></div>
-      </div>
-    </header>
-
-    <main class="console-grid">
-      <aside class="configuration panel" aria-labelledby="configurationTitle">
-        <div class="panel-heading">
-          <span class="section-code">CONTROL</span>
-          <h2 id="configurationTitle">Compose one run</h2>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <strong>Affordance</strong>
         </div>
 
-        <form id="runForm">
-          <label class="field">
-            <span>MiniWoB task</span>
-            <select id="caseSelect" name="case_id"></select>
-            <small id="caseMeta">Frozen manifest</small>
-          </label>
+        <button class="new-task" id="newTaskButton" type="button">
+          <span>新建任务</span><span aria-hidden="true">＋</span>
+        </button>
 
-          <div class="role-block action-role">
-            <div class="role-title"><span>A</span><b>Action policy</b></div>
-            <label class="field">
-              <span>Model</span>
-              <select id="actionModel" name="action_model"></select>
-            </label>
-            <label class="field">
-              <span>Wire capability</span>
-              <select id="actionWireCapability" name="action_wire_capability"></select>
-            </label>
-            <div class="inline-readout">
-              <span>Thinking</span><b id="thinkingReadout">—</b>
-            </div>
-          </div>
+        <p class="nav-label">最近</p>
+        <nav class="session-list" id="sessionList" aria-label="最近运行">
+          <div class="session-placeholder">启动一个任务后，会话会出现在这里。</div>
+        </nav>
 
-          <div class="role-block goal-role">
-            <div class="role-title"><span>G</span><b>Goal compiler</b></div>
-            <div class="segmented" role="group" aria-label="Goal compiler mode">
-              <button type="button" data-mode="model" class="active">Model</button>
-              <button type="button" data-mode="disabled">Disabled</button>
-            </div>
-            <label class="field" id="goalModelField">
-              <span>Model</span>
-              <select id="goalModel" name="goal_compiler_model"></select>
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Perception</span>
-            <select id="perceptionSelect" name="perception_profile"></select>
-          </label>
-
-          <label class="field">
-            <span>Evidence profile</span>
-            <input id="profileInput" value="CONSOLE_EXPERIMENT" maxlength="80" pattern="[A-Z][A-Z0-9_]{2,79}" />
-          </label>
-
-          <div class="launch-row">
-            <button class="launch" id="launchButton" type="submit"><span>Launch formal run</span><i>↗</i></button>
-            <button class="stop" id="stopButton" type="button" disabled>Stop</button>
-          </div>
-          <p class="form-error" id="formError" role="alert"></p>
-        </form>
+        <div class="sidebar-bottom">
+          <button class="utility-link" id="labsButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 9h4m-7 12h10a3 3 0 0 0 2.8-4.1L16 7V3H8v4l-3.8 9.9A3 3 0 0 0 7 21Z"/></svg>
+            <span>Labs</span>
+          </button>
+          <button class="utility-link" id="settingsButton" type="button" aria-disabled="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+            <span>设置</span>
+          </button>
+        </div>
       </aside>
 
-      <section class="trajectory panel" aria-labelledby="trajectoryTitle">
-        <div class="panel-heading trajectory-heading">
-          <div><span class="section-code">LIVE LINEAGE</span><h2 id="trajectoryTitle">Run trajectory</h2></div>
-          <div class="run-clock"><span id="runStatus">IDLE</span><b id="runClock">00:00</b></div>
+      <section class="conversation" aria-labelledby="taskTitle">
+        <header class="conversation-header">
+          <div class="title-block">
+            <small id="taskEyebrow">NEW TASK</small>
+            <h1 id="taskTitle">从一句话开始</h1>
+          </div>
+          <div class="header-actions">
+            <span class="status-pill idle" id="runStatus"><i></i><span>空闲</span></span>
+            <button class="icon-button" id="conversationMenu" type="button" aria-label="打开运行详情">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="thread" id="thread" aria-live="polite">
+          <div class="welcome" id="welcomeState">
+            <span class="welcome-orbit" aria-hidden="true"><i></i></span>
+            <p class="welcome-kicker">GUI AGENT</p>
+            <h2>说出目标，观察每一步。</h2>
+            <p>Agent 会在右侧真实浏览器中执行任务。需要确认时，它会回到这里问你。</p>
+            <button id="welcomeStartButton" type="button">选择一个任务</button>
+          </div>
+          <div class="thread-content" id="threadContent" hidden>
+            <p class="thread-time" id="threadTime"></p>
+            <div class="message user"><div class="bubble" id="taskInstruction">正在读取任务…</div></div>
+            <div class="message agent" id="agentIntro">
+              <span class="avatar">A</span>
+              <div class="bubble">收到。我会根据当前页面逐步执行，并把重要状态同步在这里。</div>
+            </div>
+            <p class="activity-lead">当前进展</p>
+            <div class="activity-stack" id="activityStack"></div>
+            <div class="message agent final-message" id="finalMessage" hidden>
+              <span class="avatar">A</span>
+              <div class="bubble" id="finalMessageText"></div>
+            </div>
+          </div>
         </div>
-        <div class="metric-strip">
-          <div><span>Events</span><b id="eventCount">0</b></div>
-          <div><span>Policy turns</span><b id="turnCount">0</b></div>
-          <div><span>Executions</span><b id="executionCount">0</b></div>
-          <div><span>Outcome</span><b id="outcomeReadout">—</b></div>
-        </div>
-        <div class="rail" id="eventRail" aria-live="polite">
-          <div class="empty-state" id="emptyState">
-            <div class="empty-orbit"><span></span></div>
-            <h3>No run in flight</h3>
-            <p>Choose two cognitive roles and one frozen task. Events will appear in Runtime order.</p>
+
+        <div class="composer-wrap">
+          <div class="composer-hint" id="composerHint">普通任务输入将在 Runtime session 接口开放后启用；当前由 Labs 启动正式验证任务。</div>
+          <div class="composer" aria-label="任务输入">
+            <button class="composer-tool" id="composerLabsButton" type="button" aria-label="打开 Labs">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 9h4m-7 12h10a3 3 0 0 0 2.8-4.1L16 7V3H8v4l-3.8 9.9A3 3 0 0 0 7 21Z"/></svg>
+            </button>
+            <textarea id="composerInput" rows="1" readonly placeholder="在 Labs 中选择正式任务…"></textarea>
+            <button class="send" id="composerSend" type="button" aria-label="选择任务">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+            </button>
           </div>
         </div>
       </section>
 
-      <aside class="inspector panel" aria-labelledby="inspectorTitle">
-        <div class="panel-heading inspector-heading">
-          <div><span class="section-code">EVIDENCE</span><h2 id="inspectorTitle">Trace inspector</h2></div>
-          <button id="copyButton" type="button" disabled>Copy JSON</button>
+      <section class="browser-panel" aria-labelledby="browserTitle">
+        <header class="browser-header">
+          <div class="title-block">
+            <small>LIVE SURFACE</small>
+            <h2 id="browserTitle">实时浏览器</h2>
+          </div>
+          <div class="header-actions">
+            <span class="control-badge" id="browserControl">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 9 3 3-3 3m5 0h3"/></svg>
+              <span>等待任务</span>
+            </span>
+            <button class="icon-button" id="fullscreenButton" type="button" aria-label="全屏浏览器">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M8 21H3v-5m13 5h5v-5"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="browser-stage" id="browserStage">
+          <div class="browser-empty" id="browserEmpty">
+            <span class="browser-empty-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18M7 6h.01M10 6h.01"/></svg>
+            </span>
+            <h3>浏览器尚未打开</h3>
+            <p>任务启动后，Runtime 捕获的当前页面会显示在这里。</p>
+          </div>
+          <figure class="browser-frame" id="browserFrame" hidden>
+            <div class="browser-chrome" aria-hidden="true">
+              <span class="window-dots"><i></i><i></i><i></i></span>
+              <span class="address"><i></i><span id="browserAddress">Runtime browser session</span></span>
+              <span class="chrome-more">···</span>
+            </div>
+            <div class="frame-viewport">
+              <img id="browserImage" alt="Runtime 当前浏览器画面" />
+              <div class="frame-loading" id="frameLoading"><i></i><span>正在等待当前画面</span></div>
+            </div>
+          </figure>
+          <div class="viewer-note" id="viewerNote" hidden><i></i><span>只读模式 · Agent 操作期间无法手动点击</span></div>
         </div>
-        <div class="inspector-summary" id="inspectorSummary">
-          <span>Select an event</span>
-          <p>Provider attempts, compiler output, action decisions and verifier facts remain separate.</p>
-        </div>
-        <pre id="jsonInspector" tabindex="0">{}</pre>
-        <div class="stdout-drawer">
-          <button id="stdoutToggle" type="button">Runner output <span>＋</span></button>
-          <pre id="stdoutOutput" hidden></pre>
-        </div>
-      </aside>
+      </section>
     </main>
 
-    <footer>
-      <span>Local only · formal runner · append-only evidence</span>
-      <span id="evidencePath">No evidence directory</span>
-    </footer>
+    <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+    <aside class="labs-drawer" id="labsDrawer" aria-labelledby="labsTitle" aria-hidden="true" inert>
+      <header class="labs-header">
+        <div>
+          <span>DEVELOPER WORKSPACE</span>
+          <h2 id="labsTitle">Labs</h2>
+        </div>
+        <button class="icon-button" id="closeLabsButton" type="button" aria-label="关闭 Labs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="labs-tabs" role="tablist" aria-label="Labs 视图">
+        <button class="active" type="button" role="tab" data-labs-tab="experiment" aria-selected="true">实验</button>
+        <button type="button" role="tab" data-labs-tab="bad-cases" aria-selected="false">Bad cases <span id="badCaseCount">0</span></button>
+        <button type="button" role="tab" data-labs-tab="evidence" aria-selected="false">证据</button>
+      </div>
+
+      <div class="labs-content">
+        <section class="labs-view active" data-labs-view="experiment">
+          <div class="labs-intro">
+            <h3>启动正式验证任务</h3>
+            <p>这些设置只影响 benchmark runner；不会改变 Runtime 的事实和控制权。</p>
+          </div>
+          <form id="runForm">
+            <label class="field">
+              <span>MiniWoB task</span>
+              <select id="caseSelect" name="case_id"></select>
+              <small id="caseMeta">正在读取 frozen manifest…</small>
+            </label>
+
+            <div class="form-grid">
+              <label class="field">
+                <span>Action policy</span>
+                <select id="actionModel" name="action_model"></select>
+              </label>
+              <label class="field">
+                <span>Wire capability</span>
+                <select id="actionWireCapability" name="action_wire_capability"></select>
+              </label>
+            </div>
+
+            <div class="role-card">
+              <div class="role-card-title"><span>G</span><div><b>Goal compiler</b><small>为任务提供静态目标指导</small></div></div>
+              <div class="segmented" role="group" aria-label="Goal compiler mode">
+                <button type="button" data-mode="model" class="active">Model</button>
+                <button type="button" data-mode="disabled">Disabled</button>
+              </div>
+              <label class="field" id="goalModelField">
+                <span>Model</span>
+                <select id="goalModel" name="goal_compiler_model"></select>
+              </label>
+            </div>
+
+            <div class="form-grid">
+              <label class="field">
+                <span>Perception</span>
+                <select id="perceptionSelect" name="perception_profile"></select>
+              </label>
+              <label class="field">
+                <span>Evidence profile</span>
+                <input id="profileInput" value="CONSOLE_EXPERIMENT" maxlength="80" pattern="[A-Z][A-Z0-9_]{2,79}" />
+              </label>
+            </div>
+
+            <div class="model-readout"><span>Thinking profile</span><b id="thinkingReadout">—</b></div>
+            <p class="form-error" id="formError" role="alert"></p>
+            <div class="launch-row">
+              <button class="launch" id="launchButton" type="submit"><span>启动任务</span><i>↗</i></button>
+              <button class="stop" id="stopButton" type="button" disabled>停止</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="labs-view" data-labs-view="bad-cases" hidden>
+          <div class="labs-intro">
+            <h3>Bad cases</h3>
+            <p>失败状态只来自 runner 的正式结果。选择一条记录可查看证据。</p>
+          </div>
+          <div class="bad-case-list" id="badCaseList"></div>
+        </section>
+
+        <section class="labs-view" data-labs-view="evidence" hidden>
+          <div class="evidence-head">
+            <div><span>当前运行</span><b id="evidenceRunName">尚未选择</b></div>
+            <button id="copyButton" type="button" disabled>复制 JSON</button>
+          </div>
+          <div class="metric-strip">
+            <div><span>Events</span><b id="eventCount">0</b></div>
+            <div><span>Policy</span><b id="turnCount">0</b></div>
+            <div><span>Actions</span><b id="executionCount">0</b></div>
+            <div><span>Clock</span><b id="runClock">00:00</b></div>
+          </div>
+          <div class="trace-list" id="traceList">
+            <div class="evidence-empty">运行事件会按 Runtime 顺序出现在这里。</div>
+          </div>
+          <div class="trace-inspector">
+            <div class="trace-summary" id="inspectorSummary"><b>选择一个事件</b><span>查看原始本地证据</span></div>
+            <pre id="jsonInspector" tabindex="0">{}</pre>
+          </div>
+          <details class="stdout-drawer">
+            <summary>Runner output</summary>
+            <pre id="stdoutOutput">No runner output yet.</pre>
+          </details>
+          <p class="evidence-path" id="evidencePath">No evidence directory</p>
+        </section>
+      </div>
+    </aside>
+
+    <div class="toast" id="toast" role="status" hidden></div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
