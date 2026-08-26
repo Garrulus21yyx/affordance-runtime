@@ -423,6 +423,10 @@ def _json_type(value: Any) -> str:
 
 
 def _public_issue_path(path: str) -> str:
+    # Array positions are validation-local detail, not stable public fields.
+    # Project them to the schema field so every supported bounded array can
+    # still produce a public typed rejection.
+    path = re.sub(r"\[[0-9]+\]", "", path)
     parts = {
         part.casefold()
         for item in path.split(".")

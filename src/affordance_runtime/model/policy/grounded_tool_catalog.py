@@ -131,21 +131,9 @@ class _ControlBinding:
 
 @dataclass(frozen=True)
 class _FinalResponseBinding:
-    public_to_canonical: Mapping[str, str]
-
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         del tool_call_id
-        raw_refs = arguments.get("evidence_refs", ())
-        if not isinstance(raw_refs, list | tuple):
-            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-        try:
-            canonical_refs = tuple(self.public_to_canonical[str(ref)] for ref in raw_refs)
-        except KeyError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.GROUNDING_GAP,
-                "final response evidence_ref is not a current public fact",
-            ) from exc
-        return FinalResponse(context_id, str(arguments["content"]), canonical_refs)
+        return FinalResponse(context_id, str(arguments["content"]))
 
 
 @dataclass(frozen=True)
@@ -413,16 +401,11 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
-    final_evidence = {
-        public: canonical
-        for public, canonical in context.private_fact_bindings.items()
-        if public in delivery.manifest.fact_refs
-    }
     registered.append(
         RegisteredGroundedTool(
             ToolSpec(
                 GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
-                "Submit the complete final answer from the current World directly for native evaluation.",
+                "Submit the complete final answer supported in the current agent context for native evaluation.",
                 _object_schema(
                     {
                         "content": {
@@ -431,24 +414,11 @@ def compile_grounded_tool_catalog(
                             "minLength": 1,
                             "maxLength": 8000,
                         },
-                        "evidence_refs": {
-                            "type": "array",
-                            "description": "optional current F-refs for traceability",
-                            "items": (
-                                PublicRefCodec.enum_schema(
-                                    tuple(sorted(final_evidence)),
-                                    expected=PublicRefKind.FACT,
-                                )
-                                if final_evidence
-                                else {"type": "string"}
-                            ),
-                            "maxItems": min(32, len(final_evidence)),
-                        },
                     },
                     ("content",),
                 ),
             ),
-            _FinalResponseBinding(final_evidence),
+            _FinalResponseBinding(),
         )
     )
 

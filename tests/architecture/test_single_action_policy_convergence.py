@@ -68,6 +68,7 @@ def test_production_prompts_cannot_advertise_deleted_control_protocols() -> None
     assert "progress_checkpoint" not in prompt
     assert "Harness-produced summary" in prompt
     assert "submit_final_response" in prompt
+    assert prompt.count("An exact identifier encoded in a resolved link target") == 1
 
 
 def test_target_runner_has_exactly_one_core_loop_path() -> None:

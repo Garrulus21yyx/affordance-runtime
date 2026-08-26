@@ -340,21 +340,34 @@ class ActionRecallSet:
             operation_tokens = _literal_tokens(operation)
             path_tokens = _literal_tokens(" ".join(path))
             exact = bool(label and _bounded_phrase_match(label, normalized_query))
+            # A query token can be both a public label and another current
+            # option's operation (for example ``Go`` versus ``go_back``).
+            # Facet discovery is inventory-wide, but that must not steal an
+            # exact label token from the candidate that owns the label.
+            # Explicit role facets remain binding, so ``Go checkbox`` still
+            # cannot select a button merely because its label is ``Go``.
+            candidate_label_terms = query_tokens & label_tokens if exact else frozenset()
+            candidate_role_terms = role_terms - candidate_label_terms
+            candidate_operation_terms = operation_terms - candidate_label_terms
+            candidate_target_terms = target_terms | candidate_label_terms
             # Current ActionSpace role/operation vocabulary supplies dynamic
             # query facets; no task/site keyword table is involved.  Remaining
             # target words must hit public label/path.  Keep every genuine
             # match so explicit recall does not become a Runtime subgoal selector.
-            if not role_terms <= role_tokens or not operation_terms <= operation_tokens:
+            if (
+                not candidate_role_terms <= role_tokens
+                or not candidate_operation_terms <= operation_tokens
+            ):
                 remainder.append(option)
                 continue
             target_tokens = label_tokens | path_tokens
-            target_overlap = target_terms & target_tokens
-            if target_terms:
+            target_overlap = candidate_target_terms & target_tokens
+            if candidate_target_terms:
                 if not target_overlap:
                     remainder.append(option)
                     continue
-                coverage = Fraction(len(target_overlap), len(target_terms))
-            elif role_terms or operation_terms or exact:
+                coverage = Fraction(len(target_overlap), len(candidate_target_terms))
+            elif candidate_role_terms or candidate_operation_terms or exact:
                 coverage = Fraction(1, 1)
             else:
                 remainder.append(option)
@@ -372,7 +385,7 @@ class ActionRecallSet:
                         coverage,
                         int(exact),
                         len(target_overlap),
-                        len(role_terms) + len(operation_terms),
+                        len(candidate_role_terms) + len(candidate_operation_terms),
                     ),
                     structural_priority,
                     option,

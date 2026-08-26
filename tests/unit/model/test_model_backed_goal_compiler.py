@@ -14,6 +14,7 @@ from affordance_runtime.model.goal_compiler import (
     GOAL_COMPILER_PROMPT_VERSION,
     GoalCompilerModelResponse,
     ModelBackedGoalCompiler,
+    model_goal_compiler_from_environment,
 )
 from affordance_runtime.model.policy import model_roles_from_environment
 from affordance_runtime.model.providers.port import (
@@ -103,6 +104,18 @@ def test_initial_attempt_uses_independent_prompt_and_preserves_transcript() -> N
     assert "Describe outcomes, not internal" in port.messages[0][0].content
     assert "semantic_contract" not in port.messages[0][1].content
     assert compiler.last_generation_attempts[0].transcript["llm.output_messages"][0]["content"] == "raw:1"
+
+
+def test_generation_attempt_records_role_thinking_contract() -> None:
+    port = ScriptedModelPort([_ready()])
+    port.thinking_mode = None
+    compiler = ModelBackedGoalCompiler(port, ModelConfig(thinking_mode="disabled"))
+
+    asyncio.run(compiler.compile(GoalCompilerRequest(_task())))
+
+    attempt = compiler.last_generation_attempts[0]
+    assert attempt.thinking_requested == "disabled"
+    assert attempt.thinking_effective == "disabled"
 
 
 def test_schema_repair_preserves_both_raw_attempts() -> None:
@@ -287,6 +300,30 @@ def test_role_factory_uses_deepseek_compiler_model_override(monkeypatch) -> None
 
     assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "deepseek-v4-pro"
+
+
+def test_deepseek_goal_compiler_disables_provider_thinking_for_structured_role() -> None:
+    compiler = model_goal_compiler_from_environment({
+        "LLM_ACTIVE_PROFILE": "deepseek",
+        "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+        "LLM_DEEPSEEK_API_KEY": "secret",
+        "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+    })
+
+    assert compiler.port.supports_thinking_control is True
+    assert compiler.config.thinking_mode == "disabled"
+
+
+def test_goal_compiler_does_not_send_thinking_to_provider_without_control() -> None:
+    compiler = model_goal_compiler_from_environment({
+        "LLM_ACTIVE_PROFILE": "aliyun",
+        "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
+        "LLM_ALIYUN_API_KEY": "secret",
+        "LLM_ALIYUN_MODEL": "glm-5.2",
+    })
+
+    assert compiler.port.supports_thinking_control is False
+    assert compiler.config.thinking_mode is None
 
 
 def test_pydantic_policy_keeps_distinct_compiler_model_override(monkeypatch) -> None:

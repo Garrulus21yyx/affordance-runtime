@@ -10,12 +10,18 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from affordance_runtime.agent.attempt_signature import (
+    PublicAttemptSignature,
+    public_attempt_signature,
+)
+from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -30,6 +36,10 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     AgentDecision,
     DecisionKind,
+    LocalToolResult,
+    RequestActionPage,
+    RequestObservation,
+    ToolRejectedResult,
 )
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
@@ -56,6 +66,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.prompt import MODEL_POLICY_EVIDENCE_STATUS
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ProviderCallNormalizer,
     ToolCallReconciliationStatus,
@@ -86,7 +97,10 @@ _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
 _HISTORY_COMPACTION_KEEP_TOKENS_RATIO = 0.12
 _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
-_HISTORY_COMPACTION_SUMMARY_PROMPT = """
+_SUMMARY_EXACT_VALUE = re.compile(
+    r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)*(?:[A-Za-z°′″%]+)?(?![A-Za-z0-9_])"
+)
+_HISTORY_COMPACTION_SUMMARY_PROMPT = f"""
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
 
@@ -106,6 +120,9 @@ it. Coverage or pagination metadata limits the result's scope; it does not inval
 records or exact values already returned. A later navigation, lookup, or execution failure does
 not retract an already supported fact unless it explicitly disproves that fact.
 
+Shared evidence-status rule:
+{MODEL_POLICY_EVIDENCE_STATUS}
+
 ## Remaining questions
 At most three unresolved user requirements or values that still need verification.
 
@@ -122,7 +139,7 @@ selectors, call-local E/R/F/N refs, old control IDs, or incidental page metadata
 summary concise and respond with only the summary.
 
 <messages>
-{messages}
+{{messages}}
 </messages>
 """.strip()
 _HISTORY_COMPACTION_INSTRUCTIONS = (
@@ -429,6 +446,7 @@ class PydanticAIGroundedDecisionPort:
                         tuple(captured_messages),
                         phase,
                         current_envelope,
+                        history_prefix=current_history,
                         latency_ms=(time.perf_counter() - started) * 1000,
                     )
                     raise
@@ -571,6 +589,11 @@ class PydanticAIGroundedDecisionPort:
                 request.context_id,
                 source_response=_latest_model_response(result),
             )
+            if accepted_exchange is not None:
+                accepted_exchange = _reject_prohibited_recovery_replay(
+                    accepted_exchange,
+                    request.agent_context,
+                )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
                 repair_profile = self.reasoning_policy.repair()
@@ -1172,12 +1195,25 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         *,
+        history_prefix: tuple[object, ...] = (),
         latency_ms: float,
     ) -> None:
         """Close one failed PydanticAI output-retry run from SDK-captured messages."""
 
         if not messages:
             return
+        # ``capture_run_messages`` includes the supplied official history on
+        # an exhausted run, while ``RunResult.new_messages()`` excludes it on
+        # success.  Trace only physical calls made by this invocation.  Strip
+        # the exact typed prefix when present; a non-matching capture is
+        # already fresh and remains untouched.
+        typed_history_prefix = tuple(history_prefix)
+        if (
+            typed_history_prefix
+            and len(messages) >= len(typed_history_prefix)
+            and messages[: len(typed_history_prefix)] == typed_history_prefix
+        ):
+            messages = messages[len(typed_history_prefix) :]
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
         serialized = json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
@@ -1695,6 +1731,79 @@ def _resolve_deferred(
     return None, GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS), ()
 
 
+def _reject_prohibited_recovery_replay(
+    accepted: AcceptedToolExchange,
+    context: AgentContext,
+) -> AcceptedToolExchange:
+    """Return one typed zero-dispatch result for an exact advisory-recovery replay."""
+
+    raw_signature = context.control_feedback.get("prohibited_attempt_signature")
+    if not isinstance(raw_signature, Mapping):
+        return accepted
+    try:
+        prohibited = PublicAttemptSignature(
+            operation=str(raw_signature["operation"]),
+            page_semantic_digest=str(raw_signature["page_semantic_digest"]),
+            target_semantic_digest=str(raw_signature["target_semantic_digest"]),
+            destination_semantic_digest=str(raw_signature["destination_semantic_digest"]),
+            parameter_digest=str(raw_signature["parameter_digest"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return accepted
+    if context.current_observation is None:
+        return accepted
+    decision = accepted.decision
+    if isinstance(decision, LocalToolResult):
+        current = decision.rejected_attempt_signature or public_attempt_signature(
+            decision.tool_name,
+            "",
+            "",
+            decision.arguments,
+            context.current_observation,
+        )
+    elif isinstance(decision, RequestActionPage):
+        current = public_attempt_signature(
+            "find_controls",
+            "",
+            "",
+            {"query": decision.query},
+            context.current_observation,
+        )
+    elif isinstance(decision, RequestObservation):
+        current = public_attempt_signature(
+            "request_observation",
+            "",
+            "",
+            {
+                "purpose": decision.purpose,
+                "subject_id": decision.subject_id,
+                "evidence_property": decision.evidence_property,
+                "cursor": decision.cursor,
+            },
+            context.current_observation,
+        )
+    else:
+        return accepted
+    if current != prohibited:
+        return accepted
+    rejected = ToolRejectedResult(
+        context.context_id,
+        accepted.call.name,
+        accepted.call.arguments,
+        {
+            "kind": "recovery_repeat_rejected",
+            "failure_kind": "control_feedback_prohibited_attempt",
+            "attempted_operation": accepted.call.name,
+            "dispatch": "not_sent",
+            "world_changed": False,
+            "must_change": ("operation", "arguments"),
+        },
+        accepted.call.call_id,
+        rejected_attempt_signature=current,
+    )
+    return replace(accepted, decision=rejected)
+
+
 def _latest_model_response(result):
     """Return the current SDK response, excluding earlier supplied history."""
 
@@ -2026,6 +2135,7 @@ async def _compact_pydantic_history(
                     usage=RunUsage(),
                 )
             if transcript:
+                _validate_history_summary_consistency(compacted[0])
                 preserved_count = len(compacted) - 1
                 if preserved_count < 0 or preserved_count > len(messages):
                     raise ValueError("Harness compaction returned an invalid preserved suffix")
@@ -2061,6 +2171,50 @@ async def _compact_pydantic_history(
         latency_ms=(time.perf_counter() - started) * 1000,
         attempted=bool(transcript),
     )
+
+
+def _validate_history_summary_consistency(summary_message: object) -> None:
+    """Fail safe when one exact value is both verified and still unresolved."""
+
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart
+
+    if not isinstance(summary_message, ModelRequest):
+        raise ValueError("Harness compaction did not return a summary request")
+    summaries = tuple(
+        part.content
+        for part in summary_message.parts
+        if isinstance(part, SystemPromptPart)
+        and part.content.startswith("Summary of previous conversation:")
+    )
+    if len(summaries) != 1:
+        raise ValueError("Harness compaction did not return exactly one summary")
+    verified = _summary_section(summaries[0], "Verified facts")
+    remaining = _summary_section(summaries[0], "Remaining questions")
+    if not verified or not remaining:
+        return
+    conflicts = _summary_exact_values(verified) & _summary_exact_values(remaining)
+    if conflicts:
+        raise ValueError(
+            "history summary repeats an exact verified value under Remaining questions"
+        )
+
+
+def _summary_section(summary: str, heading: str) -> str:
+    match = re.search(
+        rf"(?ms)^## {re.escape(heading)}\s*\n(.*?)(?=^## |\Z)",
+        summary,
+    )
+    return match.group(1).strip() if match is not None else ""
+
+
+def _summary_exact_values(section: str) -> frozenset[str]:
+    values = set()
+    for match in _SUMMARY_EXACT_VALUE.finditer(section):
+        value = match.group(0).casefold().rstrip(".,")
+        digits = sum(char.isdigit() for char in value)
+        if digits >= 3 or any(char in value for char in (".", ",", "°", "′", "″", "%")):
+            values.add(value)
+    return frozenset(values)
 
 
 def _repair_preserves_rejected_semantics(

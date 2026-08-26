@@ -612,6 +612,68 @@ def test_physical_stale_not_sent_refreshes_world_and_returns_to_policy_without_r
     asyncio.run(scenario())
 
 
+def test_invalid_parameters_not_sent_returns_same_call_failure_for_reselection() -> None:
+    @dataclass
+    class ReselectingPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id="provider-call:invalid",
+                )
+            assert context.last_step is not None
+            assert context.last_step.status_after is RunStatus.RUNNING
+            assert context.last_step.feedback == "action_not_sent:invalid_parameters"
+            assert context.last_step.execution_receipts is not None
+            assert context.last_step.execution_receipts.execution_count == 0
+            terminal = context.last_step.execution_receipts.terminal_failure
+            assert terminal is not None
+            assert terminal.permits_reselection is True
+            assert terminal.error is ActionError.INVALID_PARAMETERS
+            return Abort(context.context_id, "typed failure observed", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        policy = ReselectingPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("invalid_parameter_reselection_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("before", False),
+            results=(
+                ActionResult(
+                    "*",
+                    DispatchStatus.NOT_SENT,
+                    "dom",
+                    False,
+                    ActionError.INVALID_PARAMETERS,
+                ),
+            ),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.current_world.observation_id == "before"
+        assert state.execution_count == 0
+        assert policy.turns == 2
+        assert environment.execute_calls == 1
+        assert environment.capture_calls == 0
+        assert environment.dispatched_requests == []
+        assert [item.reason for item in state.workspace.recent_steps] == [
+            "action_not_sent:invalid_parameters",
+            "agent_aborted:user_request",
+        ]
+
+    asyncio.run(scenario())
+
+
 def test_post_dispatch_evaluator_exception_is_typed_and_never_fabricates_unknown(tmp_path) -> None:
     class FailingPostDispatchEvaluator(CoreTaskEvaluator):
         async def evaluate(self, task, observation):

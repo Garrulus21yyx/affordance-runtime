@@ -264,6 +264,15 @@ class ActionResult:
         ):
             raise ValueError("action result execution diagnostics are invalid")
 
+    @property
+    def permits_reselection(self) -> bool:
+        """Whether a different model selection can safely follow this zero-dispatch result."""
+
+        return (
+            self.dispatch_status is DispatchStatus.NOT_SENT
+            and self.error is ActionError.INVALID_PARAMETERS
+        )
+
 
 @dataclass(frozen=True)
 class ExecutionAttempt:

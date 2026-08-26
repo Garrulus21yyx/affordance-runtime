@@ -1214,7 +1214,11 @@ class CoreAgentLoop:
                 state.current_world,
                 state.current_world,
                 state.current_task_evaluation,
-                RunStatus.BLOCKED,
+                (
+                    RunStatus.RUNNING
+                    if execution.result.permits_reselection
+                    else RunStatus.BLOCKED
+                ),
                 execution_receipts=ExecutionReceiptBatch.from_atomic(
                     execution,
                     state.current_world.observation_id,

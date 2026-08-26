@@ -21,6 +21,7 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SearchPageContentResult,
     SelectAction,
+    ToolRejectedResult,
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE, AgentLoopProfile
@@ -125,6 +126,30 @@ class EpisodeMonitor:
             self.recent_gui_attempts = ()
             self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
+
+        if self.recovery_count and isinstance(result.decision, ToolRejectedResult):
+            self.no_progress_count += 1
+            self.same_attempt_streak += 1
+            self.latest_attempt_signature = _same_world_attempt_signature(result)
+            self.recovery_count += 1
+            signal = _control_stall_signal(
+                result,
+                self,
+                recovery_attempt=self.recovery_count,
+            )
+            if self.recovery_count > self.profile.max_recovery_retries + 1:
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
+            )
 
         gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
         cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)

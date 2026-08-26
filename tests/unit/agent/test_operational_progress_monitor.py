@@ -11,7 +11,12 @@ from affordance_runtime.actions import (
     ActionRisk,
     ActionSpaceBuilder,
 )
-from affordance_runtime.agent import RequestActionPage, SearchPageContentResult, SelectAction
+from affordance_runtime.agent import (
+    RequestActionPage,
+    SearchPageContentResult,
+    SelectAction,
+    ToolRejectedResult,
+)
 from affordance_runtime.agent import monitor as monitor_module
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.context.observation_delivery import (
@@ -483,6 +488,44 @@ def test_same_attempt_after_recovery_is_control_stalled() -> None:
     assert blocked.recovery_signal is not None
     assert recovery.recovery_signal is not None
     assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
+
+
+def test_typed_recovery_replay_rejection_gets_one_bounded_fallback_turn() -> None:
+    world = _world("observation:typed-recovery-rejection")
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    _evaluate(monitor, _local_step(world, query="one"))
+    recovery = _evaluate(monitor, _local_step(world, query="two"))
+    assert recovery.recovery_signal is not None
+    prohibited = recovery.recovery_signal.prohibited_attempt_signature
+    assert prohibited is not None
+    rejected = StepResult(
+        ToolRejectedResult(
+            "context:test",
+            "search_page_content",
+            {"query": "two"},
+            {
+                "kind": "recovery_repeat_rejected",
+                "dispatch": "not_sent",
+                "world_changed": False,
+            },
+            rejected_attempt_signature=prohibited,
+        ),
+        world,
+        world,
+        _evaluation(world),
+        feedback="local_tool_result",
+    )
+
+    fallback = _evaluate(monitor, rejected)
+    blocked = _evaluate(monitor, rejected)
+
+    assert fallback.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert fallback.recovery_signal is not None
+    assert fallback.recovery_signal.recovery_attempt == 2
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "control_stalled"
 
 
 def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:

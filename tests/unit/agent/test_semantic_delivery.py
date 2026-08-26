@@ -1278,10 +1278,12 @@ def test_tool_schemas_are_stable_and_manifest_actions_resolve_to_complete_action
         observation=small_world,
     )
     schemas = json.dumps([to_json_compatible(item.input_schema) for item in catalog.specs])
+    final_spec = next(item for item in catalog.specs if item.name == "submit_final_response")
 
     assert PublicRefCodec.pattern(PublicRefKind.EXECUTABLE) in schemas
-    assert '"enum": ["F' in schemas
     assert PublicRefCodec.pattern(PublicRefKind.REGION) in schemas
+    assert set(final_spec.input_schema["properties"]) == {"content"}
+    assert "evidence_refs" not in schemas
     assert all(ref in {item.target_ref for item in context.complete_actions} for ref in view.manifest.executable_refs)
     assert catalog.serialized_bytes < 8_000
 

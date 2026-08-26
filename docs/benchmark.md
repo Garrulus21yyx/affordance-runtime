@@ -24,10 +24,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-Current repair-focused owner/cross-boundary verification is included in the full suite, which reports
-`1740 passed / 25 skipped`; one pre-existing multiprocessing fork warning remains in the observability test. Full
-Ruff, compileall, and `git diff --check` pass. This is implementation evidence for the bounded changes, not a
-post-optimization live Task266 witness or overall closure.
+Current repair-focused owner/cross-boundary verification reports `172 passed / 3 skipped`. The full code suite reports
+`1759 passed / 25 skipped`; its sole failure is the pre-existing untracked `docs/interaction-shell.md` exceeding the
+repository's five-maintained-document governance set. That user file was not modified or removed. `git diff --check`
+passes. This is implementation evidence for the bounded changes; run37 below is the fresh live Task266 witness.
 
 Overall project status remains **reopened / non-closed**. This cutover does not close:
 
@@ -357,6 +357,33 @@ Runtime-private BrowserGym binding retains environment locations and rejects an 
 dispatch. The actor prompt removes duplicated static rules but keeps the complete fresh World and current ToolReturn.
 No checkpoint, memory owner, URL recognizer, service directory, cursor, Monitor trigger, or second Runtime path is
 introduced. A fresh post-optimization live witness remains required.
+
+Runs33--36 then separated four remaining contracts rather than just extending the case timeout. Run33 showed that a
+typed pre-dispatch `invalid_parameters` result was reselectable at execution authority but CoreLoop still terminated;
+the generic NOT_SENT algebra now re-enters the same ActionPolicy only for explicitly reselectable failures. Run34
+crossed that repair and showed that the final public tool schema still required ephemeral current-World evidence refs;
+the model-visible final call now owns only `content`, while internal evaluator evidence remains unchanged. Run35
+proved that the conclusion-oriented compaction prompt alone could still emit relation `2176999` under both verified
+and remaining sections and that an exact prohibited local replay had no enforceable alternate-step boundary. The
+history owner now fails safe to raw official history on that exact contradiction, while the existing typed Monitor
+recovery budget handles a same-call replay rejection; no checkpoint reducer or second policy was added.
+
+The authorized
+[`run36`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run36/run.json) crossed the GoalCompiler,
+identifier-retention, final-call, and replay contracts. Its last failure was distinct: the fresh World and private
+bindings contained an executable button labeled `Go`, but `find_controls("Go button")` returned empty. Inventory-wide
+facet inference had interpreted `go` as an operation because the same ActionSpace contained `go_back/go_forward`,
+then removed that token from the button's own exact label. Repeated discovery was a consequence; the final text-only
+provider exhaustion was secondary. The action-discovery owner now lets an exact candidate label claim colliding
+tokens before role/operation constraints, without any site, URL, task, selector, or unique-control branch.
+
+The fresh authorized
+[`run37`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run37/run.json) is accepted with native
+`verified_success`. It returns `[{"relation_id":2176999,"distance":"287km"}]`, makes one GoalCompiler call, 39 ordinary
+ActionPolicy calls, zero recovery calls, and exactly one STOP, post-STOP capture, and native evaluator call. Sequence
+84 returns the current `Go` capability for `find_controls("Go submit directions")`, sequence 86 executes it, and the
+formal run ends `done` in about 325 seconds. The two reported gaps were therefore real root causes, but not a complete
+explanation of run36: the independent exact-label/operation collision also had to be closed at control discovery.
 
 Run21's final `PublicGroundingAmbiguousError` was also reproduced without the model on the exact Maine page. Two
 legitimate executable links named `List of counties in Maine` had distinct source structural paths `(94, 1)` and
@@ -918,6 +945,12 @@ The final read-only review for this cutover must answer:
 27. Does DeepSeek receive the declared output limit as `max_tokens`, and does text-only ActionPolicy output cause one
     PydanticAI same-context retry followed by a typed bounded failure without polluting accepted history or nesting a
     representation-repair retry?
+28. When a query token is both one control's exact label and another control's operation, does `find_controls`
+    preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
+    genuine current match?
+29. Do ActionPolicy and Harness compaction consume one evidence-status rule, does a contradictory exact-value summary
+    restore raw official history, and does GoalCompiler disable thinking only through the selected provider's declared
+    wire capability?
 
 ## Exit statement
 

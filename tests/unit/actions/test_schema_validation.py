@@ -5,6 +5,7 @@ import pytest
 from affordance_runtime.actions.schema_validation import (
     validate_parameter_schema_contract,
     validate_value,
+    validate_value_issue,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolSpec
 
@@ -108,3 +109,24 @@ def test_schema_value_validation_rejects_union_cross_product_and_nonfinite_numbe
         validate_value({"target": "E1", "value": "B"}, schema)
     with pytest.raises(ValueError):
         validate_value(math.inf, {"type": "number"})
+
+
+def test_array_item_validation_projects_to_a_bounded_public_field_path() -> None:
+    issue = validate_value_issue(
+        {"values": ["unsupported"]},
+        {
+            "type": "object",
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["supported"]},
+                    "maxItems": 2,
+                }
+            },
+            "required": ["values"],
+            "additionalProperties": False,
+        },
+    )
+
+    assert issue is not None
+    assert issue.public_field_paths == ("parameters.values",)

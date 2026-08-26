@@ -332,6 +332,29 @@ def test_target_terms_outweigh_role_and_operation_terms_in_explicit_control_quer
     assert {item.action_id for item in partition.remainder} == {"action:00", "action:02"}
 
 
+def test_exact_label_token_is_not_stolen_by_another_options_operation_facet() -> None:
+    options = (
+        _option(0, action="activate"),
+        _option(1, action="go_back"),
+    )
+
+    partition = ActionRecallSet().partition(
+        options,
+        labels={
+            "target:00": "Go",
+            "target:01": "Browser navigation",
+        },
+        roles={
+            "target:00": "button",
+            "target:01": "browser_context",
+        },
+        query="Go button",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:00",)
+    assert tuple(item.action_id for item in partition.remainder) == ("action:01",)
+
+
 def test_explicit_control_query_returns_empty_when_only_role_matches() -> None:
     options = (_option(0), _option(1))
     partition = ActionRecallSet().partition(

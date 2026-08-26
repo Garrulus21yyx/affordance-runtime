@@ -17,6 +17,29 @@ packed; an explicit `find_controls` result remains one complete higher-priority 
 current action-boundary repair also makes that rank purely presentational: registry-owned action tools use stable
 E-ref-shaped schemas, while the existing complete current `ActionSpace` resolver alone validates the selected ref,
 operation, destination, parameters, and private action identity.
+
+The latest Task266 convergence repair closes three owner contracts without adding another memory, evidence, cursor,
+or control-flow path. `GoalCompiler` now requests disabled thinking whenever the selected provider declares that
+wire capability; providers without the capability remain unchanged. ActionPolicy and Harness compaction consume one
+prompt-owned evidence-status rule: an exact identifier encoded by a resolved link remains identity evidence when the
+destination later fails to load, and an exact value cannot be both verified and unresolved. Because a prompt is not
+an enforcement boundary, the PydanticAI history owner rejects a summary that places the same exact value in
+`Verified facts` and `Remaining questions` and preserves the official raw history instead. It creates no fact store
+and makes no independent task judgment.
+
+Control discovery also now gives a candidate's exact public label ownership of colliding query tokens before applying
+inventory-wide role/operation facets. Thus `Go button` finds the current `Go` button even though the same ActionSpace
+also contains `go_back`/`go_forward`; an explicit mismatching role still rejects the candidate, and every genuine
+match remains visible. The exhausted PydanticAI output-retry transcript strips only the exact supplied official
+history prefix, so old responses are no longer counted as physical calls from the current invocation.
+
+The authorized
+[`run37`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run37/run.json) crossed these contracts and ended
+`done` with native `verified_success`, returning relation `2176999` and driving distance `287km`. It made one
+GoalCompiler call, 39 ordinary ActionPolicy calls, zero recovery calls, and exactly one STOP, post-STOP capture, and
+native evaluation. This is a live correctness witness for this Task266 causal line, not closure of the Planner gap or
+the broader benchmark campaign.
+
 The latest repair keeps the generic BrowserGym browser profile unrestricted, while an environment may explicitly
 provide a navigation scope. WebArena is the only current selector of that restricted profile: its runner reads the
 official BrowserGym `ENV_VARS` URL set once and gives the normalized locations to the existing private browser-context
@@ -1067,6 +1090,10 @@ This cutover is implementation-complete only when all of the following agree:
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
 21. DeepSeek receives the declared output budget through its supported wire parameter, and a text-only ActionPolicy
     response is retried once by PydanticAI before a typed terminal failure, with no nested representation retry.
+22. GoalCompiler thinking control follows the selected provider capability; ActionPolicy and Harness compaction share
+    one evidence-status rule; an exact value cannot survive in both verified and unresolved summary sections.
+23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and
+    exhausted output-retry tracing cannot count responses from the supplied official history as new physical calls.
 
 These gates prove this bounded implementation. They do not close the BrowserGym transition without its post-repair
 live witness, Planner lexical admission, or the broader benchmark campaign.

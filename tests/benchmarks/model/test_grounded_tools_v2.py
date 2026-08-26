@@ -1028,6 +1028,22 @@ def test_find_controls_has_one_natural_language_input_and_no_generic_continuatio
     assert not hasattr(resolution.decision, "continuation_scope")
 
 
+def test_final_response_tool_accepts_content_without_world_fact_lineage() -> None:
+    context = _context()
+    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    spec = next(item for item in catalog.specs if item.name == "submit_final_response")
+
+    assert set(spec.input_schema["properties"]) == {"content"}
+    assert spec.input_schema["required"] == ["content"]
+    resolution = _resolve_catalog_call(
+        catalog,
+        ToolCall("submit_final_response", {"content": "supported answer"}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(resolution.decision, FinalResponse)
+    assert resolution.decision.evidence_refs == ()
+
+
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)

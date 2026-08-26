@@ -60,6 +60,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
+from affordance_runtime.model.policy.prompt import (
+    MODEL_POLICY_EVIDENCE_STATUS,
+    MODEL_POLICY_INSTRUCTIONS,
+)
 from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationResult,
     ToolCallReconciliationStatus,
@@ -296,6 +300,62 @@ def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_
     asyncio.run(scenario())
 
 
+def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
+    async def scenario() -> None:
+        repeated_call_id = "recording-call:prohibited-read"
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[ToolCallPart("list_regions", {}, repeated_call_id)]
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("recovery-output-validator", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+        prohibited = pydantic_bridge.public_attempt_signature(
+            "list_regions",
+            "",
+            "",
+            {},
+            world,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "control-stall:fixture",
+                "recovery_attempt": 1,
+                "prohibited_attempt_signature": pydantic_bridge.to_json_compatible(prohibited),
+            },
+        )
+
+        result = await policy.port.generate(
+            ModelDecisionRequest("request:recovery-output-validator", context)
+        )
+
+        assert result.failure is None
+        assert result.output is not None
+        assert result.output.decision.kind.value == "tool_rejected"
+        assert result.output.decision.tool_name == "list_regions"
+        assert result.output.decision.tool_call_id == repeated_call_id
+        assert result.output.decision.result["kind"] == "recovery_repeat_rejected"
+        assert result.output.decision.result["dispatch"] == "not_sent"
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["deliberate"]
+        assert [attempt.status for attempt in result.attempts] == ["accepted"]
+        canonical_history = json.dumps(policy.port.message_history, default=str)
+        assert repeated_call_id in canonical_history
+
+    asyncio.run(scenario())
+
+
 def test_text_only_output_retry_exhaustion_is_typed_no_tool_call() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["zero_calls", "zero_calls"])
@@ -324,6 +384,70 @@ def test_text_only_output_retry_exhaustion_is_typed_no_tool_call() -> None:
         )
         assert result.diagnostics["policy_model_call_count"] == 2
         assert all(attempt.phase != "representation_repair" for attempt in result.attempts)
+
+    asyncio.run(scenario())
+
+
+def test_exhausted_output_retry_trace_excludes_prior_official_history() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                "zero_calls",
+                "zero_calls",
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("output-retry-history-boundary", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(
+            ModelDecisionRequest("request:output-retry-history:first", first_context)
+        )
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=first_step,
+        )
+
+        second = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:output-retry-history:second",
+                second_context,
+                last_step=first_step,
+            )
+        )
+
+        assert second.failure is not None
+        assert second.failure.reason == "no_tool_call"
+        assert scripted.calls == 3
+        assert [item.phase for item in second.attempts] == [
+            "ordinary",
+            "ordinary_output_retry",
+        ]
+        assert [item.status for item in second.attempts] == ["invalid", "failed"]
+        assert all(
+            not any(
+                part.get("part_kind") == "tool-call"
+                for message in item.transcript["llm.output_messages"]
+                for part in message["parts"]
+            )
+            for item in second.attempts
+        )
 
     asyncio.run(scenario())
 
@@ -509,7 +633,7 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
                 ],
                 (
                     "submit_final_response",
-                    {"content": "Canonical pairs preserved.", "evidence_refs": []},
+                    {"content": "Canonical pairs preserved."},
                 ),
             ]
         )
@@ -634,7 +758,7 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         scripts.append(
             (
                 "submit_final_response",
-                {"content": "Canonical exchange received.", "evidence_refs": []},
+                {"content": "Canonical exchange received."},
             )
         )
         scripted = ScriptedModel(scripts)
@@ -756,7 +880,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
                 ),
                 (
                     "submit_final_response",
-                    {"content": "Dibbins; Anglebert Dinkherhump", "evidence_refs": []},
+                    {"content": "Dibbins; Anglebert Dinkherhump"},
                 ),
             ]
         )
@@ -956,7 +1080,7 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
                 ("read_region", {"region_ref": region_ref}),
                 (
                     "submit_final_response",
-                    {"content": "Observed the complete current result.", "evidence_refs": []},
+                    {"content": "Observed the complete current result."},
                 ),
             ]
         )
@@ -1133,8 +1257,102 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "At most two terse strategy-level failures" in prompt
     assert "## Action outcomes" not in prompt
     assert "Never enumerate attempted URLs" in prompt
+    assert MODEL_POLICY_EVIDENCE_STATUS in prompt
+    assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
+    assert "destination is unavailable" in MODEL_POLICY_EVIDENCE_STATUS
+    assert "must not also appear unresolved" in MODEL_POLICY_EVIDENCE_STATUS
     assert pydantic_bridge._HISTORY_COMPACTION_KEEP_TOKENS_RATIO == 0.12
     assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
+
+
+def test_exact_link_identity_survives_destination_load_failure_compaction_boundary() -> None:
+    history = list(_official_history_with_pending_actions(7))
+    history[0] = ModelRequest(parts=[
+        UserPromptPart("Return relation_id and driving distance for the selected place"),
+    ])
+    history[2] = ModelRequest(parts=[
+        ToolReturnPart(
+            "activate",
+            {
+                "status": "stable",
+                "result_label": "Selected national park",
+                "resolved_link_target": "/relation/2176999",
+            },
+            "call:0",
+        ),
+        UserPromptPart("World 1: selected result is now current"),
+    ])
+    history[4] = ModelRequest(parts=[
+        ToolReturnPart(
+            "activate",
+            {
+                "status": "stable",
+                "route": "/relation/2176999",
+                "page_title": "Not Found",
+            },
+            "call:1",
+        ),
+        UserPromptPart("World 2: destination page is unavailable"),
+    ])
+    expected_summary = """## Verified facts
+- relation_id = 2176999 (resolved result link)
+
+## Remaining questions
+- Driving distance
+
+## Next intent
+Compute the driving distance from the established coordinates."""
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart(expected_summary)])])
+
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            tuple(history),
+            model=scripted.build(),
+            max_estimated_tokens=1,
+            timeout_s=2.0,
+        )
+    )
+
+    assert run.error == ""
+    assert expected_summary in run.messages[0].parts[0].content
+    recorded = json.dumps(
+        normalize_recorded_provider_input(scripted.records[0]),
+        sort_keys=True,
+    )
+    assert "An exact identifier encoded in a resolved link target" in recorded
+    assert "must not also appear unresolved under Remaining" in recorded
+    assert "/relation/2176999" in recorded
+    assert "Not Found" in recorded
+    assert pydantic_bridge._pending_call_from_history(run.messages) == ToolCall(
+        "activate", {"target": "E6"}, "call:6"
+    )
+
+
+def test_compaction_fails_safe_when_an_exact_verified_value_is_also_unresolved() -> None:
+    history = _official_history_with_pending_actions(7)
+    invalid_summary = """## Verified facts
+- The resolved link target encodes relation ID 2176999.
+
+## Remaining questions
+- Relation ID 2176999 because its destination returned Not Found.
+
+## Next intent
+- Re-open the relation page."""
+    scripted = ScriptedModel([ModelResponse(parts=[TextPart(invalid_summary)])])
+
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history,
+            model=scripted.build(),
+            max_estimated_tokens=1,
+            timeout_s=2.0,
+        )
+    )
+
+    assert run.attempted is True
+    assert run.messages == history
+    assert "repeats an exact verified value" in run.error
+    assert len(scripted.records) == 1
 
 
 def test_harness_summary_sees_complete_bounded_tool_result_past_upstream_clip() -> None:
@@ -1278,7 +1496,7 @@ def test_action_envelope_recomputes_timeout_after_actual_compaction_elapsed(monk
                 ("list_regions", {}),
                 (
                     "submit_final_response",
-                    {"content": "Deadline propagated.", "evidence_refs": []},
+                    {"content": "Deadline propagated."},
                 ),
             ]
         )
@@ -1458,7 +1676,7 @@ def test_recording_model_receives_same_tool_cursor_page_as_direct_same_call_resu
                 ("read_region", {"region_ref": region_ref, "cursor": cursor}),
                 (
                     "submit_final_response",
-                    {"content": "Review pages inspected.", "evidence_refs": []},
+                    {"content": "Review pages inspected."},
                 ),
             ]
         )
@@ -1527,7 +1745,7 @@ def test_list_regions_returns_standard_call_correlated_tool_result() -> None:
                 ("list_regions", {}),
                 (
                     "submit_final_response",
-                    {"content": "Region inventory received.", "evidence_refs": []},
+                    {"content": "Region inventory received."},
                 ),
             ]
         )
@@ -1929,6 +2147,58 @@ def test_pydantic_ai_repairs_invalid_representation_without_changing_target() ->
         assert isinstance(result.output.decision, SelectAction)
         assert scripted.calls == 2
         assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
+
+    asyncio.run(scenario())
+
+
+def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_content() -> None:
+    async def scenario() -> None:
+        call_id = "recording-call:final-with-stale-ref"
+        content = '{"task_type":"RETRIEVE","status":"SUCCESS","retrieved_data":[{"value":287}]}'
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "submit_final_response",
+                            {"content": content, "evidence_refs": ["F408"]},
+                            call_id,
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[ToolCallPart("submit_final_response", {"content": content}, call_id)]
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("final-response-stale-ref", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:final-stale-ref", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, FinalResponse)
+        assert result.output.decision.content == content
+        assert result.output.decision.evidence_refs == ()
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "ordinary",
+            "representation_repair",
+        ]
+        final_spec = next(
+            tool
+            for tool in scripted.records[0].function_tools
+            if tool.name == "submit_final_response"
+        )
+        assert set(final_spec.parameters_json_schema["properties"]) == {"content"}
 
     asyncio.run(scenario())
 

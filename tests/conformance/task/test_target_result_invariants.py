@@ -36,6 +36,19 @@ def test_action_result_allows_sent_business_failure() -> None:
     assert not result.transport_success
 
 
+@pytest.mark.parametrize("error", tuple(ActionError))
+def test_only_invalid_parameters_permits_zero_dispatch_reselection(error) -> None:
+    result = ActionResult(
+        "request",
+        DispatchStatus.NOT_SENT,
+        "fixture",
+        False,
+        error,
+    )
+
+    assert result.permits_reselection is (error is ActionError.INVALID_PARAMETERS)
+
+
 def test_causal_transition_requires_a_successful_sent_action() -> None:
     assert (
         ActionResult(

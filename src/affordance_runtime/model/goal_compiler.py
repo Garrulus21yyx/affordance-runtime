@@ -186,6 +186,12 @@ class ModelBackedGoalCompiler:
         error: Exception | None = None,
     ) -> None:
         record = getattr(self.port, "last_call", None)
+        requested_thinking = self.config.thinking_mode or "provider_default"
+        effective_thinking = (
+            self.config.thinking_mode
+            or getattr(self.port, "thinking_mode", None)
+            or "provider_default"
+        )
         attempt = ModelGenerationAttempt(
             attempt=number,
             phase=phase,
@@ -198,6 +204,8 @@ class ModelBackedGoalCompiler:
             completion_tokens=int(getattr(record, "completion_tokens", 0)),
             total_tokens=int(getattr(record, "total_tokens", 0)),
             exception_class=type(error).__name__ if error else "",
+            thinking_requested=requested_thinking,
+            thinking_effective=effective_thinking,
             transcript=getattr(self.port, "last_transcript", None),
         )
         object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, attempt))
@@ -303,6 +311,11 @@ def model_goal_compiler_from_environment(
         and selected_port.model.casefold() == "glm-4.1v-thinking-flashx"
         else None
     )
+    thinking_mode = (
+        "disabled"
+        if bool(getattr(selected_port, "supports_thinking_control", False))
+        else None
+    )
     return ModelBackedGoalCompiler(
         selected_port,
         ModelConfig(
@@ -314,6 +327,7 @@ def model_goal_compiler_from_environment(
             provider_circuit_break_s=0.0,
             prompt_version=GOAL_COMPILER_PROMPT_VERSION,
             structured_output_mode=output_mode,
+            thinking_mode=thinking_mode,
         ),
     )
 
