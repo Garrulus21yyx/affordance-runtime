@@ -231,6 +231,19 @@ class CooperativeRunControl:
         self._record(outcome)
         return outcome
 
+    def restore_paused(self, outcome: RunControlOutcome) -> None:
+        """Hydrate one committed pause boundary into a fresh Runtime process."""
+
+        if (
+            self._pending is not None
+            or self._paused is not None
+            or outcome.kind is not RunControlKind.PAUSE
+            or outcome.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+        ):
+            raise ValueError("run control cannot restore this pause boundary")
+        self._paused = outcome
+        self._record(outcome)
+
     def _record(self, outcome: RunControlOutcome) -> None:
         self._outcomes[outcome.command_id] = outcome
         self._outcome_order.append(outcome.command_id)

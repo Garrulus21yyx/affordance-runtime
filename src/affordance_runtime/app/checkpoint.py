@@ -12,16 +12,51 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from affordance_runtime.actions.space_contracts import ActionRisk
+from affordance_runtime.agent.context.contracts import (
+    AgentHistoricalTargetView,
+    AgentTurnView,
+)
+from affordance_runtime.agent.decisions import AskUser, DecisionKind, SelectAction
 from affordance_runtime.agent.run_control import (
+    RunControlBoundary,
     RunControlKind,
     RunControlOutcome,
     RunControlOutcomeKind,
 )
-from affordance_runtime.agent.run_state import RunState, RunStatus
+from affordance_runtime.agent.run_state import RunCheckpointFacts, RunState, RunStatus
+from affordance_runtime.agent.workspace import (
+    ActivityFamily,
+    ActivitySummary,
+    AgentWorkspace,
+    SemanticEvent,
+    SemanticEventKind,
+)
+from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.goals.plan import (
+    Failed,
+    GoalPlan,
+    GoalPlanItem,
+    NeedsInput,
+    NotRequired,
+    Ready,
+    Unsupported,
+)
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.task.contracts import TaskGoal
+from affordance_runtime.risk.contracts import (
+    ConfirmationSubject,
+    RiskAssessment,
+    RiskDecisionKind,
+)
+from affordance_runtime.task.contracts import (
+    EvaluationSpec,
+    LoopBudget,
+    MaterialBinding,
+    RiskProfile,
+    TaskGoal,
+)
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v1"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v2"
 _MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024
 
 
@@ -162,6 +197,12 @@ class RuntimeCheckpoint:
             }
         )
 
+    def restore_task(self) -> TaskGoal:
+        return _restore_task(self.task)
+
+    def restore_run_facts(self) -> RunCheckpointFacts:
+        return _restore_run_facts(self.run, self.last_step)
+
     @classmethod
     def from_json(cls, payload: str) -> RuntimeCheckpoint:
         try:
@@ -214,6 +255,26 @@ class RuntimeCheckpointCommandOutcome:
             raise RuntimeCheckpointError("checkpoint_command_outcome_invalid")
 
 
+@dataclass(frozen=True)
+class RuntimeCheckpointResumeOutcome:
+    """The single durable command allowed to consume one paused checkpoint."""
+
+    session_id: str
+    command_id: str
+    checkpoint_id: str
+    outcome: str = "resumed"
+
+    def __post_init__(self) -> None:
+        if (
+            not self.session_id.strip()
+            or not self.command_id.strip()
+            or len(self.command_id) > 128
+            or not self.checkpoint_id.startswith("runtime-checkpoint:")
+            or self.outcome != "resumed"
+        ):
+            raise RuntimeCheckpointError("checkpoint_resume_outcome_invalid")
+
+
 class RuntimeCheckpointStore(Protocol):
     async def commit_pause(
         self,
@@ -223,9 +284,17 @@ class RuntimeCheckpointStore(Protocol):
 
     async def load_latest(self, session_id: str) -> RuntimeCheckpoint | None: ...
 
-    async def command_outcome(
-        self, session_id: str, command_id: str
-    ) -> RuntimeCheckpointCommandOutcome | None: ...
+    async def load(self, session_id: str, checkpoint_id: str) -> RuntimeCheckpoint | None: ...
+
+    async def command_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointCommandOutcome | None: ...
+
+    async def commit_resume(self, outcome: RuntimeCheckpointResumeOutcome) -> None: ...
+
+    async def resume_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointResumeOutcome | None: ...
+
+    async def checkpoint_resume_outcome(
+        self, session_id: str, checkpoint_id: str
+    ) -> RuntimeCheckpointResumeOutcome | None: ...
 
 
 @dataclass(frozen=True)
@@ -264,11 +333,43 @@ class SQLiteRuntimeCheckpointStore:
         except (OSError, sqlite3.Error) as exc:
             raise RuntimeCheckpointError("checkpoint_load_failed") from exc
 
-    async def command_outcome(
-        self, session_id: str, command_id: str
-    ) -> RuntimeCheckpointCommandOutcome | None:
+    async def load(self, session_id: str, checkpoint_id: str) -> RuntimeCheckpoint | None:
+        try:
+            return await asyncio.to_thread(self._load, session_id, checkpoint_id)
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_load_failed") from exc
+
+    async def command_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointCommandOutcome | None:
         try:
             return await asyncio.to_thread(self._command_outcome, session_id, command_id)
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_load_failed") from exc
+
+    async def commit_resume(self, outcome: RuntimeCheckpointResumeOutcome) -> None:
+        try:
+            await asyncio.to_thread(self._commit_resume, outcome)
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_resume_persistence_failed") from exc
+
+    async def resume_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointResumeOutcome | None:
+        try:
+            return await asyncio.to_thread(self._resume_outcome, session_id, command_id)
+        except RuntimeCheckpointError:
+            raise
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeCheckpointError("checkpoint_load_failed") from exc
+
+    async def checkpoint_resume_outcome(
+        self, session_id: str, checkpoint_id: str
+    ) -> RuntimeCheckpointResumeOutcome | None:
+        try:
+            return await asyncio.to_thread(self._checkpoint_resume_outcome, session_id, checkpoint_id)
         except RuntimeCheckpointError:
             raise
         except (OSError, sqlite3.Error) as exc:
@@ -292,8 +393,7 @@ class SQLiteRuntimeCheckpointStore:
         try:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT checkpoint_id, outcome FROM runtime_command_outcomes "
-                "WHERE session_id = ? AND command_id = ?",
+                "SELECT checkpoint_id, outcome FROM runtime_command_outcomes WHERE session_id = ? AND command_id = ?",
                 (outcome.session_id, outcome.command_id),
             ).fetchone()
             if existing is not None:
@@ -315,8 +415,7 @@ class SQLiteRuntimeCheckpointStore:
                 ),
             )
             row = connection.execute(
-                "SELECT digest, payload_json FROM runtime_checkpoints "
-                "WHERE session_id = ? AND checkpoint_id = ?",
+                "SELECT digest, payload_json FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
                 (checkpoint.session_id, checkpoint.checkpoint_id),
             ).fetchone()
             if row != (checkpoint.digest, checkpoint.to_json()):
@@ -350,16 +449,34 @@ class SQLiteRuntimeCheckpointStore:
             ).fetchone()
         finally:
             connection.close()
-        return None if row is None else RuntimeCheckpoint.from_json(str(row[0]))
+        if row is None:
+            return None
+        checkpoint = RuntimeCheckpoint.from_json(str(row[0]))
+        if checkpoint.session_id != session_id:
+            raise RuntimeCheckpointError("checkpoint_scope_mismatch")
+        return checkpoint
 
-    def _command_outcome(
-        self, session_id: str, command_id: str
-    ) -> RuntimeCheckpointCommandOutcome | None:
+    def _load(self, session_id: str, checkpoint_id: str) -> RuntimeCheckpoint | None:
         connection = self._connect()
         try:
             row = connection.execute(
-                "SELECT checkpoint_id, outcome FROM runtime_command_outcomes "
-                "WHERE session_id = ? AND command_id = ?",
+                "SELECT payload_json FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
+                (session_id, checkpoint_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        checkpoint = RuntimeCheckpoint.from_json(str(row[0]))
+        if checkpoint.session_id != session_id or checkpoint.checkpoint_id != checkpoint_id:
+            raise RuntimeCheckpointError("checkpoint_scope_mismatch")
+        return checkpoint
+
+    def _command_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointCommandOutcome | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT checkpoint_id, outcome FROM runtime_command_outcomes WHERE session_id = ? AND command_id = ?",
                 (session_id, command_id),
             ).fetchone()
         finally:
@@ -367,6 +484,76 @@ class SQLiteRuntimeCheckpointStore:
         if row is None:
             return None
         return RuntimeCheckpointCommandOutcome(session_id, command_id, str(row[0]), str(row[1]))
+
+    def _commit_resume(self, outcome: RuntimeCheckpointResumeOutcome) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            checkpoint = connection.execute(
+                "SELECT 1 FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
+                (outcome.session_id, outcome.checkpoint_id),
+            ).fetchone()
+            if checkpoint is None:
+                raise RuntimeCheckpointError("checkpoint_not_found")
+            by_command = connection.execute(
+                "SELECT checkpoint_id, outcome FROM runtime_resume_outcomes WHERE session_id = ? AND command_id = ?",
+                (outcome.session_id, outcome.command_id),
+            ).fetchone()
+            if by_command is not None:
+                if by_command != (outcome.checkpoint_id, outcome.outcome):
+                    raise RuntimeCheckpointError("checkpoint_resume_command_conflict")
+                connection.commit()
+                return
+            by_checkpoint = connection.execute(
+                "SELECT command_id FROM runtime_resume_outcomes WHERE session_id = ? AND checkpoint_id = ?",
+                (outcome.session_id, outcome.checkpoint_id),
+            ).fetchone()
+            if by_checkpoint is not None:
+                raise RuntimeCheckpointError("checkpoint_already_resumed")
+            connection.execute(
+                "INSERT INTO runtime_resume_outcomes "
+                "(session_id, command_id, checkpoint_id, outcome, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    outcome.session_id,
+                    outcome.command_id,
+                    outcome.checkpoint_id,
+                    outcome.outcome,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _resume_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointResumeOutcome | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT checkpoint_id, outcome FROM runtime_resume_outcomes WHERE session_id = ? AND command_id = ?",
+                (session_id, command_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return RuntimeCheckpointResumeOutcome(session_id, command_id, str(row[0]), str(row[1]))
+
+    def _checkpoint_resume_outcome(self, session_id: str, checkpoint_id: str) -> RuntimeCheckpointResumeOutcome | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT command_id, outcome FROM runtime_resume_outcomes WHERE session_id = ? AND checkpoint_id = ?",
+                (session_id, checkpoint_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return RuntimeCheckpointResumeOutcome(session_id, str(row[0]), checkpoint_id, str(row[1]))
 
 
 def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, object]:
@@ -460,8 +647,283 @@ def _last_step_payload(state: RunState) -> dict[str, object] | None:
             "identity": step.confirmation.subject_id,
             "reason": step.confirmation.reason,
             "risk": str(step.confirmation.risk),
+            "decision": to_json_compatible(decision),
+            "assessment": to_json_compatible(step.confirmation),
         }
     return payload
+
+
+def _restore_task(payload: Mapping[str, object]) -> TaskGoal:
+    try:
+        materials = tuple(
+            MaterialBinding(
+                str(item["name"]),
+                str(item["digest"]),
+                str(item.get("media_type", "application/octet-stream")),
+                str(item.get("public_reference", "")),
+            )
+            for item in _mapping_sequence(payload.get("material_bindings", []))
+        )
+        budget = _mapping(payload["loop_budget"])
+        raw_evaluation = payload.get("evaluation_spec")
+        evaluation = None
+        if raw_evaluation is not None:
+            evaluation_payload = _mapping(raw_evaluation)
+            evaluation = EvaluationSpec(
+                dict(_mapping(evaluation_payload["success_expression"])),
+                dict(_mapping(evaluation_payload.get("required_output_integrity", {}))),
+                tuple(_string_sequence(evaluation_payload.get("authoritative_checks", []))),
+                evaluation_payload.get("strict_source_lineage") is True,
+            )
+        return TaskGoal(
+            str(payload["task_id"]),
+            str(payload["instruction"]),
+            constraints=tuple(_string_sequence(payload.get("constraints", []))),
+            allowed_effects=tuple(_string_sequence(payload.get("allowed_effects", []))),
+            forbidden_effects=tuple(_string_sequence(payload.get("forbidden_effects", []))),
+            inputs=dict(_mapping(payload.get("inputs", {}))),
+            success_criteria=tuple(dict(item) for item in _mapping_sequence(payload.get("success_criteria", []))),
+            requested_outputs=tuple(_string_sequence(payload.get("requested_outputs", []))),
+            risk_profile=RiskProfile(str(payload["risk_profile"])),
+            material_bindings=materials,
+            loop_budget=LoopBudget(
+                _integer(budget["max_turns"]),
+                _integer(budget["max_observations"]),
+            ),
+            evaluation_spec=evaluation,
+            revision=_integer(payload["revision"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeCheckpointError("checkpoint_task_invalid") from exc
+
+
+def _restore_run_facts(
+    run_payload: Mapping[str, object],
+    last_step_payload: Mapping[str, object] | None,
+) -> RunCheckpointFacts:
+    try:
+        resolution = _restore_goal_resolution(run_payload.get("goal_resolution"))
+        workspace = _restore_workspace(_mapping(run_payload.get("workspace", {})))
+        boundary_payload = _mapping(run_payload["pause_boundary"])
+        dispatch = boundary_payload.get("dispatch_status")
+        boundary = RunControlOutcome(
+            str(boundary_payload["command_id"]),
+            RunControlKind(str(boundary_payload["kind"])),
+            RunControlOutcomeKind(str(boundary_payload["outcome"])),
+            RunControlBoundary(str(boundary_payload["boundary"])),
+            DispatchStatus(str(dispatch)) if dispatch is not None else None,
+            str(boundary_payload.get("failure_code", "")),
+        )
+        status = RunStatus(str(run_payload["status_before_pause"]))
+        last_decision, confirmation, feedback = _restore_pending_step(
+            status,
+            last_step_payload,
+        )
+        counts_payload = _mapping(run_payload.get("decision_counts", {}))
+        return RunCheckpointFacts(
+            status,
+            _integer(run_payload["remaining_steps"]),
+            _integer(run_payload["observation_count"]),
+            _integer(run_payload["execution_count"]),
+            _integer(run_payload["step_count"]),
+            _integer(run_payload["context_generation"]),
+            _integer(run_payload["waited_ms"]),
+            _integer(run_payload["task_revision"]),
+            resolution,
+            _integer(run_payload["goal_plan_version_counter"]),
+            _integer(run_payload["committed_sent_unknown_count"]),
+            {DecisionKind(str(kind)): _integer(value) for kind, value in counts_payload.items()},
+            _integer(run_payload["currentness_probe_count"]),
+            workspace,
+            boundary,
+            last_decision,
+            confirmation,
+            feedback,
+        )
+    except RuntimeCheckpointError:
+        raise
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeCheckpointError("checkpoint_run_state_invalid") from exc
+
+
+def _restore_goal_resolution(payload: object):
+    if payload is None:
+        return None
+    wrapper = _mapping(payload)
+    kind = str(wrapper["kind"])
+    value = _mapping(wrapper["value"])
+    revision = _integer(value["task_revision"])
+    if kind == "ready":
+        plan_payload = _mapping(value["accepted_plan"])
+        items = tuple(
+            GoalPlanItem(
+                str(item["id"]),
+                str(item["objective"]),
+                str(item["done_when"]),
+                tuple(_string_sequence(item.get("depends_on", []))),
+                item.get("final") is True,
+            )
+            for item in _mapping_sequence(plan_payload["items"])
+        )
+        return Ready(
+            revision,
+            GoalPlan(
+                _integer(plan_payload["task_revision"]),
+                _integer(plan_payload["plan_version"]),
+                items,
+            ),
+        )
+    if kind == "needs_input":
+        return NeedsInput(
+            revision,
+            str(value["question"]),
+            tuple(_string_sequence(value["fields"])),
+        )
+    cls = {
+        "not_required": NotRequired,
+        "unsupported": Unsupported,
+        "failed": Failed,
+    }.get(kind)
+    if cls is None:
+        raise RuntimeCheckpointError("checkpoint_goal_resolution_invalid")
+    return cls(revision, str(value["reason"]))
+
+
+def _restore_workspace(payload: Mapping[str, object]) -> AgentWorkspace:
+    recent = tuple(
+        AgentTurnView(
+            str(item["decision_kind"]),
+            str(item.get("semantic_action", "")),
+            _restore_historical_target(item.get("target")),
+            _restore_historical_target(item.get("destination")),
+            dict(_mapping(item.get("public_parameters", {}))),
+            str(item.get("expected_outcome", "")),
+            str(item.get("dispatch_status", "")),
+            str(item.get("local_postcondition", "")),
+            dict(_mapping(item.get("transition", {}))),
+            str(item.get("task_evaluation_status", "")),
+            str(item.get("reason", "")),
+            dict(_mapping(item.get("semantic_summary", {}))),
+        )
+        for item in _mapping_sequence(payload.get("recent_steps", []))
+    )
+    events = tuple(
+        SemanticEvent(
+            _integer(item["step_index"]),
+            SemanticEventKind(str(item["kind"])),
+            str(item["summary"]),
+            str(item.get("operation", "")),
+            str(item.get("result_lineage", "")),
+        )
+        for item in _mapping_sequence(payload.get("semantic_events", []))
+    )
+    activities = tuple(
+        ActivitySummary(
+            ActivityFamily(str(item["family"])),
+            str(item["world_digest"]),
+            _integer(item["attempt_count"]),
+            _integer(item["new_finding_count"]),
+            str(item["last_outcome"]),
+        )
+        for item in _mapping_sequence(payload.get("activities", []))
+    )
+    return AgentWorkspace(recent, events, activities)
+
+
+def _restore_historical_target(payload: object) -> AgentHistoricalTargetView | None:
+    if payload is None:
+        return None
+    value = _mapping(payload)
+    return AgentHistoricalTargetView(
+        str(value["role"]),
+        str(value["label"]),
+        tuple(_string_sequence(value.get("context", []))),
+    )
+
+
+def _restore_pending_step(
+    status: RunStatus,
+    payload: Mapping[str, object] | None,
+) -> tuple[AskUser | SelectAction | None, RiskAssessment | None, str]:
+    if payload is None:
+        if status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
+            raise RuntimeCheckpointError("checkpoint_pending_step_missing")
+        return None, None, "checkpoint_restored"
+    feedback = str(payload.get("feedback", "checkpoint_restored"))
+    if status is RunStatus.WAITING_USER:
+        pending = _mapping(payload["pending_question"])
+        return (
+            AskUser(
+                str(payload["context_id"]),
+                str(pending["question"]),
+                tuple(_string_sequence(pending.get("requested_fields", []))),
+                str(payload.get("tool_call_id", "")),
+            ),
+            None,
+            feedback,
+        )
+    if status is RunStatus.WAITING_CONFIRMATION:
+        pending = _mapping(payload["pending_confirmation"])
+        decision_payload = _mapping(pending["decision"])
+        assessment_payload = _mapping(pending["assessment"])
+        subject_payload = _mapping(assessment_payload["subject"])
+        subject = ConfirmationSubject(
+            str(subject_payload["semantic_action"]),
+            str(subject_payload["target_id"]),
+            str(subject_payload.get("destination_id", "")),
+            dict(_mapping(subject_payload.get("parameters", {}))),
+            tuple(_string_sequence(subject_payload.get("selection_effects", []))),
+            tuple(_string_sequence(subject_payload.get("assessed_effects", []))),
+            ActionRisk(str(subject_payload["risk"])),
+            tuple(_string_sequence(subject_payload.get("consequences", []))),
+            str(subject_payload["effect_category"]),
+        )
+        assessment = RiskAssessment(
+            RiskDecisionKind(str(assessment_payload["decision"])),
+            ActionRisk(str(assessment_payload["risk"])),
+            tuple(_string_sequence(assessment_payload.get("semantic_effects", []))),
+            tuple(_string_sequence(assessment_payload.get("consequences", []))),
+            str(assessment_payload["subject_id"]),
+            str(assessment_payload["reason"]),
+            subject,
+        )
+        return (
+            SelectAction(
+                str(decision_payload["context_id"]),
+                str(decision_payload["action_id"]),
+                dict(_mapping(decision_payload.get("parameters", {}))),
+                str(decision_payload.get("destination_id", "")),
+                str(decision_payload.get("tool_call_id", "")),
+                str(decision_payload.get("expected_outcome", "")),
+            ),
+            assessment,
+            feedback,
+        )
+    return None, None, feedback
+
+
+def _mapping(value: object) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("checkpoint value must be an object")
+    return value
+
+
+def _integer(value: object) -> int:
+    if type(value) is not int:
+        raise TypeError("checkpoint value must be an integer")
+    return value
+
+
+def _mapping_sequence(value: object) -> tuple[Mapping[str, object], ...]:
+    if not isinstance(value, list | tuple):
+        raise TypeError("checkpoint value must be an object sequence")
+    return tuple(_mapping(item) for item in value)
+
+
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple) or any(not isinstance(item, str) for item in value):
+        raise TypeError("checkpoint value must be a string sequence")
+    return tuple(value)
 
 
 def _checkpoint_digest(unsigned_payload: Mapping[str, object]) -> str:
@@ -497,6 +959,17 @@ CREATE TABLE IF NOT EXISTS runtime_command_outcomes (
     checkpoint_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (session_id, command_id),
+    FOREIGN KEY (session_id, checkpoint_id)
+        REFERENCES runtime_checkpoints (session_id, checkpoint_id)
+);
+CREATE TABLE IF NOT EXISTS runtime_resume_outcomes (
+    session_id TEXT NOT NULL,
+    command_id TEXT NOT NULL,
+    checkpoint_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome = 'resumed'),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, command_id),
+    UNIQUE (session_id, checkpoint_id),
     FOREIGN KEY (session_id, checkpoint_id)
         REFERENCES runtime_checkpoints (session_id, checkpoint_id)
 );

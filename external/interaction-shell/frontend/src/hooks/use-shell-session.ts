@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, postCommand, subscribeEvents } from "@/lib/api";
+import { createSession, postCommand, recoverSession, subscribeEvents } from "@/lib/api";
 import type { Snapshot } from "@/lib/types";
 
 export function useShellSession() {
@@ -9,8 +9,11 @@ export function useShellSession() {
   const [sessionKey, setSessionKey] = useState("");
   const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
   const [notice, setNotice] = useState("");
+  const [streamGeneration, setStreamGeneration] = useState(0);
   const cursor = useRef(0);
   const eventEpoch = useRef("");
+  const latestSnapshot = useRef<Snapshot | null>(null);
+  const attemptedRecovery = useRef("");
   const sessionOpening = useRef<ReturnType<typeof createSession> | null>(null);
   const sessionId = snapshot?.session_id;
 
@@ -22,6 +25,7 @@ export function useShellSession() {
         if (!active) return;
         setSessionKey(created.session_key);
         setSnapshot(created.snapshot);
+        latestSnapshot.current = created.snapshot;
         eventEpoch.current = created.snapshot.event_epoch;
         cursor.current = created.snapshot.event_cursor;
       })
@@ -45,21 +49,53 @@ export function useShellSession() {
         }
         cursor.current = event.cursor;
         const projected = event.data?.snapshot as Snapshot | undefined;
-        if (projected) setSnapshot(projected);
+        if (projected) {
+          latestSnapshot.current = projected;
+          setSnapshot(projected);
+        }
         setConnection("live");
       },
       () => setConnection("live"),
       controller.signal,
-    ).catch(() => {
-      if (!controller.signal.aborted) setConnection("offline");
+    ).catch(async () => {
+      if (controller.signal.aborted) return;
+      const current = latestSnapshot.current;
+      const recoveryIdentity = `${eventEpoch.current}:${current?.checkpoint_id ?? ""}`;
+      if (
+        current?.run_status === "paused"
+        && current.resume_eligible
+        && current.checkpoint_id
+        && attemptedRecovery.current !== recoveryIdentity
+      ) {
+        attemptedRecovery.current = recoveryIdentity;
+        try {
+          const recovered = await recoverSession(
+            current.session_id,
+            sessionKey,
+            current.checkpoint_id,
+          );
+          if (controller.signal.aborted) return;
+          latestSnapshot.current = recovered.snapshot;
+          eventEpoch.current = recovered.snapshot.event_epoch;
+          cursor.current = recovered.snapshot.event_cursor;
+          setSnapshot(recovered.snapshot);
+          setConnection("live");
+          setStreamGeneration((generation) => generation + 1);
+          return;
+        } catch {
+          // One bounded recovery attempt per epoch/checkpoint; remain fail-closed.
+        }
+      }
+      setConnection("offline");
     });
     return () => controller.abort();
-  }, [sessionId, sessionKey]);
+  }, [sessionId, sessionKey, streamGeneration]);
 
   const send = useCallback(
     async (path: string, body: Record<string, unknown>) => {
       if (!snapshot || !sessionKey) return null;
       const admission = await postCommand(snapshot.session_id, sessionKey, path, body);
+      latestSnapshot.current = admission.snapshot;
       setSnapshot(admission.snapshot);
       setNotice(
         admission.kind === "accepted"
@@ -122,5 +158,17 @@ export function useShellSession() {
     await send("commands/optional", commandBase("pause_task"));
   }, [commandBase, send, snapshot]);
 
-  return { snapshot, connection, notice, submitMessage, confirm, cancel, pause };
+  const resume = useCallback(async () => {
+    if (
+      !snapshot?.capabilities.includes("resume_task")
+      || !snapshot.checkpoint_id
+      || !snapshot.resume_eligible
+    ) return;
+    await send("commands/resume", {
+      ...commandBase("resume_task"),
+      checkpoint_id: snapshot.checkpoint_id,
+    });
+  }, [commandBase, send, snapshot]);
+
+  return { snapshot, connection, notice, submitMessage, confirm, cancel, pause, resume };
 }

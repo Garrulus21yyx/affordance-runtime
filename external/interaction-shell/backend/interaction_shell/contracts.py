@@ -33,6 +33,7 @@ class Capability(StrEnum):
     CLOSE_SESSION = "close_session"
     CANCEL_TASK = "cancel_task"
     PAUSE_TASK = "pause_task"
+    RESUME_TASK = "resume_task"
     REVISE_TASK = "revise_task"
     START_NEW_TASK = "start_new_task"
     TAKE_OVER = "take_over"
@@ -221,8 +222,19 @@ class OptionalCommand(CommandBase):
     message: str | None = Field(default=None, max_length=8000)
 
 
+class ResumeTask(CommandBase):
+    kind: Literal["resume_task"] = "resume_task"
+    checkpoint_id: str = Field(min_length=1, max_length=200)
+
+
 ShellCommand = Annotated[
-    StartTask | AnswerQuestion | ApproveAction | RejectAction | CloseSession | OptionalCommand,
+    StartTask
+    | AnswerQuestion
+    | ApproveAction
+    | RejectAction
+    | CloseSession
+    | ResumeTask
+    | OptionalCommand,
     Field(discriminator="kind"),
 ]
 SHELL_COMMAND_ADAPTER = TypeAdapter(ShellCommand)
@@ -272,4 +284,12 @@ class CreateSessionRequest(StrictModel):
 
 class CreateSessionResponse(StrictModel):
     session_key: str
+    snapshot: RuntimeSessionSnapshot
+
+
+class RecoverSessionRequest(StrictModel):
+    checkpoint_id: str = Field(min_length=1, max_length=200)
+
+
+class RecoverSessionResponse(StrictModel):
     snapshot: RuntimeSessionSnapshot

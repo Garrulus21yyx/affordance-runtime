@@ -1,5 +1,12 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
-import type { Admission, CreatedSession, Diagnosis, ShellEvent, Snapshot } from "./types";
+import type {
+  Admission,
+  CreatedSession,
+  Diagnosis,
+  RecoveredSession,
+  ShellEvent,
+  Snapshot,
+} from "./types";
 
 const API = "/shell-api";
 
@@ -20,6 +27,20 @@ export async function createSession(): Promise<CreatedSession> {
 
 export async function getSnapshot(sessionId: string, key: string): Promise<Snapshot> {
   return checked(await fetch(`${API}/sessions/${sessionId}`, { headers: { "X-Session-Key": key } }));
+}
+
+export async function recoverSession(
+  sessionId: string,
+  key: string,
+  checkpointId: string,
+): Promise<RecoveredSession> {
+  return checked(
+    await fetch(`${API}/sessions/${sessionId}/recover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Session-Key": key },
+      body: JSON.stringify({ checkpoint_id: checkpointId }),
+    }),
+  );
 }
 
 export async function postCommand(

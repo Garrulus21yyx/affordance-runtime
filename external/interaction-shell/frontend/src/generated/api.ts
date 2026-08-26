@@ -195,6 +195,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/commands/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume */
+        post: operations["resume_sessions__session_id__commands_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}/events": {
         parameters: {
             query?: never;
@@ -206,6 +223,23 @@ export interface paths {
         get: operations["subscribe_events_sessions__session_id__events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recover Session */
+        post: operations["recover_session_sessions__session_id__recover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -282,7 +316,7 @@ export interface components {
          * Capability
          * @enum {string}
          */
-        Capability: "start_task" | "answer_question" | "approve_action" | "reject_action" | "close_session" | "cancel_task" | "pause_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
+        Capability: "start_task" | "answer_question" | "approve_action" | "reject_action" | "close_session" | "cancel_task" | "pause_task" | "resume_task" | "revise_task" | "start_new_task" | "take_over" | "return_control";
         /** CaseDiagnosis */
         CaseDiagnosis: {
             /** Case Id */
@@ -580,6 +614,15 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** RecoverSessionRequest */
+        RecoverSessionRequest: {
+            /** Checkpoint Id */
+            checkpoint_id: string;
+        };
+        /** RecoverSessionResponse */
+        RecoverSessionResponse: {
+            snapshot: components["schemas"]["RuntimeSessionSnapshot"];
+        };
         /** RejectAction */
         RejectAction: {
             /** Command Id */
@@ -610,6 +653,22 @@ export interface components {
             /** Message */
             message: string;
             snapshot: components["schemas"]["RuntimeSessionSnapshot"];
+        };
+        /** ResumeTask */
+        ResumeTask: {
+            /** Checkpoint Id */
+            checkpoint_id: string;
+            /** Command Id */
+            command_id: string;
+            expected_run_status: components["schemas"]["RunStatus"];
+            /** Expected Task Revision */
+            expected_task_revision: number;
+            /**
+             * Kind
+             * @default resume_task
+             * @constant
+             */
+            kind: "resume_task";
         };
         /**
          * RunStatus
@@ -1264,6 +1323,43 @@ export interface operations {
             };
         };
     };
+    resume_sessions__session_id__commands_resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Session-Key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeTask"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"] | components["schemas"]["Conflict"] | components["schemas"]["Unsupported"] | components["schemas"]["Rejected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     subscribe_events_sessions__session_id__events_get: {
         parameters: {
             query?: {
@@ -1288,6 +1384,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recover_session_sessions__session_id__recover_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Session-Key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoverSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoverSessionResponse"];
                 };
             };
             /** @description Validation Error */

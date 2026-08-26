@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 4 durable checkpoint complete; Phase 5 restart resume pending
+Status: Phase 5 reconnectable-lease restart recovery complete; Phase 6 task revision pending
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -230,7 +230,7 @@ Constraints:
       External backend/architecture passed 50 tests; frontend 5 unit tests,
       ESLint, TypeScript, OpenAPI generation, and production build passed;
       backend Pyright and touched-owner MyPy passed. No benchmark was run.
-16. **pending — Phase 5: process restart recovery and explicit ResumeRun.**
+16. **done — Phase 5: process restart recovery and explicit ResumeRun.**
     - On restart validate session/schema/digest, reconnect the same environment,
       restore model history, capture a fresh World, create a new event epoch and
       baseline snapshot, then wait for explicit `ResumeRun` without replaying an
@@ -239,6 +239,36 @@ Constraints:
       replaying against a replacement browser.
     - Add authenticated same-session recovery, old-epoch resync behavior,
       corrupted/stale checkpoint rejection, and restart fault-injection tests.
+    - Implemented exact checkpoint load/digest/schema validation, official
+      PydanticAI history restore, bounded RunState hydration against a fresh
+      World, semantic confirmation rebasing, a new Runtime-owned event epoch,
+      and explicit ResumeRun with SQLite one-shot checkpoint consumption before
+      any new policy/dispatch.
+    - Shell restart authentication persists only a salted key verifier and the
+      original TTL. Old epochs require snapshot resync; checkpoint/session/key
+      mismatches and consumed checkpoints fail typed. RUNNING, waiting-user,
+      waiting-confirmation, committed-SENT/no-replay, corruption, lost browser,
+      and auth-isolation witnesses pass.
+    - Local BrowserGym cannot reconnect the exact Playwright context after
+      process death. Its deployment health remains durable-resume unavailable
+      and recovery returns `environment_not_reconnectable` without opening a
+      replacement browser; reconnectable deployment leases can use the now
+      complete factory/port contract.
+    - Verification: the focused Core/model/public-session/architecture slice
+      passed 204 tests with 3 optional skips; external backend/architecture
+      passed 54 tests; frontend passed 7 unit tests, ESLint, TypeScript,
+      generated-OpenAPI equality, production build, and 1 Demo Playwright E2E.
+      Backend Pyright, Ruff, compileall, diff checks, and the five touched
+      Runtime-owner MyPy files passed. The full provider-free suite passed 1778
+      tests with 25 skips and retained only the two known non-Phase-5 failures:
+      documentation governance rejects the user-required interaction-shell
+      implementation document, and one semantic-delivery witness requires a
+      historical live trace absent from this worktree. Two added owner-boundary
+      regressions also pass: concurrent same-session recovery installs one
+      Runtime handle, and SQLite rejects row/payload scope mismatch. No benchmark
+      was run.
+17. **pending — Phase 6: ReviseTask compiler and paused revision commit.**
+    - Do not start until this Phase 5 milestone is committed and pushed.
 
 ## Current-work produced files
 
@@ -258,7 +288,11 @@ Constraints:
 - `src/affordance_runtime/app/checkpoint.py` — Runtime-owned immutable
   checkpoint contract and atomic SQLite WAL store.
 - `tests/unit/app/test_runtime_checkpoint.py` — safe-boundary ordering,
-  transaction rollback, currentness recovery, idempotency, and cancel witnesses.
+  transaction rollback, currentness recovery, idempotency, all supported
+  restart boundaries, sent-receipt no-replay, corruption, and cancel witnesses.
+- `external/interaction-shell/backend/interaction_shell/session_registry.py` —
+  salted same-session restart authentication and original TTL, without Runtime
+  state or reusable key persistence.
 
 ## Phase 2 final verification
 

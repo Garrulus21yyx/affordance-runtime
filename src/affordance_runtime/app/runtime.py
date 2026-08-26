@@ -24,7 +24,7 @@ from affordance_runtime.agent.run_control import (
     RunControlKind,
     RunControlOutcome,
 )
-from affordance_runtime.agent.run_state import RunState, RunStatus
+from affordance_runtime.agent.run_state import RunCheckpointFacts, RunState, RunStatus
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
 from affordance_runtime.risk.policy import RiskPolicy
@@ -141,6 +141,18 @@ class TargetRuntime:
             raise TypeError("Runtime checkpoint history must be a mapping")
         return history
 
+    def restore_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(self.decision_ports.action_policy, "restore_checkpoint_history", None)
+        if not callable(restorer):
+            raise TypeError("Runtime model policy does not support checkpoint restoration")
+        restorer(payload, task_id=task_id, task_revision=task_revision)
+
     def apply_waiting_control(
         self,
         state: RunState,
@@ -182,12 +194,15 @@ class TargetRuntime:
             or self.run_control.paused is None
         ):
             raise ValueError("run has no matching internal pause boundary")
+        restored_checkpoint = bool(state.durable_checkpoint_id)
         outcome = self.run_control.resume(command_id)
         state.resume_control_boundary()
         self.trace_sink.run_resumed(
             "control",
             {"command_id": command_id, "outcome": outcome.outcome.value},
         )
+        if restored_checkpoint:
+            self.build_loop().settle_restored_currentness(state)
         return outcome
 
     async def recover_pause_persistence_failure(
@@ -208,6 +223,27 @@ class TargetRuntime:
                 state,
             )
         return state
+
+    async def restore_paused_checkpoint(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        facts: RunCheckpointFacts,
+        checkpoint_id: str,
+    ) -> RunState:
+        """Restore Runtime/model/control owners before exposing a recovered session."""
+
+        self.run_control.restore_paused(facts.pause_boundary)
+        try:
+            return await self.build_loop().restore_paused(
+                environment,
+                task,
+                facts,
+                checkpoint_id,
+            )
+        except BaseException:
+            self.run_control.resume("restore-failed")
+            raise
 
     def with_runtime_controls(
         self,

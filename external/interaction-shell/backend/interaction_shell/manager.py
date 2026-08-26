@@ -15,6 +15,7 @@ from .contracts import (
     CommandAdmission,
     Conflict,
     CreateSessionResponse,
+    RecoverSessionResponse,
     RejectAction,
     RuntimeSessionSnapshot,
     ShellCommand,
@@ -23,7 +24,8 @@ from .contracts import (
     Unsupported,
 )
 from .conversation import BoundedConversation, ConversationTurn
-from .port import RuntimeSessionPort
+from .port import RuntimeSessionPort, RuntimeSessionUnavailable
+from .session_registry import SessionRecoveryRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +52,15 @@ class SessionUnauthorized(PermissionError):
 
 
 class RunSessionManager:
-    def __init__(self, port: RuntimeSessionPort) -> None:
+    def __init__(
+        self,
+        port: RuntimeSessionPort,
+        recovery_registry: SessionRecoveryRegistry | None = None,
+    ) -> None:
         self._port = port
+        self._recovery_registry = recovery_registry
         self._sessions: dict[str, ManagedSession] = {}
+        self._recovery_lock = asyncio.Lock()
 
     async def create(self, ttl_seconds: int = 1800) -> CreateSessionResponse:
         session_id = secrets.token_urlsafe(18)
@@ -62,11 +70,72 @@ class RunSessionManager:
         managed = ManagedSession(session_id, session_key, handle, expires_at)
         try:
             snapshot = await self._snapshot(managed)
+            if self._recovery_registry is not None:
+                await self._recovery_registry.register(
+                    session_id,
+                    session_key,
+                    expires_at,
+                )
         except BaseException:
             await self._cleanup_once(managed)
             raise
         self._sessions[session_id] = managed
         return CreateSessionResponse(session_key=session_key, snapshot=snapshot)
+
+    async def recover(
+        self,
+        session_id: str,
+        session_key: str,
+        checkpoint_id: str,
+    ) -> RecoverSessionResponse:
+        async with self._recovery_lock:
+            return await self._recover_once(session_id, session_key, checkpoint_id)
+
+    async def _recover_once(
+        self,
+        session_id: str,
+        session_key: str,
+        checkpoint_id: str,
+    ) -> RecoverSessionResponse:
+        live = self._sessions.get(session_id)
+        if live is not None:
+            if not secrets.compare_digest(live.session_key, session_key):
+                raise SessionUnauthorized(session_id)
+            snapshot = await self._snapshot(live)
+            if (
+                snapshot.run_status.value != "paused"
+                or not snapshot.resume_eligible
+                or snapshot.checkpoint_id != checkpoint_id
+            ):
+                raise RuntimeSessionUnavailable("checkpoint_mismatch")
+            return RecoverSessionResponse(snapshot=snapshot)
+        registry = self._recovery_registry
+        if registry is None:
+            raise RuntimeSessionUnavailable("session_recovery_unavailable")
+        credential = await registry.authenticate(session_id, session_key)
+        if credential is None:
+            raise SessionUnauthorized(session_id)
+        if datetime.now(UTC) >= credential.expires_at:
+            await registry.revoke(session_id)
+            raise SessionNotFound(session_id)
+        handle = await self._port.recover(
+            session_id,
+            checkpoint_id,
+            credential.expires_at,
+        )
+        managed = ManagedSession(
+            session_id,
+            session_key,
+            handle,
+            credential.expires_at,
+        )
+        try:
+            snapshot = await self._snapshot(managed)
+        except BaseException:
+            await self._cleanup_once(managed, revoke=False)
+            raise
+        self._sessions[session_id] = managed
+        return RecoverSessionResponse(snapshot=snapshot)
 
     def authenticate(self, session_id: str, session_key: str) -> ManagedSession:
         managed = self._sessions.get(session_id)
@@ -148,8 +217,19 @@ class RunSessionManager:
     async def close_all(self) -> tuple[Exception, ...]:
         errors: list[Exception] = []
         for managed in tuple(self._sessions.values()):
+            preserve_recovery = False
             try:
-                await self._cleanup_once(managed)
+                snapshot = await self._snapshot(managed)
+                preserve_recovery = (
+                    snapshot.run_status.value == "paused"
+                    and snapshot.resume_eligible
+                    and bool(snapshot.checkpoint_id)
+                )
+            except Exception as exc:
+                errors.append(exc)
+                logger.exception("session snapshot failed during shutdown: %s", managed.session_id)
+            try:
+                await self._cleanup_once(managed, revoke=not preserve_recovery)
             except Exception as exc:
                 errors.append(exc)
                 logger.exception("session cleanup failed during shutdown: %s", managed.session_id)
@@ -169,7 +249,12 @@ class RunSessionManager:
         if snapshot.run_status.value in {"done", "failed", "blocked", "cancelled"}:
             await self._cleanup_once(managed)
 
-    async def _cleanup_once(self, managed: ManagedSession) -> None:
+    async def _cleanup_once(
+        self,
+        managed: ManagedSession,
+        *,
+        revoke: bool = True,
+    ) -> None:
         if managed.cleanup_started:
             return
         managed.cleanup_started = True
@@ -177,6 +262,8 @@ class RunSessionManager:
             await self._port.close(managed.runtime_handle)
         finally:
             managed.closed = True
+            if revoke and self._recovery_registry is not None:
+                await self._recovery_registry.revoke(managed.session_id)
 
     @staticmethod
     def _pending_conflict(command: ShellCommand, snapshot: RuntimeSessionSnapshot) -> bool:

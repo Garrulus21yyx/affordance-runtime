@@ -20,7 +20,10 @@ from .contracts import (
     CreateSessionRequest,
     CreateSessionResponse,
     OptionalCommand,
+    RecoverSessionRequest,
+    RecoverSessionResponse,
     RejectAction,
+    ResumeTask,
     RuntimeSessionSnapshot,
     ShellEvent,
     StartTask,
@@ -119,6 +122,30 @@ def create_app(
         except RuntimeSessionUnavailable as exc:
             raise HTTPException(503, exc.code) from exc
 
+    @app.post(
+        "/sessions/{session_id}/recover",
+        response_model=RecoverSessionResponse,
+    )
+    async def recover_session(
+        session_id: str,
+        body: RecoverSessionRequest,
+        session_key: str = Depends(key),
+    ) -> RecoverSessionResponse:
+        try:
+            return await shell.recover(
+                session_id,
+                session_key,
+                body.checkpoint_id,
+            )
+        except (SessionNotFound, SessionUnauthorized) as exc:
+            raise map_auth(exc) from exc
+        except RuntimeSessionUnavailable as exc:
+            status = 409 if exc.code in {
+                "checkpoint_already_resumed",
+                "checkpoint_mismatch",
+            } else 503
+            raise HTTPException(status, exc.code) from exc
+
     @app.get("/sessions/{session_id}", response_model=RuntimeSessionSnapshot)
     async def get_snapshot(session_id: str, session_key: str = Depends(key)):
         try:
@@ -200,6 +227,10 @@ def create_app(
 
     @app.post("/sessions/{session_id}/commands/reject", response_model=CommandAdmission)
     async def reject(session_id: str, body: RejectAction, session_key: str = Depends(key)):
+        return await command(session_id, session_key, body)
+
+    @app.post("/sessions/{session_id}/commands/resume", response_model=CommandAdmission)
+    async def resume(session_id: str, body: ResumeTask, session_key: str = Depends(key)):
         return await command(session_id, session_key, body)
 
     @app.post("/sessions/{session_id}/commands/close", response_model=CommandAdmission)

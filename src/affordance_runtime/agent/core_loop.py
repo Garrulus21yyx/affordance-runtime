@@ -63,6 +63,7 @@ from affordance_runtime.agent.run_control import (
 from affordance_runtime.agent.run_state import (
     ControlTermination,
     ControlTerminationKind,
+    RunCheckpointFacts,
     RunState,
     RunStatus,
     StepResult,
@@ -107,7 +108,7 @@ from affordance_runtime.goals.compiler import (
 )
 from affordance_runtime.goals.plan import GoalPlanResolution, NeedsInput, Ready
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.risk.contracts import RiskDecisionKind
+from affordance_runtime.risk.contracts import ConfirmationSubject, RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
@@ -263,6 +264,105 @@ class CoreAgentLoop:
             self._record_official_outcome(evaluation)
         return state
 
+    async def restore_paused(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        facts: RunCheckpointFacts,
+        checkpoint_id: str,
+    ) -> RunState:
+        """Hydrate one committed boundary against a newly captured current World."""
+
+        if task.revision != facts.task_revision:
+            raise ValueError("checkpoint task revision is stale")
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh World after checkpoint environment reconnect",
+            )
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            raise CoreLoopStartError("checkpoint_fresh_world_unavailable")
+        current = acquisition.observation
+        projection, region_index = self._canonical_world_for(task, current)
+        evaluation = await self._validated_task_evaluation(task, current, projection)
+        last_decision = facts.last_decision
+        if (
+            facts.status_before_pause is RunStatus.WAITING_CONFIRMATION
+            and isinstance(last_decision, SelectAction)
+            and facts.last_confirmation is not None
+        ):
+            last_decision = self._rebase_checkpoint_confirmation(
+                task,
+                current,
+                last_decision,
+                facts.last_confirmation.subject,
+            )
+        last_step = (
+            StepResult(
+                last_decision,
+                current,
+                current,
+                evaluation,
+                facts.status_before_pause,
+                confirmation=facts.last_confirmation,
+                feedback=facts.last_feedback,
+            )
+            if last_decision is not None
+            else None
+        )
+        state = RunState(
+            current,
+            evaluation,
+            facts.remaining_steps,
+            status=facts.status_before_pause,
+            last_step=last_step,
+            observation_count=facts.observation_count + 1,
+            execution_count=facts.execution_count,
+            step_count=facts.step_count,
+            context_generation=facts.context_generation,
+            workspace=facts.workspace,
+            waited_ms=facts.waited_ms,
+            task_revision=facts.task_revision,
+            goal_resolution=facts.goal_resolution,
+            goal_plan_version_counter=facts.goal_plan_version_counter,
+            committed_sent_unknown_count=facts.committed_sent_unknown_count,
+            decision_counts=dict(facts.decision_counts),
+            currentness_probe_count=facts.currentness_probe_count,
+            control_boundary=facts.pause_boundary,
+        )
+        state.install_delivery_index(region_index)
+        state.install_canonical_world(projection)
+        state.commit_durable_pause(checkpoint_id)
+        return state
+
+    def _rebase_checkpoint_confirmation(
+        self,
+        task: TaskGoal,
+        current: WorldObservation,
+        decision: SelectAction,
+        subject: ConfirmationSubject,
+    ) -> SelectAction:
+        """Map confirmed semantics to one fresh action ID without dispatching it."""
+
+        action_space = self.action_space_builder.build(task, current)
+        candidates = tuple(
+            option
+            for option in action_space.options
+            if option.semantic_action == subject.semantic_action
+            and option.target_id == subject.target_id
+            and option.effect_category == subject.effect_category
+            and tuple(sorted(option.semantic_effects)) == subject.selection_effects
+            and (
+                subject.destination_id in option.eligible_destination_ids
+                if subject.destination_id
+                else not option.destination_required
+            )
+        )
+        if len(candidates) != 1 or dict(decision.parameters) != dict(subject.parameters):
+            raise CoreLoopStartError("checkpoint_confirmation_not_current")
+        return replace(decision, action_id=candidates[0].action_id)
+
     async def continue_run(
         self,
         environment: WorldEnvironment,
@@ -272,6 +372,19 @@ class CoreAgentLoop:
         """Continue an initialized state until it pauses or terminates."""
 
         return await self._run_until_pause(environment, task, state)
+
+    def settle_restored_currentness(self, state: RunState) -> None:
+        """Honor a terminal fresh evaluation before any post-restart policy call."""
+
+        evaluation = state.current_task_evaluation
+        if evaluation is None:
+            raise ValueError("restored state requires a fresh task evaluation")
+        status = _status_for_evaluation(evaluation)
+        if status not in {RunStatus.DONE, RunStatus.BLOCKED}:
+            return
+        state.status = status
+        self._record_official_outcome(evaluation)
+        self.trace_sink.run_finished(state)
 
     async def refresh_after_pause_persistence_failure(
         self,
@@ -360,10 +473,7 @@ class CoreAgentLoop:
         request = self.run_control.pending
         if request is None:
             return False
-        if (
-            not self._close_deferred_call(state.last_step)
-            and request.kind is RunControlKind.PAUSE
-        ):
+        if not self._close_deferred_call(state.last_step) and request.kind is RunControlKind.PAUSE:
             self.run_control.fail_pending("deferred_history_closure_failed")
             return False
         outcome = self.run_control.acknowledge(RunControlBoundary.BEFORE_POLICY)
@@ -388,12 +498,16 @@ class CoreAgentLoop:
             and result.runtime_failure is None
             and result.failure_code is None
         )
-        if result.status_after in {
-            RunStatus.DONE,
-            RunStatus.BLOCKED,
-            RunStatus.CANCELLED,
-            RunStatus.FAILED,
-        } and not pause_uncertain_dispatch:
+        if (
+            result.status_after
+            in {
+                RunStatus.DONE,
+                RunStatus.BLOCKED,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+            }
+            and not pause_uncertain_dispatch
+        ):
             self.run_control.resolve_terminal()
             return result
         boundary = {
@@ -416,10 +530,7 @@ class CoreAgentLoop:
             feedback=f"{result.feedback}:control_{preview.outcome.value}",
             control_boundary=preview,
         )
-        if (
-            not self._close_deferred_call(controlled)
-            and request.kind is RunControlKind.PAUSE
-        ):
+        if not self._close_deferred_call(controlled) and request.kind is RunControlKind.PAUSE:
             self.run_control.fail_pending("deferred_history_closure_failed")
             return result
         outcome = self.run_control.acknowledge(
@@ -446,18 +557,11 @@ class CoreAgentLoop:
         result = _same_world_step(
             state,
             decision,
-            (
-                RunStatus.CANCELLED
-                if preview.kind is RunControlKind.CANCEL
-                else RunStatus.RUNNING
-            ),
+            (RunStatus.CANCELLED if preview.kind is RunControlKind.CANCEL else RunStatus.RUNNING),
             f"action_not_dispatched:control_{preview.outcome.value}",
             control_boundary=preview,
         )
-        if (
-            not self._close_deferred_call(result)
-            and request.kind is RunControlKind.PAUSE
-        ):
+        if not self._close_deferred_call(result) and request.kind is RunControlKind.PAUSE:
             self.run_control.fail_pending("deferred_history_closure_failed")
             return _same_world_step(
                 state,
@@ -577,9 +681,7 @@ class CoreAgentLoop:
                 result,
                 status_after=RunStatus.BLOCKED,
                 feedback="turn_budget_exhausted",
-                control_termination=ControlTermination(
-                    ControlTerminationKind.TURN_BUDGET_EXHAUSTED
-                ),
+                control_termination=ControlTermination(ControlTerminationKind.TURN_BUDGET_EXHAUSTED),
             )
         if delivery_transition is None:
             delivery_transition = state.delivery_store.reduce(
@@ -606,12 +708,8 @@ class CoreAgentLoop:
         )
         state.workspace = workspace
         if result.task_evaluation is not None and (
-            (
-                result.finalization is not None
-                and result.finalization.native_evaluation_status is not None
-            )
-            or result.task_evaluation.status
-            in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
+            (result.finalization is not None and result.finalization.native_evaluation_status is not None)
+            or result.task_evaluation.status in {TaskEvaluationStatus.COMPLETE, TaskEvaluationStatus.BLOCKED}
         ):
             self._record_official_outcome(result.task_evaluation)
         if trace_step:
@@ -634,9 +732,7 @@ class CoreAgentLoop:
             before_index = state.delivery_index or WorldDeliveryIndex.from_observation(
                 result.before_world, before_actions.options
             )
-            before = CanonicalPublicWorldProjection.build(
-                result.before_world, before_index, before_actions
-            )
+            before = CanonicalPublicWorldProjection.build(result.before_world, before_index, before_actions)
         if result.after_world is result.before_world or (
             result.after_world.observation_id == result.before_world.observation_id
         ):
@@ -649,9 +745,7 @@ class CoreAgentLoop:
                 public_world_delta=result.public_world_delta,
                 previous_index=state.delivery_index or state.prior_delivery_index,
             )
-            after = CanonicalPublicWorldProjection.build(
-                result.after_world, after_index, after_actions
-            )
+            after = CanonicalPublicWorldProjection.build(result.after_world, after_index, after_actions)
         return replace(result, before_public_world=before, after_public_world=after)
 
     def _record_official_outcome(self, evaluation: TaskEvaluation) -> None:
@@ -668,12 +762,18 @@ class CoreAgentLoop:
         delivery_transition: DeliveryTransition,
     ) -> StepResult:
         monitor = self.episode_monitor
-        if monitor is None or result.task_evaluation is None or result.status_after in {
-            RunStatus.DONE,
-            RunStatus.WAITING_USER,
-            RunStatus.WAITING_CONFIRMATION,
-            RunStatus.CANCELLED,
-        } or result.control_boundary is not None:
+        if (
+            monitor is None
+            or result.task_evaluation is None
+            or result.status_after
+            in {
+                RunStatus.DONE,
+                RunStatus.WAITING_USER,
+                RunStatus.WAITING_CONFIRMATION,
+                RunStatus.CANCELLED,
+            }
+            or result.control_boundary is not None
+        ):
             return result
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
@@ -767,8 +867,7 @@ class CoreAgentLoop:
         if (
             region_index is None
             or region_index.world_observation_id != state.current_world.observation_id
-            or set(region_index.action_region_keys)
-            != {item.action_id for item in action_space.options}
+            or set(region_index.action_region_keys) != {item.action_id for item in action_space.options}
         ):
             region_index = WorldDeliveryIndex.from_observation(
                 state.current_world,
@@ -928,11 +1027,7 @@ class CoreAgentLoop:
             case DecisionKind.FIND_CONTROLS:
                 assert isinstance(decision, RequestActionPage)
                 result = self._action_page(task, state, action_space, decision)
-            case (
-                DecisionKind.READ_REGION
-                | DecisionKind.SEARCH_PAGE_CONTENT
-                | DecisionKind.TOOL_REJECTED
-            ):
+            case DecisionKind.READ_REGION | DecisionKind.SEARCH_PAGE_CONTENT | DecisionKind.TOOL_REJECTED:
                 assert isinstance(decision, LocalToolResult)
                 result = StepResult(
                     decision,
@@ -959,9 +1054,7 @@ class CoreAgentLoop:
                     decision,
                     status,
                     f"agent_aborted:{decision.category}",
-                    control_termination=ControlTermination(
-                        ControlTerminationKind.AGENT_ABORTED
-                    ),
+                    control_termination=ControlTermination(ControlTerminationKind.AGENT_ABORTED),
                 )
             case unexpected:
                 assert_never(unexpected)
@@ -1043,9 +1136,7 @@ class CoreAgentLoop:
         if captured:
             assert post is not None and post.observation is not None
             native_evaluator_invoked = True
-            final_delta = WorldTransitionProjector().project(
-                state.current_world, post.observation
-            )
+            final_delta = WorldTransitionProjector().project(state.current_world, post.observation)
             after_projection, _after_index = self._canonical_world_for(
                 task,
                 post.observation,
@@ -1098,7 +1189,9 @@ class CoreAgentLoop:
                     feedback=attempt.code,
                     runtime_failure=RuntimeFailure(
                         FailureStage.EVALUATION,
-                        FailureKind.CAPABILITY_UNAVAILABLE if isinstance(attempt, Unavailable) else FailureKind.INTERNAL,
+                        FailureKind.CAPABILITY_UNAVAILABLE
+                        if isinstance(attempt, Unavailable)
+                        else FailureKind.INTERNAL,
                         attempt.code,
                         exception_class=attempt.diagnostic.exception_type,
                     ),
@@ -1219,9 +1312,7 @@ class CoreAgentLoop:
                 decision,
                 RunStatus.BLOCKED,
                 "wait_budget_exhausted",
-                control_termination=ControlTermination(
-                    ControlTerminationKind.WAIT_BUDGET_EXHAUSTED
-                ),
+                control_termination=ControlTermination(ControlTerminationKind.WAIT_BUDGET_EXHAUSTED),
             )
         await self.wait_controller.wait(decision.max_wait_ms)
         acquisition = await environment.capture(
@@ -1750,9 +1841,7 @@ class CoreAgentLoop:
                 cancelled=False,
                 code=outcome.code,
                 failure_kind=(
-                    FailureKind.CAPABILITY_UNAVAILABLE
-                    if isinstance(outcome, Unavailable)
-                    else FailureKind.INTERNAL
+                    FailureKind.CAPABILITY_UNAVAILABLE if isinstance(outcome, Unavailable) else FailureKind.INTERNAL
                 ),
                 exception_class=outcome.diagnostic.exception_type,
             )
@@ -1768,9 +1857,7 @@ class CoreAgentLoop:
         observation: WorldObservation,
         canonical_world: CanonicalPublicWorldProjection,
     ) -> TaskEvaluation:
-        attempt = await validated_task_evaluation_attempt(
-            self.task_evaluator, task, observation, canonical_world
-        )
+        attempt = await validated_task_evaluation_attempt(self.task_evaluator, task, observation, canonical_world)
         if isinstance(attempt, Evaluated):
             return attempt.evaluation
         self._trace_native_evaluator_failure(attempt)

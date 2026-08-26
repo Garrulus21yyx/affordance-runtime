@@ -325,6 +325,37 @@ class PydanticAIGroundedDecisionPort:
             "active_task_identity": list(identity) if identity is not None else None,
         }
 
+    def restore_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        """Validate and restore one complete official SDK message sequence."""
+
+        if payload.get("format") != "pydantic-ai.messages.v1":
+            raise ValueError("PydanticAI checkpoint history format is unsupported")
+        identity = payload.get("active_task_identity")
+        if not isinstance(identity, list | tuple) or tuple(identity) != (
+            task_id,
+            task_revision,
+        ):
+            raise ValueError("PydanticAI checkpoint history belongs to another task")
+        messages = payload.get("messages")
+        if not isinstance(messages, list | tuple):
+            raise TypeError("PydanticAI checkpoint history messages are invalid")
+        from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+        mutable_messages = to_json_compatible(messages)
+        if not isinstance(mutable_messages, list):
+            raise TypeError("PydanticAI checkpoint history messages are invalid")
+        restored = tuple(ModelMessagesTypeAdapter.validate_python(mutable_messages))
+        if _pending_tool_parts_from_history(restored):
+            raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
+        object.__setattr__(self, "message_history", restored)
+        object.__setattr__(self, "active_task_identity", (task_id, task_revision))
+
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES

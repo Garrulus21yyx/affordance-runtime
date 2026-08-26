@@ -136,6 +136,18 @@ class ModelBackedAgentPolicy:
             raise TypeError("model checkpoint history must be a mapping")
         return history
 
+    def restore_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(self.port, "restore_checkpoint_history", None)
+        if not callable(restorer):
+            raise TypeError("model port does not support checkpoint history restoration")
+        restorer(payload, task_id=task_id, task_revision=task_revision)
+
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]

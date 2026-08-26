@@ -6,6 +6,7 @@ import type { CreatedSession } from "@/lib/types";
 const api = vi.hoisted(() => ({
   createSession: vi.fn(),
   postCommand: vi.fn(),
+  recoverSession: vi.fn(),
   subscribeEvents: vi.fn(),
 }));
 
@@ -63,11 +64,17 @@ function PauseProbe() {
   return <button onClick={shell.pause}>pause</button>;
 }
 
+function ResumeProbe() {
+  const shell = useShellSession();
+  return <button onClick={shell.resume}>resume</button>;
+}
+
 describe("session acquisition", () => {
   beforeEach(() => {
     api.createSession.mockReset();
     api.createSession.mockResolvedValue(created);
     api.postCommand.mockReset();
+    api.recoverSession.mockReset();
     api.subscribeEvents.mockReset();
     api.subscribeEvents.mockReturnValue(new Promise(() => undefined));
   });
@@ -145,5 +152,85 @@ describe("session acquisition", () => {
         expected_run_status: "running",
       }),
     );
+  });
+
+  it("resumes only the exact advertised durable checkpoint", async () => {
+    const checkpointId = `runtime-checkpoint:${"b".repeat(64)}`;
+    const paused = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Choose an option",
+        run_status: "paused" as const,
+        capabilities: ["resume_task", "close_session"] as const,
+        checkpoint_id: checkpointId,
+        resume_eligible: true,
+      },
+    } as CreatedSession;
+    api.createSession.mockResolvedValue(paused);
+    api.postCommand.mockResolvedValue({
+      kind: "accepted",
+      command_id: "resume",
+      snapshot: paused.snapshot,
+    });
+    render(<ResumeProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "resume" }));
+
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
+    expect(api.postCommand).toHaveBeenCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/resume",
+      expect.objectContaining({
+        kind: "resume_task",
+        checkpoint_id: checkpointId,
+        expected_task_revision: 1,
+        expected_run_status: "paused",
+      }),
+    );
+  });
+
+  it("attempts one exact checkpoint recovery when a paused SSE stream is lost", async () => {
+    const checkpointId = `runtime-checkpoint:${"c".repeat(64)}`;
+    const paused = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Choose an option",
+        run_status: "paused" as const,
+        capabilities: ["resume_task", "close_session"] as const,
+        checkpoint_id: checkpointId,
+        resume_eligible: true,
+      },
+    } as CreatedSession;
+    const recovered = {
+      snapshot: {
+        ...paused.snapshot,
+        event_epoch: "epoch:after-process-restart",
+        event_cursor: 1,
+      },
+    };
+    api.createSession.mockResolvedValue(paused);
+    api.subscribeEvents
+      .mockRejectedValueOnce(new Error("service restarted"))
+      .mockReturnValue(new Promise(() => undefined));
+    api.recoverSession.mockResolvedValue(recovered);
+
+    render(<Probe />);
+
+    await waitFor(() => expect(api.recoverSession).toHaveBeenCalledWith(
+      "session:strict-mode",
+      "session-key",
+      checkpointId,
+    ));
+    await waitFor(() => expect(api.subscribeEvents).toHaveBeenCalledTimes(2));
+    expect(api.subscribeEvents.mock.calls[1][2]).toBe("epoch:after-process-restart");
+    expect(api.subscribeEvents.mock.calls[1][3]).toBe(1);
   });
 });

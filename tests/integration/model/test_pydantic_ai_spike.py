@@ -186,6 +186,26 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
         "request",
     ]
 
+    restored = _policy(ScriptedModel(["first_gui_action"]).build())
+    restored.restore_checkpoint_history(
+        serialized,
+        task_id="task:checkpoint",
+        task_revision=3,
+    )
+    assert restored.port.message_history == history
+    assert restored.port.active_task_identity == ("task:checkpoint", 3)
+
+    from affordance_runtime.immutable import freeze_json
+
+    frozen = freeze_json(serialized)
+    restored_from_checkpoint = _policy(ScriptedModel(["first_gui_action"]).build())
+    restored_from_checkpoint.restore_checkpoint_history(
+        frozen,
+        task_id="task:checkpoint",
+        task_revision=3,
+    )
+    assert restored_from_checkpoint.port.message_history == history
+
 
 def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())

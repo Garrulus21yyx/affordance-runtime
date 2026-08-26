@@ -61,6 +61,14 @@ class ContractDemoPort:
             ),
         )
 
+    async def recover(
+        self, session_id: str, checkpoint_id: str, expires_at: datetime
+    ) -> DemoHandle:
+        del session_id, checkpoint_id, expires_at
+        from .port import RuntimeSessionUnavailable
+
+        raise RuntimeSessionUnavailable("synthetic_demo_recovery_unavailable")
+
     async def snapshot(self, handle: DemoHandle) -> RuntimeSessionSnapshot:
         return handle.snapshot
 

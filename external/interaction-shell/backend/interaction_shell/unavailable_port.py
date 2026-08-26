@@ -27,6 +27,14 @@ class UnavailableRuntimeSessionPort:
     async def open(self, session_id: str, expires_at: datetime) -> UnavailableHandle:
         return UnavailableHandle(session_id, expires_at, secrets.token_urlsafe(18))
 
+    async def recover(
+        self, session_id: str, checkpoint_id: str, expires_at: datetime
+    ) -> UnavailableHandle:
+        del session_id, checkpoint_id, expires_at
+        from .port import RuntimeSessionUnavailable
+
+        raise RuntimeSessionUnavailable("runtime_session_recovery_unavailable")
+
     async def snapshot(self, handle: UnavailableHandle) -> RuntimeSessionSnapshot:
         return RuntimeSessionSnapshot(
             session_id=handle.session_id,

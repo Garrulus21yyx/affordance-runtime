@@ -17,6 +17,7 @@ from affordance_runtime.agent.context.world_transition import (
 )
 from affordance_runtime.agent.decisions import (
     AgentDecision,
+    AskUser,
     DecisionKind,
     FinalResponse,
     LocalToolResult,
@@ -288,6 +289,76 @@ class StepResult:
         """Expose the Registry-owned result without storing a second copy."""
 
         return self.decision.result if isinstance(self.decision, LocalToolResult) else None
+
+
+@dataclass(frozen=True)
+class RunCheckpointFacts:
+    """Typed non-World facts admitted from one validated Runtime checkpoint."""
+
+    status_before_pause: RunStatus
+    remaining_steps: int
+    observation_count: int
+    execution_count: int
+    step_count: int
+    context_generation: int
+    waited_ms: int
+    task_revision: int
+    goal_resolution: GoalPlanResolution | None
+    goal_plan_version_counter: int
+    committed_sent_unknown_count: int
+    decision_counts: Mapping[DecisionKind, int]
+    currentness_probe_count: int
+    workspace: AgentWorkspace
+    pause_boundary: RunControlOutcome
+    last_decision: AgentDecision | None = None
+    last_confirmation: RiskAssessment | None = None
+    last_feedback: str = "checkpoint_restored"
+
+    def __post_init__(self) -> None:
+        if self.status_before_pause not in {
+            RunStatus.RUNNING,
+            RunStatus.WAITING_USER,
+            RunStatus.WAITING_CONFIRMATION,
+        }:
+            raise ValueError("checkpoint facts require a resumable prior status")
+        if (
+            self.remaining_steps < 0
+            or self.observation_count < 1
+            or self.execution_count < 0
+            or self.step_count < 0
+            or self.context_generation < 0
+            or self.waited_ms < 0
+            or self.task_revision < 1
+            or self.goal_plan_version_counter < 0
+            or self.committed_sent_unknown_count < 0
+            or self.currentness_probe_count < 0
+        ):
+            raise ValueError("checkpoint facts contain invalid counters")
+        if not isinstance(self.workspace, AgentWorkspace):
+            raise TypeError("checkpoint facts require one typed workspace")
+        if (
+            self.pause_boundary.kind is not RunControlKind.PAUSE
+            or self.pause_boundary.outcome
+            is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+        ):
+            raise ValueError("checkpoint facts require one reached pause boundary")
+        counts = dict(self.decision_counts)
+        if any(
+            not isinstance(kind, DecisionKind) or type(count) is not int or count < 0
+            for kind, count in counts.items()
+        ):
+            raise ValueError("checkpoint decision counts are invalid")
+        object.__setattr__(self, "decision_counts", counts)
+        if self.status_before_pause is RunStatus.WAITING_USER:
+            if not isinstance(self.last_decision, AskUser) or self.last_confirmation is not None:
+                raise ValueError("waiting-user checkpoint requires its exact question")
+        elif self.status_before_pause is RunStatus.WAITING_CONFIRMATION:
+            if not isinstance(self.last_decision, SelectAction) or self.last_confirmation is None:
+                raise ValueError("waiting-confirmation checkpoint requires its exact request")
+        elif self.last_confirmation is not None:
+            raise ValueError("running checkpoint cannot retain a pending confirmation")
+        if not self.last_feedback.strip() or len(self.last_feedback) > 500:
+            raise ValueError("checkpoint last feedback is invalid")
 
 
 @dataclass

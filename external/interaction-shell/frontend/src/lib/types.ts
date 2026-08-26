@@ -9,3 +9,4 @@ export type Admission =
   | components["schemas"]["Rejected"];
 export type Diagnosis = components["schemas"]["CaseDiagnosis"];
 export type CreatedSession = components["schemas"]["CreateSessionResponse"];
+export type RecoveredSession = components["schemas"]["RecoverSessionResponse"];

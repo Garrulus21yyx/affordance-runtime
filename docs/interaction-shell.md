@@ -64,8 +64,9 @@ implementation details behind those boundaries, not additional cross-layer APIs:
 
 1. `RuntimeSessionPort`: one thin translation boundary over supported public Runtime capabilities;
 2. `RunSessionManager`: external session authentication/TTL, serialized commands, in-process duplicate protection,
-   bounded conversation, and exactly-once invocation of port cleanup; it streams port-owned events without retaining or
-   renumbering a second event log;
+   bounded conversation, and exactly-once invocation of port cleanup; for restart recovery its Shell-private SQLite
+   registry stores only a salted session-key verifier and the original TTL, never Runtime state or a reusable key; it
+   streams port-owned events without retaining or renumbering a second event log;
 3. deployment-private session construction: per-session Runtime, environment/browser lease, optional viewer reference,
    Runtime-owned checkpoint persistence, and idempotent cleanup, returned only as one opaque public handle;
 4. Runtime-private checkpoint storage: persistence of Runtime-owner state and execution truth, never exposed to the
@@ -94,14 +95,15 @@ The following states must not be collapsed into one label such as "implemented":
 | Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
-| Core public session adapter | Implemented with durable pause | It wraps start, answer, confirmation, cooperative pause/cancel, snapshot/event, and close; SQLite remains private to Runtime. |
+| Core public session adapter | Implemented with durable pause/recovery | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
 | Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
-| Restart resume/revision | Unavailable | Environment reconnect, checkpoint hydration, `ResumeRun`, and `ReviseTask` have not been implemented. |
+| Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
+| Running-task revision | Unavailable | `ReviseTask` and effect reconciliation have not been implemented. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Closed through Phase 2 | Phase 0–2 changes are committed and synchronized with the branch origin. |
+| Delivery hygiene | Closed through Phase 5 | Phase 0–5 implementation, tests, documentation, and milestone evidence agree in the current commit. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1229,7 +1231,7 @@ Exit evidence: stop service after a committed pause, restart it, authenticate th
 environment, hydrate an equivalent public snapshot under a new event epoch, and resume without replaying a committed
 GUI effect. An old epoch deterministically yields `resync_required` rather than fabricated event replay.
 
-Checkpoint milestone status (2026-08-26): implemented and verified. The Runtime checkpoint contains the task revision,
+Implementation status (2026-08-26): implemented and verified for the bounded reconnectable-lease contract. The Runtime checkpoint contains the task revision,
 paused-from status, validated GoalPlan disposition, bounded counters/budgets/workspace, last closed step/receipt and
 pending interrupt identity, official PydanticAI message history, environment reconnect reference, pause command
 outcome, schema version, digest, and timestamp. It excludes complete World payloads, live tasks/locks/clients, Shell
@@ -1237,8 +1239,22 @@ conversation/events, and Viewer/trace projections. SQLite uses WAL and commits t
 one transaction. Injected command-outcome failure rolls both rows back, emits typed `pause_persistence_failed`, clears
 the internal pause, acquires a fresh current World when the run was active, and continues the original revision.
 Only after a successful commit does `RunState` enter authoritative `PAUSED` and the Shell receive `checkpoint_id` and
-`resume_eligible`. Process restart hydration, environment reconnection, new event epoch, and `ResumeRun` remain the
-next unimplemented milestone; local BrowserGym therefore reports durable resume unavailable.
+`resume_eligible`. Restart recovery validates the exact session/schema/digest and one-shot resume outcome, restores
+official PydanticAI history and bounded Runtime facts, reconnects only the checkpoint's exact environment reference,
+captures and evaluates a fresh World, then publishes one new-epoch `SESSION_RECOVERED` baseline while remaining
+`PAUSED`. `ResumeRun` consumes the checkpoint before any new policy/dispatch; duplicate or competing resume commands
+cannot replay it. Fresh terminal truth finishes directly after explicit resume, and a fresh confirmation action ID is
+rebased only when its canonical confirmation subject has exactly one current semantic match. Shell restart auth stores
+only a salted key verifier plus the original TTL; old epochs return snapshot resync required. Restart tests cover
+RUNNING, waiting-user, waiting-confirmation, a committed `SENT` receipt with zero replay, corrupt checkpoints,
+already-consumed checkpoints, auth isolation, and missing environments. Local BrowserGym cannot reconnect the same
+Playwright context after process death, so its health remains durable-resume unavailable and recovery returns typed
+`environment_not_reconnectable` without opening a replacement browser. An already-open Web client makes one bounded
+same-session recovery attempt only when its current owner snapshot is `PAUSED + resume_eligible + checkpoint_id`, then
+resubscribes from the recovered epoch/cursor; other stream failures remain offline and never open a new session.
+Concurrent recovery requests are serialized at the Shell handle-install boundary, so exactly one opaque Runtime handle
+owns a recovered session; SQLite also rejects any row whose indexed session/checkpoint scope disagrees with its signed
+checkpoint payload.
 
 ### Phase 6 — bounded running-task revision
 

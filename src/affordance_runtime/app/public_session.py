@@ -34,6 +34,8 @@ from affordance_runtime.world.environment import WorldEnvironment
 from .checkpoint import (
     RuntimeCheckpoint,
     RuntimeCheckpointCommandOutcome,
+    RuntimeCheckpointError,
+    RuntimeCheckpointResumeOutcome,
     RuntimeCheckpointStore,
 )
 from .runtime import TargetRuntime
@@ -60,12 +62,14 @@ class PublicSessionCapability(StrEnum):
     REJECT_ACTION = "reject_action"
     CANCEL_TASK = "cancel_task"
     PAUSE_TASK = "pause_task"
+    RESUME_TASK = "resume_task"
     CLOSE_SESSION = "close_session"
 
 
 PUBLIC_SESSION_CAPABILITIES = frozenset(PublicSessionCapability)
 BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
-    PublicSessionCapability.PAUSE_TASK
+    PublicSessionCapability.PAUSE_TASK,
+    PublicSessionCapability.RESUME_TASK,
 }
 
 
@@ -172,6 +176,12 @@ class RuntimeEnvironmentFactory(Protocol):
     def __call__(self, session_id: str) -> RuntimeEnvironmentLease | Awaitable[RuntimeEnvironmentLease]: ...
 
 
+class RuntimeEnvironmentReconnectFactory(Protocol):
+    def __call__(
+        self, session_id: str, reconnect_reference: str
+    ) -> RuntimeEnvironmentLease | Awaitable[RuntimeEnvironmentLease]: ...
+
+
 class TargetRuntimeFactory(Protocol):
     def __call__(self, session_id: str) -> TargetRuntime | Awaitable[TargetRuntime]: ...
 
@@ -192,11 +202,17 @@ class PublicRuntimeSessionHandle(Protocol):
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
     async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def resume(
+        self, command_id: str, checkpoint_id: str
+    ) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
 
 class PublicRuntimeSessionFactory(Protocol):
     async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle: ...
+    async def recover(
+        self, session_id: str, checkpoint_id: str, expires_at: datetime
+    ) -> PublicRuntimeSessionHandle: ...
 
 
 @dataclass
@@ -365,6 +381,56 @@ class TargetRuntimeSession:
                 await self._settle_pause_boundary(self.runtime, self._admitted.task, state)
             return self._project()
 
+    async def resume(
+        self,
+        command_id: str,
+        checkpoint_id: str,
+    ) -> PublicRuntimeSessionSnapshot:
+        async with self._lock:
+            self._require_open()
+            store = self.checkpoint_store
+            if store is None:
+                raise PublicSessionConflict("resume_unavailable", self._project())
+            try:
+                existing = await store.resume_outcome(self.session_id, command_id)
+            except Exception as exc:
+                raise PublicSessionConflict("resume_persistence_failed", self._project()) from exc
+            if existing is not None:
+                if existing.checkpoint_id == checkpoint_id:
+                    return self._project()
+                raise PublicSessionConflict("resume_command_conflict", self._project())
+            state = self._state
+            if (
+                state is None
+                or state.status is not RunStatus.PAUSED
+                or not self._resume_eligible
+                or self._checkpoint_id != checkpoint_id
+                or state.durable_checkpoint_id != checkpoint_id
+            ):
+                raise PublicSessionConflict("checkpoint_mismatch", self._project())
+            try:
+                await store.commit_resume(
+                    RuntimeCheckpointResumeOutcome(
+                        self.session_id,
+                        command_id,
+                        checkpoint_id,
+                    )
+                )
+            except RuntimeCheckpointError as exc:
+                raise PublicSessionConflict(exc.code, self._project()) from exc
+            self.runtime.resume_control(state, command_id)
+            self._resume_eligible = False
+            self._status = _public_status(state.status)
+            self._emit("RUN_FINISHED" if state.terminal else "RUN_RESUMED")
+            if state.status is RunStatus.RUNNING:
+                if self._admitted is None:
+                    raise PublicSessionConflict("run_not_resumable", self._project())
+                self._active = asyncio.create_task(
+                    self._run_continue(),
+                    name=f"runtime-checkpoint-resume:{self.session_id}",
+                )
+            return self._project()
+
     async def close(self) -> None:
         async with self._lock:
             if self._closed:
@@ -439,6 +505,27 @@ class TargetRuntimeSession:
             )
         except BaseException as exc:
             self._fail("runtime_session_confirmation_failed", type(exc).__name__)
+        finally:
+            self._active = None
+            if self._closed:
+                await self._cleanup_once()
+
+    async def _run_continue(self) -> None:
+        assert self._admitted is not None and self._state is not None
+        runtime = self._runtime_with_projection()
+        try:
+            self._state = await runtime.continue_task(
+                self.lease.environment,
+                self._admitted.task,
+                self._state,
+            )
+            await self._settle_pause_boundary(
+                runtime,
+                self._admitted.task,
+                self._state,
+            )
+        except BaseException as exc:
+            self._fail("runtime_session_resume_failed", type(exc).__name__)
         finally:
             self._active = None
             if self._closed:
@@ -607,6 +694,11 @@ class TargetRuntimeSession:
             capabilities=(
                 BASE_PUBLIC_SESSION_CAPABILITIES
                 | ({PublicSessionCapability.PAUSE_TASK} if self.checkpoint_store is not None else set())
+                | (
+                    {PublicSessionCapability.RESUME_TASK}
+                    if status is PublicSessionStatus.PAUSED and self._resume_eligible
+                    else set()
+                )
             ),
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
@@ -643,6 +735,7 @@ class TargetRuntimeSessionFactory:
     environment_factory: RuntimeEnvironmentFactory
     request_factory: PublicTaskRequestFactory = default_public_task_request
     checkpoint_store: RuntimeCheckpointStore | None = None
+    environment_reconnector: RuntimeEnvironmentReconnectFactory | None = None
 
     async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
         if not callable(self.request_factory):
@@ -688,6 +781,139 @@ class TargetRuntimeSessionFactory:
                 PublicSessionOpenStage.SESSION,
                 "session_initialization_failed",
             ) from exc
+
+    async def recover(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> TargetRuntimeSession:
+        store = self.checkpoint_store
+        if store is None:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "checkpoint_store_unavailable",
+            )
+        try:
+            checkpoint = await store.load(session_id, checkpoint_id)
+            resume_outcome = await store.checkpoint_resume_outcome(
+                session_id, checkpoint_id
+            )
+        except Exception as exc:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "checkpoint_invalid",
+            ) from exc
+        if checkpoint is None:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "checkpoint_not_found",
+            )
+        if resume_outcome is not None:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "checkpoint_already_resumed",
+            )
+        reconnector = self.environment_reconnector
+        if (
+            not checkpoint.resume_eligible
+            or not checkpoint.environment_reference
+            or reconnector is None
+        ):
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.ENVIRONMENT,
+                "environment_not_reconnectable",
+            )
+        try:
+            runtime = self.runtime_factory(session_id)
+            if inspect.isawaitable(runtime):
+                runtime = await runtime
+            if not isinstance(runtime, TargetRuntime):
+                raise TypeError("Runtime factory must return TargetRuntime")
+        except Exception as exc:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.RUNTIME,
+                "runtime_factory_failed",
+            ) from exc
+        lease: RuntimeEnvironmentLease | None = None
+        try:
+            candidate = reconnector(session_id, checkpoint.environment_reference)
+            if inspect.isawaitable(candidate):
+                candidate = await candidate
+            if not isinstance(candidate, RuntimeEnvironmentLease):
+                raise TypeError("environment reconnector must return a typed lease")
+            if candidate.reconnect_reference != checkpoint.environment_reference:
+                raise ValueError("reconnected environment reference changed")
+            lease = candidate
+        except Exception as exc:
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.ENVIRONMENT,
+                "environment_not_reconnectable",
+            ) from exc
+        try:
+            task = checkpoint.restore_task()
+            facts = checkpoint.restore_run_facts()
+            runtime.restore_checkpoint_history(
+                checkpoint.model_history,
+                task_id=task.task_id,
+                task_revision=task.revision,
+            )
+            state = await runtime.restore_paused_checkpoint(
+                lease.environment,
+                task,
+                facts,
+                checkpoint.checkpoint_id,
+            )
+            session = TargetRuntimeSession(
+                runtime,
+                lease,
+                session_id,
+                expires_at,
+                self.request_factory,
+                store,
+            )
+            session._request = _request_from_task(task)
+            session._admitted = ReadyTask(session_id, task)
+            session._state = state
+            session._status = PublicSessionStatus.PAUSED
+            session._checkpoint_id = checkpoint.checkpoint_id
+            session._resume_eligible = True
+            session._last_control_outcome = PublicControlOutcome(
+                checkpoint.pause_command_id,
+                "pause",
+                "paused",
+                "pause_checkpoint_committed",
+                checkpoint.checkpoint_id,
+            )
+            session._emit("SESSION_RECOVERED")
+            return session
+        except Exception as exc:
+            await _cleanup_environment_lease(lease)
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "checkpoint_restore_failed",
+            ) from exc
+
+
+def _request_from_task(task: TaskGoal) -> NaturalLanguageTaskRequest:
+    return NaturalLanguageTaskRequest(
+        task.task_id,
+        task.instruction,
+        TaskBoundary(
+            constraints=task.constraints,
+            allowed_effects=task.allowed_effects,
+            forbidden_effects=task.forbidden_effects,
+            inputs=task.inputs,
+            success_criteria=task.success_criteria,
+            requested_outputs=task.requested_outputs,
+            risk_profile=task.risk_profile,
+            material_bindings=task.material_bindings,
+            loop_budget=task.loop_budget,
+            evaluation_spec=task.evaluation_spec,
+        ),
+        source_ref="checkpoint_restore",
+        revision=task.revision,
+    )
 
 
 async def _cleanup_environment_lease(lease: RuntimeEnvironmentLease) -> None:

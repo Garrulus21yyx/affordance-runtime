@@ -40,6 +40,7 @@ from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from .api import create_app
 from .core_runtime_port import CoreRuntimeSessionPort
 from .manager import RunSessionManager
+from .session_registry import SQLiteSessionRecoveryRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,20 @@ class BrowserGymDeploymentSessionFactory:
                 PublicSessionOpenStage.SESSION,
                 "session_initialization_failed",
             ) from exc
+
+    async def recover(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> TargetRuntimeSession:
+        del session_id, checkpoint_id, expires_at
+        # The local BrowserGym profile cannot reconnect its exact Playwright context.
+        # Opening a replacement context here would risk replaying an external effect.
+        raise PublicSessionOpenError(
+            PublicSessionOpenStage.ENVIRONMENT,
+            "environment_not_reconnectable",
+        )
 
     def health(self) -> Mapping[str, object]:
         inventory = browsergym_api_inventory()
@@ -335,6 +350,9 @@ session_factory = BrowserGymDeploymentSessionFactory(
     SQLiteRuntimeCheckpointStore(_checkpoint_path),
 )
 app = create_app(
-    RunSessionManager(CoreRuntimeSessionPort(session_factory)),
+    RunSessionManager(
+        CoreRuntimeSessionPort(session_factory),
+        SQLiteSessionRecoveryRegistry(_checkpoint_path),
+    ),
     health_provider=session_factory.health,
 )

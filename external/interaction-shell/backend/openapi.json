@@ -119,6 +119,7 @@
           "close_session",
           "cancel_task",
           "pause_task",
+          "resume_task",
           "revise_task",
           "start_new_task",
           "take_over",
@@ -835,6 +836,35 @@
         "title": "PublicTraceExport",
         "type": "object"
       },
+      "RecoverSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint_id"
+        ],
+        "title": "RecoverSessionRequest",
+        "type": "object"
+      },
+      "RecoverSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ],
+        "title": "RecoverSessionResponse",
+        "type": "object"
+      },
       "RejectAction": {
         "additionalProperties": false,
         "properties": {
@@ -906,6 +936,45 @@
           "snapshot"
         ],
         "title": "Rejected",
+        "type": "object"
+      },
+      "ResumeTask": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "resume_task",
+            "default": "resume_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "checkpoint_id"
+        ],
+        "title": "ResumeTask",
         "type": "object"
       },
       "RunStatus": {
@@ -2168,6 +2237,94 @@
         "summary": "Reject"
       }
     },
+    "/sessions/{session_id}/commands/resume": {
+      "post": {
+        "operationId": "resume_sessions__session_id__commands_resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeTask"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Resume Sessions  Session Id  Commands Resume Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume"
+      }
+    },
     "/sessions/{session_id}/events": {
       "get": {
         "operationId": "subscribe_events_sessions__session_id__events_get",
@@ -2261,6 +2418,71 @@
           }
         },
         "summary": "Subscribe Events"
+      }
+    },
+    "/sessions/{session_id}/recover": {
+      "post": {
+        "operationId": "recover_session_sessions__session_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Session"
       }
     },
     "/sessions/{session_id}/tasks": {

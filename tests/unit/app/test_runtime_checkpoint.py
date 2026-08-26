@@ -7,28 +7,115 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.checkpoint import (
     RuntimeCheckpointCommandOutcome,
     RuntimeCheckpointError,
+    RuntimeCheckpointResumeOutcome,
     SQLiteRuntimeCheckpointStore,
 )
 from affordance_runtime.app.public_session import (
     PublicSessionCapability,
+    PublicSessionOpenError,
     PublicSessionStatus,
     RuntimeEnvironmentLease,
     TargetRuntimeSessionFactory,
 )
+from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.task import NaturalLanguageTaskRequest, RiskProfile, TaskBoundary
+from tests.integration.agent.test_core_loop import (
+    CoreActionOutcomeProjector,
+    CoreTaskEvaluator,
+)
+from tests.integration.agent.test_core_loop import (
+    _world as _action_world,
+)
 from tests.unit.agent.test_target_runtime_facade import AskForAccountPolicy, _runtime, _world
+
+
+class RecoverableAskPolicy(AskForAccountPolicy):
+    active_task_identity: tuple[str, int] | None = None
+    restored: bool = False
+
+    async def decide(self, context):
+        self.active_task_identity = (
+            context.task.task_id,
+            context.goal_plan.task_revision,
+        )
+        return await super().decide(context)
+
+    def export_checkpoint_history(self):
+        return {
+            "format": "pydantic-ai.messages.v1",
+            "messages": [],
+            "active_task_identity": list(self.active_task_identity or ()),
+        }
+
+    def restore_checkpoint_history(self, payload, *, task_id, task_revision):
+        if payload.get("format") != "pydantic-ai.messages.v1":
+            raise ValueError("history format mismatch")
+        if tuple(payload.get("active_task_identity", ())) != (task_id, task_revision):
+            raise ValueError("history task mismatch")
+        self.active_task_identity = (task_id, task_revision)
+        self.restored = True
+
+
+class RecoverableSelectPolicy(RecoverableAskPolicy):
+    async def decide(self, context):
+        self.active_task_identity = (
+            context.task.task_id,
+            context.goal_plan.task_revision,
+        )
+        self.calls += 1
+        return SelectAction(
+            context.context_id,
+            context.actions.options[0].action_id,
+            tool_call_id="provider-call:recover-confirmation",
+        )
+
+
+def _confirmation_runtime(policy: RecoverableSelectPolicy) -> TargetRuntime:
+    return TargetRuntime(
+        AgentDecisionPorts(policy),
+        CoreActionOutcomeProjector(),
+        CoreTaskEvaluator(),
+        goal_compiler=NotRequiredGoalCompiler("checkpoint_confirmation_test"),
+    )
+
+
+def _confirmation_request(session_id: str, instruction: str):
+    return NaturalLanguageTaskRequest(
+        session_id,
+        instruction,
+        TaskBoundary(
+            allowed_effects=("shared_state_enabled",),
+            success_criteria=({"target_id": "shared-toggle", "state": {"enabled": True}},),
+            risk_profile=RiskProfile.MEDIUM,
+        ),
+    )
+
+
+def _action_request(session_id: str, instruction: str):
+    return NaturalLanguageTaskRequest(
+        session_id,
+        instruction,
+        TaskBoundary(
+            allowed_effects=("shared_state_enabled",),
+            success_criteria=({"target_id": "shared-toggle", "state": {"enabled": True}},),
+            risk_profile=RiskProfile.LOW,
+        ),
+    )
 
 
 async def _waiting_checkpoint_session(tmp_path, *, store=None):
     checkpoint_store = store or SQLiteRuntimeCheckpointStore(tmp_path / "runtime-checkpoints.sqlite3")
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(),
-        lambda _session_id: RuntimeEnvironmentLease(
-            ScriptedEnvironment(initial_observation=_world())
-        ),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
         checkpoint_store=checkpoint_store,
     )
     handle = await factory.open(
@@ -77,6 +164,13 @@ async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(
         "CONTROL_REQUESTED",
         "RUN_PAUSED",
     )
+    restored_task = checkpoint.restore_task()
+    restored_facts = checkpoint.restore_run_facts()
+    assert restored_task.task_id == "session:checkpoint"
+    assert restored_task.revision == 1
+    assert restored_facts.status_before_pause.value == "waiting_user"
+    assert restored_facts.last_decision is not None
+    assert restored_facts.last_decision.question == "Which account should I use?"
     await handle.close()
 
 
@@ -92,9 +186,7 @@ async def test_active_pause_does_not_write_before_runtime_reaches_boundary(tmp_p
 
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(),
-        lambda _session_id: RuntimeEnvironmentLease(
-            BlockingEnvironment(initial_observation=_world())
-        ),
+        lambda _session_id: RuntimeEnvironmentLease(BlockingEnvironment(initial_observation=_world())),
         checkpoint_store=store,
     )
     handle = await factory.open(
@@ -247,3 +339,404 @@ async def test_cancel_from_durable_pause_is_terminal_and_not_resume_eligible(tmp
     assert cancelled.completion is not None
     assert cancelled.completion.outcome == "cancelled"
     await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_process_restart_restores_same_environment_fresh_world_and_new_epoch(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "runtime-checkpoints.sqlite3")
+    first_policy = RecoverableAskPolicy()
+    first_environment = ScriptedEnvironment(initial_observation=_world())
+    first_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(first_policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            first_environment,
+            reconnect_reference="browser-lease:session:restart",
+        ),
+        checkpoint_store=store,
+    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    first = await first_factory.open("session:restart", expires_at)
+    await first.start("Inspect the selected account")
+    for _ in range(100):
+        if (await first.snapshot()).status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    paused = await first.pause("pause:restart")
+    assert paused.status is PublicSessionStatus.PAUSED
+    assert paused.resume_eligible is True
+    assert paused.checkpoint_id is not None
+    first_epoch = paused.event_epoch
+    await first.close()
+
+    normal_open_calls = 0
+    reconnect_calls: list[tuple[str, str]] = []
+    recovered_environment = ScriptedEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    recovered_policy = RecoverableAskPolicy()
+
+    def must_not_open_replacement(_session_id: str):
+        nonlocal normal_open_calls
+        normal_open_calls += 1
+        raise AssertionError("restart recovery must not open a replacement environment")
+
+    def reconnect(session_id: str, reference: str):
+        reconnect_calls.append((session_id, reference))
+        return RuntimeEnvironmentLease(
+            recovered_environment,
+            reconnect_reference=reference,
+        )
+
+    recovered_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(recovered_policy),
+        must_not_open_replacement,
+        checkpoint_store=store,
+        environment_reconnector=reconnect,
+    )
+    recovered = await recovered_factory.recover("session:restart", paused.checkpoint_id, expires_at)
+    baseline = await recovered.snapshot()
+
+    assert baseline.status is PublicSessionStatus.PAUSED
+    assert baseline.event_epoch != first_epoch
+    assert baseline.event_cursor == 1
+    assert tuple(event.type for event in await recovered.events(0)) == ("SESSION_RECOVERED",)
+    assert baseline.checkpoint_id == paused.checkpoint_id
+    assert baseline.resume_eligible is True
+    assert normal_open_calls == 0
+    assert reconnect_calls == [("session:restart", "browser-lease:session:restart")]
+    assert recovered_environment.reset_calls == 0
+    assert recovered_environment.capture_calls == 1
+    assert recovered_policy.restored is True
+    assert recovered_policy.calls == 0
+
+    resumed = await recovered.resume("resume:restart", paused.checkpoint_id)
+    assert resumed.status is PublicSessionStatus.WAITING_USER
+    assert resumed.pending_question is not None
+    assert resumed.resume_eligible is False
+    assert recovered_policy.calls == 0
+    assert await store.resume_outcome("session:restart", "resume:restart") == (
+        RuntimeCheckpointResumeOutcome("session:restart", "resume:restart", paused.checkpoint_id)
+    )
+    duplicate = await recovered.resume("resume:restart", paused.checkpoint_id)
+    assert duplicate == resumed
+
+    with pytest.raises(PublicSessionOpenError, match="checkpoint_already_resumed"):
+        await recovered_factory.recover("session:restart", paused.checkpoint_id, expires_at)
+    assert len(reconnect_calls) == 1
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_refuses_nonreconnectable_checkpoint_without_opening_environment(tmp_path) -> None:
+    handle, _store = await _waiting_checkpoint_session(tmp_path)
+    paused = await handle.pause("pause:not-reconnectable")
+    assert paused.checkpoint_id is not None
+    await handle.close()
+    open_calls = 0
+
+    def environment_factory(_session_id: str):
+        nonlocal open_calls
+        open_calls += 1
+        raise AssertionError("failed recovery must not create a new environment")
+
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        environment_factory,
+        checkpoint_store=SQLiteRuntimeCheckpointStore(tmp_path / "runtime-checkpoints.sqlite3"),
+    )
+    with pytest.raises(PublicSessionOpenError, match="environment_not_reconnectable"):
+        await factory.recover(
+            "session:checkpoint",
+            paused.checkpoint_id,
+            datetime.now(UTC) + timedelta(minutes=5),
+        )
+    assert open_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_restart_from_running_boundary_reselects_only_after_explicit_resume(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "running-checkpoints.sqlite3")
+    release = asyncio.Event()
+
+    class BlockingEnvironment(ScriptedEnvironment):
+        async def reset(self, task):
+            await release.wait()
+            return await super().reset(task)
+
+    first_policy = RecoverableAskPolicy()
+    first_policy.active_task_identity = ("session:running-restart", 1)
+    first_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(first_policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            BlockingEnvironment(initial_observation=_world()),
+            reconnect_reference="browser-lease:running",
+        ),
+        checkpoint_store=store,
+    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    first = await first_factory.open("session:running-restart", expires_at)
+    await first.start("Inspect the selected account")
+    await first.pause("pause:running-restart")
+    release.set()
+    for _ in range(100):
+        paused = await first.snapshot()
+        if paused.status is PublicSessionStatus.PAUSED:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("running checkpoint did not commit")
+    assert paused.checkpoint_id is not None
+    await first.close()
+
+    recovered_policy = RecoverableAskPolicy()
+    recovered_environment = ScriptedEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(recovered_policy),
+        lambda _session_id: (_ for _ in ()).throw(AssertionError("normal environment open is forbidden")),
+        checkpoint_store=store,
+        environment_reconnector=lambda _session_id, reference: RuntimeEnvironmentLease(
+            recovered_environment,
+            reconnect_reference=reference,
+        ),
+    )
+    recovered = await factory.recover("session:running-restart", paused.checkpoint_id, expires_at)
+    assert recovered_policy.calls == 0
+    assert recovered_environment.execute_calls == 0
+
+    resumed = await recovered.resume("resume:running-restart", paused.checkpoint_id)
+    assert resumed.status is PublicSessionStatus.RUNNING
+    for _ in range(100):
+        waiting = await recovered.snapshot()
+        if waiting.status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("resumed running checkpoint did not return to policy")
+    assert recovered_policy.calls == 1
+    assert recovered_environment.execute_calls == 0
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_confirmation_keeps_exact_interrupt_and_never_dispatches_before_resume(
+    tmp_path,
+) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "confirmation-checkpoints.sqlite3")
+    first_policy = RecoverableSelectPolicy()
+    first_environment = ScriptedEnvironment(initial_observation=_action_world("confirmation-before", False))
+    first_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _confirmation_runtime(first_policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            first_environment,
+            reconnect_reference="browser-lease:confirmation",
+        ),
+        request_factory=_confirmation_request,
+        checkpoint_store=store,
+    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    first = await first_factory.open("session:confirmation-restart", expires_at)
+    await first.start("Enable shared state")
+    for _ in range(100):
+        waiting = await first.snapshot()
+        if waiting.status is PublicSessionStatus.WAITING_CONFIRMATION:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("confirmation fixture did not reach its interrupt")
+    original_interrupt = waiting.pending_confirmation
+    paused = await first.pause("pause:confirmation-restart")
+    assert paused.status is PublicSessionStatus.PAUSED
+    assert paused.checkpoint_id is not None
+    assert first_environment.execute_calls == 0
+    await first.close()
+
+    recovered_policy = RecoverableSelectPolicy()
+    recovered_environment = ScriptedEnvironment(
+        initial_observation=_action_world("confirmation-reconnected", False),
+        independent_observations=(_action_world("confirmation-reconnected", False),),
+        post_observations=(_action_world("confirmation-after", True),),
+        results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+    )
+    recovered_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _confirmation_runtime(recovered_policy),
+        lambda _session_id: (_ for _ in ()).throw(AssertionError("normal environment open is forbidden")),
+        request_factory=_confirmation_request,
+        checkpoint_store=store,
+        environment_reconnector=lambda _session_id, reference: RuntimeEnvironmentLease(
+            recovered_environment,
+            reconnect_reference=reference,
+        ),
+    )
+    recovered = await recovered_factory.recover("session:confirmation-restart", paused.checkpoint_id, expires_at)
+    assert recovered_environment.execute_calls == 0
+    assert recovered_policy.calls == 0
+
+    resumed = await recovered.resume("resume:confirmation-restart", paused.checkpoint_id)
+    assert resumed.status is PublicSessionStatus.WAITING_CONFIRMATION
+    assert resumed.pending_confirmation == original_interrupt
+    assert recovered_environment.execute_calls == 0
+    assert recovered_policy.calls == 0
+
+    assert resumed.pending_confirmation is not None
+    await recovered.confirm(
+        resumed.pending_confirmation.interrupt_id,
+        approved=True,
+    )
+    for _ in range(100):
+        done = await recovered.snapshot()
+        if done.status is PublicSessionStatus.DONE:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"restored confirmation did not execute after approval: {done!r}")
+    assert recovered_environment.execute_calls == 1
+    assert recovered_policy.calls == 0
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_after_sent_receipt_observes_effect_without_replaying_action(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "sent-checkpoints.sqlite3")
+    dispatch_entered = asyncio.Event()
+    dispatch_release = asyncio.Event()
+
+    class BlockingDispatchEnvironment(ScriptedEnvironment):
+        async def execute(self, request):
+            dispatch_entered.set()
+            await dispatch_release.wait()
+            return await super().execute(request)
+
+    first_policy = RecoverableSelectPolicy()
+    first_environment = BlockingDispatchEnvironment(
+        initial_observation=_action_world("sent-before", False),
+        post_observations=(_action_world("sent-after", False),),
+        results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+    )
+    first_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _confirmation_runtime(first_policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            first_environment,
+            reconnect_reference="browser-lease:sent",
+        ),
+        request_factory=_action_request,
+        checkpoint_store=store,
+    )
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    first = await first_factory.open("session:sent-restart", expires_at)
+    await first.start("Enable shared state")
+    await asyncio.wait_for(dispatch_entered.wait(), timeout=1)
+    requested = await first.pause("pause:sent-restart")
+    assert requested.status is PublicSessionStatus.RUNNING
+    dispatch_release.set()
+    for _ in range(100):
+        paused = await first.snapshot()
+        if paused.status is PublicSessionStatus.PAUSED:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("sent checkpoint did not commit")
+    assert paused.checkpoint_id is not None
+    checkpoint = await store.load(
+        "session:sent-restart",
+        paused.checkpoint_id,
+    )
+    assert checkpoint is not None and checkpoint.last_step is not None
+    receipts = checkpoint.last_step["receipts"]
+    assert receipts[0]["dispatch_status"] == "sent"
+    assert first_environment.execute_calls == 1
+    await first.close()
+
+    recovered_policy = RecoverableSelectPolicy()
+    recovered_environment = ScriptedEnvironment(
+        initial_observation=_action_world("sent-reconnected", True),
+        independent_observations=(_action_world("sent-reconnected", True),),
+    )
+    recovered_factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _confirmation_runtime(recovered_policy),
+        lambda _session_id: (_ for _ in ()).throw(AssertionError("normal environment open is forbidden")),
+        request_factory=_action_request,
+        checkpoint_store=store,
+        environment_reconnector=lambda _session_id, reference: RuntimeEnvironmentLease(
+            recovered_environment,
+            reconnect_reference=reference,
+        ),
+    )
+    recovered = await recovered_factory.recover("session:sent-restart", paused.checkpoint_id, expires_at)
+    assert recovered_environment.execute_calls == 0
+    assert recovered_policy.calls == 0
+    await recovered.resume("resume:sent-restart", paused.checkpoint_id)
+    for _ in range(100):
+        done = await recovered.snapshot()
+        if done.status is PublicSessionStatus.DONE:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"sent checkpoint did not finish from fresh truth: {done!r}")
+    assert recovered_environment.execute_calls == 0
+    assert recovered_policy.calls == 0
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_rejects_corrupted_checkpoint_before_environment_reconnect(tmp_path) -> None:
+    handle, store = await _waiting_checkpoint_session(tmp_path)
+    paused = await handle.pause("pause:corrupt")
+    assert paused.checkpoint_id is not None
+    await handle.close()
+    with sqlite3.connect(store.path) as connection:
+        connection.execute(
+            "UPDATE runtime_checkpoints SET payload_json = replace(payload_json, "
+            "'Inspect the selected account', 'Inspect a corrupted account') "
+            "WHERE session_id = ? AND checkpoint_id = ?",
+            ("session:checkpoint", paused.checkpoint_id),
+        )
+        connection.commit()
+    reconnect_calls = 0
+
+    def reconnect(_session_id: str, reference: str):
+        nonlocal reconnect_calls
+        reconnect_calls += 1
+        return RuntimeEnvironmentLease(
+            ScriptedEnvironment(initial_observation=_world()),
+            reconnect_reference=reference,
+        )
+
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: (_ for _ in ()).throw(AssertionError("normal environment open is forbidden")),
+        checkpoint_store=store,
+        environment_reconnector=reconnect,
+    )
+    with pytest.raises(PublicSessionOpenError, match="checkpoint_invalid"):
+        await factory.recover(
+            "session:checkpoint",
+            paused.checkpoint_id,
+            datetime.now(UTC) + timedelta(minutes=5),
+        )
+    assert reconnect_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_load_rejects_row_and_payload_scope_mismatch(tmp_path) -> None:
+    handle, store = await _waiting_checkpoint_session(tmp_path)
+    paused = await handle.pause("pause:scope")
+    assert paused.checkpoint_id is not None
+    await handle.close()
+    with sqlite3.connect(store.path) as connection:
+        connection.execute(
+            "INSERT INTO runtime_checkpoints "
+            "(session_id, checkpoint_id, schema_version, digest, created_at, payload_json) "
+            "SELECT ?, checkpoint_id, schema_version, digest, created_at, payload_json "
+            "FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
+            ("session:wrong-scope", "session:checkpoint", paused.checkpoint_id),
+        )
+        connection.commit()
+
+    with pytest.raises(RuntimeCheckpointError, match="checkpoint_scope_mismatch"):
+        await store.load("session:wrong-scope", paused.checkpoint_id)
+    with pytest.raises(RuntimeCheckpointError, match="checkpoint_scope_mismatch"):
+        await store.load_latest("session:wrong-scope")

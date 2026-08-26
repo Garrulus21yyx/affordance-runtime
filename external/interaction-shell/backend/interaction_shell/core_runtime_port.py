@@ -29,6 +29,7 @@ from .contracts import (
     PendingQuestion,
     PublicStep,
     RejectAction,
+    ResumeTask,
     RunStatus,
     RuntimeSessionSnapshot,
     ShellCommand,
@@ -67,6 +68,7 @@ class CoreRuntimeSessionPort:
                 Capability.REJECT_ACTION,
                 Capability.CANCEL_TASK,
                 Capability.PAUSE_TASK,
+                Capability.RESUME_TASK,
                 Capability.CLOSE_SESSION,
             }
         )
@@ -74,6 +76,17 @@ class CoreRuntimeSessionPort:
     async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle:
         try:
             return await self.factory.open(session_id, expires_at)
+        except PublicSessionOpenError as exc:
+            raise RuntimeSessionUnavailable(exc.code) from exc
+
+    async def recover(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> PublicRuntimeSessionHandle:
+        try:
+            return await self.factory.recover(session_id, checkpoint_id, expires_at)
         except PublicSessionOpenError as exc:
             raise RuntimeSessionUnavailable(exc.code) from exc
 
@@ -101,6 +114,8 @@ class CoreRuntimeSessionPort:
                 current = await handle.cancel(command.command_id)
             elif isinstance(command, OptionalCommand) and command.kind == "pause_task":
                 current = await handle.pause(command.command_id)
+            elif isinstance(command, ResumeTask):
+                current = await handle.resume(command.command_id, command.checkpoint_id)
             else:
                 raise TypeError("Core Runtime port received an unsupported command")
         except PublicSessionConflict as exc:
@@ -212,6 +227,7 @@ _SUPPORTED_PUBLIC_CAPABILITIES = frozenset(
         PublicSessionCapability.REJECT_ACTION,
         PublicSessionCapability.CANCEL_TASK,
         PublicSessionCapability.PAUSE_TASK,
+        PublicSessionCapability.RESUME_TASK,
         PublicSessionCapability.CLOSE_SESSION,
     }
 )
