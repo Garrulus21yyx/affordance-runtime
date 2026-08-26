@@ -145,6 +145,31 @@ class FailingRevisionStore:
         await self.delegate.commit_revision(checkpoint, outcome)
 
 
+@dataclass(frozen=True)
+class FailingRevisionReadStore:
+    delegate: SQLiteRuntimeCheckpointStore
+
+    def __getattr__(self, name):
+        return getattr(self.delegate, name)
+
+    async def load(self, session_id, checkpoint_id):
+        del session_id, checkpoint_id
+        raise RuntimeCheckpointError("injected_revision_source_read_failure")
+
+
+@dataclass(frozen=True)
+class FailingRevisionOutcomeStore:
+    delegate: SQLiteRuntimeCheckpointStore
+
+    def __getattr__(self, name):
+        return getattr(self.delegate, name)
+
+    async def commit_revision(self, checkpoint, outcome):
+        if checkpoint is None:
+            raise RuntimeCheckpointError("injected_revision_outcome_failure")
+        await self.delegate.commit_revision(checkpoint, outcome)
+
+
 async def _revisable_checkpoint_session(
     tmp_path,
     *,
@@ -986,6 +1011,126 @@ async def test_revision_command_reuses_cooperative_pause_without_separate_shell_
 
 
 @pytest.mark.asyncio
+async def test_revision_during_policy_waits_for_cooperative_boundary_before_commit(
+    tmp_path,
+) -> None:
+    policy_entered = asyncio.Event()
+    policy_release = asyncio.Event()
+
+    class BlockingRevisionPolicy(RecoverableAskPolicy):
+        async def decide(self, context):
+            policy_entered.set()
+            await policy_release.wait()
+            return await super().decide(context)
+
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "active-revision.sqlite3")
+    policy = BlockingRevisionPolicy()
+    compiler = ReadyRevisionCompiler()
+    goal_compiler = CountingGoalCompiler()
+    environment = RevisionEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: replace(
+            _runtime(policy),
+            goal_compiler=goal_compiler,
+            task_revision_compiler=compiler,
+        ),
+        lambda _session_id: RuntimeEnvironmentLease(
+            environment,
+            reconnect_reference="browser-lease:active-revision",
+        ),
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:active-revision",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    await asyncio.wait_for(policy_entered.wait(), timeout=1)
+
+    revising = asyncio.create_task(
+        handle.revise(
+            "revise:during-policy",
+            None,
+            "Also include the owner",
+        )
+    )
+    await asyncio.sleep(0)
+    assert not revising.done()
+
+    policy_release.set()
+    revised = await asyncio.wait_for(revising, timeout=1)
+
+    assert revised.status is PublicSessionStatus.PAUSED
+    assert revised.task_revision == 2
+    assert revised.checkpoint_id is not None
+    assert compiler.calls == 1
+    assert goal_compiler.revisions == [1, 2]
+    assert policy.calls == 1
+    assert [task.revision for task in environment.revised_tasks] == [2]
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_revision_invalidates_old_confirmation_without_dispatch(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "confirmation-revision.sqlite3")
+    policy = RecoverableSelectPolicy()
+    compiler = ReadyRevisionCompiler()
+    goal_compiler = CountingGoalCompiler()
+    environment = RevisionEnvironment(
+        initial_observation=_action_world("revision-confirmation-before", False),
+        independent_observations=(
+            _action_world("revision-confirmation-after", False),
+        ),
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: replace(
+            _confirmation_runtime(policy),
+            goal_compiler=goal_compiler,
+            task_revision_compiler=compiler,
+        ),
+        lambda _session_id: RuntimeEnvironmentLease(
+            environment,
+            reconnect_reference="browser-lease:confirmation-revision",
+        ),
+        request_factory=_confirmation_request,
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:confirmation-revision",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Enable shared state")
+    for _ in range(100):
+        waiting = await handle.snapshot()
+        if waiting.status is PublicSessionStatus.WAITING_CONFIRMATION:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("revision fixture did not reach confirmation")
+    assert waiting.pending_confirmation is not None
+    assert environment.execute_calls == 0
+
+    revised = await handle.revise(
+        "revise:confirmation",
+        None,
+        "Inspect the account and its owner instead",
+    )
+
+    assert revised.status is PublicSessionStatus.PAUSED
+    assert revised.task_revision == 2
+    assert revised.pending_confirmation is None
+    assert revised.resume_eligible is True
+    assert environment.execute_calls == 0
+    assert policy.calls == 1
+    assert compiler.calls == 1
+    assert goal_compiler.revisions == [1, 2]
+    await handle.close()
+
+
+@pytest.mark.asyncio
 async def test_revision_nonready_outcome_is_durable_and_keeps_old_checkpoint(tmp_path) -> None:
     compiler = NoChangeRevisionCompiler()
     handle, store, _policy, _, goal_compiler, environment, source = (
@@ -1019,6 +1164,69 @@ async def test_revision_nonready_outcome_is_durable_and_keeps_old_checkpoint(tmp
             "Do not call the compiler twice",
         )
     assert compiler.calls == 1
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_revision_source_read_failure_is_typed_and_keeps_old_pause(tmp_path) -> None:
+    delegate = SQLiteRuntimeCheckpointStore(tmp_path / "revision-read-failure.sqlite3")
+    store = FailingRevisionReadStore(delegate)
+    handle, _, _policy, compiler, goal_compiler, environment, source = (
+        await _revisable_checkpoint_session(tmp_path, store=store)
+    )
+    assert source.checkpoint_id is not None
+
+    with pytest.raises(PublicSessionConflict, match="revision_persistence_failed"):
+        await handle.revise(
+            "revise:read-failure",
+            source.checkpoint_id,
+            "Also include the owner",
+        )
+
+    current = await handle.snapshot()
+    assert current.status is PublicSessionStatus.PAUSED
+    assert current.task_revision == 1
+    assert current.checkpoint_id == source.checkpoint_id
+    assert current.last_control_outcome is not None
+    assert current.last_control_outcome.command_id == "revise:read-failure"
+    assert current.last_control_outcome.code == "revision_persistence_failed"
+    assert compiler.calls == 0
+    assert goal_compiler.revisions == [1]
+    assert environment.revised_tasks == []
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_revision_rejection_persistence_failure_projects_current_command(tmp_path) -> None:
+    delegate = SQLiteRuntimeCheckpointStore(tmp_path / "revision-outcome-failure.sqlite3")
+    store = FailingRevisionOutcomeStore(delegate)
+    compiler = NoChangeRevisionCompiler()
+    handle, _, _policy, _, goal_compiler, environment, source = (
+        await _revisable_checkpoint_session(tmp_path, store=store, compiler=compiler)
+    )
+    assert source.checkpoint_id is not None
+
+    with pytest.raises(PublicSessionConflict, match="revision_persistence_failed"):
+        await handle.revise(
+            "revise:outcome-failure",
+            source.checkpoint_id,
+            "Keep the current goal",
+        )
+
+    current = await handle.snapshot()
+    assert current.status is PublicSessionStatus.PAUSED
+    assert current.task_revision == 1
+    assert current.checkpoint_id == source.checkpoint_id
+    assert current.last_control_outcome is not None
+    assert current.last_control_outcome.command_id == "revise:outcome-failure"
+    assert current.last_control_outcome.code == "revision_persistence_failed"
+    assert compiler.calls == 1
+    assert goal_compiler.revisions == [1]
+    assert environment.revised_tasks == []
+    assert await delegate.revision_outcome(
+        "session:revision",
+        "revise:outcome-failure",
+    ) is None
     await handle.close()
 
 

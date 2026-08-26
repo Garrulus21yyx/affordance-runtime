@@ -16,7 +16,8 @@ success.
 
 The Runtime now publishes `affordance-runtime.session.v1`. When a deployment
 composes `CoreRuntimeSessionPort` with a `TargetRuntimeSessionFactory`, the
-supported commands are start, AskUser answer, confirmation approve/reject, and
+supported commands are start, AskUser answer, confirmation approve/reject,
+cooperative cancel, durable pause/resume, zero-prior-effect task revision, and
 close. The opaque Core handle owns resumable `RunState`; the external manager
 stores only that handle and drains owner-projected events by epoch/cursor without
 retaining a second event list, timestamp, or envelope projection. Without a
@@ -25,10 +26,11 @@ typed `Unsupported`. `INTERACTION_SHELL_DEMO=true` enables a contract-only
 local/E2E port; it emits no GUI action, has no agent loop, and labels its
 completion `demo_owner_completion`.
 
-Cancel, running revision, new-task replacement, takeover, and return-control
-remain unavailable until a future Runtime port advertises the corresponding
-typed capability. Viewer interaction likewise remains disabled without an
-exclusive typed control lease and return outcome.
+Task revision is one dedicated command/port call and always remains paused after
+success. A prior `SENT` or `SENT_UNKNOWN` receipt returns typed
+`effect_reconciliation_required`; compensation, new-task replacement, takeover,
+and return-control remain unavailable. Viewer interaction likewise remains
+disabled without an exclusive typed control lease and return outcome.
 
 Steel/Browserbase Live View is a deployment projection, not a media protocol:
 `ViewerStateProjector` may publish only a read-only, secret-free same-origin

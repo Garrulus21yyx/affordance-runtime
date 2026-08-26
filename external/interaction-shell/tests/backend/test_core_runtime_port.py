@@ -379,6 +379,22 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
     )
     assert Capability.REVISE_TASK in started.snapshot.capabilities
 
+    stale = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:stale",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.RUNNING,
+            expected_checkpoint_id=None,
+            text="This stale command must not reach Runtime",
+        ),
+    )
+    assert stale.kind == "conflict"
+    assert stale.code == "stale_command"
+    assert factory.handle is not None
+    assert factory.handle.revise_calls == []
+
     revised = await manager.admit(
         created.snapshot.session_id,
         created.session_key,
@@ -396,7 +412,6 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
     assert revised.snapshot.task_revision == 2
     assert revised.snapshot.last_control_outcome is not None
     assert revised.snapshot.last_control_outcome.kind == "revise"
-    assert factory.handle is not None
     assert factory.handle.revise_calls == [
         ("revise:1", None, "Inspect the account and its owner")
     ]

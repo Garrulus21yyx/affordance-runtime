@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 5 reconnectable-lease restart recovery complete; Phase 6 task revision pending
+Status: Phase 6 bounded task revision complete; Phase 7 effect reconciliation pending
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -267,7 +267,7 @@ Constraints:
       regressions also pass: concurrent same-session recovery installs one
       Runtime handle, and SQLite rejects row/payload scope mismatch. No benchmark
       was run.
-17. **in progress — Phase 6: ReviseTask compiler and paused revision commit.**
+17. **done — Phase 6: ReviseTask compiler and paused revision commit.**
     - Baseline is clean `0a7b0ddc`; Phase 5 checkpoint/recovery infrastructure
       is fixed and will not be redesigned for this phase.
     - First map the existing TaskIntake, GoalCompiler, environment task-revision,
@@ -301,8 +301,28 @@ Constraints:
       restores old history/environment/fresh paused state. The 82 checkpoint and
       PydanticAI tests plus 51 public Runtime/composition/architecture tests,
       Ruff, compileall, and the five typed Runtime-owner MyPy files pass.
-    - Commit and push each coherent milestone; do not run live benchmark or
-      start Viewer/Phase 7 work.
+    - Shell/API/UI milestone implemented: `ReviseTask` is a dedicated command
+      and HTTP route; Manager makes exactly one `RuntimeSessionPort.revise`
+      call per request and lets duplicate retries replay the Runtime-owned
+      durable outcome. Generated OpenAPI/TypeScript contracts and the
+      capability-gated conversation input carry the exact expected checkpoint;
+      success remains paused and never invokes Resume automatically. Synthetic
+      Demo and the default unavailable port remain typed unavailable.
+    - Final owner evidence includes revision arriving during a held policy
+      call, waiting-confirmation invalidation with zero dispatch, stale Shell
+      rejection before the port, duplicate result replay, every compiler
+      non-ready outcome, prior-effect rejection, persistence rollback, and
+      exact single GoalCompiler/environment revision on success.
+    - Final verification: the Phase 6/Core/Shell focused slice passed 174 tests;
+      external backend/architecture passed 56 tests; frontend passed 8 unit
+      tests, ESLint, TypeScript, generated OpenAPI, and production build;
+      backend Pyright/Ruff and touched Core Ruff passed; Demo Playwright E2E
+      passed 1 test. The full provider-free suite passed 1805 tests with 19
+      skips after deselecting the same two known non-Phase-6 witnesses: the
+      documentation-governance count rejects this user-required document, and
+      one semantic-delivery test requires a historical live trace absent from
+      the worktree. An initial unfiltered run recorded only those two failures.
+      No live benchmark was run; Viewer and Phase 7 were not started.
 
 ## Current-work produced files
 

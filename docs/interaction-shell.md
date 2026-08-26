@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Local real execution implemented and verified; Viewer and resumable control unavailable**
+Status: **Local real execution, durable control, and bounded task revision implemented; Viewer and effect reconciliation unavailable**
 
 Date: 2026-08-26
 
@@ -21,8 +21,9 @@ profile are implemented. The production-safe default deliberately uses an unavai
 `interaction_shell.deployment_app:app` composes one real Runtime, policy/history, BrowserGym environment, browser
 context, trace sink, and idempotent resource cleanup owner per Web session. The local profile has passed real API/UI
 execution and two-session isolation witnesses. Cooperative `CancelRun` is now a distinct public terminal capability;
-Viewer, durable pause/resume, running revision, and takeover are not public Runtime capabilities and remain visible as
-typed unavailable states rather than being hidden by the UI or simulated by the shell.
+durable `PauseRun`/`ResumeRun` and zero-prior-effect `ReviseTask` are also public Runtime capabilities. Viewer, local
+BrowserGym process-restart reconnection, effect reconciliation/compensation, and takeover remain visible as typed
+unavailable states rather than being hidden by the UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -95,15 +96,16 @@ The following states must not be collapsed into one label such as "implemented":
 | Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
-| Core public session adapter | Implemented with durable pause/recovery | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, snapshot/event, and close; SQLite remains private to Runtime. |
+| Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, zero-prior-effect task revision, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
 | Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
-| Running-task revision | Unavailable | `ReviseTask` and effect reconciliation have not been implemented. |
+| Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
+| Effect reconciliation/compensation | Unavailable | Phase 6 preserves and blocks on prior dispatched truth; Phase 7 has not implemented observation/compensation or automatic undo. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Closed through Phase 5 | Phase 0–5 implementation, tests, documentation, and milestone evidence agree in the current commit. |
+| Delivery hygiene | Closed through Phase 6 | Phase 0–6 implementation, tests, documentation, and milestone evidence agree in the current commit. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -648,20 +650,21 @@ Cancel persists final audit/receipt truth but produces no resumable checkpoint. 
 
 ### 9.5 Running-task revision
 
-This feature is absent until `RuntimeSessionPort` advertises typed pause and running-revision capabilities. The user
-message is not injected directly into ActionPolicy and does not mutate an existing `GoalPlan`:
+`RuntimeSessionPort` now advertises running revision only when the Runtime owns durable pause/checkpoint support. The
+user message is not injected directly into ActionPolicy and does not mutate an existing `GoalPlan`:
 
 ```text
 ReviseTask(command_id, expected_task_revision=n)
 → cooperative pause at a Runtime safe boundary
 → commit checkpoint for the last closed step
+→ if any prior receipt is SENT/SENT_UNKNOWN, keep revision n and return effect_reconciliation_required
 → TaskRevisionCompiler interprets bounded user-owned language
 → TaskIntake validates a proposed complete TaskGoal(revision=n+1)
-→ public Runtime revision boundary stages environment.revise_task with an idempotent revision token
+→ public Runtime revision boundary stages environment.revise_task
 → acquire fresh WorldObservation
 → GoalCompiler runs exactly once with TASK_REVISION
 → atomically commit TaskGoal(n+1), invalidation, GoalPlan outcome, fresh World lineage, and revised checkpoint
-→ owner snapshot reports PAUSED with revision_applied_ready or effect_reconciliation_required
+→ owner snapshot reports PAUSED with revised + checkpoint_id
 → a later ResumeRun lets the same ActionPolicy continue from the committed revision
 ```
 
@@ -676,14 +679,12 @@ progress or rollback. On a later `ResumeRun`, the same ActionPolicy decides subs
 the revised authoritative goal and current World.
 
 The proposed task is not authoritative merely because the compiler or TaskIntake returned it. The public Runtime
-revision boundary owns one serialized commit. `environment.revise_task` must be idempotent for the revision token and
-must not perform an unrelated GUI effect. If environment revision/fresh acquisition fails, revision `n` remains public
-authority, the run stays `PAUSED`, and the staged revision returns typed `revision_environment_unavailable`; it may be
-retried with the same token but no action dispatches. `GoalCompiler` `Unsupported|Failed` commits revision `n+1` with
-plan guidance unavailable and retains the ordinary loop behavior; only genuine missing user facts becomes
-`WAITING_USER`. Failure to commit the revised checkpoint leaves the run quiescent in a typed
-`revision_commit_failed` state and never resumes either revision until the same staged transaction is durably resolved
-or the session is cancelled/closed.
+revision boundary owns one serialized commit, and `environment.revise_task` must not perform an unrelated GUI effect.
+If environment revision, fresh acquisition, history rebinding, or checkpoint construction fails, Runtime restores
+revision `n`, its model history, the environment task, and a fresh paused World before returning typed
+`revision_failed`. `GoalCompiler` `Unsupported|Failed` commits revision `n+1` with plan guidance unavailable and
+retains the ordinary loop behavior. Failure to commit the revised checkpoint restores the same revision-`n` paused
+authority and returns `revision_persistence_failed`; it never auto-resumes either revision.
 
 Any pending action, binding, action page, or confirmation created under revision `n` is stale under revision `n+1`.
 An accepted-but-not-dispatched PydanticAI deferred tool proposal must receive a Runtime-projected `not_dispatched /
@@ -694,12 +695,12 @@ Compiler/conversion outcomes have closed control semantics:
 
 | Outcome | Goal authority | Run/control result |
 |---|---|---|
-| `RevisionReady` + commit, with no retained `SENT`/`SENT_UNKNOWN` | becomes `n+1` | remain `PAUSED` with `revision_applied_ready`; `ResumeRun` is legal |
-| `RevisionReady` + commit, with retained `SENT`/`SENT_UNKNOWN` | becomes `n+1` | remain `PAUSED` with `effect_reconciliation_required`; Phase 7 support is required before resume can dispatch |
-| `NeedsInput` | remains `n` | `WAITING_USER`; checkpoint remains resumable and no GUI dispatch occurs |
+| Prior `SENT`/`SENT_UNKNOWN` before compilation | remains `n` | remain `PAUSED` with durable `effect_reconciliation_required`; Phase 7 is required before revising that goal |
+| `RevisionReady` + atomic commit, with no prior dispatched effect | becomes `n+1` | remain `PAUSED` with `revised`; separate `ResumeRun` is legal |
+| `NeedsInput` | remains `n` | remain `PAUSED` with typed `revision_needs_input`; no GUI dispatch occurs |
 | `NoChange` | remains `n` | remain `PAUSED`; user may resume, revise again, cancel, or close |
 | `Unsupported` / `Failed` / TaskIntake rejection | remains `n` | remain `PAUSED` with typed conversion failure; original task may resume |
-| `NewTaskSuggested` | remains `n` | remain `PAUSED` while asking whether to create a new session |
+| `NewTaskSuggested` | remains `n` | remain `PAUSED` with a typed suggestion; creating a new session requires a separate future command |
 
 Accepting `NewTaskSuggested` creates a new Shell/Runtime session and then cancels or closes the old paused session only
 according to the user's explicit choice. Rejecting it leaves the old session paused. The shell never forces unrelated
@@ -1272,14 +1273,23 @@ GoalCompiler, and existing ActionPolicy.
    add a revision Agent, per-step compiler, mutable task plan, or second loop.
 7. Test revision during policy, before dispatch, during confirmation, after known dispatch, and after unknown dispatch;
    test stale and duplicate revision commands.
-8. Emit `revision_applied_ready` when no prior dispatched receipt exists. A revision with retained
-   `SENT`/`SENT_UNKNOWN` truth commits the new goal but remains `PAUSED` with typed
-   `effect_reconciliation_required`; `ResumeRun` cannot dispatch until Phase 7 closes that outcome.
+8. Commit `revised` when no prior dispatched receipt exists. If retained `SENT`/`SENT_UNKNOWN` truth exists, keep the
+   old goal/checkpoint authoritative and return typed `effect_reconciliation_required`; Phase 7 will own later
+   reconciliation before that revision can be accepted.
 
 Exit evidence: every revision command ends in one table-defined paused/waiting outcome; all subsequent resumed actions
 use revision `n+1`; no revision-`n` selection or approval can dispatch; old
 effects are preserved as immutable receipts; GoalCompiler is called exactly once for the accepted revision; known and
-unknown prior dispatches reach `effect_reconciliation_required` without executing a new action.
+unknown prior dispatches reach `effect_reconciliation_required` without compiling or executing a new action.
+
+Implementation status (2026-08-26): complete for the bounded Phase 6 scope. `ReviseTask` is a dedicated Shell command
+and endpoint that makes one `RuntimeSessionPort.revise` call. Runtime reuses the Phase 5 cooperative pause and source
+checkpoint, durably closes every compiler non-ready outcome, admits only a complete consecutive `TaskGoal`, revises
+the same environment, captures fresh World, invokes the existing GoalCompiler once, rebinds official PydanticAI
+history, and atomically commits the new checkpoint plus command outcome before publishing revision `n+1`. Successful
+revision remains `PAUSED`, clears stale action/confirmation state, and never auto-resumes. Duplicate commands replay
+the Runtime-owned stored result. Prior dispatched truth fails closed as `effect_reconciliation_required` while keeping
+revision `n`; effect reconciliation, compensation, Viewer, and takeover remain unavailable.
 
 ### Phase 7 — bounded compensation for already-applied effects
 

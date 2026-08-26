@@ -502,11 +502,25 @@ class TargetRuntimeSession:
                 or state.durable_checkpoint_id != source_checkpoint_id
             ):
                 raise PublicSessionConflict("revision_pause_failed", self._project())
-            source_checkpoint = await store.load(
-                self.session_id,
-                source_checkpoint_id,
-            )
+            try:
+                source_checkpoint = await store.load(
+                    self.session_id,
+                    source_checkpoint_id,
+                )
+            except Exception as exc:
+                self._set_revision_outcome(
+                    "revision_persistence_failed",
+                    command_id,
+                    message=type(exc).__name__,
+                )
+                self._emit("CONTROL_FAILED")
+                raise PublicSessionConflict(
+                    "revision_persistence_failed",
+                    self._project(),
+                ) from exc
             if source_checkpoint is None:
+                self._set_revision_outcome("checkpoint_not_found", command_id)
+                self._emit("CONTROL_FAILED")
                 raise PublicSessionConflict("checkpoint_not_found", self._project())
             if state.execution_count > 0:
                 await self._reject_revision(
@@ -646,6 +660,12 @@ class TargetRuntimeSession:
         try:
             await store.commit_revision(None, outcome)
         except Exception as exc:
+            self._set_revision_outcome(
+                "revision_persistence_failed",
+                command_id,
+                message=type(exc).__name__,
+            )
+            self._emit("CONTROL_FAILED")
             raise PublicSessionConflict(
                 "revision_persistence_failed",
                 self._project(),
@@ -694,6 +714,7 @@ class TargetRuntimeSession:
             "revision_unsupported": "unsupported",
             "revision_failed": "failed",
             "revision_persistence_failed": "failed",
+            "checkpoint_not_found": "failed",
             "effect_reconciliation_required": "effect_reconciliation_required",
         }[outcome]
         self._last_control_outcome = PublicControlOutcome(

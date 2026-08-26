@@ -48,7 +48,9 @@ stay with the deployment, while the returned handle keeps `RunState` private.
 The Runtime/public port owns one event epoch and cursor; the Shell manager only
 forwards `events(after)` and never keeps a second event log.
 The configured port supports start, AskUser answer, confirmation approve/reject,
-and close. Cancel, revise, new task, and takeover remain typed unavailable.
+cooperative cancel, durable pause/resume, bounded zero-prior-effect task revision,
+and close. Effect reconciliation/compensation, new task, and takeover remain
+typed unavailable.
 
 Install the deployment profile alongside the Runtime worktree, then start its
 dedicated app (the example interpreter is the repository's pinned BrowserGym
