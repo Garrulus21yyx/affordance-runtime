@@ -399,13 +399,16 @@ class PydanticAIGroundedDecisionPort:
                     raise ModelRetry("Return one offered tool call for the current World; text-only output is invalid.")
                 return output
 
-            def action_policy_model_settings(_context):
-                # This Agent invocation is deliberately one provider action,
-                # not a conversational run that eventually returns text.  A
-                # per-step callable is PydanticAI's supported contract for
-                # requiring a function tool without its static-setting guard
-                # reserving a later direct-output step.
-                return dict(current_envelope.model_settings)
+            def action_policy_model_settings(context):
+                # Preserve the policy's native thought+action response on the
+                # ordinary request.  If output validation rejects text-only
+                # output, PydanticAI increments ``RunContext.retry`` before
+                # the next physical request; only that bounded retry forces a
+                # function call.  This keeps progress text without allowing a
+                # second text-only response to consume the invocation.
+                settings = dict(current_envelope.model_settings)
+                settings["tool_choice"] = "required" if context.retry else "auto"
+                return settings
 
             # PydanticAI owns the one bounded output-validation retry. Capture
             # its exact messages so an exhausted retry remains a typed,
@@ -1154,6 +1157,7 @@ class PydanticAIGroundedDecisionPort:
                 }
                 for spec in envelope.function_tools
             ],
+            "llm.model_settings": to_json_compatible(envelope.model_settings),
             "llm.token_count.prompt": attempt_prompt_tokens,
             "llm.token_count.completion": attempt_completion_tokens,
             "llm.token_count.total": attempt_prompt_tokens + attempt_completion_tokens,
@@ -1264,6 +1268,9 @@ class PydanticAIGroundedDecisionPort:
                 else _structured_output_failure_for_response(response, has_tool_call=has_tool_call)
             )
             status = "accepted" if accepted and is_final else ("failed" if is_final else "invalid")
+            physical_settings = dict(envelope.model_settings)
+            if ordinal:
+                physical_settings["tool_choice"] = "required"
             transcript = {
                 "openinference.span.kind": "LLM",
                 "llm.system": self.provider_id,
@@ -1273,6 +1280,7 @@ class PydanticAIGroundedDecisionPort:
                 "llm.actual_messages": messages[:response_index],
                 "llm.output_messages": [response],
                 "llm.tools": tools,
+                "llm.model_settings": to_json_compatible(physical_settings),
                 "llm.token_count.prompt": prompt_tokens,
                 "llm.token_count.completion": completion_tokens,
                 "llm.token_count.total": prompt_tokens + completion_tokens,

@@ -420,11 +420,12 @@ The positive owner contract is now:
 - title changes do not change the browser-context binding identity; current URL/index still own currentness;
 - the DeepSeek model profile explicitly tells PydanticAI to send the existing generic output budget as
   `max_tokens`;
-- every canonical ActionPolicy envelope sets `tool_choice=required` and `parallel_tool_calls=false`. The existing
-  single-step `Agent.run` supplies those settings through PydanticAI's per-step callable contract, so each physical
-  policy request must choose an offered tool while the SDK still owns `DeferredToolRequests`, argument validation,
-  call IDs, and the one bounded output-validation retry. DeepSeek V4 advertises `required` only together with the
-  already-configured disabled-thinking request mode;
+- every canonical ActionPolicy envelope disables parallel calls and starts with `tool_choice=auto`, allowing the one
+  ActionPolicy response to retain its bounded text/reasoning together with one ToolCall. If output validation rejects
+  a text-only response, PydanticAI increments `RunContext.retry`; the same SDK per-step settings callable strengthens
+  only that one bounded retry to `tool_choice=required`. The SDK still owns `DeferredToolRequests`, argument
+  validation, call IDs, and retry history. DeepSeek V4 advertises `required` only for this disabled-thinking repair
+  request;
 - the existing ActionPolicy Agent uses a PydanticAI output validator: a text-only response receives one same-context
   SDK output retry, while an exhausted pair returns typed `no_tool_call` or `output_budget_exhausted`. A pre-existing
   representation-repair request gets no nested output retry, so the output-validation sequence is bounded to two
@@ -1097,7 +1098,9 @@ The boundary preserves each accepted model response exactly, including `Thinking
 reasoning metadata, and all tool proposals. Only the summarizer's throwaway input maps thinking to ordinary text
 because Harness 0.25 otherwise omits it; persisted and replayed messages remain exact. Raw ActionPolicy and compactor
 provider exchanges remain in Trace. This is same-actor semantic compaction, not Runtime fact authority or Workspace
-memory.
+memory. The same ActionPolicy response states progress only when an evidence-backed conclusion, unresolved
+requirement, or strategy changes; unchanged atomic steps may remain tool-only. That trigger is model judgment inside
+the existing response, not a Runtime progress reducer.
 
 `TurnPacker` budgets the already-compacted history but does not summarize, edit, or rebuild ToolReturn content.
 Harness removes only a pair-safe expired prefix and produces the one replacement summary. The bridge verifies that the
@@ -1116,13 +1119,15 @@ or projects GUI effects.
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot
 decide how a ToolReturn is serialized or make information persist in model context. Control discovery is capability
 lookup, not task evidence, so `ObservationDeliveryStore` emits no novelty delta for it. Monitor allows one same-World
-discovery step and recovers on the second consecutive discovery. In addition, the same Monitor keeps at most six
-ref-free public signatures for dispatched GUI attempts and recognizes repeated period-2/3 suffixes across fresh
-Worlds. Local read/search steps do not erase that effectful-action sequence. The first occurrence emits the existing
-typed `STATE_OSCILLATION` recovery; recurrence of the same phase-independent cycle blocks. Only a proven effectful GUI
-transition or a causal dispatch that reaches a different fresh public World starts the next same-World no-progress
-episode; an arbitrary same-World dispatch does not. This bounded operational detection never reads TaskGoal, GoalPlan, ToolReturn bodies, URLs,
-task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
+discovery step and recovers on the second consecutive discovery. In addition, the same Monitor keeps at most sixteen
+ref-free public signatures for dispatched GUI attempts and recognizes every exactly repeated suffix representable in
+that window across fresh Worlds. Candidate periods are derived from the actual window length rather than a second
+semantic threshold. Local read/search steps without new public information do not erase that effectful-action sequence. The
+first occurrence emits the existing typed `STATE_OSCILLATION` recovery; partial continuation retains that identity,
+and recurrence of the same phase-independent cycle blocks. Typed `NEW_INFORMATION` or detection of a different cycle
+replaces it. A cycle is sequence-level feedback, so Monitor does not incorrectly blacklist the last action that
+happened to close it. This bounded operational detection never reads TaskGoal, GoalPlan,
+ToolReturn bodies, URLs, task IDs, or site names. The outer episode step limit remains the generic long-loop fallback.
 
 ## World, perception, and action boundaries
 
@@ -1182,6 +1187,13 @@ Current primary sources converge on a thin loop rather than a result-conservatio
   validated deferred results, and message-history resumption.
 - [PydanticAI message history](https://pydantic.dev/docs/ai/core-concepts/message-history/) keeps provider-valid message
   history and supports history processors at the SDK boundary rather than requiring a second result ledger.
+- PydanticAI's current [`Agent.model_settings`](https://ai.pydantic.dev/api/agent/) contract accepts a `RunContext`
+  callable before every physical request and exposes the output-validation retry count. The ActionPolicy therefore
+  keeps its ordinary thought+action response shape and strengthens only a rejected text-only retry; it does not need a
+  parallel progress channel or custom provider loop.
+- [VLAA-GUI](https://arxiv.org/html/2604.21375) reports loop breaking as a post-action trajectory check that feeds one
+  strategy-change directive back to the same Manager policy. The bounded `EpisodeMonitor` is the deterministic,
+  provider-free subset of that pattern: exact ref-free cycle recurrence only, without importing its extra judge model.
 - [OSWorld](https://arxiv.org/abs/2404.07972) evaluates agents over a task, current screenshot/AX observation, action,
   and next observation trajectory. Its agent history is trajectory context, not a second authoritative desktop state.
 
@@ -1224,7 +1236,7 @@ This cutover is implementation-complete only when all of the following agree:
 13. proactive SDK history processing preserves exact call/result pairs and exactly one latest cumulative progress
     note across tool-only turns, and a partial PageMap remains aggregate-bounded and recoverable through the existing
     read tools.
-14. dispatched GUI attempts have one bounded ref-free Monitor history; repeated period-2/3 cycles recover once and
+14. dispatched GUI attempts have one bounded ref-free Monitor history; every repeated cycle representable in that window recovers once and
     block only on recurrence, without task-progress interpretation or a second policy.
 15. every current non-entity `InteractionSubjectKind` present in Actor World reaches the same compact observation;
     adding an action for an existing kind does not require a renderer or history-path change.
@@ -1239,9 +1251,10 @@ This cutover is implementation-complete only when all of the following agree:
     outcomes and transition lineage with honest truncation metadata rather than duplicate canonical Worlds.
 20. BrowserGym open-tab titles and routes are paired by position into one current browser subject; title-only changes
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
-21. DeepSeek receives the declared output budget through its supported wire parameter, disabled thinking, and
-    `tool_choice=required`; a provider violation still receives at most one PydanticAI output retry before a typed
-    terminal failure, with no nested representation retry or historical response miscount.
+21. DeepSeek receives the declared output budget through its supported wire parameter and disabled thinking; the
+    ordinary request uses `tool_choice=auto` so exact model text can accompany one ToolCall, while only a text-only
+    output retry uses `required`. A repeated provider violation still ends in a typed terminal failure, with no nested
+    representation retry or historical response miscount, and Trace records the physical setting of both requests.
 22. GoalCompiler thinking control follows the selected provider capability, and ActionPolicy and Harness compaction
     receive one prompt-owned evidence-status rule without Runtime parsing summary prose into fact state.
 23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and

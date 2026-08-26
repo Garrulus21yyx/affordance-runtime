@@ -1661,10 +1661,6 @@ def _recovery_feedback(signal) -> dict[str, object]:
         ),
         "human_instruction": signal.human_instruction,
         "recovery_attempt": signal.recovery_attempt,
-        "instruction": (
-            "Do not repeat the prohibited typed attempt. Use the fresh World and current tools "
-            "to choose a materially different route, or yield if no supported route exists."
-        ),
     }
 
 

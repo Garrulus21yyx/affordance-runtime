@@ -43,8 +43,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
-_MAX_SHORT_GUI_CYCLE_PERIOD = 3
-_MAX_RECENT_GUI_ATTEMPTS = _MAX_SHORT_GUI_CYCLE_PERIOD * 2
+_MAX_RECENT_GUI_ATTEMPTS = 16
 
 
 @dataclass
@@ -173,14 +172,20 @@ class EpisodeMonitor:
                 RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
-        if gui_signature is not None:
-            self.active_gui_cycle_digest = ""
 
         if durable_progress:
             self.observation_only_streak = 0
             self.recovery_count = 0
             self.latest_attempt_signature = None
             self.same_attempt_streak = 0
+            if (
+                information_delta is not None
+                and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+            ):
+                # Owner-produced task information, unlike a mere changed
+                # screen, closes the preceding operational-cycle episode.
+                self.recent_gui_attempts = ()
+                self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         # A causally dispatched GUI attempt that reached a different fresh
@@ -371,7 +376,11 @@ def _gui_cycle_recovery_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signature=monitor.latest_attempt_signature,
+        # A cycle is a sequence-level finding.  Blacklisting whichever action
+        # happened to close it is both phase-dependent and usually useless on
+        # the resulting fresh World.  The ActionPolicy receives the bounded
+        # cycle finding and owns the semantic strategy change.
+        prohibited_attempt_signature=None,
         human_instruction=(
             "Recent effectful GUI attempts repeated a short cycle across fresh Worlds. Preserve completed results "
             "already present in tool history and choose an offered action outside this cycle toward an unresolved "
@@ -384,12 +393,10 @@ def _gui_cycle_recovery_signal(
 def _short_gui_cycle(
     attempts: tuple[PublicAttemptSignature, ...],
 ) -> tuple[str, int]:
-    """Return one phase-independent digest for a repeated period-2/3 suffix."""
+    """Return one phase-independent digest for any repeated suffix in the bounded window."""
 
-    digests = tuple(item.digest for item in attempts)
-    for period in range(2, _MAX_SHORT_GUI_CYCLE_PERIOD + 1):
-        if len(digests) < period * 2:
-            continue
+    digests = tuple(item.digest for item in attempts[-_MAX_RECENT_GUI_ATTEMPTS:])
+    for period in range(2, len(digests) // 2 + 1):
         previous = digests[-period * 2 : -period]
         current = digests[-period:]
         if previous != current or len(set(current)) < 2:

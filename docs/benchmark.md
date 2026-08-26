@@ -79,13 +79,24 @@ the final invocation again exhausted two text-only responses and ended `invalid_
 failed pre-repair witnesses for one provider-boundary mismatch: the local ActionPolicy contract required a tool, but
 the physical provider request still allowed text.
 
-The canonical ActionPolicy envelope now requires `tool_choice=required` in addition to
-`parallel_tool_calls=false`. The one-step PydanticAI Agent receives that through the SDK's supported per-step settings
-callable, retains the existing external/deferred toolset and one output-validator retry, and uses DeepSeek V4 only
-with its existing disabled-thinking setting. There is no repetition detector, larger output budget, Monitor branch,
-alternate parser, or second Runtime path. Failed retry capture is bounded to the current invocation's existing
-`UsageLimits` response suffix, so normalized historical messages cannot be misreported as new retries. A fresh Task8
-native-evaluator result remains required.
+The first attempted repair forced `tool_choice=required` on every ActionPolicy request. Task8
+[`run4`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run4/run.json) falsified that contract: all 100 policy
+responses contained a ToolCall, but none contained model text. PydanticAI compaction never triggered, the explicit
+workspace tail retained only four steps, and the policy repeatedly executed the six-action semantic cycle
+`E5 -> back -> E6 -> back -> E7 -> back` until the outer turn budget. The provider fix had therefore removed the
+same-policy progress text that earlier runs carried alongside their calls, while the existing Monitor supported only
+period-2/3 cycles and cleared its active cycle identity on an incomplete longer recurrence.
+
+The converged ActionPolicy request now starts with `tool_choice=auto` and `parallel_tool_calls=false`, so one accepted
+response can contain both exact model text/reasoning and one ToolCall. Its existing PydanticAI output validator still
+rejects text-only output; the SDK's dynamic per-request settings use `RunContext.retry` to set only that one retry to
+`tool_choice=required`. The actual setting of each physical request is recorded in its provider transcript. No
+progress store, separate checkpoint, second policy, or custom retry loop was added. The ActionPolicy prompt asks for
+bounded prose only when a conclusion, unresolved requirement, or strategy changes; unchanged atomic steps may stay
+tool-only. The same `EpisodeMonitor` now
+keeps sixteen ref-free signatures, detects every exact repeated suffix representable in that window, retains a recovered identity through a partial
+recurrence, and blocks the same phase-independent cycle when it continues. Typed new public information or expiry of
+the episode clears that identity. A fresh Task8 native-evaluator result remains required.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
@@ -162,8 +173,8 @@ one latest model-authored visible text across tool-only responses: a new visible
 tool-only response carried forward the exact previous text and removed only duplicate historical `TextPart` values.
 Completed call/result pairs remain untouched and the existing `ProcessHistory` path still drops only oldest complete
 exchanges. Run15 later proved that treating every visible text as progress was underspecified. `EpisodeMonitor` now
-uses its existing `STATE_OSCILLATION` algebra over at most six dispatched public
-attempt signatures to recognize repeated period-2/3 cycles across fresh Worlds. It reads no task text, URL, site,
+uses its existing `STATE_OSCILLATION` algebra over at most sixteen dispatched public
+attempt signatures to recognize every repeated suffix representable in that window across fresh Worlds. It reads no task text, URL, site,
 GoalPlan status, or ToolReturn body. Run12 remains a failed pre-repair diagnostic; run13 below crossed these two
 repairs before exposing the independent SurfaceAdapter defect.
 
@@ -382,9 +393,9 @@ a URL recognizer, site rule, memory path, or larger case timeout.
 The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by index into the one browser-context
 subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
 World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's
-existing output budget is sent through `max_tokens`. Canonical ActionPolicy requests now additionally use
-`tool_choice=required` with disabled thinking, while PydanticAI's output validator remains the one bounded defense
-when a provider violates that wire contract. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
+existing output budget is sent through `max_tokens`. Canonical ActionPolicy requests use disabled thinking and start
+with `tool_choice=auto`; PydanticAI's output validator changes only its one text-only retry to `required`. Exhaustion
+is typed as `no_tool_call` or `output_budget_exhausted`;
 rejected prose does not enter canonical history. Representation repair is not nested with this retry. Focused tests
 cover title/URL
 pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
@@ -821,8 +832,9 @@ a provider error, timeout, or invalid compacted topology returns the exact raw h
 knowledge bootstrap/batching, result-kind triggers, and failed-input memos are absent from production.
 
 Monitor gates prove a different empty discovery/read attempt remains in the same recovery episode, while typed
-`NEW_INFORMATION` clears it. A generated period-2/3 property proves GUI cycle identity is phase-independent and
-blocks recurrence even when a local read occurs between effectful actions.
+`NEW_INFORMATION` clears it. A generated property over every period representable by the fixed window proves GUI cycle identity is phase-independent; a
+vertical period-6 case recovers once and blocks continued recurrence even when every action reaches a changed fresh
+World.
 
 ### G4 — R-ref follow-up
 
@@ -1058,7 +1070,7 @@ The final read-only review for this cutover must answer:
     or second browser-state channel?
 19. Does element currentness ignore state outside the selected offer's declared semantic contract, leave physical
     actionability to BrowserGym/Playwright, and turn typed pre-dispatch stale into one fresh capture with zero replay?
-20. Does Monitor issue bounded recovery for no-information families and period-2/3 dispatched GUI cycles, persist the
+20. Does Monitor issue bounded recovery for no-information families and every dispatched GUI cycle representable in its fixed window, persist the
     episode across different empty/no-match and ineffectual same-World attempts, project dispatch from the real
     receipt, and start a new same-World episode only on typed new information, a proven GUI effect, or a causal GUI
     dispatch reaching a changed fresh public World?
@@ -1074,10 +1086,10 @@ The final read-only review for this cutover must answer:
     can any typed non-dispatch terminal failure still be projected as `failed=false` or omitted from its ToolReturn?
 26. Are BrowserGym tab titles and sanitized routes paired by their native index in the one current World, with route
     identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
-27. Does DeepSeek receive the declared output limit as `max_tokens`, disabled thinking, and
-    `tool_choice=required`; and if a provider nevertheless returns text, does one PydanticAI same-context retry end in
-    a typed bounded failure without polluting accepted history, miscounting historical responses, or nesting a
-    representation-repair retry?
+27. Does DeepSeek receive the declared output limit as `max_tokens` and disabled thinking, allow exact model text with
+    a ToolCall on the initial `auto` request, and change only a text-only PydanticAI retry to `required`; and does retry
+    exhaustion remain a typed bounded failure without polluting accepted history, miscounting historical responses,
+    or nesting a representation-repair retry?
 28. When a query token is both one control's exact label and another control's operation, does `find_controls`
     preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
     genuine current match?

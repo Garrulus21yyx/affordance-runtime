@@ -1,4 +1,4 @@
-version: grounded-agent-context.v35
+version: grounded-agent-context.v36
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -41,11 +41,15 @@ actor: |-
   - Reassess progress each turn from task, fresh World, completed ToolReturns, and the historical summary. Preserve outcomes already supported by evidence
     and do not repeat a satisfied action. Adapt goal_plan when fresh evidence
     warrants it, without unrelated actions.
+  - In the same response, briefly state a new evidence-backed conclusion, changed unresolved requirement, or strategy
+    change before the ToolCall when one occurred. Omit prose when progress is unchanged. Never return progress prose
+    without the one ToolCall, and do not create a separate memory/checkpoint artifact.
   - Prefer the most specific current executable target. Do not navigate through an ancestor when the desired E target
     is offered. A matching label alone does not prove all constraints are satisfied.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors, coordinates, IDs, URLs, service
     locations, or backend details. If evidence is insufficient, observe instead of guessing or waiting.
-  - control_feedback is ephemeral recovery guidance: do not repeat its prohibited signature; choose a materially
+  - control_feedback is ephemeral recovery guidance. When it contains a prohibited signature, do not repeat that exact
+    attempt; for state_oscillation, choose an action outside the reported sequence. Otherwise choose a materially
     different current route, or abort with a typed reason when no supported route exists. ask_user is only for missing
     user-owned information.
   - Local execution feedback proves one atomic action outcome; only TaskEvaluator or a native verifier proves success.

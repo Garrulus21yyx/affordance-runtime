@@ -197,7 +197,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
                 "max_tokens": 1024,
                 "temperature": 0.0,
                 "parallel_tool_calls": False,
-                "tool_choice": "required",
+                "tool_choice": "auto",
                 "timeout": 4.0,
             }
         ]
@@ -205,7 +205,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
             "max_tokens": 1024,
             "temperature": 0.0,
             "parallel_tool_calls": False,
-            "tool_choice": "required",
+            "tool_choice": "auto",
             "timeout": 4.0,
         }
         assert state.last_step is not None
@@ -293,6 +293,14 @@ def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_
         assert result.attempts[0].output_failure_kind is StructuredOutputFailureKind.NO_TOOL_CALL
         assert result.attempts[1].output_failure_kind is None
         assert result.diagnostics["policy_model_call_count"] == 2
+        assert [record.model_settings["tool_choice"] for record in scripted.records] == [
+            "auto",
+            "required",
+        ]
+        assert [attempt.transcript["llm.model_settings"]["tool_choice"] for attempt in result.attempts] == [
+            "auto",
+            "required",
+        ]
         canonical_history = json.dumps(policy.port.message_history, default=str)
         assert "no tool call" not in canonical_history
         assert "Return one offered tool call" not in canonical_history
@@ -853,6 +861,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_call_id == "recording-call:progress"
+        assert scripted.records[0].model_settings["tool_choice"] == "auto"
         retained = policy.port.message_history[1]
         assert isinstance(retained, ModelResponse)
         assert [type(part) for part in retained.parts] == [
@@ -914,6 +923,9 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
         assert discarded_id in physical
         assert "Not executed" in physical
         assert "Do not emit a separate memory" in str(scripted.records[0].instructions)
+        assert "In the same response, briefly state a new evidence-backed conclusion" in str(
+            scripted.records[0].instructions
+        )
         assert "Return exactly one offered tool call" in str(scripted.records[0].instructions)
 
     asyncio.run(scenario())

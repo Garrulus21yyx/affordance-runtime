@@ -613,6 +613,7 @@ def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
     assert recovery.recovery_signal.observed_evidence["cycle_period"] == 2
+    assert recovery.recovery_signal.prohibited_attempt_signature is None
     assert "short cycle across fresh Worlds" in recovery.recovery_signal.human_instruction
 
     # A local inspection does not make the effectful navigation cycle disappear.
@@ -624,10 +625,10 @@ def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence
     assert blocked.reason == "state_oscillation"
     assert blocked.recovery_signal is not None
     assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
-    assert len(monitor.recent_gui_attempts) <= 6
+    assert len(monitor.recent_gui_attempts) <= 16
 
 
-@given(period=st.integers(min_value=2, max_value=3), rotation=st.integers(min_value=0, max_value=2))
+@given(period=st.integers(min_value=2, max_value=8), rotation=st.integers(min_value=0, max_value=7))
 def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: int) -> None:
     values = tuple(
         PublicAttemptSignature(
@@ -647,6 +648,88 @@ def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: in
 
     assert original_period == shifted_period == period
     assert original_digest == shifted_digest
+
+
+def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
+    values = tuple(
+        PublicAttemptSignature(
+            f"operation-{index}",
+            f"{index + 1:064x}",
+            "",
+            "",
+            f"{index + 11:064x}",
+        )
+        for index in range(9)
+    )
+
+    digest, period = monitor_module._short_gui_cycle(values + values)
+
+    assert digest == ""
+    assert period == 0
+
+
+def test_six_step_gui_cycle_recovers_once_and_blocks_its_recurrence() -> None:
+    worlds = tuple(
+        _world(f"observation:cycle-{index}", route=f"/state/{index}")
+        for index in range(6)
+    )
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(worlds[0], _evaluation(worlds[0]))
+
+    first_two_cycles = tuple(
+        _evaluate(
+            monitor,
+            _dispatched_step(worlds[index % 6], worlds[(index + 1) % 6]),
+        )
+        for index in range(12)
+    )
+
+    assert all(
+        item.recommendation is EpisodeMonitorRecommendation.CONTINUE
+        for item in first_two_cycles[:-1]
+    )
+    recovery = first_two_cycles[-1]
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.observed_evidence["cycle_period"] == 6
+
+    # The digest is phase-independent, so continuing the same sequence by one
+    # effectful action is already recurrence of the recovered cycle rather
+    # than six more free attempts.
+    blocked = _evaluate(monitor, _dispatched_step(worlds[0], worlds[1]))
+
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "state_oscillation"
+    assert blocked.recovery_signal is not None
+    assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
+
+
+def test_new_public_information_closes_gui_cycle_recovery_episode() -> None:
+    first = _world("observation:cycle-info-a", route="/state/a")
+    second = _world("observation:cycle-info-b", route="/state/b")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first, _evaluation(first))
+    store = ObservationDeliveryStore()
+
+    for index in range(4):
+        before, after = (first, second) if index % 2 == 0 else (second, first)
+        transition = _evaluate(monitor, _dispatched_step(before, after))
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert monitor.active_gui_cycle_digest
+
+    information_step = _search_with_items(first)
+    delivery = store.reduce(information_step, step_index=5)
+    continued = monitor.evaluate(
+        information_step,
+        current_findings_digest(first),
+        delivery.information_delta,
+    )
+
+    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert delivery.information_delta is not None
+    assert delivery.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert monitor.recent_gui_attempts == ()
+    assert monitor.active_gui_cycle_digest == ""
 
 
 def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> None:
