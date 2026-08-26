@@ -166,7 +166,7 @@ Constraints:
       converge on that owner. Trace cleanup failure is logged and fail-open for
       task truth and surface cleanup. The delivery-state truth table now agrees
       with the verified Phase 2 status.
-14. **in progress — Phase 3: cooperative control and dispatch closure.**
+14. **done — Phase 3: cooperative control and dispatch closure.**
     - Add Runtime-owned `PauseRun` and `CancelRun` requests without SQLite,
       durable `PAUSED`, revision, or a second execution loop.
     - Define one closed dispatch truth algebra: `NOT_SENT | SENT |
@@ -186,9 +186,20 @@ Constraints:
       receipt propagation, and PydanticAI terminal ToolReturn closure are in
       place. Held policy/dispatch races cover `NOT_SENT`, `SENT`, and
       `SENT_UNKNOWN`; 211 focused Core/model/architecture tests pass.
-    - Remaining in this phase: project `CancelRun` through the public Runtime
-      session and Shell as distinct `CANCELLED`; keep Pause/Resume private and
-      unadvertised until durable checkpoint ordering exists.
+    - Public closure complete: `CancelRun` is advertised through the public
+      Runtime session, Shell port, optional command API, generated frontend
+      types, and capability-gated UI control. It projects terminal `CANCELLED`
+      with a cancellation completion and remains separate from Close teardown.
+      Pause/Resume stay private and unadvertised until durable checkpoint
+      ordering exists.
+    - Final evidence: 263 focused Core/model/public-session/backend/architecture
+      tests passed with 3 optional-dependency skips; Ruff passed. Frontend 4
+      unit tests, ESLint, TypeScript, OpenAPI equality/generation, and production
+      build passed. No benchmark was run and no SQLite/checkpoint code was added.
+      The full provider-free suite passed 1770 tests with 19 skips after
+      deselecting the two pre-existing non-Phase-3 witnesses: documentation
+      governance rejects this required implementation document, and one
+      semantic-delivery test depends on a historical live trace absent here.
 
 ## Current-work produced files
 

@@ -3,7 +3,7 @@
 import { CopilotChatView, CopilotKitProvider } from "@copilotkit/react-core/v2";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { Badge, Button, Card, Flex, Heading, Text, Theme } from "@radix-ui/themes";
-import { Activity, CircleOff, Eye, Radio, ShieldCheck } from "lucide-react";
+import { Activity, CircleOff, Eye, Radio, ShieldCheck, Square } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useShellSession } from "@/hooks/use-shell-session";
 import type { Snapshot } from "@/lib/types";
@@ -124,6 +124,10 @@ export function Progress({ snapshot }: { snapshot: Snapshot | null }) {
 
 export function ShellApp() {
   const shell = useShellSession();
+  const cancellable = Boolean(
+    shell.snapshot?.capabilities.includes("cancel_task")
+    && ["running", "waiting_user", "waiting_confirmation"].includes(shell.snapshot.run_status),
+  );
   return (
     <CopilotKitProvider runtimeUrl="/api/copilotkit">
       <Theme accentColor="orange" grayColor="slate" radius="small">
@@ -131,7 +135,14 @@ export function ShellApp() {
           <div className="topbar">
             <div className="wordmark"><Activity /><span>INTERACTION</span><strong>FLIGHT DECK</strong></div>
             <div className="topology"><span>CONVERSATION</span><i /><span>LIVE VIEW</span><i /><span>PROGRESS</span></div>
-            <div className="connection"><Radio size={14} /><span>{shell.connection}</span></div>
+            <div className="connection">
+              {cancellable && (
+                <Button size="1" variant="soft" color="red" onClick={shell.cancel}>
+                  <Square size={11} /> Cancel task
+                </Button>
+              )}
+              <Radio size={14} /><span>{shell.connection}</span>
+            </div>
           </div>
           {shell.notice && <div className="notice" role="status">{shell.notice}</div>}
           <Group orientation="horizontal" className="shell-grid">

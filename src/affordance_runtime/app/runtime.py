@@ -137,22 +137,45 @@ class TargetRuntime:
             "waiting_user": RunControlBoundary.WAITING_USER,
             "waiting_confirmation": RunControlBoundary.WAITING_CONFIRMATION,
         }.get(state.status.value)
+        if (
+            boundary is None
+            and state.control_boundary is not None
+            and state.control_boundary.kind is RunControlKind.PAUSE
+        ):
+            boundary = RunControlBoundary.BEFORE_POLICY
         if boundary is None:
             raise ValueError("run is not at a waiting control boundary")
+        request = self.run_control.pending
         close = getattr(self.decision_ports.action_policy, "close_deferred_call", None)
         if callable(close) and state.last_step is not None:
             try:
                 close(state.last_step)
             except Exception:
-                return self.run_control.fail_pending("deferred_history_closure_failed")
+                if request is not None and request.kind is RunControlKind.PAUSE:
+                    return self.run_control.fail_pending("deferred_history_closure_failed")
         outcome = self.run_control.acknowledge(boundary)
         if outcome is not None:
             state.apply_control_boundary(outcome)
+            emit = getattr(self.trace_sink, "control_boundary_reached", None)
+            if callable(emit):
+                emit(outcome)
+            if outcome.kind is RunControlKind.CANCEL:
+                self.trace_sink.run_finished(state)
         return outcome
 
     def resume_control(self, state: RunState, command_id: str) -> RunControlOutcome:
+        if (
+            state.control_boundary is None
+            or state.control_boundary.kind is not RunControlKind.PAUSE
+            or self.run_control.paused is None
+        ):
+            raise ValueError("run has no matching internal pause boundary")
         outcome = self.run_control.resume(command_id)
         state.resume_control_boundary()
+        self.trace_sink.run_resumed(
+            "control",
+            {"command_id": command_id, "outcome": outcome.outcome.value},
+        )
         return outcome
 
     def with_runtime_controls(

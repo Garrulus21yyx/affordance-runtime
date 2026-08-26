@@ -25,6 +25,7 @@ from .contracts import (
     Conflict,
     PendingConfirmation,
     PendingQuestion,
+    OptionalCommand,
     PublicStep,
     RejectAction,
     RunStatus,
@@ -63,6 +64,7 @@ class CoreRuntimeSessionPort:
                 Capability.ANSWER_QUESTION,
                 Capability.APPROVE_ACTION,
                 Capability.REJECT_ACTION,
+                Capability.CANCEL_TASK,
                 Capability.CLOSE_SESSION,
             }
         )
@@ -93,6 +95,8 @@ class CoreRuntimeSessionPort:
                 current = await handle.confirm(command.request_id, approved=True)
             elif isinstance(command, RejectAction):
                 current = await handle.confirm(command.request_id, approved=False)
+            elif isinstance(command, OptionalCommand) and command.kind == "cancel_task":
+                current = await handle.cancel(command.command_id)
             else:
                 raise TypeError("Core Runtime port received an unsupported command")
         except PublicSessionConflict as exc:
@@ -188,6 +192,7 @@ _SUPPORTED_PUBLIC_CAPABILITIES = frozenset(
         PublicSessionCapability.ANSWER_QUESTION,
         PublicSessionCapability.APPROVE_ACTION,
         PublicSessionCapability.REJECT_ACTION,
+        PublicSessionCapability.CANCEL_TASK,
         PublicSessionCapability.CLOSE_SESSION,
     }
 )

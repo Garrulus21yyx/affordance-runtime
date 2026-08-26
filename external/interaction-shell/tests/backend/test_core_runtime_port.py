@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, cast
 
 import pytest
-from interaction_shell.contracts import RunStatus, StartTask, ViewerState
+from interaction_shell.contracts import Capability, OptionalCommand, RunStatus, StartTask, ViewerState
 from interaction_shell.core_runtime_port import CoreRuntimeSessionPort
 from interaction_shell.manager import RunSessionManager
 
@@ -70,6 +70,20 @@ class FakePublicHandle:
 
     async def confirm(self, interrupt_id: str, *, approved: bool):
         raise AssertionError((interrupt_id, approved))
+
+    async def cancel(self, command_id: str):
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.CANCELLED,
+                pending_question=None,
+                completion=PublicCompletion(
+                    "cancelled", "user_cancelled", "Cancelled at a safe boundary."
+                ),
+            ),
+            "RUN_FINISHED",
+        )
+        return self.current
 
     async def close(self):
         self.cleanup_count += 1
@@ -156,4 +170,41 @@ async def test_core_adapter_drains_background_owner_events_in_cursor_order() -> 
     assert tuple(event.cursor for event in terminal_events) == (3,)
     assert factory.handle.cleanup_count == 1
     await manager.snapshot(session_id, created.session_key)
+    assert factory.handle.cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_core_adapter_advertises_cancel_and_projects_distinct_terminal_status() -> None:
+    factory = FakePublicFactory()
+    manager = RunSessionManager(CoreRuntimeSessionPort(cast(Any, factory)))
+    created = await manager.create()
+    session_id = created.snapshot.session_id
+    assert Capability.CANCEL_TASK in created.snapshot.capabilities
+    started = await manager.admit(
+        session_id,
+        created.session_key,
+        StartTask(
+            command_id="start:cancel",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.IDLE,
+            task="Choose an option",
+        ),
+    )
+
+    cancelled = await manager.admit(
+        session_id,
+        created.session_key,
+        OptionalCommand(
+            kind="cancel_task",
+            command_id="cancel:1",
+            expected_task_revision=1,
+            expected_run_status=started.snapshot.run_status,
+        ),
+    )
+
+    assert cancelled.kind == "accepted"
+    assert cancelled.snapshot.run_status is RunStatus.CANCELLED
+    assert cancelled.snapshot.completion is not None
+    assert cancelled.snapshot.completion.outcome == "cancelled"
+    assert factory.handle is not None
     assert factory.handle.cleanup_count == 1

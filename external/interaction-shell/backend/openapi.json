@@ -283,7 +283,8 @@
             "enum": [
               "success",
               "failure",
-              "blocked"
+              "blocked",
+              "cancelled"
             ],
             "title": "Outcome",
             "type": "string"
@@ -862,6 +863,7 @@
           "waiting_user",
           "waiting_confirmation",
           "done",
+          "cancelled",
           "failed",
           "blocked"
         ],

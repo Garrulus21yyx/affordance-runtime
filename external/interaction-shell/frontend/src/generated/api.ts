@@ -345,7 +345,7 @@ export interface components {
              * Outcome
              * @enum {string}
              */
-            outcome: "success" | "failure" | "blocked";
+            outcome: "success" | "failure" | "blocked" | "cancelled";
         };
         /** Conflict */
         Conflict: {
@@ -596,7 +596,7 @@ export interface components {
          * RunStatus
          * @enum {string}
          */
-        RunStatus: "idle" | "running" | "waiting_user" | "waiting_confirmation" | "done" | "failed" | "blocked";
+        RunStatus: "idle" | "running" | "waiting_user" | "waiting_confirmation" | "done" | "cancelled" | "failed" | "blocked";
         /** RuntimeSessionSnapshot */
         RuntimeSessionSnapshot: {
             /** Capabilities */

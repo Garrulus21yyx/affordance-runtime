@@ -134,7 +134,7 @@ class RunSessionManager:
                 text = command.task if isinstance(command, StartTask) else command.answer
                 managed.conversation.append(ConversationTurn(role="user", text=text))
             current = await self._snapshot(managed)
-            if current.run_status.value in {"done", "failed", "blocked"}:
+            if current.run_status.value in {"done", "failed", "blocked", "cancelled"}:
                 await self._cleanup_if_terminal(managed, current)
                 current = await self._snapshot(managed)
             return admission.model_copy(update={"snapshot": current})
@@ -167,7 +167,7 @@ class RunSessionManager:
         return True
 
     async def _cleanup_if_terminal(self, managed: ManagedSession, snapshot: RuntimeSessionSnapshot) -> None:
-        if snapshot.run_status.value in {"done", "failed", "blocked"}:
+        if snapshot.run_status.value in {"done", "failed", "blocked", "cancelled"}:
             await self._cleanup_once(managed)
 
     async def _cleanup_once(self, managed: ManagedSession) -> None:

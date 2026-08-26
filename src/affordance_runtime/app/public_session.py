@@ -13,6 +13,11 @@ from typing import Literal, Protocol
 
 from affordance_runtime.agent.decisions import AskUser
 from affordance_runtime.agent.observability import FanoutRunTraceSink, NullRunTraceSink
+from affordance_runtime.agent.run_control import (
+    RunControlAdmissionKind,
+    RunControlKind,
+    RunControlOutcomeKind,
+)
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.evaluation.contracts import TaskOutcomeKind
 from affordance_runtime.task.contracts import TaskGoal
@@ -38,6 +43,7 @@ class PublicSessionStatus(StrEnum):
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
     FAILED = "failed"
 
 
@@ -46,6 +52,7 @@ class PublicSessionCapability(StrEnum):
     ANSWER_QUESTION = "answer_question"
     APPROVE_ACTION = "approve_action"
     REJECT_ACTION = "reject_action"
+    CANCEL_TASK = "cancel_task"
     CLOSE_SESSION = "close_session"
 
 
@@ -68,7 +75,7 @@ class PublicPendingConfirmation:
 
 @dataclass(frozen=True)
 class PublicCompletion:
-    outcome: Literal["success", "failure", "blocked"]
+    outcome: Literal["success", "failure", "blocked", "cancelled"]
     code: str
     message: str
     evidence_refs: tuple[str, ...] = ()
@@ -160,6 +167,7 @@ class PublicRuntimeSessionHandle(Protocol):
     async def start(self, instruction: str) -> PublicRuntimeSessionSnapshot: ...
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot: ...
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
+    async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
 
@@ -260,6 +268,32 @@ class TargetRuntimeSession:
             self._active = asyncio.create_task(
                 self._run_confirmation(approved), name=f"runtime-confirm:{self.session_id}"
             )
+            return self._project()
+
+    async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot:
+        async with self._lock:
+            if self._closed:
+                raise PublicSessionConflict("session_closed", self._project())
+            state = self._state
+            if (
+                (state is not None and state.terminal)
+                or (state is None and self._active is None)
+            ):
+                raise PublicSessionConflict("run_not_active", self._project())
+            admission = self.runtime.request_control(command_id, RunControlKind.CANCEL)
+            if admission.outcome is RunControlAdmissionKind.CONFLICT:
+                raise PublicSessionConflict("control_request_conflict", self._project())
+            if admission.outcome is RunControlAdmissionKind.DUPLICATE:
+                return self._project()
+            self._emit("CONTROL_REQUESTED")
+            if self._active is None:
+                if state is None:
+                    raise PublicSessionConflict("run_not_active", self._project())
+                outcome = self.runtime.apply_waiting_control(state)
+                if outcome is None or outcome.outcome is not RunControlOutcomeKind.CANCELLED:
+                    raise PublicSessionConflict("control_boundary_failed", self._project())
+                self._status = PublicSessionStatus.CANCELLED
+                self._emit("RUN_FINISHED")
             return self._project()
 
     async def close(self) -> None:
@@ -539,7 +573,7 @@ def _public_status(status: RunStatus) -> PublicSessionStatus:
         RunStatus.WAITING_CONFIRMATION: PublicSessionStatus.WAITING_CONFIRMATION,
         RunStatus.DONE: PublicSessionStatus.DONE,
         RunStatus.BLOCKED: PublicSessionStatus.BLOCKED,
-        RunStatus.CANCELLED: PublicSessionStatus.FAILED,
+        RunStatus.CANCELLED: PublicSessionStatus.CANCELLED,
         RunStatus.FAILED: PublicSessionStatus.FAILED,
     }[status]
 
@@ -548,9 +582,16 @@ def _completion(state: RunState | None, status: PublicSessionStatus) -> PublicCo
     if state is None or status not in {
         PublicSessionStatus.DONE,
         PublicSessionStatus.BLOCKED,
+        PublicSessionStatus.CANCELLED,
         PublicSessionStatus.FAILED,
     }:
         return None
+    if status is PublicSessionStatus.CANCELLED:
+        return PublicCompletion(
+            "cancelled",
+            "user_cancelled",
+            "Runtime cancelled the task at a safe execution boundary.",
+        )
     evaluation = state.current_task_evaluation
     outcome = evaluation.outcome if evaluation is not None else None
     if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_SUCCESS:

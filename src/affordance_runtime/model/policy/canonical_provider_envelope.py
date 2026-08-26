@@ -142,7 +142,15 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope lineage is invalid")
         if len(self.instructions) != 1 or not self.instructions[0].strip():
             raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
-        if self.tool_result is not None and not self.history_messages:
+        closed_history_candidate = bool(
+            self.history_messages
+            and self.pydantic_history
+            and self.tool_result is None
+        )
+        if (
+            bool(self.history_messages) != bool(self.tool_result)
+            and not closed_history_candidate
+        ):
             raise ValueError("deferred tool result requires its bounded call history")
         if bool(self.pydantic_history) != bool(self.history_messages):
             raise ValueError("canonical history requires the exact admitted PydanticAI messages")

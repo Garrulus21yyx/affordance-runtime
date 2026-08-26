@@ -20,9 +20,9 @@ The shell contract, synthetic demo, frontend, diagnosis projection, provider-fre
 profile are implemented. The production-safe default deliberately uses an unavailable Runtime port, while
 `interaction_shell.deployment_app:app` composes one real Runtime, policy/history, BrowserGym environment, browser
 context, trace sink, and idempotent resource cleanup owner per Web session. The local profile has passed real API/UI
-execution and two-session isolation witnesses. Viewer, running pause/cancellation/revision, durable resume, and
-takeover are not public Runtime capabilities and remain visible as typed unavailable states rather than being hidden
-by the UI or simulated by the shell.
+execution and two-session isolation witnesses. Cooperative `CancelRun` is now a distinct public terminal capability;
+Viewer, durable pause/resume, running revision, and takeover are not public Runtime capabilities and remain visible as
+typed unavailable states rather than being hidden by the UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -94,10 +94,11 @@ The following states must not be collapsed into one label such as "implemented":
 | Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
-| Core public session adapter | Implemented but in-memory | It wraps currently supported start, answer, confirmation, snapshot/event, and close operations. |
+| Core public session adapter | Implemented but in-memory | It wraps currently supported start, answer, confirmation, cooperative cancel, snapshot/event, and close operations. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
 | Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
-| Running pause/revise/cancel and durable resume | Unavailable | The public Runtime port does not advertise these transitions. |
+| Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
+| Durable pause/revise/resume | Unavailable | Internal pause boundaries exist, but public `PAUSED` and pause/resume/revision capabilities remain disabled until checkpoint commit and restart recovery are real. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
 | Delivery hygiene | Closed through Phase 2 | Phase 0–2 changes are committed and synchronized with the branch origin. |
 
@@ -1196,6 +1197,12 @@ Exit evidence: every exercised control request has one typed outcome; every disp
 execution truth; no stale action/binding/confirmation dispatches after an internal pause/resume boundary. Durable pause
 is not yet advertised.
 
+Implementation status (2026-08-26): complete for this bounded phase. Core owns a per-session cooperative request and
+commits the reached boundary into the sole `RunState`; accepted-but-undispatched PydanticAI calls receive a terminal
+ToolReturn; held policy and dispatch races cover `NOT_SENT`, `SENT`, and `SENT_UNKNOWN`; the public Runtime/Shell/API/UI
+advertise only `CancelRun` and project a distinct terminal `CANCELLED`. Internal Pause/Resume remain unadvertised and no
+SQLite/checkpoint code has been introduced.
+
 ### Phase 5 — durable checkpoint and process-boundary resume
 
 Owner: Runtime snapshot boundary, `RunResumeCheckpointStore`, and deployment browser lease.
@@ -1306,7 +1313,7 @@ borrow evidence from a demo or projection that does not exercise its owner.
 - event order is stable and cursor-resumable within one event epoch; the current in-memory duplicate-command conflict
   behavior is explicit rather than described as durable idempotent replay;
 - `AskUser` and confirmation pause and resume through existing typed Runtime entrypoints;
-- unsupported execution, viewer, durable resume, cancel, revision, and takeover capabilities are independently disabled
+- unsupported execution, viewer, durable pause/resume, revision, and takeover capabilities are independently disabled
   rather than simulated;
 - waiting, pause-requested, paused, blocked, failed, cancelled, `SENT_UNKNOWN`, and unsupported states render distinct
   owner-backed feedback and legal next actions;

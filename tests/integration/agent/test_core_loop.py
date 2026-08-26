@@ -620,6 +620,148 @@ def test_cooperative_control_during_policy_closes_not_sent_without_dispatch(
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("kind", "expected_status", "expected_control_outcome", "expected_turns"),
+    (
+        (
+            RunControlKind.PAUSE,
+            RunStatus.BLOCKED,
+            RunControlOutcomeKind.BOUNDARY_FAILED,
+            2,
+        ),
+        (
+            RunControlKind.CANCEL,
+            RunStatus.CANCELLED,
+            RunControlOutcomeKind.CANCELLED,
+            1,
+        ),
+    ),
+)
+def test_deferred_history_closure_failure_is_typed_and_never_prevents_cancel(
+    kind,
+    expected_status,
+    expected_control_outcome,
+    expected_turns,
+) -> None:
+    async def scenario() -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        @dataclass
+        class FailingClosurePolicy:
+            turns: int = 0
+
+            async def decide(self, context):
+                self.turns += 1
+                if self.turns == 1:
+                    entered.set()
+                    await release.wait()
+                    return SelectAction(
+                        context.context_id,
+                        context.actions.options[0].action_id,
+                        tool_call_id="provider-call:closure-failure",
+                    )
+                return Abort(
+                    context.context_id,
+                    "pause boundary could not close model history",
+                    AbortCategory.UNSUPPORTED,
+                )
+
+            def close_deferred_call(self, step):
+                del step
+                raise ValueError("synthetic history closure failure")
+
+        policy = FailingClosurePolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("control_closure_failure"),
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("closure-failure", False))
+        state = await runtime.initialize_task(environment, _task())
+        active = asyncio.create_task(runtime.continue_task(environment, _task(), state))
+        await entered.wait()
+        runtime.request_control("command:closure-failure", kind)
+        release.set()
+
+        await active
+
+        outcome = runtime.run_control.outcome("command:closure-failure")
+        assert outcome is not None
+        assert outcome.outcome is expected_control_outcome
+        assert state.status is expected_status
+        assert policy.turns == expected_turns
+        assert environment.execute_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_internal_resume_reselects_from_fresh_context_without_dispatching_stale_action() -> None:
+    async def scenario() -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        @dataclass
+        class ReselectingPolicy:
+            turns: int = 0
+
+            async def decide(self, context):
+                self.turns += 1
+                if self.turns == 1:
+                    entered.set()
+                    await release.wait()
+                    call_id = "provider-call:stale-before-pause"
+                else:
+                    assert context.last_step is not None
+                    assert "action_not_dispatched" in context.last_step.feedback
+                    call_id = "provider-call:fresh-after-resume"
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id=call_id,
+                )
+
+            def close_deferred_call(self, step):
+                del step
+
+        policy = ReselectingPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("control_resume_reselect"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_world("resume-before", False),
+            post_observations=(_world("resume-after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+        state = await runtime.initialize_task(environment, _task())
+        active = asyncio.create_task(runtime.continue_task(environment, _task(), state))
+        await entered.wait()
+        runtime.request_control("command:pause-reselect", RunControlKind.PAUSE)
+        release.set()
+        await active
+
+        assert state.control_boundary is not None
+        assert environment.execute_calls == 0
+        runtime.resume_control(state, "command:resume-reselect")
+        await runtime.continue_task(environment, _task(), state)
+
+        assert state.status is RunStatus.DONE
+        assert policy.turns == 2
+        assert environment.execute_calls == 1
+        assert state.last_step is not None
+        assert state.last_step.execution_receipts is not None
+        assert (
+            state.last_step.execution_receipts.receipts[-1].request.tool_call_id
+            == "provider-call:fresh-after-resume"
+        )
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("dispatch_status", (DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN))
 def test_pause_during_dispatch_waits_for_receipt_fresh_world_and_evaluation(
     dispatch_status,

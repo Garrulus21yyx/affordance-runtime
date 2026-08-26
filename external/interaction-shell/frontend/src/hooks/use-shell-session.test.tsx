@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreatedSession } from "@/lib/types";
 
@@ -52,6 +52,11 @@ function Probe() {
   return <div data-testid="session-id">{shell.snapshot?.session_id ?? "opening"}</div>;
 }
 
+function CancelProbe() {
+  const shell = useShellSession();
+  return <button onClick={shell.cancel}>cancel</button>;
+}
+
 describe("session acquisition", () => {
   beforeEach(() => {
     api.createSession.mockReset();
@@ -69,5 +74,37 @@ describe("session acquisition", () => {
 
     await waitFor(() => expect(screen.getByTestId("session-id")).toHaveTextContent("session:strict-mode"));
     expect(api.createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the advertised cooperative cancel command through the optional route", async () => {
+    const active = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Choose an option",
+        run_status: "running" as const,
+        capabilities: ["start_task", "cancel_task", "close_session"] as const,
+      },
+    } as CreatedSession;
+    api.createSession.mockResolvedValue(active);
+    api.postCommand.mockResolvedValue({ kind: "accepted", command_id: "cancel", snapshot: active.snapshot });
+    render(<CancelProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "cancel" }));
+
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
+    expect(api.postCommand).toHaveBeenCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/optional",
+      expect.objectContaining({
+        kind: "cancel_task",
+        expected_task_revision: 1,
+        expected_run_status: "running",
+      }),
+    );
   });
 });

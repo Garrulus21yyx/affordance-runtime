@@ -161,6 +161,8 @@ class CooperativeRunControl:
         self._pending = None
         if request.kind is RunControlKind.PAUSE:
             self._paused = outcome
+        else:
+            self._paused = None
         self._record(outcome)
         return outcome
 

@@ -8,6 +8,7 @@ import pytest
 
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.app.public_session import (
+    PublicSessionCapability,
     PublicSessionConflict,
     PublicSessionOpenError,
     PublicSessionOpenStage,
@@ -142,6 +143,75 @@ async def test_public_session_cleanup_waits_for_active_run_and_executes_once() -
 
 
 @pytest.mark.asyncio
+async def test_cancel_run_is_cooperative_terminal_and_close_remains_teardown() -> None:
+    release = asyncio.Event()
+    cleanup_count = 0
+
+    class BlockingEnvironment(ScriptedEnvironment):
+        async def reset(self, task):
+            await release.wait()
+            return await super().reset(task)
+
+    def cleanup() -> None:
+        nonlocal cleanup_count
+        cleanup_count += 1
+
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: RuntimeEnvironmentLease(
+            BlockingEnvironment(initial_observation=_world()), cleanup
+        ),
+    )
+    handle = await factory.open("session:cancel", datetime.now(UTC) + timedelta(minutes=5))
+    initial = await handle.snapshot()
+    assert PublicSessionCapability.CANCEL_TASK in initial.capabilities
+    await handle.start("Inspect the selected account")
+
+    requested = await handle.cancel("cancel:active")
+    assert requested.status is PublicSessionStatus.RUNNING
+    assert cleanup_count == 0
+    release.set()
+    cancelled = await _wait_for_status(handle, PublicSessionStatus.CANCELLED)
+
+    assert cancelled.completion is not None
+    assert cancelled.completion.outcome == "cancelled"
+    assert cancelled.completion.code == "user_cancelled"
+    assert tuple(event.type for event in await handle.events(0)) == (
+        "RUN_STARTED",
+        "CONTROL_REQUESTED",
+        "RUN_FINISHED",
+    )
+    assert cleanup_count == 0
+
+    await handle.close()
+    await handle.close()
+    assert cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_at_waiting_boundary_does_not_resume_policy_or_dispatch() -> None:
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: RuntimeEnvironmentLease(
+            ScriptedEnvironment(initial_observation=_world())
+        ),
+    )
+    handle = await factory.open(
+        "session:cancel-waiting", datetime.now(UTC) + timedelta(minutes=5)
+    )
+    await handle.start("Inspect the selected account")
+    await _wait_for_status(handle, PublicSessionStatus.WAITING_USER)
+
+    cancelled = await handle.cancel("cancel:waiting")
+
+    assert cancelled.status is PublicSessionStatus.CANCELLED
+    assert cancelled.pending_question is None
+    assert cancelled.completion is not None
+    assert cancelled.completion.outcome == "cancelled"
+    await handle.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_factory_isolates_policy_history_world_events_and_cleanup() -> None:
     policies: dict[str, SessionHistoryPolicy] = {}
     environments: dict[str, ScriptedEnvironment] = {}
@@ -206,6 +276,9 @@ async def test_runtime_factory_isolates_policy_history_world_events_and_cleanup(
     assert {event.session_id for event in await first.events(0)} == {"session:first"}
     assert {event.session_id for event in await second.events(0)} == {"session:second"}
 
+    first_cancelled = await first.cancel("cancel:first")
+    assert first_cancelled.status is PublicSessionStatus.CANCELLED
+    assert (await second.snapshot()).status is PublicSessionStatus.WAITING_USER
     await first.close()
     assert cleanup_counts == {"session:first": 1, "session:second": 0}
     assert (await second.snapshot()).status is PublicSessionStatus.WAITING_USER

@@ -19,6 +19,7 @@ class RunStatus(StrEnum):
     WAITING_USER = "waiting_user"
     WAITING_CONFIRMATION = "waiting_confirmation"
     DONE = "done"
+    CANCELLED = "cancelled"
     FAILED = "failed"
     BLOCKED = "blocked"
 
@@ -48,7 +49,7 @@ class PendingConfirmation(StrictModel):
 
 
 class Completion(StrictModel):
-    outcome: Literal["success", "failure", "blocked"]
+    outcome: Literal["success", "failure", "blocked", "cancelled"]
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(max_length=4000)
     evidence_refs: tuple[str, ...] = ()

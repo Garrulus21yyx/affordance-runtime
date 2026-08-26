@@ -305,7 +305,10 @@ class CoreAgentLoop:
         request = self.run_control.pending
         if request is None:
             return False
-        if not self._close_deferred_call(state.last_step):
+        if (
+            not self._close_deferred_call(state.last_step)
+            and request.kind is RunControlKind.PAUSE
+        ):
             self.run_control.fail_pending("deferred_history_closure_failed")
             return False
         outcome = self.run_control.acknowledge(RunControlBoundary.BEFORE_POLICY)
@@ -358,7 +361,10 @@ class CoreAgentLoop:
             feedback=f"{result.feedback}:control_{preview.outcome.value}",
             control_boundary=preview,
         )
-        if not self._close_deferred_call(controlled):
+        if (
+            not self._close_deferred_call(controlled)
+            and request.kind is RunControlKind.PAUSE
+        ):
             self.run_control.fail_pending("deferred_history_closure_failed")
             return result
         outcome = self.run_control.acknowledge(
@@ -373,7 +379,8 @@ class CoreAgentLoop:
         state: RunState,
         decision: AgentDecision,
     ) -> StepResult | None:
-        if self.run_control.pending is None:
+        request = self.run_control.pending
+        if request is None:
             return None
         preview = self.run_control.preview(
             RunControlBoundary.AFTER_POLICY,
@@ -392,7 +399,10 @@ class CoreAgentLoop:
             f"action_not_dispatched:control_{preview.outcome.value}",
             control_boundary=preview,
         )
-        if not self._close_deferred_call(result):
+        if (
+            not self._close_deferred_call(result)
+            and request.kind is RunControlKind.PAUSE
+        ):
             self.run_control.fail_pending("deferred_history_closure_failed")
             return _same_world_step(
                 state,
