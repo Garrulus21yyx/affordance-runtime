@@ -66,8 +66,7 @@ one generic public rule that a completed RETRIEVE with zero qualifying items use
 while a nonempty completed retrieval uses `SUCCESS` and the result list. The original BrowserGym goal remains
 byte-for-byte unchanged, `TaskGoal.constraints` projects the rule through the normal `AgentContext`, and the existing
 upstream Pydantic response codec remains validation-only. There is no evaluator lookup, task-ID/text branch, response
-rewrite, alternate prompt, or production Agent change. A fresh Task8 native-evaluator witness is still required before
-the held-out cohort resumes.
+rewrite, alternate prompt, or production Agent change. Task8 run6 below is the accepted native-evaluator witness.
 
 Task8
 [`run2`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run2/run.json) made 16 policy calls and eight
@@ -97,7 +96,7 @@ existing Harness compactor alone produces a low-frequency cumulative replacement
 The same `EpisodeMonitor` now
 keeps sixteen ref-free signatures, detects every exact repeated suffix representable in that window, retains a recovered identity through a partial
 recurrence, and blocks the same phase-independent cycle when it continues. Typed new public information or expiry of
-the episode clears that identity. A fresh Task8 native-evaluator result remains required.
+the episode clears that identity.
 
 Task8 [`run5`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run5/run.json) falsified an intermediate v36
 prompt that asked the ActionPolicy to state progress in the same response whenever a conclusion, unresolved
@@ -108,6 +107,13 @@ distances, and the known Nominatim limitation, so run5 is not evidence loss or a
 already reached the sufficient `international airport Pittsburgh -> Aerodrome region -> empty qualifying set`
 strategy without a per-step progress instruction. The v36 instruction is therefore removed; optional native model
 text and low-frequency Harness compaction remain separate existing concerns.
+
+Task8 [`run6`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run6/run.json) is the accepted post-repair
+witness at commit `c53d496e`: Runtime ended `done`, issued one STOP and one post-STOP capture, and the native evaluator
+accepted `NOT_FOUND_ERROR` with null data. It completed in 45 policy turns and 236.9 seconds. Eight Harness
+compactions retained cumulative historical conclusions while recent reasoning/call/result messages remained exact;
+there was no per-step progress producer. Run6 closes the Task8 zero-result/provider/progress witness, but one accepted
+case does not establish held-out cohort stability.
 
 Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture

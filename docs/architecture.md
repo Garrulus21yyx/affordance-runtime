@@ -503,8 +503,8 @@ The WebArena-Verified benchmark profile now publishes one unambiguous zero-resul
 data; a nonempty completed retrieval emits `SUCCESS` with the result list. This is projected through the ordinary
 `TaskGoal.constraints -> AgentContext.task.constraints` path. The BrowserGym goal remains unchanged and the upstream
 Pydantic response codec remains validation-only, so no private evaluator answer, task identity, response rewrite,
-alternate prompt, or new Agent/Runtime authority was introduced. A fresh native Task8 result remains the acceptance
-witness for this benchmark-owner clarification.
+alternate prompt, or new Agent/Runtime authority was introduced. Task8 run6 is the accepted native witness for this
+benchmark-owner clarification.
 
 Task8
 [`run2`](../evidence/live/w1b-task-8-deepseek-v4-flash-20260826-run2/run.json) and
@@ -513,8 +513,9 @@ did not reach STOP. Run2 ended after a text-only ActionPolicy response and its o
 output budgets. Run3 acquired the decisive CMU, Pittsburgh International Airport, and approximately 32.8 km OSRM
 facts, then continued searching; its last policy invocation again emitted two output-limited text responses instead
 of a ToolCall. The positive provider-boundary repair above prevents that legal-but-invalid wire choice rather than
-adding a repetition recognizer or Monitor control path. These two runs remain failed pre-repair evidence; a fresh
-native Task8 witness is still required.
+adding a repetition recognizer or Monitor control path. These two runs remain failed pre-repair evidence. Task8 run6
+later accepted with one STOP, one post-STOP capture, and one native evaluation after the provider boundary restored
+optional native text and the existing Harness compactor remained the only low-frequency progress-summary owner.
 
 Task266 run18 crossed the reducer scheduling repair: only two reductions ran and both completed. It then exposed one
 shared action-delivery minimum and one Monitor lifecycle defect. The fresh World contained a focused Wikipedia search
