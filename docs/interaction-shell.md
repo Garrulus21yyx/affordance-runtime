@@ -566,8 +566,10 @@ expected_checkpoint_id where a paused/recovered state is addressed
 typed payload
 ```
 
-The manager serializes commands per session and rejects stale commands deterministically. An HTTP success means the
-command was admitted, not that the GUI task succeeded. Task outcome continues to arrive through owner events.
+The manager serializes commands per session. It rejects stale non-revision commands from the current Runtime snapshot;
+for `ReviseTask` it forwards the complete command and lets Runtime validate expected revision/status/checkpoint so the
+same owner also decides durable replay. An HTTP success means the command was admitted, not that the GUI task
+succeeded. Task outcome continues to arrive through owner events.
 `command_id` and expected values provide optimistic concurrency across reconnects; a stale revision or checkpoint
 returns `Conflict` with the current owner-produced snapshot. The current in-memory implementation treats every reused
 command ID as `duplicate_command`. The durable target algebra is stricter and genuinely idempotent:
@@ -1288,8 +1290,13 @@ checkpoint, durably closes every compiler non-ready outcome, admits only a compl
 the same environment, captures fresh World, invokes the existing GoalCompiler once, rebinds official PydanticAI
 history, and atomically commits the new checkpoint plus command outcome before publishing revision `n+1`. Successful
 revision remains `PAUSED`, clears stale action/confirmation state, and never auto-resumes. Duplicate commands replay
-the Runtime-owned stored result. Prior dispatched truth fails closed as `effect_reconciliation_required` while keeping
-revision `n`; effect reconciliation, compensation, Viewer, and takeover remain unavailable.
+the Runtime-owned stored result. The stored row now contains a canonical digest of the complete command and a bounded
+outcome/message summary: an exact retry replays without compilation or environment mutation, while reuse of the same
+identity for different expected values or text returns typed `command_identity_reused`. The Shell always forwards
+revision attempts under its per-session lock and uses its command set only to avoid duplicating conversation turns;
+it does not decide revision idempotency or staleness. Prior dispatched truth fails closed as
+`effect_reconciliation_required` while keeping revision `n`; effect reconciliation, compensation, Viewer, and
+takeover remain unavailable.
 
 ### Phase 7 — bounded compensation for already-applied effects
 
@@ -1499,5 +1506,7 @@ measured requirement, evaluate mature PydanticAI durable-execution integrations 
 - [Browserbase Session Live View](https://docs.browserbase.com/platform/browser/observability/session-live-view)
 - [PydanticAI message history](https://ai.pydantic.dev/message-history/)
 - [PydanticAI deferred tools](https://ai.pydantic.dev/deferred-tools/)
+- [PydanticAI step persistence](https://ai.pydantic.dev/harness/step-persistence/)
+- [PydanticAI observability](https://ai.pydantic.dev/logfire/)
 - [PydanticAI durable execution](https://ai.pydantic.dev/durable_execution/overview/)
 - [OpenHands system architecture](https://github.com/OpenHands/OpenHands/blob/main/openhands/architecture/system-architecture.md)

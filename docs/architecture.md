@@ -61,10 +61,21 @@ active, and continues the original task revision. Checkpoints retain bounded
 task/plan/run counters, last receipt, pending interrupt identity, official
 PydanticAI history, and an opaque environment reference; they exclude complete
 Worlds, Shell events/conversation, Viewer/trace projections, tasks, locks, and
-clients. Restart hydration, environment reconnect, `ResumeRun`, revision,
-Viewer, compensation, and takeover remain unavailable. These deployment and
-persistence tests are not benchmark witnesses and do not alter the reopened
-overall project status.
+clients. Reconnectable deployments can now hydrate that checkpoint under a new
+event epoch, capture fresh World, and wait for explicit `ResumeRun`; a lost
+environment fails typed rather than opening a replacement browser. Bounded
+`ReviseTask` reuses the same cooperative pause, validates one complete
+consecutive `TaskGoal`, revises the same environment, captures fresh World,
+compiles one new GoalPlan, atomically commits revision `n+1`, and remains
+paused. Runtime also owns revision command identity: the existing outcome row
+stores a canonical complete-command digest plus bounded result/message, exact
+retries replay before current-state validation, and changed payload under one
+ID fails as `command_identity_reused`. Shell forwards complete revision
+commands and only suppresses duplicate conversation turns; it owns no durable
+revision result. Prior GUI effects still return
+`effect_reconciliation_required`; Viewer, compensation, and takeover remain
+unavailable. These deployment/control tests are not benchmark witnesses and do
+not alter the reopened overall project status.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

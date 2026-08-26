@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, cast, get_args
 
 from affordance_runtime.app.public_session import (
     PublicRuntimeSessionEvent,
@@ -14,6 +14,8 @@ from affordance_runtime.app.public_session import (
     PublicSessionCapability,
     PublicSessionConflict,
     PublicSessionOpenError,
+    PublicSessionStatus,
+    PublicTaskRevisionCommand,
 )
 
 from .contracts import (
@@ -23,6 +25,7 @@ from .contracts import (
     Capability,
     Completion,
     Conflict,
+    ConflictCode,
     ControlOutcome,
     OptionalCommand,
     PendingConfirmation,
@@ -139,15 +142,21 @@ class CoreRuntimeSessionPort:
         before = (await handle.snapshot()).event_cursor
         try:
             current = await handle.revise(
-                command.command_id,
-                command.expected_checkpoint_id,
-                command.text,
+                PublicTaskRevisionCommand(
+                    command_id=command.command_id,
+                    expected_task_revision=command.expected_task_revision,
+                    expected_run_status=PublicSessionStatus(
+                        command.expected_run_status.value
+                    ),
+                    expected_checkpoint_id=command.expected_checkpoint_id,
+                    text=command.text,
+                )
             )
         except PublicSessionConflict as exc:
             return (
                 Conflict(
                     command_id=command.command_id,
-                    code=exc.code,
+                    code=_revision_conflict_code(exc.code),
                     snapshot=_snapshot(exc.snapshot, self.viewer_projector(handle)),
                 ),
                 (),
@@ -158,6 +167,15 @@ class CoreRuntimeSessionPort:
 
     async def close(self, handle: PublicRuntimeSessionHandle) -> None:
         await handle.close()
+
+
+_REVISION_CONFLICT_CODES = frozenset(get_args(ConflictCode))
+
+
+def _revision_conflict_code(code: str) -> ConflictCode:
+    if code in _REVISION_CONFLICT_CODES:
+        return cast(ConflictCode, code)
+    return "runtime_conflict"
 
 
 def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> RuntimeSessionSnapshot:

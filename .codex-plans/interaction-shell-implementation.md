@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 6 bounded task revision complete; Phase 7 effect reconciliation pending
+Status: Phase 6 complete; Phase 6.5 persistence/trace/idempotency convergence in progress
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -323,6 +323,47 @@ Constraints:
       one semantic-delivery test requires a historical live trace absent from
       the worktree. An initial unfiltered run recorded only those two failures.
       No live benchmark was run; Viewer and Phase 7 were not started.
+18. **in progress — Phase 6.5: reuse model persistence/trace and close command identity.**
+    - Preserve Runtime ownership of `TaskGoal`, `RunState`, cooperative safe
+      points, GUI dispatch receipts, fresh-World currentness, checkpoint/resume
+      eligibility, and browser reconnect references.
+    - Verify the installed `pydantic-ai-harness==0.25.0` APIs and migrate model
+      message/step continuity to `StepPersistence(SqliteStepStore)` only where
+      it can replace the current parallel transcript/history persistence
+      without becoming GUI-effect or Runtime-checkpoint authority.
+    - Use PydanticAI/OpenTelemetry instrumentation for model/provider spans and
+      connect the custom structured-provider boundary to the same trace path;
+      remove only transcript state made redundant by that positive owner flow.
+    - Extend the existing Runtime revision-outcome transaction with a canonical
+      `ReviseTask` payload digest and bounded original result. Same command ID +
+      same digest replays the original outcome; a different digest returns
+      typed `command_identity_reused` before compilation/environment mutation.
+    - Remove Shell-side duplicate authority for `ReviseTask`; the Shell keeps
+      its command lock and bounded conversation but forwards every revision
+      request once to Runtime. Do not add a service, ledger, workflow engine,
+      Temporal/DBOS/LangGraph, or Phase 7 compensation behavior.
+    - Migrate schema/versioning, recovery/duplicate/fault paths, public
+      contracts, OpenAPI/UI tests, documentation, and verification together.
+      Commit and push each coherent milestone; do not run live benchmark.
+    - API finding: Harness 0.25.0 `StepPersistence` persists complete snapshots
+      only at PydanticAI-owned settled boundaries. This Runtime intentionally
+      returns deferred external tool calls and later appends their GUI
+      `ToolReturn` synchronously from a closed `StepResult`; no Harness hook
+      owns that later boundary. Until an adapter durably saves that owner-closed
+      official history before Runtime checkpoint commit, replacing the embedded
+      message snapshot would expose only `interrupted` history and is unsafe.
+      Keep the current `ModelMessagesTypeAdapter` snapshot while building and
+      testing that adapter; do not claim StepPersistence migration complete.
+    - Command-identity milestone implemented: the public Runtime receives the
+      complete revision command, hashes its canonical payload, and atomically
+      stores the digest plus bounded outcome/message in the existing revision
+      row. Exact retries replay before stale-state checks; changed payload under
+      the same ID fails typed as `command_identity_reused` before compiler or
+      environment work. Legacy rows migrate in place with an unverifiable
+      sentinel and therefore fail closed against new payloads. Shell forwards
+      every revision attempt and retains the ID only as a bounded-conversation
+      cache. Focused evidence: 23 Runtime checkpoint tests and 13 Shell
+      manager/port tests passed; touched Ruff, MyPy, and Pyright checks passed.
 
 ## Current-work produced files
 

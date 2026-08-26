@@ -22,8 +22,14 @@ was accepted, and the reopened/non-closed benchmark status below is unchanged.
 The interaction shell has subsequently verified cooperative durable pause with
 a Runtime-private SQLite WAL store, including atomic checkpoint/command outcome
 commit and rollback plus fresh-World continuation after injected persistence
-failure. This is control-plane verification only; restart resume is still
-unavailable and no benchmark case was run for the checkpoint change.
+failure. Reconnectable test leases now verify restart hydration, fresh-World
+resume without GUI-effect replay, and bounded paused task revision. Revision
+idempotency is Runtime-owned: one existing SQLite outcome row stores the
+canonical complete-command digest and bounded result, exact retries replay, and
+changed payload under one ID fails typed before compiler/environment mutation.
+The local BrowserGym deployment still reports process-restart reconnect as
+unavailable because it cannot reconnect the exact Playwright context. This is
+control-plane verification only; no benchmark case was run for these changes.
 
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action

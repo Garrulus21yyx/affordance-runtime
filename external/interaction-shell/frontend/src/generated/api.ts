@@ -404,7 +404,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "effect_reconciliation_required";
+            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "command_identity_reused" | "effect_reconciliation_required";
             /** Command Id */
             command_id: string;
             /**

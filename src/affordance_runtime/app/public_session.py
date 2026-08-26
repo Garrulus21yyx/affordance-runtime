@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import json
 import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -64,6 +65,54 @@ class PublicSessionStatus(StrEnum):
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class PublicTaskRevisionCommand:
+    """Complete Runtime-owned revision command and its canonical identity."""
+
+    command_id: str
+    expected_task_revision: int
+    expected_run_status: PublicSessionStatus
+    expected_checkpoint_id: str | None
+    text: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.command_id.strip()
+            or len(self.command_id) > 128
+            or type(self.expected_task_revision) is not int
+            or self.expected_task_revision < 0
+            or not isinstance(self.expected_run_status, PublicSessionStatus)
+            or (
+                self.expected_checkpoint_id is not None
+                and (
+                    len(self.expected_checkpoint_id) > 200
+                    or not self.expected_checkpoint_id.startswith("runtime-checkpoint:")
+                )
+            )
+            or not self.text.strip()
+            or len(self.text) > 8000
+        ):
+            raise ValueError("public task revision command is invalid")
+
+    @property
+    def payload_digest(self) -> str:
+        payload = {
+            "expected_checkpoint_id": self.expected_checkpoint_id,
+            "expected_run_status": self.expected_run_status.value,
+            "expected_task_revision": self.expected_task_revision,
+            "kind": "revise_task",
+            "schema_version": PUBLIC_SESSION_SCHEMA_VERSION,
+            "text": self.text,
+        }
+        canonical = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class PublicSessionCapability(StrEnum):
@@ -229,10 +278,7 @@ class PublicRuntimeSessionHandle(Protocol):
         self, command_id: str, checkpoint_id: str
     ) -> PublicRuntimeSessionSnapshot: ...
     async def revise(
-        self,
-        command_id: str,
-        expected_checkpoint_id: str | None,
-        text: str,
+        self, command: PublicTaskRevisionCommand
     ) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
@@ -461,10 +507,7 @@ class TargetRuntimeSession:
             return self._project()
 
     async def revise(
-        self,
-        command_id: str,
-        expected_checkpoint_id: str | None,
-        text: str,
+        self, command: PublicTaskRevisionCommand
     ) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
             if self._closed:
@@ -472,27 +515,53 @@ class TargetRuntimeSession:
             store = self.checkpoint_store
             if store is None:
                 raise PublicSessionConflict("revision_unavailable", self._project())
+            admitted_at_entry = self._admitted
+            state_at_entry = self._state
+            command_matches_entry = (
+                admitted_at_entry is not None
+                and state_at_entry is not None
+                and admitted_at_entry.task.revision == command.expected_task_revision
+                and self._status is command.expected_run_status
+            )
+            checkpoint_matches_entry = (
+                self._checkpoint_id == command.expected_checkpoint_id
+            )
             try:
-                existing = await store.revision_outcome(self.session_id, command_id)
+                existing = await store.revision_outcome(
+                    self.session_id,
+                    command.command_id,
+                )
             except Exception as exc:
                 raise PublicSessionConflict(
                     "revision_persistence_failed",
                     self._project(),
                 ) from exc
             if existing is not None:
-                if existing.outcome == "revised" and (
-                    self._checkpoint_id == existing.result_checkpoint_id
-                    and self._admitted is not None
-                    and self._admitted.task.revision == existing.task_revision
-                ):
+                if existing.payload_digest != command.payload_digest:
+                    raise PublicSessionConflict(
+                        "command_identity_reused",
+                        self._project(),
+                    )
+                self._set_revision_outcome(
+                    existing.outcome,
+                    command.command_id,
+                    checkpoint_id=(
+                        existing.result_checkpoint_id
+                        if existing.outcome == "revised"
+                        else None
+                    ),
+                    message=existing.message,
+                )
+                if existing.outcome == "revised":
                     return self._project()
-                self._set_revision_outcome(existing.outcome, command_id)
                 raise PublicSessionConflict(existing.outcome, self._project())
-            if self._admitted is None or self._state is None:
+            if admitted_at_entry is None or state_at_entry is None:
                 raise PublicSessionConflict("run_not_revisable", self._project())
-            if self._checkpoint_id != expected_checkpoint_id:
+            if not command_matches_entry:
+                raise PublicSessionConflict("stale_command", self._project())
+            if not checkpoint_matches_entry:
                 raise PublicSessionConflict("checkpoint_mismatch", self._project())
-            await self._ensure_revision_pause(command_id)
+            await self._ensure_revision_pause(command.command_id)
             state = self._state
             source_checkpoint_id = self._checkpoint_id
             if (
@@ -510,7 +579,7 @@ class TargetRuntimeSession:
             except Exception as exc:
                 self._set_revision_outcome(
                     "revision_persistence_failed",
-                    command_id,
+                    command.command_id,
                     message=type(exc).__name__,
                 )
                 self._emit("CONTROL_FAILED")
@@ -519,23 +588,26 @@ class TargetRuntimeSession:
                     self._project(),
                 ) from exc
             if source_checkpoint is None:
-                self._set_revision_outcome("checkpoint_not_found", command_id)
+                self._set_revision_outcome("checkpoint_not_found", command.command_id)
                 self._emit("CONTROL_FAILED")
                 raise PublicSessionConflict("checkpoint_not_found", self._project())
             if state.execution_count > 0:
                 await self._reject_revision(
-                    command_id,
+                    command,
                     source_checkpoint_id,
                     state.task_revision,
                     "effect_reconciliation_required",
                     "The current revision has committed GUI effects.",
                 )
-            compiled = await self.runtime.compile_task_revision(self._admitted, text)
+            compiled = await self.runtime.compile_task_revision(
+                self._admitted,
+                command.text,
+            )
             revised = compiled.intake
             if not isinstance(revised, ReadyTask):
                 code, message = _revision_rejection(compiled.compiler, revised)
                 await self._reject_revision(
-                    command_id,
+                    command,
                     source_checkpoint_id,
                     state.task_revision,
                     code,
@@ -543,6 +615,7 @@ class TargetRuntimeSession:
                 )
             assert isinstance(revised, ReadyTask)
             current = self._admitted
+            assert current is not None
             runtime = self._runtime_with_projection()
             try:
                 candidate = await runtime.prepare_paused_task_revision(
@@ -566,7 +639,7 @@ class TargetRuntimeSession:
             except Exception as exc:
                 await self._restore_revision_source(runtime, source_checkpoint)
                 await self._reject_revision(
-                    command_id,
+                    command,
                     source_checkpoint_id,
                     state.task_revision,
                     "revision_failed",
@@ -575,11 +648,13 @@ class TargetRuntimeSession:
                 raise AssertionError("revision rejection must raise") from exc
             revision_outcome = RuntimeCheckpointRevisionOutcome(
                 self.session_id,
-                command_id,
+                command.command_id,
                 source_checkpoint_id,
                 checkpoint.checkpoint_id,
                 revised.task.revision,
                 "revised",
+                command.payload_digest,
+                "",
             )
             try:
                 await store.commit_revision(checkpoint, revision_outcome)
@@ -587,7 +662,7 @@ class TargetRuntimeSession:
                 await self._restore_revision_source(runtime, source_checkpoint)
                 self._set_revision_outcome(
                     "revision_persistence_failed",
-                    command_id,
+                    command.command_id,
                     message=type(exc).__name__,
                 )
                 self._emit("CONTROL_FAILED")
@@ -604,7 +679,7 @@ class TargetRuntimeSession:
             self._resume_eligible = checkpoint.resume_eligible
             self._set_revision_outcome(
                 "revised",
-                command_id,
+                command.command_id,
                 checkpoint_id=checkpoint.checkpoint_id,
             )
             self._emit("TASK_REVISED")
@@ -641,7 +716,7 @@ class TargetRuntimeSession:
 
     async def _reject_revision(
         self,
-        command_id: str,
+        command: PublicTaskRevisionCommand,
         source_checkpoint_id: str,
         task_revision: int,
         code: str,
@@ -649,20 +724,23 @@ class TargetRuntimeSession:
     ) -> None:
         store = self.checkpoint_store
         assert store is not None
+        message = message[:2000]
         outcome = RuntimeCheckpointRevisionOutcome(
             self.session_id,
-            command_id,
+            command.command_id,
             source_checkpoint_id,
             source_checkpoint_id,
             task_revision,
             code,
+            command.payload_digest,
+            message,
         )
         try:
             await store.commit_revision(None, outcome)
         except Exception as exc:
             self._set_revision_outcome(
                 "revision_persistence_failed",
-                command_id,
+                command.command_id,
                 message=type(exc).__name__,
             )
             self._emit("CONTROL_FAILED")
@@ -670,7 +748,7 @@ class TargetRuntimeSession:
                 "revision_persistence_failed",
                 self._project(),
             ) from exc
-        self._set_revision_outcome(code, command_id, message=message)
+        self._set_revision_outcome(code, command.command_id, message=message)
         self._emit("TASK_REVISION_REJECTED")
         raise PublicSessionConflict(code, self._project())
 

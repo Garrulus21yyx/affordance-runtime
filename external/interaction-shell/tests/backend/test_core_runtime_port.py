@@ -26,7 +26,9 @@ from affordance_runtime.app.public_session import (
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionSnapshot,
     PublicSessionCapability,
+    PublicSessionConflict,
     PublicSessionStatus,
+    PublicTaskRevisionCommand,
 )
 
 
@@ -43,7 +45,10 @@ class FakePublicHandle:
         self.recorded: list[PublicRuntimeSessionEvent] = []
         self.release = asyncio.Event()
         self.cleanup_count = 0
-        self.revise_calls: list[tuple[str, str | None, str]] = []
+        self.revise_calls: list[
+            tuple[str, int, PublicSessionStatus, str | None, str]
+        ] = []
+        self.revision_digests: dict[str, str] = {}
 
     async def snapshot(self):
         return self.current
@@ -133,25 +138,36 @@ class FakePublicHandle:
         )
         return self.current
 
-    async def revise(
-        self,
-        command_id: str,
-        expected_checkpoint_id: str | None,
-        text: str,
-    ):
-        self.revise_calls.append((command_id, expected_checkpoint_id, text))
-        if (
-            self.current.last_control_outcome is not None
-            and self.current.last_control_outcome.command_id == command_id
-        ):
+    async def revise(self, command: PublicTaskRevisionCommand):
+        self.revise_calls.append(
+            (
+                command.command_id,
+                command.expected_task_revision,
+                command.expected_run_status,
+                command.expected_checkpoint_id,
+                command.text,
+            )
+        )
+        existing_digest = self.revision_digests.get(command.command_id)
+        if existing_digest is not None:
+            if existing_digest != command.payload_digest:
+                raise PublicSessionConflict("command_identity_reused", self.current)
             return self.current
+        if (
+            command.expected_task_revision != self.current.task_revision
+            or command.expected_run_status is not self.current.status
+        ):
+            raise PublicSessionConflict("stale_command", self.current)
+        if command.expected_checkpoint_id != self.current.checkpoint_id:
+            raise PublicSessionConflict("checkpoint_mismatch", self.current)
+        self.revision_digests[command.command_id] = command.payload_digest
         checkpoint_id = "runtime-checkpoint:" + "b" * 64
         self._emit(
             replace(
                 self.current,
                 status=PublicSessionStatus.PAUSED,
                 task_revision=self.current.task_revision + 1,
-                task_text=text,
+                task_text=command.text,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
                 capabilities=self.current.capabilities
@@ -159,7 +175,7 @@ class FakePublicHandle:
                 pending_question=None,
                 pending_confirmation=None,
                 last_control_outcome=PublicControlOutcome(
-                    command_id,
+                    command.command_id,
                     "revise",
                     "revised",
                     "revised",
@@ -387,13 +403,21 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
             expected_task_revision=0,
             expected_run_status=RunStatus.RUNNING,
             expected_checkpoint_id=None,
-            text="This stale command must not reach Runtime",
+            text="This stale command must be rejected by Runtime",
         ),
     )
     assert stale.kind == "conflict"
     assert stale.code == "stale_command"
     assert factory.handle is not None
-    assert factory.handle.revise_calls == []
+    assert factory.handle.revise_calls == [
+        (
+            "revise:stale",
+            0,
+            PublicSessionStatus.RUNNING,
+            None,
+            "This stale command must be rejected by Runtime",
+        )
+    ]
 
     revised = await manager.admit(
         created.snapshot.session_id,
@@ -413,8 +437,41 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
     assert revised.snapshot.last_control_outcome is not None
     assert revised.snapshot.last_control_outcome.kind == "revise"
     assert factory.handle.revise_calls == [
-        ("revise:1", None, "Inspect the account and its owner")
+        (
+            "revise:stale",
+            0,
+            PublicSessionStatus.RUNNING,
+            None,
+            "This stale command must be rejected by Runtime",
+        ),
+        (
+            "revise:1",
+            1,
+            PublicSessionStatus.RUNNING,
+            None,
+            "Inspect the account and its owner",
+        ),
     ]
+    reused = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReviseTask(
+            command_id="revise:1",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.RUNNING,
+            expected_checkpoint_id=None,
+            text="Reuse the identity for a different revision",
+        ),
+    )
+    assert reused.kind == "conflict"
+    assert reused.code == "command_identity_reused"
+    assert factory.handle.revise_calls[-1] == (
+        "revise:1",
+        1,
+        PublicSessionStatus.RUNNING,
+        None,
+        "Reuse the identity for a different revision",
+    )
 
     duplicate = await manager.admit(
         created.snapshot.session_id,
@@ -431,6 +488,41 @@ async def test_shell_calls_dedicated_revision_port_once_and_keeps_paused() -> No
     assert duplicate.kind == "accepted"
     assert duplicate.snapshot.task_revision == 2
     assert factory.handle.revise_calls == [
-        ("revise:1", None, "Inspect the account and its owner"),
-        ("revise:1", None, "Inspect the account and its owner"),
+        (
+            "revise:stale",
+            0,
+            PublicSessionStatus.RUNNING,
+            None,
+            "This stale command must be rejected by Runtime",
+        ),
+        (
+            "revise:1",
+            1,
+            PublicSessionStatus.RUNNING,
+            None,
+            "Inspect the account and its owner",
+        ),
+        (
+            "revise:1",
+            1,
+            PublicSessionStatus.RUNNING,
+            None,
+            "Reuse the identity for a different revision",
+        ),
+        (
+            "revise:1",
+            1,
+            PublicSessionStatus.RUNNING,
+            None,
+            "Inspect the account and its owner",
+        ),
     ]
+    conversation = manager.authenticate(
+        created.snapshot.session_id,
+        created.session_key,
+    ).conversation.view(duplicate.snapshot)
+    assert tuple(turn.text for turn in conversation.recent_turns) == (
+        "Inspect the account",
+        "This stale command must be rejected by Runtime",
+        "Inspect the account and its owner",
+    )

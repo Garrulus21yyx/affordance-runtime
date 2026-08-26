@@ -324,6 +324,7 @@
               "revision_failed",
               "revision_persistence_failed",
               "revision_command_conflict",
+              "command_identity_reused",
               "effect_reconciliation_required"
             ],
             "title": "Code",

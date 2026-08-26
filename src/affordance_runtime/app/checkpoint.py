@@ -58,6 +58,7 @@ from affordance_runtime.task.contracts import (
 
 RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v2"
 _MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024
+_LEGACY_REVISION_PAYLOAD_DIGEST = "0" * 64
 
 
 class RuntimeCheckpointError(RuntimeError):
@@ -298,6 +299,8 @@ class RuntimeCheckpointRevisionOutcome:
     result_checkpoint_id: str
     task_revision: int
     outcome: str
+    payload_digest: str
+    message: str
 
     def __post_init__(self) -> None:
         if (
@@ -309,6 +312,9 @@ class RuntimeCheckpointRevisionOutcome:
             or type(self.task_revision) is not int
             or self.task_revision < 1
             or self.outcome not in _REVISION_OUTCOMES
+            or len(self.payload_digest) != 64
+            or any(character not in "0123456789abcdef" for character in self.payload_digest)
+            or len(self.message) > 2000
             or (
                 self.outcome == "revised"
                 and self.result_checkpoint_id == self.source_checkpoint_id
@@ -495,6 +501,7 @@ class SQLiteRuntimeCheckpointStore:
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA foreign_keys=ON")
         connection.executescript(_SCHEMA)
+        _migrate_revision_outcome_schema(connection)
         return connection
 
     def _commit_pause(
@@ -666,7 +673,8 @@ class SQLiteRuntimeCheckpointStore:
             if source is None:
                 raise RuntimeCheckpointError("checkpoint_not_found")
             existing = connection.execute(
-                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome "
+                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome, "
+                "payload_digest, message "
                 "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
                 (outcome.session_id, outcome.command_id),
             ).fetchone()
@@ -675,6 +683,8 @@ class SQLiteRuntimeCheckpointStore:
                 outcome.result_checkpoint_id,
                 outcome.task_revision,
                 outcome.outcome,
+                outcome.payload_digest,
+                outcome.message,
             )
             if existing is not None:
                 if existing != expected:
@@ -694,7 +704,8 @@ class SQLiteRuntimeCheckpointStore:
             connection.execute(
                 "INSERT INTO runtime_revision_outcomes "
                 "(session_id, command_id, source_checkpoint_id, result_checkpoint_id, "
-                "task_revision, outcome, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "task_revision, outcome, payload_digest, message, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     outcome.session_id,
                     outcome.command_id,
@@ -702,6 +713,8 @@ class SQLiteRuntimeCheckpointStore:
                     outcome.result_checkpoint_id,
                     outcome.task_revision,
                     outcome.outcome,
+                    outcome.payload_digest,
+                    outcome.message,
                     datetime.now(UTC).isoformat(),
                 ),
             )
@@ -720,7 +733,8 @@ class SQLiteRuntimeCheckpointStore:
         connection = self._connect()
         try:
             row = connection.execute(
-                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome "
+                "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome, "
+                "payload_digest, message "
                 "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
                 (session_id, command_id),
             ).fetchone()
@@ -735,6 +749,8 @@ class SQLiteRuntimeCheckpointStore:
             str(row[1]),
             int(row[2]),
             str(row[3]),
+            str(row[4]),
+            str(row[5]),
         )
 
     def _checkpoint_revision_outcome(
@@ -745,7 +761,8 @@ class SQLiteRuntimeCheckpointStore:
         connection = self._connect()
         try:
             row = connection.execute(
-                "SELECT command_id, result_checkpoint_id, task_revision, outcome "
+                "SELECT command_id, result_checkpoint_id, task_revision, outcome, "
+                "payload_digest, message "
                 "FROM runtime_revision_outcomes "
                 "WHERE session_id = ? AND source_checkpoint_id = ? AND outcome = 'revised'",
                 (session_id, checkpoint_id),
@@ -761,6 +778,8 @@ class SQLiteRuntimeCheckpointStore:
             str(row[1]),
             int(row[2]),
             str(row[3]),
+            str(row[4]),
+            str(row[5]),
         )
 
 
@@ -1222,6 +1241,8 @@ CREATE TABLE IF NOT EXISTS runtime_revision_outcomes (
         'revision_failed',
         'effect_reconciliation_required'
     )),
+    payload_digest TEXT NOT NULL,
+    message TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (session_id, command_id),
     FOREIGN KEY (session_id, source_checkpoint_id)
@@ -1233,3 +1254,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS runtime_revision_source_consumed
     ON runtime_revision_outcomes (session_id, source_checkpoint_id)
     WHERE outcome = 'revised';
 """
+
+
+def _migrate_revision_outcome_schema(connection: sqlite3.Connection) -> None:
+    """Add bounded idempotency result fields without discarding legacy outcomes."""
+
+    columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(runtime_revision_outcomes)")
+    }
+    additions = {
+        "payload_digest": (
+            "ALTER TABLE runtime_revision_outcomes ADD COLUMN payload_digest "
+            f"TEXT NOT NULL DEFAULT '{_LEGACY_REVISION_PAYLOAD_DIGEST}'"
+        ),
+        "message": (
+            "ALTER TABLE runtime_revision_outcomes ADD COLUMN message "
+            "TEXT NOT NULL DEFAULT ''"
+        ),
+    }
+    for name, statement in additions.items():
+        if name in columns:
+            continue
+        try:
+            connection.execute(statement)
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    connection.commit()

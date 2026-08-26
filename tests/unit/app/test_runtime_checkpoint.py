@@ -22,6 +22,7 @@ from affordance_runtime.app.public_session import (
     PublicSessionConflict,
     PublicSessionOpenError,
     PublicSessionStatus,
+    PublicTaskRevisionCommand,
     RuntimeEnvironmentLease,
     TargetRuntimeSessionFactory,
 )
@@ -45,6 +46,23 @@ from tests.integration.agent.test_core_loop import (
     _world as _action_world,
 )
 from tests.unit.agent.test_target_runtime_facade import AskForAccountPolicy, _runtime, _world
+
+
+def _revision_command(
+    command_id: str,
+    checkpoint_id: str | None,
+    text: str,
+    *,
+    task_revision: int = 1,
+    run_status: PublicSessionStatus = PublicSessionStatus.PAUSED,
+) -> PublicTaskRevisionCommand:
+    return PublicTaskRevisionCommand(
+        command_id,
+        task_revision,
+        run_status,
+        checkpoint_id,
+        text,
+    )
 
 
 class RecoverableAskPolicy(AskForAccountPolicy):
@@ -904,6 +922,50 @@ async def test_checkpoint_load_rejects_row_and_payload_scope_mismatch(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_revision_outcome_schema_migrates_legacy_rows_fail_closed(tmp_path) -> None:
+    path = tmp_path / "legacy-revision-outcomes.sqlite3"
+    checkpoint_id = "runtime-checkpoint:" + "a" * 64
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE runtime_revision_outcomes ("
+            "session_id TEXT NOT NULL, command_id TEXT NOT NULL, "
+            "source_checkpoint_id TEXT NOT NULL, result_checkpoint_id TEXT NOT NULL, "
+            "task_revision INTEGER NOT NULL, outcome TEXT NOT NULL, "
+            "created_at TEXT NOT NULL, PRIMARY KEY (session_id, command_id))"
+        )
+        connection.execute(
+            "INSERT INTO runtime_revision_outcomes VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "session:legacy-revision",
+                "revise:legacy",
+                checkpoint_id,
+                checkpoint_id,
+                1,
+                "revision_no_change",
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        connection.commit()
+
+    outcome = await SQLiteRuntimeCheckpointStore(path).revision_outcome(
+        "session:legacy-revision",
+        "revise:legacy",
+    )
+
+    assert outcome is not None
+    assert outcome.payload_digest == "0" * 64
+    assert outcome.message == ""
+    with sqlite3.connect(path) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(runtime_revision_outcomes)"
+            )
+        }
+    assert {"payload_digest", "message"} <= columns
+
+
+@pytest.mark.asyncio
 async def test_revision_commits_new_checkpoint_and_remains_paused(tmp_path) -> None:
     (
         handle,
@@ -918,9 +980,11 @@ async def test_revision_commits_new_checkpoint_and_remains_paused(tmp_path) -> N
     policy_calls = policy.calls
 
     revised = await handle.revise(
-        "revise:ready",
-        source.checkpoint_id,
-        "Also include the owner",
+        _revision_command(
+            "revise:ready",
+            source.checkpoint_id,
+            "Also include the owner",
+        )
     )
 
     assert revised.status is PublicSessionStatus.PAUSED
@@ -953,6 +1017,12 @@ async def test_revision_commits_new_checkpoint_and_remains_paused(tmp_path) -> N
             revised.checkpoint_id,
             2,
             "revised",
+            _revision_command(
+                "revise:ready",
+                source.checkpoint_id,
+                "Also include the owner",
+            ).payload_digest,
+            "",
         )
     )
     assert await store.checkpoint_revision_outcome(
@@ -965,13 +1035,30 @@ async def test_revision_commits_new_checkpoint_and_remains_paused(tmp_path) -> N
         revised.checkpoint_id,
         2,
         "revised",
+        _revision_command(
+            "revise:ready",
+            source.checkpoint_id,
+            "Also include the owner",
+        ).payload_digest,
+        "",
     )
     duplicate = await handle.revise(
-        "revise:ready",
-        source.checkpoint_id,
-        "ignored duplicate text",
+        _revision_command(
+            "revise:ready",
+            source.checkpoint_id,
+            "Also include the owner",
+        )
     )
     assert duplicate == revised
+    assert revision_compiler.calls == 1
+    with pytest.raises(PublicSessionConflict, match="command_identity_reused"):
+        await handle.revise(
+            _revision_command(
+                "revise:ready",
+                source.checkpoint_id,
+                "A different goal under the same command identity",
+            )
+        )
     assert revision_compiler.calls == 1
     await handle.close()
 
@@ -987,9 +1074,12 @@ async def test_revision_command_reuses_cooperative_pause_without_separate_shell_
     policy_calls = policy.calls
 
     revised = await handle.revise(
-        "revise:single-command",
-        None,
-        "Also include the owner",
+        _revision_command(
+            "revise:single-command",
+            None,
+            "Also include the owner",
+            run_status=PublicSessionStatus.WAITING_USER,
+        )
     )
 
     assert revised.status is PublicSessionStatus.PAUSED
@@ -1052,9 +1142,12 @@ async def test_revision_during_policy_waits_for_cooperative_boundary_before_comm
 
     revising = asyncio.create_task(
         handle.revise(
-            "revise:during-policy",
-            None,
-            "Also include the owner",
+            _revision_command(
+                "revise:during-policy",
+                None,
+                "Also include the owner",
+                run_status=PublicSessionStatus.RUNNING,
+            )
         )
     )
     await asyncio.sleep(0)
@@ -1114,9 +1207,12 @@ async def test_revision_invalidates_old_confirmation_without_dispatch(tmp_path) 
     assert environment.execute_calls == 0
 
     revised = await handle.revise(
-        "revise:confirmation",
-        None,
-        "Inspect the account and its owner instead",
+        _revision_command(
+            "revise:confirmation",
+            None,
+            "Inspect the account and its owner instead",
+            run_status=PublicSessionStatus.WAITING_CONFIRMATION,
+        )
     )
 
     assert revised.status is PublicSessionStatus.PAUSED
@@ -1140,9 +1236,11 @@ async def test_revision_nonready_outcome_is_durable_and_keeps_old_checkpoint(tmp
 
     with pytest.raises(PublicSessionConflict, match="revision_no_change"):
         await handle.revise(
-            "revise:no-change",
-            source.checkpoint_id,
-            "Keep the existing task",
+            _revision_command(
+                "revise:no-change",
+                source.checkpoint_id,
+                "Keep the existing task",
+            )
         )
 
     current = await handle.snapshot()
@@ -1156,14 +1254,20 @@ async def test_revision_nonready_outcome_is_durable_and_keeps_old_checkpoint(tmp
     assert environment.revised_tasks == []
     outcome = await store.revision_outcome("session:revision", "revise:no-change")
     assert outcome is not None and outcome.outcome == "revision_no_change"
+    assert outcome.message == "already_equivalent"
 
     with pytest.raises(PublicSessionConflict, match="revision_no_change"):
         await handle.revise(
-            "revise:no-change",
-            None,
-            "Do not call the compiler twice",
+            _revision_command(
+                "revise:no-change",
+                source.checkpoint_id,
+                "Keep the existing task",
+            )
         )
     assert compiler.calls == 1
+    replayed = await handle.snapshot()
+    assert replayed.last_control_outcome is not None
+    assert replayed.last_control_outcome.message == "already_equivalent"
     await handle.close()
 
 
@@ -1178,9 +1282,11 @@ async def test_revision_source_read_failure_is_typed_and_keeps_old_pause(tmp_pat
 
     with pytest.raises(PublicSessionConflict, match="revision_persistence_failed"):
         await handle.revise(
-            "revise:read-failure",
-            source.checkpoint_id,
-            "Also include the owner",
+            _revision_command(
+                "revise:read-failure",
+                source.checkpoint_id,
+                "Also include the owner",
+            )
         )
 
     current = await handle.snapshot()
@@ -1208,9 +1314,11 @@ async def test_revision_rejection_persistence_failure_projects_current_command(t
 
     with pytest.raises(PublicSessionConflict, match="revision_persistence_failed"):
         await handle.revise(
-            "revise:outcome-failure",
-            source.checkpoint_id,
-            "Keep the current goal",
+            _revision_command(
+                "revise:outcome-failure",
+                source.checkpoint_id,
+                "Keep the current goal",
+            )
         )
 
     current = await handle.snapshot()
@@ -1241,9 +1349,11 @@ async def test_revision_requires_phase7_when_any_gui_effect_was_committed(tmp_pa
 
     with pytest.raises(PublicSessionConflict, match="effect_reconciliation_required"):
         await handle.revise(
-            "revise:effect",
-            source.checkpoint_id,
-            "Change the goal after an effect",
+            _revision_command(
+                "revise:effect",
+                source.checkpoint_id,
+                "Change the goal after an effect",
+            )
         )
 
     current = await handle.snapshot()
@@ -1271,9 +1381,11 @@ async def test_revision_commit_failure_restores_old_history_environment_and_paus
 
     with pytest.raises(PublicSessionConflict, match="revision_persistence_failed"):
         await handle.revise(
-            "revise:persistence-failure",
-            source.checkpoint_id,
-            "Also include the owner",
+            _revision_command(
+                "revise:persistence-failure",
+                source.checkpoint_id,
+                "Also include the owner",
+            )
         )
 
     current = await handle.snapshot()
