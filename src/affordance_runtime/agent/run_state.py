@@ -25,6 +25,11 @@ from affordance_runtime.agent.decisions import (
 from affordance_runtime.agent.finalization import FinalizationProtocolResult
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.run_control import (
+    RunControlKind,
+    RunControlOutcome,
+    RunControlOutcomeKind,
+)
 from affordance_runtime.agent.runtime_failure import FailureStage, RuntimeFailure
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import (
@@ -59,6 +64,7 @@ class ControlTerminationKind(StrEnum):
     TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
     WAIT_BUDGET_EXHAUSTED = "wait_budget_exhausted"
     AGENT_ABORTED = "agent_aborted"
+    USER_CANCELLED = "user_cancelled"
 
 
 @dataclass(frozen=True)
@@ -118,6 +124,7 @@ class StepResult:
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
     control_termination: ControlTermination | None = None
+    control_boundary: RunControlOutcome | None = None
     model_delivery: ModelTurnDelivery | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
@@ -147,6 +154,21 @@ class StepResult:
                 raise TypeError("step control termination must be typed")
             if self.status_after not in {RunStatus.BLOCKED, RunStatus.CANCELLED, RunStatus.FAILED}:
                 raise ValueError("control termination requires a terminal run status")
+        if self.control_boundary is not None:
+            if not isinstance(self.control_boundary, RunControlOutcome):
+                raise TypeError("step control boundary must be typed")
+            if self.control_boundary.outcome is RunControlOutcomeKind.CANCELLED:
+                if self.status_after is not RunStatus.CANCELLED:
+                    raise ValueError("cancel boundary requires CANCELLED step status")
+            elif self.control_boundary.outcome is RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED:
+                if self.status_after not in {
+                    RunStatus.RUNNING,
+                    RunStatus.WAITING_USER,
+                    RunStatus.WAITING_CONFIRMATION,
+                }:
+                    raise ValueError("pause boundary requires a resumable step status")
+            else:
+                raise ValueError("step can only commit a reached control boundary")
         if self.model_delivery is not None:
             from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 
@@ -219,6 +241,7 @@ class StepResult:
         if (
             self.status_after is RunStatus.CANCELLED
             and self.execution_receipts is not None
+            and self.control_boundary is None
             and (self.execution_receipts.completion is not ExecutionCompletion.CANCELLED)
         ):
             raise ValueError("cancelled effectful step requires cancelled receipt completion")
@@ -296,6 +319,7 @@ class RunState:
     canonical_world: CanonicalPublicWorldProjection | None = field(default=None, repr=False)
     prior_delivery_index: WorldDeliveryIndex | None = field(default=None, repr=False)
     control_termination: ControlTermination | None = None
+    control_boundary: RunControlOutcome | None = None
     action_discovery: ActionDiscoveryResult | None = None
 
     def __post_init__(self) -> None:
@@ -378,6 +402,8 @@ class RunState:
             self.control_termination, ControlTermination
         ):
             raise TypeError("run control termination must be typed")
+        if self.control_boundary is not None:
+            self._validate_control_boundary(self.control_boundary)
         if self.action_discovery is not None and not isinstance(
             self.action_discovery, ActionDiscoveryResult
         ):
@@ -439,6 +465,40 @@ class RunState:
             raise ValueError("run resume status does not match the pending boundary")
         self.status = RunStatus.RUNNING
 
+    def apply_control_boundary(self, outcome: RunControlOutcome) -> None:
+        """Commit one cooperative boundary without fabricating a policy step."""
+
+        if self.terminal:
+            raise ValueError("terminal run cannot accept a control boundary")
+        self._validate_control_boundary(outcome)
+        self.control_boundary = outcome
+        if outcome.kind is RunControlKind.CANCEL:
+            self.status = RunStatus.CANCELLED
+            self.control_termination = ControlTermination(
+                ControlTerminationKind.USER_CANCELLED
+            )
+
+    def resume_control_boundary(self) -> None:
+        boundary = self.control_boundary
+        if (
+            boundary is None
+            or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+        ):
+            raise ValueError("run has no internal pause boundary")
+        self.control_boundary = None
+
+    def _validate_control_boundary(self, outcome: RunControlOutcome) -> None:
+        if not isinstance(outcome, RunControlOutcome):
+            raise TypeError("run control boundary must be typed")
+        if outcome.outcome is RunControlOutcomeKind.CANCELLED:
+            if outcome.kind is not RunControlKind.CANCEL:
+                raise ValueError("cancel outcome must belong to CancelRun")
+        elif outcome.outcome is RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED:
+            if outcome.kind is not RunControlKind.PAUSE:
+                raise ValueError("pause outcome must belong to PauseRun")
+        else:
+            raise ValueError("RunState only stores reached control boundaries")
+
     def apply(
         self,
         result: StepResult,
@@ -467,6 +527,12 @@ class RunState:
         self.current_task_evaluation = result.task_evaluation
         self.last_step = result
         self.status = result.status_after
+        if result.control_boundary is not None:
+            self.control_boundary = result.control_boundary
+            if result.control_boundary.kind is RunControlKind.CANCEL:
+                self.control_termination = ControlTermination(
+                    ControlTerminationKind.USER_CANCELLED
+                )
         if consume_step:
             self.remaining_steps = max(0, self.remaining_steps - 1)
         self.observation_count += int(acquired_new_world)

@@ -142,7 +142,7 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope lineage is invalid")
         if len(self.instructions) != 1 or not self.instructions[0].strip():
             raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
-        if bool(self.history_messages) != bool(self.tool_result):
+        if self.tool_result is not None and not self.history_messages:
             raise ValueError("deferred tool result requires its bounded call history")
         if bool(self.pydantic_history) != bool(self.history_messages):
             raise ValueError("canonical history requires the exact admitted PydanticAI messages")
@@ -150,20 +150,28 @@ class CanonicalProviderEnvelope:
             try:
                 if tuple(self.history_messages) != _project_pydantic_history(self.pydantic_history):
                     raise ValueError("canonical history projection differs from exact PydanticAI messages")
-                response_message = self.history_messages[-1]
-                prior_call = next(
-                    part
-                    for part in tuple(response_message["parts"])
-                    if part["part_kind"] == "tool-call"
-                )
                 current_result = self.tool_result
-                assert current_result is not None
-                valid_exchange = (
-                    response_message["kind"] == "response"
-                    and prior_call["part_kind"] == "tool-call"
-                    and prior_call["tool_call_id"] == current_result["tool_call_id"]
-                    and prior_call["tool_name"] == current_result["tool_name"]
-                )
+                if current_result is None:
+                    closed_message = self.history_messages[-1]
+                    closed_parts = tuple(closed_message["parts"])
+                    valid_exchange = (
+                        closed_message["kind"] == "request"
+                        and bool(closed_parts)
+                        and all(part["part_kind"] == "tool-return" for part in closed_parts)
+                    )
+                else:
+                    response_message = self.history_messages[-1]
+                    prior_call = next(
+                        part
+                        for part in tuple(response_message["parts"])
+                        if part["part_kind"] == "tool-call"
+                    )
+                    valid_exchange = (
+                        response_message["kind"] == "response"
+                        and prior_call["part_kind"] == "tool-call"
+                        and prior_call["tool_call_id"] == current_result["tool_call_id"]
+                        and prior_call["tool_name"] == current_result["tool_name"]
+                    )
             except (AssertionError, IndexError, KeyError, TypeError, ValueError):
                 valid_exchange = False
             if not valid_exchange:
@@ -617,6 +625,7 @@ def _project_pydantic_history(
     projected: list[Mapping[str, object]] = []
     pending: tuple[tuple[str, str], ...] | None = None
     summary_seen = False
+    terminal_control_closed = False
     for index, message in enumerate(messages):
         if isinstance(message, ModelResponse):
             if pending is not None:
@@ -696,7 +705,17 @@ def _project_pydantic_history(
         returned_identities = tuple(
             (returned.tool_name, returned.tool_call_id) for returned in returns
         )
-        if len(prompts) != 1 or len(message.parts) != len(prompts) + len(returns):
+        terminal_control_closure = (
+            index == len(messages) - 1
+            and not prompts
+            and bool(returns)
+            and len(message.parts) == len(returns)
+        )
+        terminal_control_closed = terminal_control_closure
+        if (
+            not terminal_control_closure
+            and (len(prompts) != 1 or len(message.parts) != len(prompts) + len(returns))
+        ):
             raise ValueError("PydanticAI history request must contain one fresh World prompt")
         if returns:
             if (
@@ -758,7 +777,7 @@ def _project_pydantic_history(
                 "parts": tuple(request_parts),
             }
         )
-    if pending is None:
+    if pending is None and not terminal_control_closed:
         raise ValueError("compact PydanticAI history lost its unresolved suffix")
     return tuple(projected)
 

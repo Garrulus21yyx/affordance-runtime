@@ -258,7 +258,7 @@ class TurnPacker:
             include_images=include_images,
             admitted_records=admitted_records,
             packing_backoff_count=backoff_count,
-            committed_step=request.last_step,
+            committed_step=(request.last_step if pending_tool_call_id else None),
             pending_tool_call_id=pending_tool_call_id,
             pending_tool_name=pending_tool_name,
         )

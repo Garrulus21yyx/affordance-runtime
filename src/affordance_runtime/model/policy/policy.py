@@ -121,6 +121,11 @@ class ModelBackedAgentPolicy:
             return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
         return outcome.decision
 
+    def close_deferred_call(self, step: object) -> None:
+        close = getattr(self.port, "close_deferred_call", None)
+        if callable(close):
+            close(step)
+
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
     suffix = hashlib.sha256(context.context_id.encode()).hexdigest()[:24]

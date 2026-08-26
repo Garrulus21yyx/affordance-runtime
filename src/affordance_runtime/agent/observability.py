@@ -99,6 +99,7 @@ class RunTraceSink(Protocol):
     ) -> None: ...
 
     def step_completed(self, step_number: int, result: object) -> None: ...
+    def control_boundary_reached(self, outcome: object) -> None: ...
     def run_paused(self, state: object) -> None: ...
 
     def run_resumed(self, kind: str, details: Mapping[str, object]) -> None: ...
@@ -176,6 +177,10 @@ class NullRunTraceSink:
     def step_completed(self, step_number: int, result: object) -> None:
         return None
 
+    def control_boundary_reached(self, outcome: object) -> None:
+        del outcome
+        return None
+
     def run_paused(self, state: object) -> None:
         return None
 
@@ -247,6 +252,12 @@ class FanoutRunTraceSink:
 
     def step_completed(self, step_number: int, result: object) -> None:
         self._call("step_completed", step_number, result)
+
+    def control_boundary_reached(self, outcome: object) -> None:
+        for sink in self.sinks:
+            emit = getattr(sink, "control_boundary_reached", None)
+            if callable(emit):
+                emit(outcome)
 
     def run_paused(self, state: object) -> None:
         self._call("run_paused", state)
@@ -485,6 +496,9 @@ class RunTraceRecorder:
             result=_step_payload(result, self.directory),
             lineage=_step_lineage(result),
         )
+
+    def control_boundary_reached(self, outcome: object) -> None:
+        self._emit("control_boundary_reached", outcome=_json_value(outcome, self.directory))
 
     def run_paused(self, state: object) -> None:
         self._emit(

@@ -16,6 +16,13 @@ from affordance_runtime.agent.decision_capability import (
 )
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisionPorts, TaskEvaluator
+from affordance_runtime.agent.run_control import (
+    CooperativeRunControl,
+    RunControlAdmission,
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcome,
+)
 from affordance_runtime.agent.run_state import RunState
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
@@ -67,6 +74,11 @@ class TargetRuntime:
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
+    run_control: CooperativeRunControl = field(
+        default_factory=CooperativeRunControl,
+        compare=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -79,6 +91,8 @@ class TargetRuntime:
             raise TypeError("TargetRuntime intake is invalid")
         if not callable(getattr(self.goal_compiler, "compile", None)):
             raise TypeError("TargetRuntime goal compiler is invalid")
+        if not isinstance(self.run_control, CooperativeRunControl):
+            raise TypeError("TargetRuntime cooperative control owner is invalid")
         required = normalize_decision_capabilities(
             self.required_decisions,
             field_name="TargetRuntime required_decisions",
@@ -105,7 +119,41 @@ class TargetRuntime:
             runtime_controls=self.runtime_controls,
             episode_monitor=self.episode_monitor,
             official_outcome_sink=self.official_outcome_sink,
+            run_control=self.run_control,
         )
+
+    def request_control(
+        self,
+        command_id: str,
+        kind: RunControlKind,
+    ) -> RunControlAdmission:
+        return self.run_control.request(command_id, kind)
+
+    def apply_waiting_control(
+        self,
+        state: RunState,
+    ) -> RunControlOutcome | None:
+        boundary = {
+            "waiting_user": RunControlBoundary.WAITING_USER,
+            "waiting_confirmation": RunControlBoundary.WAITING_CONFIRMATION,
+        }.get(state.status.value)
+        if boundary is None:
+            raise ValueError("run is not at a waiting control boundary")
+        close = getattr(self.decision_ports.action_policy, "close_deferred_call", None)
+        if callable(close) and state.last_step is not None:
+            try:
+                close(state.last_step)
+            except Exception:
+                return self.run_control.fail_pending("deferred_history_closure_failed")
+        outcome = self.run_control.acknowledge(boundary)
+        if outcome is not None:
+            state.apply_control_boundary(outcome)
+        return outcome
+
+    def resume_control(self, state: RunState, command_id: str) -> RunControlOutcome:
+        outcome = self.run_control.resume(command_id)
+        state.resume_control_boundary()
+        return outcome
 
     def with_runtime_controls(
         self,

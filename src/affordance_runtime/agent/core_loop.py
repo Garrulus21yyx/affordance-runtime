@@ -54,6 +54,12 @@ from affordance_runtime.agent.policy import (
     TaskEvaluator,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.run_control import (
+    CooperativeRunControl,
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcome,
+)
 from affordance_runtime.agent.run_state import (
     ControlTermination,
     ControlTerminationKind,
@@ -154,6 +160,7 @@ class CoreAgentLoop:
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
+    run_control: CooperativeRunControl = field(default_factory=CooperativeRunControl)
 
     async def run(
         self,
@@ -272,21 +279,149 @@ class CoreAgentLoop:
         task: TaskGoal,
         state: RunState,
     ) -> RunState:
-        while state.status is RunStatus.RUNNING:
+        while state.status is RunStatus.RUNNING and state.control_boundary is None:
+            if self._apply_control_before_policy(state):
+                break
             try:
                 result = await self.step(environment, task, state)
             except BaseException as exc:
                 self.trace_sink.run_error(exc, state)
                 raise
+            result = self._apply_control_after_closed_step(state, result)
             result = self._attach_canonical_worlds(task, state, result)
             delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
             result = self._apply_episode_monitor(result, state, delivery)
             self._commit_step(state, result, delivery_transition=delivery)
         if state.terminal:
+            self.run_control.resolve_terminal()
             self.trace_sink.run_finished(state)
+        elif state.control_boundary is not None:
+            self._trace_control_boundary(state.control_boundary)
         else:
             self.trace_sink.run_paused(state)
         return state
+
+    def _apply_control_before_policy(self, state: RunState) -> bool:
+        request = self.run_control.pending
+        if request is None:
+            return False
+        if not self._close_deferred_call(state.last_step):
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return False
+        outcome = self.run_control.acknowledge(RunControlBoundary.BEFORE_POLICY)
+        if outcome is None:
+            return False
+        state.apply_control_boundary(outcome)
+        return True
+
+    def _apply_control_after_closed_step(
+        self,
+        state: RunState,
+        result: StepResult,
+    ) -> StepResult:
+        request = self.run_control.pending
+        if request is None:
+            return result
+        dispatch_status = _last_dispatch_status(result)
+        pause_uncertain_dispatch = (
+            request.kind is RunControlKind.PAUSE
+            and dispatch_status is DispatchStatus.SENT_UNKNOWN
+            and result.status_after is RunStatus.BLOCKED
+            and result.runtime_failure is None
+            and result.failure_code is None
+        )
+        if result.status_after in {
+            RunStatus.DONE,
+            RunStatus.BLOCKED,
+            RunStatus.CANCELLED,
+            RunStatus.FAILED,
+        } and not pause_uncertain_dispatch:
+            self.run_control.resolve_terminal()
+            return result
+        boundary = {
+            RunStatus.WAITING_USER: RunControlBoundary.WAITING_USER,
+            RunStatus.WAITING_CONFIRMATION: RunControlBoundary.WAITING_CONFIRMATION,
+        }.get(result.status_after, RunControlBoundary.AFTER_EVALUATION)
+        preview = self.run_control.preview(
+            boundary,
+            dispatch_status=dispatch_status,
+        )
+        if preview is None:
+            return result
+        controlled = replace(
+            result,
+            status_after=(
+                RunStatus.CANCELLED
+                if preview.kind is RunControlKind.CANCEL
+                else (RunStatus.RUNNING if pause_uncertain_dispatch else result.status_after)
+            ),
+            feedback=f"{result.feedback}:control_{preview.outcome.value}",
+            control_boundary=preview,
+        )
+        if not self._close_deferred_call(controlled):
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return result
+        outcome = self.run_control.acknowledge(
+            boundary,
+            dispatch_status=dispatch_status,
+        )
+        assert outcome is not None
+        return replace(controlled, control_boundary=outcome)
+
+    def _control_after_policy(
+        self,
+        state: RunState,
+        decision: AgentDecision,
+    ) -> StepResult | None:
+        if self.run_control.pending is None:
+            return None
+        preview = self.run_control.preview(
+            RunControlBoundary.AFTER_POLICY,
+            dispatch_status=DispatchStatus.NOT_SENT,
+        )
+        if preview is None:
+            return None
+        result = _same_world_step(
+            state,
+            decision,
+            (
+                RunStatus.CANCELLED
+                if preview.kind is RunControlKind.CANCEL
+                else RunStatus.RUNNING
+            ),
+            f"action_not_dispatched:control_{preview.outcome.value}",
+            control_boundary=preview,
+        )
+        if not self._close_deferred_call(result):
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.RUNNING,
+                "action_not_dispatched:control_boundary_failed",
+            )
+        outcome = self.run_control.acknowledge(
+            RunControlBoundary.AFTER_POLICY,
+            dispatch_status=DispatchStatus.NOT_SENT,
+        )
+        assert outcome is not None
+        return replace(result, control_boundary=outcome)
+
+    def _close_deferred_call(self, result: StepResult | None) -> bool:
+        if result is None:
+            return True
+        close = getattr(self.decision_ports.action_policy, "close_deferred_call", None)
+        if callable(close):
+            try:
+                close(result)
+            except Exception:
+                return False
+        return True
+
+    def _trace_control_boundary(self, outcome: RunControlOutcome) -> None:
+        emit = getattr(self.trace_sink, "control_boundary_reached", None)
+        if callable(emit):
+            emit(outcome)
 
     async def resume_user(
         self,
@@ -473,7 +608,7 @@ class CoreAgentLoop:
             RunStatus.WAITING_USER,
             RunStatus.WAITING_CONFIRMATION,
             RunStatus.CANCELLED,
-        }:
+        } or result.control_boundary is not None:
             return result
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
@@ -698,6 +833,18 @@ class CoreAgentLoop:
             raise TypeError("agent policy returned an unsupported decision")
         if decision.context_id != context.context_id:
             return _same_world_step(state, decision, RunStatus.FAILED, "decision_context_is_stale")
+        controlled = self._control_after_policy(state, decision)
+        if controlled is not None:
+            return replace(
+                controlled,
+                policy_observation=context.actor_world,
+                policy_target_refs=context.grounding.target_refs,
+                model_delivery=getattr(
+                    getattr(self.decision_ports.action_policy, "port", None),
+                    "last_model_delivery",
+                    None,
+                ),
+            )
         match decision.kind:
             case DecisionKind.SELECT_ACTION:
                 assert isinstance(decision, SelectAction)
@@ -1629,6 +1776,7 @@ def _same_world_step(
     *,
     finalization: FinalizationProtocolResult | None = None,
     control_termination: ControlTermination | None = None,
+    control_boundary: RunControlOutcome | None = None,
 ) -> StepResult:
     return StepResult(
         decision,
@@ -1639,7 +1787,18 @@ def _same_world_step(
         feedback=feedback,
         finalization=finalization,
         control_termination=control_termination,
+        control_boundary=control_boundary,
     )
+
+
+def _last_dispatch_status(result: StepResult) -> DispatchStatus | None:
+    batch = result.execution_receipts
+    if batch is None:
+        return None
+    if batch.receipts:
+        return batch.receipts[-1].result.dispatch_status
+    terminal = batch.terminal_failure
+    return terminal.dispatch_status if terminal is not None else None
 
 
 def _recovery_feedback(signal) -> dict[str, object]:

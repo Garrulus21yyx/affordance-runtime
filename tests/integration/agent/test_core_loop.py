@@ -20,6 +20,11 @@ from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.profile import AgentLoopProfile
+from affordance_runtime.agent.run_control import (
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcomeKind,
+)
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -546,6 +551,130 @@ def test_core_runtime_reuses_production_boundaries_and_completes_one_action() ->
                 state.last_step,
                 decision=replace(state.last_step.decision, tool_call_id="provider-call:wrong"),
             )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_status", "expected_outcome"),
+    (
+        (RunControlKind.PAUSE, RunStatus.RUNNING, RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED),
+        (RunControlKind.CANCEL, RunStatus.CANCELLED, RunControlOutcomeKind.CANCELLED),
+    ),
+)
+def test_cooperative_control_during_policy_closes_not_sent_without_dispatch(
+    kind,
+    expected_status,
+    expected_outcome,
+) -> None:
+    async def scenario() -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        @dataclass
+        class BlockingPolicy:
+            closed_steps: list[object]
+
+            async def decide(self, context):
+                entered.set()
+                await release.wait()
+                return SelectAction(
+                    context.context_id,
+                    context.actions.options[0].action_id,
+                    tool_call_id="provider-call:controlled",
+                )
+
+            def close_deferred_call(self, step):
+                self.closed_steps.append(step)
+
+        policy = BlockingPolicy([])
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("cooperative_policy_control"),
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("control-policy", False))
+        state = await runtime.initialize_task(environment, _task())
+        active = asyncio.create_task(runtime.continue_task(environment, _task(), state))
+        await entered.wait()
+
+        admission = runtime.request_control("command:policy", kind)
+        release.set()
+        completed = await active
+
+        assert admission.outcome.value == "accepted"
+        assert completed is state
+        assert state.status is expected_status
+        assert state.control_boundary is not None
+        assert state.control_boundary.outcome is expected_outcome
+        assert state.control_boundary.boundary is RunControlBoundary.AFTER_POLICY
+        assert state.control_boundary.dispatch_status is DispatchStatus.NOT_SENT
+        assert environment.execute_calls == 0
+        assert state.execution_count == 0
+        assert state.last_step is not None
+        assert state.last_step.execution_receipts is None
+        assert "action_not_dispatched" in state.last_step.feedback
+        assert policy.closed_steps == [state.last_step]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("dispatch_status", (DispatchStatus.SENT, DispatchStatus.SENT_UNKNOWN))
+def test_pause_during_dispatch_waits_for_receipt_fresh_world_and_evaluation(
+    dispatch_status,
+) -> None:
+    async def scenario() -> None:
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        @dataclass
+        class BlockingEnvironment(ScriptedEnvironment):
+            async def execute(self, request):
+                entered.set()
+                await release.wait()
+                return await super().execute(request)
+
+        runtime = _runtime("first_action")
+        environment = BlockingEnvironment(
+            initial_observation=_world("control-before", False),
+            post_observations=(_world("control-after", False),),
+            results=(
+                ActionResult(
+                    "*",
+                    dispatch_status,
+                    "dom",
+                    dispatch_status is DispatchStatus.SENT,
+                    (
+                        None
+                        if dispatch_status is DispatchStatus.SENT
+                        else ActionError.EXECUTION_FAILED
+                    ),
+                ),
+            ),
+        )
+        state = await runtime.initialize_task(environment, _task())
+        active = asyncio.create_task(runtime.continue_task(environment, _task(), state))
+        await entered.wait()
+
+        runtime.request_control("command:dispatch", RunControlKind.PAUSE)
+        assert not active.done()
+        release.set()
+        await active
+
+        assert state.status is RunStatus.RUNNING
+        assert state.control_boundary is not None
+        assert state.control_boundary.outcome is RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+        assert state.control_boundary.boundary is RunControlBoundary.AFTER_EVALUATION
+        assert state.control_boundary.dispatch_status is dispatch_status
+        assert state.current_world.observation_id == "control-after"
+        assert state.current_task_evaluation is not None
+        assert state.current_task_evaluation.observation_id == "control-after"
+        assert state.execution_count == 1
+        assert environment.execute_calls == 1
+        assert state.last_step is not None
+        assert state.last_step.execution_receipts is not None
+        assert state.last_step.execution_receipts.receipts[-1].result.dispatch_status is dispatch_status
 
     asyncio.run(scenario())
 

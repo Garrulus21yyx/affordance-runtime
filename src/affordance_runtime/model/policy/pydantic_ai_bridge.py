@@ -31,6 +31,10 @@ from affordance_runtime.agent.decisions import (
     AgentDecision,
     DecisionKind,
 )
+from affordance_runtime.agent.tool_result_projection import (
+    committed_tool_call_id,
+    project_committed_tool_return,
+)
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.canonical_provider_envelope import (
     UNEXECUTED_TOOL_CALL_MESSAGE,
@@ -268,6 +272,42 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("history compaction timeout must be in (0, 60]")
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
 
+    def close_deferred_call(self, step: object) -> None:
+        """Pair the pending provider call after Runtime closes it without another model turn."""
+
+        history = self.message_history
+        if not history:
+            return
+        pending_parts = _pending_tool_parts_from_history(history)
+        if not pending_parts:
+            return
+        call_id = committed_tool_call_id(step)  # type: ignore[arg-type]
+        selected = pending_parts[0]
+        if not call_id or call_id != selected.tool_call_id:
+            raise ValueError("control boundary step does not match the pending official call")
+        return_value = project_committed_tool_return(step)  # type: ignore[arg-type]
+        if return_value is None:
+            raise ValueError("control boundary step requires one public deferred result")
+        from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+        returns = tuple(
+            ToolReturnPart(
+                part.tool_name,
+                (
+                    to_json_compatible(return_value)
+                    if index == 0
+                    else UNEXECUTED_TOOL_CALL_MESSAGE
+                ),
+                part.tool_call_id,
+            )
+            for index, part in enumerate(pending_parts)
+        )
+        object.__setattr__(
+            self,
+            "message_history",
+            (*history, ModelRequest(parts=list(returns))),
+        )
+
     @property
     def supported_decisions(self) -> frozenset[DecisionCapability]:
         return GROUNDED_ACTION_DECISION_CAPABILITIES
@@ -447,23 +487,22 @@ class PydanticAIGroundedDecisionPort:
             try:
                 pending_call_parts = _pending_tool_parts_from_history(history_messages)
                 pending_call = _pending_call_from_history(history_messages)
-                if pending_call is None:
-                    raise ValueError("model message history lost its pending call")
             except (TypeError, ValueError):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "model_message_history_unavailable"),
                     request,
                 )
-            last_step = request.last_step
-            if (
-                last_step is None
-                or str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
-                != pending_call.call_id
-            ):
-                return self._invocation_failure(
-                    _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
-                    request,
-                )
+            if pending_call is not None:
+                last_step = request.last_step
+                if (
+                    last_step is None
+                    or str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
+                    != pending_call.call_id
+                ):
+                    return self._invocation_failure(
+                        _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
+                        request,
+                    )
         identity = CanonicalProviderIdentity(
             self.provider_id,
             self.model_id,
@@ -1763,9 +1802,26 @@ def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[obje
 
     if not messages:
         return ()
-    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 
     response = messages[-1]
+    if isinstance(response, ModelRequest):
+        if len(messages) < 2 or not isinstance(messages[-2], ModelResponse):
+            raise ValueError("closed model history must follow one accepted tool response")
+        calls = tuple(
+            part for part in messages[-2].parts if isinstance(part, ToolCallPart)
+        )
+        returns = tuple(
+            part for part in response.parts if isinstance(part, ToolReturnPart)
+        )
+        if (
+            not calls
+            or len(returns) != len(calls)
+            or {(part.tool_name, part.tool_call_id) for part in returns}
+            != {(part.tool_name, part.tool_call_id) for part in calls}
+        ):
+            raise ValueError("closed model history must pair every proposed tool call")
+        return ()
     if not isinstance(response, ModelResponse):
         raise ValueError("model message history must end with an accepted tool call")
     calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
@@ -1833,15 +1889,15 @@ def _accepted_message_history(
     ):
         raise ValueError("PydanticAI current turn lost its fresh World prompt")
     if not pending_calls:
-        if prior_history:
-            raise ValueError("history without a pending call cannot accept a new exchange")
+        if prior_history and _pending_call_from_history(prior_history) is not None:
+            raise ValueError("history pending call identity was not supplied to the next exchange")
         if any(
             isinstance(part, ToolReturnPart)
             for message in requests_tuple
             for part in message.parts
         ):
             raise ValueError("initial PydanticAI turn cannot contain a deferred result")
-        return (*requests_tuple, accepted.response)
+        return (*prior_history, *requests_tuple, accepted.response)
 
     pending_identities = tuple(
         (part.tool_name, part.tool_call_id) for part in pending_calls

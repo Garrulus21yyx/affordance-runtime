@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: complete through Phase 2 (Phase 3+ not started)
+Status: Phase 3 cooperative control/dispatch closure in progress; persistence not started
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -166,6 +166,29 @@ Constraints:
       converge on that owner. Trace cleanup failure is logged and fail-open for
       task truth and surface cleanup. The delivery-state truth table now agrees
       with the verified Phase 2 status.
+14. **in progress — Phase 3: cooperative control and dispatch closure.**
+    - Add Runtime-owned `PauseRun` and `CancelRun` requests without SQLite,
+      durable `PAUSED`, revision, or a second execution loop.
+    - Define one closed dispatch truth algebra: `NOT_SENT | SENT |
+      SENT_UNKNOWN`. Never derive it from asyncio task cancellation.
+    - Check cooperative control at owner boundaries before/after policy,
+      before binding/dispatch, after dispatch closure, after fresh World capture,
+      after evaluation, and in waiting-user/confirmation states.
+    - Pause terminates the active loop only at an internally reported
+      `pause_boundary_reached`; Cancel commits terminal `CANCELLED`; close remains
+      resource destruction.
+    - Preserve complete policy/tool history: a selected-but-undispatched action
+      receives a typed non-dispatch closure before the loop yields.
+    - Verify the state/transition algebra and held dispatch races with owner-level
+      and public-session integration tests. Do not add a checkpoint store.
+    - Core substrate complete: one per-Runtime bounded cooperative-control owner,
+      `RunState`-owned reached boundary, terminal user cancellation, exact
+      receipt propagation, and PydanticAI terminal ToolReturn closure are in
+      place. Held policy/dispatch races cover `NOT_SENT`, `SENT`, and
+      `SENT_UNKNOWN`; 211 focused Core/model/architecture tests pass.
+    - Remaining in this phase: project `CancelRun` through the public Runtime
+      session and Shell as distinct `CANCELLED`; keep Pause/Resume private and
+      unadvertised until durable checkpoint ordering exists.
 
 ## Current-work produced files
 

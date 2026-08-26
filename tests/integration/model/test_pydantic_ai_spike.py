@@ -465,7 +465,9 @@ def test_unexecuted_second_proposal_can_be_reissued_after_the_fresh_world() -> N
             )
         )
 
-        assert second.failure is None and second.output is not None
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
         assert second.output.decision.tool_name == "search_page_content"
         assert second.output.decision.arguments == {"query": "scope"}
         recorded = normalize_recorded_provider_input(scripted.records[1])
@@ -722,6 +724,74 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
                 "Not executed" in item["content"] for item in paired_results[1:]
             )
         assert scripted.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_control_boundary_closes_pending_pydantic_history_before_another_model_turn() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("control-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                "first_gui_action",
+                (
+                    "submit_final_response",
+                    {"content": "Closed control boundary observed.", "evidence_refs": []},
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        context = builder.build(task, world, actions, evaluation)
+        first = await policy.port.generate(ModelDecisionRequest("request:control:first", context))
+        assert first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="action_not_dispatched:control_pause_boundary_reached",
+        )
+
+        policy.close_deferred_call(step)
+
+        assert len(policy.port.message_history) == 3
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        closed_request = policy.port.message_history[-1]
+        assert isinstance(closed_request, ModelRequest)
+        returned = tuple(part for part in closed_request.parts if isinstance(part, ToolReturnPart))
+        assert len(returned) == 1
+        assert returned[0].tool_call_id == first.output.decision.tool_call_id
+        assert returned[0].content["completion"] == "not_dispatched"
+
+        next_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:control:second", next_context, last_step=step)
+        )
+
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
+        assert isinstance(second.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        paired = tuple(
+            part
+            for message in recorded["messages"]
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert len(paired) == 1
+        assert paired[0]["content"]["completion"] == "not_dispatched"
+        assert policy.port.message_history == ()
 
     asyncio.run(scenario())
 

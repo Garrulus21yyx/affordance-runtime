@@ -24,6 +24,7 @@ from affordance_runtime.agent.policy import (
     AgentPolicy,
     TaskEvaluator,
 )
+from affordance_runtime.agent.run_control import CooperativeRunControl
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
@@ -51,6 +52,7 @@ def compose_target_runtime(
     runtime_controls: tuple[str, ...] = (),
     episode_monitor: object | None = None,
     official_outcome_sink: object | None = None,
+    run_control: CooperativeRunControl | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -71,6 +73,7 @@ def compose_target_runtime(
         runtime_controls=runtime_controls,
         episode_monitor=episode_monitor if episode_monitor is not None else EpisodeMonitor(),
         official_outcome_sink=official_outcome_sink,
+        run_control=run_control or CooperativeRunControl(),
     )
 
 
