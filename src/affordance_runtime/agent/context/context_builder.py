@@ -290,6 +290,7 @@ class ContextBuilder:
         )
         grounding = self.grounding_projection.project(observation, canonical_world, model_world)
         query = canonical_action_query(page.query)
+
         def page_matches(current_page: InternalActionPage) -> tuple[ActionDiscoveryMatch, ...]:
             current_projected = project_action_page(action_space, current_page, labels)
             current_labels = {item.action_id: item.target_label for item in current_projected.options}
@@ -334,9 +335,10 @@ class ContextBuilder:
             query,
             coverage,
             "empty" if not matches else "partial" if page.has_more else "complete",
-            (),
+            page.unmatched_terms,
             "",
         )
+
 
 def _context_identity(
     task_revision,
@@ -509,9 +511,7 @@ def _discovery_match_kinds(
         return ("inventory",)
     normalized_label = canonical_action_query(label) if len(label) <= 240 else ""
     kinds: list[str] = []
-    if normalized_label and (
-        normalized_label == query or normalized_label in query or query in normalized_label
-    ):
+    if normalized_label and (normalized_label == query or normalized_label in query or query in normalized_label):
         kinds.append("exact_label")
     if query == role.casefold():
         kinds.append("role")

@@ -272,6 +272,94 @@ def test_focus_alone_does_not_turn_a_nonmatch_into_a_query_result() -> None:
     )
 
 
+@given(st.permutations(tuple(range(4))))
+def test_shared_page_ancestor_cannot_make_every_control_a_query_match(
+    permutation: list[int],
+) -> None:
+    by_index = {
+        0: _option(0),
+        1: _option(1),
+        2: _option(2),
+        3: _option(3, action="go_back"),
+    }
+    options = tuple(by_index[index] for index in permutation)
+    partition = ActionRecallSet().partition(
+        options,
+        labels={
+            "target:00": "Reports",
+            "target:01": "Orders",
+            "target:02": "Products",
+            "target:03": "Browser navigation",
+        },
+        roles={
+            "target:00": "link",
+            "target:01": "link",
+            "target:02": "link",
+            "target:03": "browser_context",
+        },
+        functional_paths={
+            "target:00": ("Dashboard", "Reports"),
+            "target:01": ("Dashboard", "Orders"),
+            "target:02": ("Dashboard", "Products"),
+            "target:03": ("Browser navigation",),
+        },
+        query="period selector dropdown dashboard",
+    )
+
+    assert partition.prioritized == ()
+    assert tuple(item.action_id for item in partition.remainder) == tuple(
+        by_index[index].action_id for index in permutation
+    )
+
+
+def test_discriminative_local_path_remains_valid_control_recall_evidence() -> None:
+    options = (_option(0), _option(1))
+    partition = ActionRecallSet().partition(
+        options,
+        labels={"target:00": "", "target:01": ""},
+        roles={"target:00": "combobox", "target:01": "combobox"},
+        functional_paths={
+            "target:00": ("Dashboard", "Reports", "Period filter"),
+            "target:01": ("Dashboard", "Orders", "Status filter"),
+        },
+        query="period filter combobox",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:00",)
+    assert tuple(item.action_id for item in partition.remainder) == ("action:01",)
+
+
+def test_candidate_owned_partial_match_reports_every_unmatched_query_term() -> None:
+    options = (_option(0), _option(1), _option(2))
+    labels = {
+        "target:00": "Dashboard",
+        "target:01": "Reports",
+        "target:02": "Products",
+    }
+    roles = {target_id: "link" for target_id in labels}
+    functional_paths = {target_id: ("Dashboard / Magento Admin", label) for target_id, label in labels.items()}
+
+    partition = ActionRecallSet().partition(
+        options,
+        labels=labels,
+        roles=roles,
+        functional_paths=functional_paths,
+        query="period selector dashboard",
+    )
+    page = ActionPager().page(
+        ActionSpace("obs:1", options),
+        labels=labels,
+        roles=roles,
+        functional_paths=functional_paths,
+        query="period selector dashboard",
+    )
+
+    assert tuple(item.action_id for item in partition.prioritized) == ("action:00",)
+    assert partition.unmatched_terms == ("period", "selector")
+    assert page.visible_action_ids == ("action:00",)
+    assert page.unmatched_terms == ("period", "selector")
+
+
 def test_query_include_returns_matches_not_the_private_remainder() -> None:
     options = (_option(0), _option(1), _option(2))
 

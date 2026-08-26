@@ -46,9 +46,15 @@ One metadata-marked SDK `UserPromptPart` anchors the current `TaskGoal + GoalPla
 only that turn's World and optional control feedback. The initial World remains a separate prompt part in the same
 PydanticAI request, preserving multimodal content and matching the SDK's physical request coalescing. Expired World
 prompts are removed oldest-first until the recent raw World tail fits 12% of the admission-derived history capacity;
-at least the newest historical World remains. Model text/thinking and every ToolCall/ToolReturn stay exact. Only the
-remaining complete canonical request may cross the existing 80% pressure threshold and call Harness
-`SummarizingCompaction`, which preserves the task anchor and exact unresolved suffix. This is one projection inside
+at least the newest historical World remains. The same recent raw window preserves model text/thinking exactly.
+Outside it, deterministic history processing removes only whitespace-equivalent repeated `TextPart` or
+`ThinkingPart` values while retaining their newest instance; unique model conclusions and every ToolCall/ToolReturn
+stay exact. Harness `SummarizingCompaction` runs when either the remaining complete request reaches the existing 80%
+capacity threshold or unsummarized model prose outside the recent raw tail fills one compaction batch. That batch is
+bounded by the smaller of the recent-tail target and the existing maximum summary-output budget, so old paraphrased
+narration is handled before whole-request pressure without per-step reducer calls. The second trigger measures only
+typed-message age and size, not semantic similarity. Harness preserves the task anchor and exact unresolved suffix.
+This is one projection inside
 the existing PydanticAI history owner, not a memory, progress reducer, evidence path, cursor, or second current-state
 authority.
 
@@ -110,6 +116,22 @@ target-term coverage but are not collapsed to one Runtime-guessed subgoal. A rol
 control when unmatched target terms remain. An empty executable-control result stays empty and does not redirect to
 readable-content search. This is deterministic retrieval over the complete current `ActionSpace`; it adds no keyword
 table, site/task branch, semantic index, model ranker, or alternate action authority.
+Candidate qualification separates local evidence from structural context. Tokens shared by every page-control
+functional path are common page ancestry: they may remain available to non-authoritative ranking but cannot alone
+admit any control into `find_controls`. Browser-context primitives keep their separate capability scope and do not
+defeat this inventory-wide ancestry calculation. A public label or discriminative local path still qualifies
+normally; no URL, site, task, or vocabulary special case is involved. The result also reports every query term not
+supported by the returned controls. A partial literal match is therefore truthful: a control may match `dashboard`
+while `period` and `selector` remain explicitly unmatched. This field is derived by the same recall owner from the
+same candidate matches; it is not a second search path.
+
+The authorized W1b Task0
+[`run4`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260826-run4/run.json) crosses both repairs. Shared page ancestry
+no longer filled discovery with unrelated controls, partial matches exposed their unsupported terms, and exactly one
+age/size-triggered Harness compaction handled expired model prose. The run made 28 valid policy tool calls, zero
+invalid, grounding, stale, or wait outcomes, then submitted `Quest Lumaflex™ Band`; the native evaluator returned
+`verified_success`. This is a live witness for these two bounded contracts, not closure of the independent Planner or
+BrowserGym causal-acquisition gaps.
 Task266 run8 crossed that repaired recall boundary, activated the intended article, and read the official coordinates.
 It then navigated to an unauthorized external API even though the benchmark-provided map was already open in tab 0.
 BrowserGym correctly terminated the WebArena task, so the following currentness result was the expected
@@ -860,8 +882,9 @@ removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstr
 
 `find_controls(query)` applies one deterministic explicit-query filter to the complete current `ActionSpace`, then
 returns only bounded matching routes. For each candidate, tokens already expressed by its real role/operation describe
-the requested control kind; remaining query terms must overlap its public label or functional path. Target-term
-coverage orders the matches, while the model still chooses among the bounded relevant set. Focus and viewport break
+the requested control kind; remaining query terms must overlap its public label or discriminative local functional
+path. Tokens shared by every page-control path are structural context and cannot establish candidate membership.
+Target-term coverage orders the matches, while the model still chooses among the bounded relevant set. Focus and viewport break
 otherwise equal ordering; they do not turn unrelated controls into matches, and the remaining ActionSpace is not
 appended behind the query result. It has no generic continuation tool and no private public-result inventory. If
 matching routes exceed the page bound, the model issues a narrower natural-language query. Action discovery never

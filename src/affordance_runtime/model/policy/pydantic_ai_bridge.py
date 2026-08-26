@@ -170,6 +170,7 @@ class _HistoryCompactionRun:
     error: str = ""
     latency_ms: float = 0.0
     attempted: bool = False
+    trigger: str = "token_pressure"
 
 
 class _ProviderCallExhausted(RuntimeError):
@@ -505,12 +506,13 @@ class PydanticAIGroundedDecisionPort:
                 raw_breakdown = raw_packed.admitted_envelope.token_breakdown
             except ModelRequestCapacityError as raw_capacity:
                 raw_breakdown = raw_capacity.breakdown
-            projected_history = _fold_expired_world_prompts(
+            recent_exact_tokens = max(
+                1,
+                int(_available_history_tokens(raw_breakdown) * _HISTORY_RECENT_EXACT_TOKENS_RATIO),
+            )
+            projected_history = _project_expired_history(
                 history_messages,
-                max_estimated_tokens=max(
-                    1,
-                    int(_available_history_tokens(raw_breakdown) * _HISTORY_RECENT_EXACT_TOKENS_RATIO),
-                ),
+                max_estimated_tokens=recent_exact_tokens,
             )
             if projected_history != history_messages:
                 history_messages = projected_history
@@ -523,10 +525,18 @@ class PydanticAIGroundedDecisionPort:
                     raw_breakdown = raw_packed.admitted_envelope.token_breakdown
                 except ModelRequestCapacityError as projected_capacity:
                     raw_breakdown = projected_capacity.breakdown
-            compaction_required = _history_compaction_required(
+            request_pressure = _history_compaction_required(
                 raw_breakdown,
                 has_history=bool(history_messages),
             )
+            expired_prose_pressure = _expired_model_prose_compaction_required(
+                history_messages,
+                max_estimated_tokens=recent_exact_tokens,
+            )
+            compaction_trigger = (
+                "token_pressure" if request_pressure else "expired_model_prose" if expired_prose_pressure else ""
+            )
+            compaction_required = bool(compaction_trigger)
             if compaction_required:
                 compaction_run = await _compact_pydantic_history(
                     history_messages,
@@ -534,6 +544,7 @@ class PydanticAIGroundedDecisionPort:
                     max_estimated_tokens=_available_history_tokens(raw_breakdown),
                     observed_estimated_tokens=raw_breakdown.history_tokens,
                     timeout_s=self.history_compaction_timeout_s,
+                    trigger=compaction_trigger,
                 )
             else:
                 compaction_run = _HistoryCompactionRun(history_messages)
@@ -936,7 +947,7 @@ class PydanticAIGroundedDecisionPort:
         if not responses:
             attempt = ModelGenerationAttempt(
                 attempt=len(self.last_generation_attempts) + 1,
-                phase="history_compaction:token_pressure",
+                phase=f"history_compaction:{run.trigger}",
                 schema_name=_HISTORY_COMPACTION_SCHEMA,
                 status="failed",
                 latency_ms=run.latency_ms,
@@ -944,7 +955,7 @@ class PydanticAIGroundedDecisionPort:
                 role="history_compactor",
                 mode="semantic_compaction",
                 schema_version=_HISTORY_COMPACTION_SCHEMA,
-                trigger="token_pressure",
+                trigger=run.trigger,
                 transcript={
                     "openinference.span.kind": "LLM",
                     "llm.system": self.provider_id,
@@ -973,7 +984,7 @@ class PydanticAIGroundedDecisionPort:
             accepted = not run.error and response_index == responses[-1][0]
             attempt = ModelGenerationAttempt(
                 attempt=len(self.last_generation_attempts) + 1,
-                phase="history_compaction:token_pressure",
+                phase=f"history_compaction:{run.trigger}",
                 schema_name=_HISTORY_COMPACTION_SCHEMA,
                 status="accepted" if accepted else "failed",
                 response_id=str(response.provider_response_id or ""),
@@ -986,7 +997,7 @@ class PydanticAIGroundedDecisionPort:
                 role="history_compactor",
                 mode="semantic_compaction",
                 schema_version=_HISTORY_COMPACTION_SCHEMA,
-                trigger="token_pressure",
+                trigger=run.trigger,
                 transcript={
                     "openinference.span.kind": "LLM",
                     "llm.system": self.provider_id,
@@ -2014,6 +2025,122 @@ def _fold_expired_world_prompts(
     return tuple(folded)
 
 
+def _project_expired_history(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> tuple[object, ...]:
+    """Project one bounded recent raw tail without changing history facts.
+
+    Fresh World prompts are temporal observations and use the existing bounded
+    tail projection.  Completed ToolCall/ToolReturn parts and unique model
+    conclusions remain exact.  Outside the same recent token window, only
+    equivalent repeated model prose is removed, retaining its newest instance.
+    This is deterministic structural history processing; semantic replacement
+    remains exclusively owned by Harness compaction under its typed schedule.
+    """
+
+    folded = _fold_expired_world_prompts(
+        messages,
+        max_estimated_tokens=max_estimated_tokens,
+    )
+    return _deduplicate_expired_model_prose(
+        folded,
+        max_estimated_tokens=max_estimated_tokens,
+    )
+
+
+def _deduplicate_expired_model_prose(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> tuple[object, ...]:
+    """Remove only repeated old prose while preserving a raw recent suffix."""
+
+    if max_estimated_tokens < 1:
+        raise ValueError("recent history target must be positive")
+    if len(messages) <= 1:
+        return messages
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+
+    recent_start = _recent_history_start(
+        messages,
+        max_estimated_tokens=max_estimated_tokens,
+    )
+
+    seen: set[tuple[type[object], str]] = set()
+    projected = list(messages)
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, ModelResponse):
+            continue
+        parts: list[object] = []
+        for part in reversed(message.parts):
+            if not isinstance(part, (TextPart, ThinkingPart)):
+                parts.append(part)
+                continue
+            signature = (type(part), " ".join(part.content.split()))
+            keep = index >= recent_start or signature not in seen
+            seen.add(signature)
+            if keep:
+                parts.append(part)
+        ordered = tuple(reversed(parts))
+        if ordered != tuple(message.parts):
+            projected[index] = replace(message, parts=ordered)
+    return tuple(projected)
+
+
+def _recent_history_start(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> int:
+    """Return the start of a non-empty raw suffix within the shared token target."""
+
+    if max_estimated_tokens < 1:
+        raise ValueError("recent history target must be positive")
+    if not messages:
+        return 0
+    from pydantic_ai_harness.compaction import estimate_token_count
+
+    recent_start = len(messages) - 1
+    used = 0
+    for index in range(len(messages) - 1, -1, -1):
+        message_tokens = estimate_token_count([messages[index]])
+        if used and used + message_tokens > max_estimated_tokens:
+            break
+        recent_start = index
+        used += message_tokens
+    return recent_start
+
+
+def _expired_model_prose_compaction_required(
+    messages: tuple[object, ...],
+    *,
+    max_estimated_tokens: int,
+) -> bool:
+    """Request Harness after one bounded batch of model prose expires."""
+
+    if not messages:
+        return False
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+    from pydantic_ai_harness.compaction import estimate_token_count
+
+    recent_start = _recent_history_start(
+        messages,
+        max_estimated_tokens=max_estimated_tokens,
+    )
+    expired_prose = tuple(
+        ModelResponse(parts=[part])
+        for message in messages[:recent_start]
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, (TextPart, ThinkingPart))
+    )
+    batch_tokens = min(max_estimated_tokens, _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS)
+    return bool(expired_prose and estimate_token_count(expired_prose) >= batch_tokens)
+
+
 def _prompt_json_object(prompt: object) -> dict[str, object] | None:
     from pydantic_ai.messages import TextContent, UserPromptPart
 
@@ -2206,7 +2333,7 @@ def _history_compaction_required(
     *,
     has_history: bool,
 ) -> bool:
-    """Use final request admission accounting as the sole pressure authority."""
+    """Return the request-capacity arm of the history compaction schedule."""
 
     return bool(
         has_history
@@ -2231,6 +2358,7 @@ async def _compact_pydantic_history(
     max_estimated_tokens: int,
     observed_estimated_tokens: int | None = None,
     timeout_s: float,
+    trigger: str = "token_pressure",
 ) -> _HistoryCompactionRun:
     """Use Harness to summarize only a pressured, pair-safe expired history prefix."""
 
@@ -2240,6 +2368,8 @@ async def _compact_pydantic_history(
         raise ValueError("history soft target must be positive")
     if timeout_s <= 0:
         raise ValueError("history compaction timeout must be positive")
+    if trigger not in {"token_pressure", "expired_model_prose"}:
+        raise ValueError("history compaction trigger is unsupported")
     from pydantic_ai import capture_run_messages
     from pydantic_ai.usage import RunUsage
     from pydantic_ai_harness.compaction import (
@@ -2255,7 +2385,7 @@ async def _compact_pydantic_history(
     estimated_tokens = (
         estimate_token_count(messages) if observed_estimated_tokens is None else observed_estimated_tokens
     )
-    if estimated_tokens < pressure_threshold:
+    if trigger == "token_pressure" and estimated_tokens < pressure_threshold:
         return _HistoryCompactionRun(messages)
     strategy = SummarizingCompaction(
         model=model,
@@ -2323,12 +2453,14 @@ async def _compact_pydantic_history(
                 error=f"{type(exc).__name__}: {str(exc)[:360]}",
                 latency_ms=(time.perf_counter() - started) * 1000,
                 attempted=bool(transcript),
+                trigger=trigger,
             )
     return _HistoryCompactionRun(
         tuple(compacted),
         tuple(transcript),
         latency_ms=(time.perf_counter() - started) * 1000,
         attempted=bool(transcript),
+        trigger=trigger,
     )
 
 

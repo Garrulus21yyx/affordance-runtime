@@ -1244,6 +1244,92 @@ def test_history_projection_keeps_one_task_anchor_recent_world_and_all_pairs(
     canonical_envelope_module._project_pydantic_history(folded)
 
 
+@given(turns=st.integers(min_value=5, max_value=12))
+@settings(max_examples=12)
+def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_and_conclusions(
+    turns: int,
+) -> None:
+    repeated_reasoning = "The current screen still needs the next control."
+    repeated_narration = "I will inspect the next control now."
+    stable_conclusion = "Verified fact: Portland coordinates are 43.6600,-70.2550."
+    original = list(_official_history_with_pending_actions(turns))
+    response_indices = tuple(index for index, message in enumerate(original) if isinstance(message, ModelResponse))
+    for ordinal, index in enumerate(response_indices):
+        response = original[index]
+        assert isinstance(response, ModelResponse)
+        prose = stable_conclusion if ordinal == 1 else repeated_narration
+        original[index] = replace(
+            response,
+            parts=(
+                ThinkingPart(repeated_reasoning),
+                TextPart(prose),
+                *(part for part in response.parts if isinstance(part, ToolCallPart)),
+            ),
+        )
+    original_tuple = tuple(original)
+
+    projected = pydantic_bridge._project_expired_history(
+        original_tuple,
+        max_estimated_tokens=1,
+    )
+
+    original_calls = tuple(
+        part
+        for message in original_tuple
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+    projected_calls = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+    original_returns = tuple(
+        part
+        for message in original_tuple
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    projected_returns = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    projected_text = tuple(
+        part.content
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, TextPart)
+    )
+    projected_thinking = tuple(
+        part.content
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ThinkingPart)
+    )
+
+    assert projected_calls == original_calls
+    assert projected_returns == original_returns
+    assert stable_conclusion in projected_text
+    assert projected_text.count(repeated_narration) == 1
+    assert projected_thinking.count(repeated_reasoning) == 1
+    assert projected[-1] == original_tuple[-1]
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "activate",
+        {"target": f"E{turns - 1}"},
+        f"call:{turns - 1}",
+    )
+    canonical_envelope_module._project_pydantic_history(projected)
+
+
 def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None:
     history = _official_history_with_pending_actions(7)
     scripted = ScriptedModel([ModelResponse(parts=[TextPart("Verified Portland facts; next open Acadia.")])])
@@ -1524,6 +1610,71 @@ def test_history_compaction_pressure_uses_complete_request_admission_accounting(
         has_history=True,
     )
     assert pydantic_bridge._available_history_tokens(over_capacity) == 49_594
+
+
+def test_expired_model_prose_uses_recent_tail_budget_without_semantic_matching() -> None:
+    history = list(_official_history_with_pending_actions(8))
+    for index, message in enumerate(tuple(history)):
+        if not isinstance(message, ModelResponse):
+            continue
+        calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
+        history[index] = replace(
+            message,
+            parts=(
+                ThinkingPart(f"reasoning-{index}-" + "r" * 600),
+                TextPart(f"narration-{index}-" + "n" * 600),
+                *calls,
+            ),
+        )
+    history_tuple = tuple(history)
+
+    assert not pydantic_bridge._expired_model_prose_compaction_required(
+        history_tuple,
+        max_estimated_tokens=100_000,
+    )
+    assert pydantic_bridge._expired_model_prose_compaction_required(
+        history_tuple,
+        max_estimated_tokens=500,
+    )
+
+
+def test_harness_compacts_expired_prose_before_whole_request_pressure() -> None:
+    history = list(_official_history_with_pending_actions(8))
+    for index, message in enumerate(tuple(history)):
+        if not isinstance(message, ModelResponse):
+            continue
+        calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
+        history[index] = replace(
+            message,
+            parts=(
+                TextPart(f"step-{index}: " + "repeated strategy narration " * 40),
+                *calls,
+            ),
+        )
+    history_tuple = tuple(history)
+    scripted = ScriptedModel(
+        [ModelResponse(parts=[TextPart("## Failed strategies\n- Re-reading the same page added no facts.")])]
+    )
+
+    run = asyncio.run(
+        pydantic_bridge._compact_pydantic_history(
+            history_tuple,
+            model=scripted.build(),
+            max_estimated_tokens=1_000,
+            observed_estimated_tokens=1,
+            timeout_s=2.0,
+            trigger="expired_model_prose",
+        )
+    )
+
+    assert run.attempted is True
+    assert run.trigger == "expired_model_prose"
+    assert run.error == ""
+    assert len(scripted.records) == 1
+    _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history_tuple)
+    assert pydantic_bridge._pending_call_from_history(run.messages) == pydantic_bridge._pending_call_from_history(
+        history_tuple
+    )
 
 
 def test_action_envelope_recomputes_timeout_after_actual_compaction_elapsed(monkeypatch) -> None:

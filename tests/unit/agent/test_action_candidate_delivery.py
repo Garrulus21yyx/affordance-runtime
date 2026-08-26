@@ -827,6 +827,22 @@ def test_find_controls_empty_result_does_not_redirect_to_readable_content_search
     assert discovery.suggested_next == ""
 
 
+def test_find_controls_projects_candidate_owned_unmatched_query_terms() -> None:
+    _task, world, actions, _evaluation, context = _context()
+    builder = ContextBuilder()
+    page = builder.page(actions, world, query="Settings period")
+    discovery = builder.discovery_result(
+        actions,
+        world,
+        page,
+        canonical_world=context.canonical_world,
+    )
+
+    assert discovery.matches
+    assert discovery.unmatched_terms == ("period",)
+    assert discovery.to_public_value()["unmatched_terms"] == ("period",)
+
+
 def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog() -> None:
     task, world, actions, evaluation, context = _context()
     builder = ContextBuilder()

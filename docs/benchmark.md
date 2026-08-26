@@ -393,9 +393,13 @@ and 1,008,148 prompt tokens; 135 historical user prompts repeated the same task/
 39 current-turn prompts. The repair stays in the PydanticAI history owner: it keeps exactly one current task/plan
 anchor, makes all other historical user prompts World-only, and removes only expired World prompt parts outside an
 admission-derived 12% recent tail before applying the existing 80% Harness pressure gate. Model-authored progress,
-thinking, ToolCalls, and ToolReturns remain exact, retained multimodal Worlds keep their media, and Harness preserves
-the anchor when semantic compaction is actually needed. Generated history tests cover 5--12 turns, exact call/result
-pair conservation, one task anchor, a bounded recent World tail, provider-boundary equality, and multimodal grounding.
+thinking, and all result-bearing messages remain raw in that recent tail. Outside it, only whitespace-equivalent
+repeated model prose is removed, with the newest occurrence retained; unique conclusions, ToolCalls, and ToolReturns
+remain exact. Retained multimodal Worlds keep their media, and Harness preserves the anchor when semantic compaction
+is needed by full-request pressure or when expired unsummarized model prose fills an age/size batch bounded by the
+smaller of the recent-tail target and existing maximum summary-output budget. This is not semantic matching or a
+reducer. Generated history tests cover 5--12 turns, exact call/result and stable-conclusion conservation, bounded
+repeated prose, one task anchor, a bounded recent raw tail, provider-boundary equality, and multimodal grounding.
 [`run38`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run38/run.json) passed native evaluation with 43
 valid policy calls, zero waits, zero invalid calls, and one STOP, so the observation/action path remained correct. It
 failed the efficiency objective: six Harness calls consumed 198,783 input tokens and all six summaries were discarded
@@ -736,11 +740,14 @@ thinking and every proposal. The next physical input pairs the first with its ow
 native failed returns. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
 verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
-Before the history-pressure gate, a generated 5..12-turn property verifies one task/plan anchor, an
-admission-token-bounded recent raw World tail, exact model-authored responses and call/result pairs, and canonical
-provider projection. History pressure then invokes PydanticAI Harness pair-safe compaction before hard overflow. The
+Before semantic compaction, generated 5..12-turn properties verify one task/plan anchor, an
+admission-token-bounded recent raw World/reasoning tail, exact unique model conclusions and call/result pairs, bounded
+equivalent repeated prose, and canonical provider projection. PydanticAI Harness pair-safe compaction runs before hard
+overflow or when expired unsummarized model prose fills an age/size batch bounded by the smaller of the recent-tail
+target and the existing maximum summary-output budget. The
 same final RequestAdmission breakdown counts history, pending ToolReturn, fresh World, tools, and overhead; below 80%
-of effective input no summary model call occurs. Above it, the summary input contains the remaining historical Worlds,
+of effective input no capacity-driven summary call occurs. The expired-prose gate may still batch old narration
+without semantic matching. The summary input contains the remaining historical Worlds,
 model-authored conclusions, ToolCalls, and ToolReturns; the task anchor, newest pair-safe SDK suffix, and unresolved
 call remain byte-for-byte unchanged. A provider error or timeout returns the exact raw history. Source-coverage,
 knowledge bootstrap/batching, result-kind triggers, and failed-input memos are absent from production.
@@ -762,6 +769,11 @@ Search results continue to return a direct `read_region(region_ref)` follow-up f
 `find_controls(query)` returns only bounded query-qualified current matches and never dispatches a browser action. It
 has no public generic continuation capability and no private public-result inventory. Partial coverage tells the model
 to refine the query.
+Common tokens present in every page-control functional path are structural ancestry rather than candidate-local
+evidence; they cannot make the inventory a genuine match set. Discriminative local paths, public labels, and real
+role/operation facets remain available without any site/task vocabulary.
+The same recall owner reports query terms that none of the returned controls actually support; a candidate-local
+partial match cannot silently turn the whole query into `unmatched_terms=[]`.
 Every `(operation, E-ref[, destination])` route returned in that result is resolved against the next same-World
 complete current `ActionSpace`. The public schema stays independent of result count and candidate packing; exact
 operation membership, destination adjacency, target-specific parameter domains, and private action identity remain in
@@ -770,6 +782,13 @@ the existing resolver. A corrupted, unavailable, or stale ref fails closed befor
 Property and Monitor gates prove that focused/unrelated controls remain excluded, permutations do not change match
 membership, discovery creates no `InformationDelta`, and the second consecutive same-World discovery produces typed
 recovery rather than an unbounded query loop.
+
+The explicitly authorized W1b Task0
+[`run4`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260826-run4/run.json) is accepted with native
+`verified_success`. It made 28 policy calls with 28 valid tool calls, zero invalid arguments, grounding gaps, stale
+bindings, or waits; one age/size-triggered Harness compaction ran, the policy reached the real Period control and
+submitted `Quest Lumaflex™ Band`. This live witness closes the two contracts above for the exercised path, while the
+independent Planner and BrowserGym causal-acquisition gaps remain open.
 
 For an ordinary turn without an explicit discovery result, one vertical gate sets the soft target to the cost of only
 one visible route and proves that both the first task-ranked target and the direct fresh focused target enter the

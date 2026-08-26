@@ -253,6 +253,7 @@ class ActionRecallPartition:
 
     prioritized: tuple[object, ...] = ()
     remainder: tuple[object, ...] = ()
+    unmatched_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         prioritized = tuple(self.prioritized)
@@ -265,6 +266,7 @@ class ActionRecallPartition:
             raise ValueError("action recall partitions must be disjoint current actions")
         object.__setattr__(self, "prioritized", prioritized)
         object.__setattr__(self, "remainder", remainder)
+        object.__setattr__(self, "unmatched_terms", tuple(self.unmatched_terms))
 
     @property
     def ordered(self) -> tuple[object, ...]:
@@ -310,10 +312,32 @@ class ActionRecallSet:
     ) -> ActionRecallPartition:
         normalized_query = canonical_action_query(query)
         if not normalized_query:
-            return ActionRecallPartition(tuple(options), ())
+            return ActionRecallPartition(tuple(options), (), ())
         roles = roles or {}
         functional_paths = functional_paths or {}
         query_tokens = _literal_tokens(normalized_query)
+        # Functional paths contain both candidate-local context and structural
+        # page ancestry.  A document/root token repeated by every page control
+        # is useful context for ranking, but it is not evidence that every
+        # control genuinely matches the query.  Browser-context primitives are
+        # a separate capability scope and must not prevent detection of the
+        # common page ancestry.
+        page_path_token_sets = tuple(
+            tokens
+            for option in options
+            if _normalize_text(roles.get(str(getattr(option, "target_id", "")), "")) != "browser_context"
+            if (
+                tokens := _literal_tokens(
+                    " ".join(
+                        _normalize_text(item)
+                        for item in functional_paths.get(str(getattr(option, "target_id", "")), ())
+                    )
+                )
+            )
+        )
+        common_page_path_tokens = (
+            frozenset.intersection(*page_path_token_sets) if len(page_path_token_sets) > 1 else frozenset()
+        )
         role_terms = query_tokens & frozenset(
             token
             for option in options
@@ -322,13 +346,12 @@ class ActionRecallSet:
         operation_terms = query_tokens & frozenset(
             token
             for option in options
-            for token in _literal_tokens(
-                getattr(option, "operation", "") or getattr(option, "semantic_action", "")
-            )
+            for token in _literal_tokens(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
         )
         target_terms = query_tokens - role_terms - operation_terms
         prioritized: list[tuple[tuple[Fraction, int, int, int], int, object]] = []
         remainder: list[object] = []
+        matched_query_terms: set[str] = set()
         for option in options:
             target_id = str(getattr(option, "target_id", ""))
             operation = _normalize_text(getattr(option, "operation", "") or getattr(option, "semantic_action", ""))
@@ -339,6 +362,7 @@ class ActionRecallSet:
             role_tokens = _literal_tokens(role)
             operation_tokens = _literal_tokens(operation)
             path_tokens = _literal_tokens(" ".join(path))
+            discriminative_path_tokens = path_tokens - common_page_path_tokens
             exact = bool(label and _bounded_phrase_match(label, normalized_query))
             # A query token can be both a public label and another current
             # option's operation (for example ``Go`` versus ``go_back``).
@@ -352,15 +376,14 @@ class ActionRecallSet:
             candidate_target_terms = target_terms | candidate_label_terms
             # Current ActionSpace role/operation vocabulary supplies dynamic
             # query facets; no task/site keyword table is involved.  Remaining
-            # target words must hit public label/path.  Keep every genuine
-            # match so explicit recall does not become a Runtime subgoal selector.
-            if (
-                not candidate_role_terms <= role_tokens
-                or not candidate_operation_terms <= operation_tokens
-            ):
+            # target words must hit the candidate's public label or
+            # discriminative local path.  Shared page ancestry is context, not
+            # candidate eligibility.  Keep every genuine match so explicit
+            # recall does not become a Runtime subgoal selector.
+            if not candidate_role_terms <= role_tokens or not candidate_operation_terms <= operation_tokens:
                 remainder.append(option)
                 continue
-            target_tokens = label_tokens | path_tokens
+            target_tokens = label_tokens | discriminative_path_tokens
             target_overlap = candidate_target_terms & target_tokens
             if candidate_target_terms:
                 if not target_overlap:
@@ -372,13 +395,10 @@ class ActionRecallSet:
             else:
                 remainder.append(option)
                 continue
-            structural_priority = (
-                0
-                if target_id in focused_target_ids
-                else 1
-                if target_id in viewport_target_ids
-                else 2
-            )
+            matched_query_terms.update(target_overlap)
+            matched_query_terms.update(candidate_role_terms)
+            matched_query_terms.update(candidate_operation_terms)
+            structural_priority = 0 if target_id in focused_target_ids else 1 if target_id in viewport_target_ids else 2
             prioritized.append(
                 (
                     (
@@ -407,6 +427,7 @@ class ActionRecallSet:
                 )
             ),
             tuple(remainder),
+            tuple(token for token in _ordered_literal_tokens(normalized_query) if token not in matched_query_terms),
         )
 
 
@@ -466,6 +487,7 @@ class InternalActionPage:
     next_cursor: str = ""
     offset: int = 0
     query: str = ""
+    unmatched_terms: tuple[str, ...] = ()
     relevance: tuple[tuple[str, ActionRelevance], ...] = ()
     objective_digest: str = "objective:none"
 
@@ -474,6 +496,7 @@ class InternalActionPage:
         destinations = tuple((action_id, tuple(items)) for action_id, items in self.visible_destinations)
         object.__setattr__(self, "visible_destinations", destinations)
         object.__setattr__(self, "relevance", tuple(self.relevance))
+        object.__setattr__(self, "unmatched_terms", tuple(self.unmatched_terms))
         if (
             self.offset < 0
             or self.visible_route_count < len(self.visible_action_ids)
@@ -497,6 +520,7 @@ class InternalActionPage:
             self.cursor,
             self.offset,
             self.query,
+            self.unmatched_terms,
             self.objective_digest,
         ):
             raise ValueError("internal action page identity does not bind its exact projection")
@@ -651,7 +675,7 @@ class ActionPager:
             tuple(sorted(allowed_action_ids)) if allowed_action_ids is not None else (),
         )
         offset = decode_cursor(cursor, fingerprint) if cursor else 0
-        ranked = _ranked_options(
+        ranked, unmatched_terms = _ranked_options(
             action_space,
             objective,
             self.relevance_policy,
@@ -696,6 +720,7 @@ class ActionPager:
             cursor,
             offset,
             query,
+            unmatched_terms,
             objective_digest,
         )
         return InternalActionPage(
@@ -710,6 +735,7 @@ class ActionPager:
             next_cursor=next_cursor,
             offset=offset,
             query=query,
+            unmatched_terms=unmatched_terms,
             relevance=tuple((item[1].action_id, item[2]) for item in visible),
             objective_digest=objective_digest,
         )
@@ -737,6 +763,7 @@ class ActionPager:
             "",
             0,
             "",
+            (),
             objective_digest,
         )
         return InternalActionPage(
@@ -759,6 +786,7 @@ def _page_id(
     cursor: str,
     offset: int,
     query: str,
+    unmatched_terms: tuple[str, ...],
     objective_digest: str,
 ) -> str:
     payload = (
@@ -768,6 +796,7 @@ def _page_id(
         visible_ids,
         visible_destinations,
         canonical_action_query(query),
+        unmatched_terms,
         objective_digest,
     )
     digest = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
@@ -786,7 +815,7 @@ def _ranked_options(
     focused_target_ids: frozenset[str],
     viewport_target_ids: frozenset[str],
     allowed_action_ids: frozenset[str] | None = None,
-) -> list[tuple[int, ActionOption, ActionRelevance]]:
+) -> tuple[list[tuple[int, ActionOption, ActionRelevance]], tuple[str, ...]]:
     ranked = [
         (index, option, relevance_policy.classify(option, objective))
         for index, option in enumerate(action_space.options)
@@ -810,10 +839,10 @@ def _ranked_options(
         # Non-matches stay private in the current ActionSpace and are available
         # to a later, materially different query.
         assert remainder_ids.isdisjoint(prioritized_ids)
-        return prioritized
+        return prioritized, partition.unmatched_terms
     if objective is not None:
         ranked.sort(key=lambda item: (_ROLE_ORDER[item[2].role], -item[2].score, item[0]))
-    return ranked
+    return ranked, ()
 
 
 def _public_option_order(option, labels, roles, functional_paths) -> tuple[object, ...]:
@@ -849,10 +878,14 @@ def _tokens(value: str) -> frozenset[str]:
 def _literal_tokens(value: str) -> frozenset[str]:
     """Token-boundary recall for explicit control discovery queries."""
 
-    return frozenset(
-        item
-        for item in _TOKEN.findall(value)
-        if len(item) >= 2 and item not in _LEXICAL_STOPWORDS
+    return frozenset(item for item in _TOKEN.findall(value) if len(item) >= 2 and item not in _LEXICAL_STOPWORDS)
+
+
+def _ordered_literal_tokens(value: str) -> tuple[str, ...]:
+    """Return the same literal query algebra while retaining public order."""
+
+    return tuple(
+        dict.fromkeys(item for item in _TOKEN.findall(value) if len(item) >= 2 and item not in _LEXICAL_STOPWORDS)
     )
 
 
@@ -866,11 +899,7 @@ def _bounded_phrase_match(left: str, right: str) -> bool:
         while start >= 0:
             end = start + len(needle)
             left_boundary = not needle[0].isalnum() or start == 0 or not haystack[start - 1].isalnum()
-            right_boundary = (
-                not needle[-1].isalnum()
-                or end == len(haystack)
-                or not haystack[end].isalnum()
-            )
+            right_boundary = not needle[-1].isalnum() or end == len(haystack) or not haystack[end].isalnum()
             if left_boundary and right_boundary:
                 return True
             start = haystack.find(needle, start + 1)
@@ -906,10 +935,7 @@ def _fuzzy_score(
         return max(SequenceMatcher(None, wanted, actual).ratio() for wanted in intent for actual in label)
     for actual in label:
         if actual not in token_scores:
-            token_scores[actual] = max(
-                SequenceMatcher(None, wanted, actual).ratio()
-                for wanted in intent
-            )
+            token_scores[actual] = max(SequenceMatcher(None, wanted, actual).ratio() for wanted in intent)
     return max(token_scores[actual] for actual in label)
 
 
