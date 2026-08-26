@@ -33,8 +33,9 @@ button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline
 .eyebrow { display: block; margin-bottom: 5px; color: var(--muted); font: 600 8px/1 "JetBrains Mono Variable", ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; }
 .resize-handle { width: 6px; background: var(--ink); position: relative; }
 .resize-handle::after { content: ""; position: absolute; inset: 45% 2px; background: var(--signal); }
-.pending-card, .completion-card { margin: 10px 12px 0; padding: 12px !important; border-left: 3px solid var(--signal); }
+.pending-card, .completion-card, .reconciliation-card { margin: 10px 12px 0; padding: 12px !important; border-left: 3px solid var(--signal); }
 .completion-card { border-left-color: var(--verified); }
+.reconciliation-card { border-left-color: #9b6bdb; }
 .chat-frame { min-height: 260px; flex: 1; overflow: hidden; --copilot-kit-primary-color: var(--signal); --copilot-kit-background-color: var(--panel); --copilot-kit-input-background-color: #eef3f5; --copilot-kit-separator-color: #aebbc2; }
 .chat-frame > div { height: 100%; }
 .chat-frame .copilotKitMessagesContainer { padding: 19px 16px; }

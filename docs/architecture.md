@@ -100,10 +100,25 @@ native/compatible OpenTelemetry instrumentation, but the current deployment
 does not install a recording `TracerProvider` or exporter. Connecting one later
 is a non-blocking deployment/observability task. Runtime JSONL/Langfuse trace
 remains an observation of GUI owner facts, not model-history or control
-authority. Prior GUI effects
-still return `effect_reconciliation_required`; Viewer, compensation, and takeover remain
-unavailable. These deployment/control tests are not benchmark witnesses and do
-not alter the reopened overall project status.
+authority. The bounded Phase 7 owner path now conserves one typed semantic effect
+from ActionBinding through receipt/checkpoint and handles one retained known
+dispatch-crossing effect. Fresh revised-goal completion preserves it; otherwise
+a reversible/compensatable effect becomes a pending Runtime reconciliation.
+After an explicit Resume, the same ActionPolicy sees only current actions for
+that resource, and any selected compensation still crosses the existing
+Binder/currentness/Risk/Confirmation/Executor/fresh-World/ActionOutcome path.
+Runtime appends the new receipt, atomically checkpoints the closed result, and
+pauses again before ordinary revised-goal execution. Unknown dispatch,
+irreversible/unknown semantics, missing or multiple retained effects, unavailable
+or mismatched actions, multi-receipt compensation, and unverified postconditions
+fail closed as typed paused/unsupported outcomes. Checkpoint v3 retains this
+bounded pair and still reads v2; the unchanged revision command payload keeps its
+old durable digest version while the additive Runtime/Shell snapshot advances to
+v2. The Shell projects only semantic reconciliation facts and exact codes. It is
+not an effect ledger, rollback mechanism, multi-effect Saga, second policy, or
+second loop. Viewer and takeover remain unavailable. These provider-free
+deployment/control tests are not benchmark witnesses and do not alter the
+reopened overall project status; no live compensation/browser run was performed.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

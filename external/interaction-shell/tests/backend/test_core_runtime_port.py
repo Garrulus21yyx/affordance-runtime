@@ -24,6 +24,7 @@ from affordance_runtime.app.public_session import (
     PUBLIC_SESSION_CAPABILITIES,
     PublicCompletion,
     PublicControlOutcome,
+    PublicEffectReconciliation,
     PublicPendingQuestion,
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionSnapshot,
@@ -270,6 +271,37 @@ class RestartingFakePublicFactory:
         self.recovery_count += 1
         self.handle = recovered
         return recovered
+
+
+@pytest.mark.asyncio
+async def test_core_adapter_projects_effect_reconciliation_without_private_binding() -> None:
+    factory = FakePublicFactory()
+    port = CoreRuntimeSessionPort(cast(Any, factory))
+    expires_at = datetime.now().astimezone()
+    handle = await port.open("session:effect-projection", expires_at)
+    assert factory.handle is not None
+    factory.handle.current = replace(
+        factory.handle.current,
+        status=PublicSessionStatus.PAUSED,
+        task_id="session:effect-projection",
+        task_revision=2,
+        effect_reconciliation=PublicEffectReconciliation(
+            "pending",
+            "effect_compensation_required",
+            "effect:" + "a" * 32,
+            "set_state",
+            "account:second",
+            "reversible",
+        ),
+    )
+
+    snapshot = await port.snapshot(handle)
+
+    assert snapshot.schema_version == "interaction-shell.v2"
+    assert snapshot.effect_reconciliation is not None
+    assert snapshot.effect_reconciliation.status == "pending"
+    assert snapshot.effect_reconciliation.resource_ref == "account:second"
+    assert "selector" not in snapshot.model_dump_json()
 
 
 @pytest.mark.asyncio

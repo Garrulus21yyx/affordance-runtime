@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { LiveView, Progress } from "./shell-app";
+import { EffectReconciliationNotice, LiveView, Progress } from "./shell-app";
 import type { Snapshot } from "@/lib/types";
 
 describe("public fact renderers", () => {
@@ -20,5 +20,26 @@ describe("public fact renderers", () => {
     expect(screen.getByText("Task started")).toBeInTheDocument();
     expect(screen.queryByText(/latency/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/token/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the Runtime-owned reconciliation summary without execution details", () => {
+    const snapshot = {
+      effect_reconciliation: {
+        status: "needs_input",
+        code: "compensation_unverified",
+        original_effect_ref: `effect:sha256:${"a".repeat(64)}`,
+        original_action: "set_state",
+        resource_ref: "account:second",
+        reversibility: "reversible",
+        compensation_effect_ref: "",
+      },
+    } as unknown as Snapshot;
+
+    render(<EffectReconciliationNotice snapshot={snapshot} />);
+
+    expect(screen.getByTestId("effect-reconciliation")).toHaveTextContent("needs_input");
+    expect(screen.getByTestId("effect-reconciliation")).toHaveTextContent("account:second");
+    expect(screen.getByTestId("effect-reconciliation")).toHaveTextContent("compensation_unverified");
+    expect(screen.queryByText(/selector|coordinate|backend/i)).not.toBeInTheDocument();
   });
 });

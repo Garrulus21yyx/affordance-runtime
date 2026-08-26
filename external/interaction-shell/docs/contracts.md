@@ -1,6 +1,6 @@
 # Public shell contracts
 
-Schema version: `interaction-shell.v1`.
+Schema version: `interaction-shell.v2`.
 
 The shell has exactly four public concepts:
 
@@ -14,11 +14,11 @@ accepted HTTP command is never interpreted as GUI task success. Only the
 `completion` field copied from a Runtime-owned public snapshot/event can render
 success.
 
-The Runtime now publishes `affordance-runtime.session.v1`. When a deployment
+The Runtime now publishes `affordance-runtime.session.v2`. When a deployment
 composes `CoreRuntimeSessionPort` with a `TargetRuntimeSessionFactory`, the
 supported commands are start, AskUser answer, confirmation approve/reject,
-cooperative cancel, durable pause/resume, zero-prior-effect task revision, and
-close. The opaque Core handle owns resumable `RunState`; the external manager
+cooperative cancel, durable pause/resume, bounded task revision, and close. The
+opaque Core handle owns resumable `RunState`; the external manager
 stores only that handle and drains owner-projected events by epoch/cursor without
 retaining a second event list, timestamp, or envelope projection. Without a
 configured Runtime/environment factory, the production-safe default remains
@@ -36,10 +36,15 @@ versioned Shell-private recovery projection retains at most six recent turns and
 64 immutable revision contexts in the existing recovery credential row. The
 Shell persists a new context before invoking `RuntimeSessionPort.revise`, restores
 it before recovering the Runtime handle, and deletes it with the session. It is
-not a command-result store or Runtime checkpoint. A
-prior `SENT` or `SENT_UNKNOWN` receipt returns typed
-`effect_reconciliation_required`; compensation, new-task replacement, takeover,
-and return-control remain unavailable. Viewer interaction likewise remains
+not a command-result store or Runtime checkpoint. One retained known `SENT`
+receipt is projected as a bounded `effect_reconciliation` value when the revised
+goal requires compensation. A separate Resume lets the same ActionPolicy select
+one currently offered same-resource action through the existing
+Binder/Risk/Confirmation/Executor path; the fresh local postcondition must verify
+before Runtime publishes `compensated`. `SENT_UNKNOWN`, irreversible, missing,
+multiple, unavailable, or unverified effects remain typed and fail-closed.
+New-task replacement, takeover, and return-control remain unavailable. Viewer
+interaction likewise remains
 disabled without an exclusive typed control lease and return outcome.
 
 Steel/Browserbase Live View is a deployment projection, not a media protocol:

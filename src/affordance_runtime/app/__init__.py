@@ -16,6 +16,7 @@ from affordance_runtime.app.composition import (
 )
 from affordance_runtime.app.public_session import (
     PUBLIC_SESSION_SCHEMA_VERSION,
+    PublicEffectReconciliation,
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionFactory,
     PublicRuntimeSessionHandle,
@@ -52,6 +53,7 @@ __all__ = [
     "RuntimeCheckpointStore",
     "SQLiteRuntimeCheckpointStore",
     "PUBLIC_SESSION_SCHEMA_VERSION",
+    "PublicEffectReconciliation",
     "PublicRuntimeSessionFactory",
     "PublicRuntimeSessionEvent",
     "PublicRuntimeSessionHandle",

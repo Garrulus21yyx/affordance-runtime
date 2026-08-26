@@ -404,7 +404,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "command_identity_reused" | "effect_reconciliation_required";
+            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "command_identity_reused" | "effect_reconciliation_required" | "effect_non_compensable" | "effect_reconciliation_unknown" | "effect_reconciliation_unsupported" | "compensation_unavailable" | "compensation_not_sent" | "compensation_effect_unknown" | "compensation_unverified" | "compensation_resource_mismatch" | "compensation_action_not_allowed" | "compensation_multiple_effects";
             /** Command Id */
             command_id: string;
             /**
@@ -561,6 +561,32 @@ export interface components {
             trace: components["schemas"]["PublicTraceExport"];
         } & {
             [key: string]: unknown;
+        };
+        /** EffectReconciliation */
+        EffectReconciliation: {
+            /** Code */
+            code: string;
+            /**
+             * Compensation Effect Ref
+             * @default
+             */
+            compensation_effect_ref: string;
+            /** Original Action */
+            original_action: string;
+            /** Original Effect Ref */
+            original_effect_ref: string;
+            /** Resource Ref */
+            resource_ref: string;
+            /**
+             * Reversibility
+             * @enum {string}
+             */
+            reversibility: "reversible" | "compensatable" | "irreversible" | "unknown";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "compensated" | "needs_input";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -742,6 +768,7 @@ export interface components {
             /** Checkpoint Id */
             checkpoint_id?: string | null;
             completion?: components["schemas"]["Completion"] | null;
+            effect_reconciliation?: components["schemas"]["EffectReconciliation"] | null;
             /**
              * Event Cursor
              * @default 0
@@ -771,10 +798,10 @@ export interface components {
             run_status: components["schemas"]["RunStatus"];
             /**
              * Schema Version
-             * @default interaction-shell.v1
+             * @default interaction-shell.v2
              * @constant
              */
-            schema_version: "interaction-shell.v1";
+            schema_version: "interaction-shell.v2";
             /** Session Id */
             session_id: string;
             /** Task Id */
@@ -826,10 +853,10 @@ export interface components {
             event_epoch: string;
             /**
              * Schema Version
-             * @default interaction-shell.v1
+             * @default interaction-shell.v2
              * @constant
              */
-            schema_version: "interaction-shell.v1";
+            schema_version: "interaction-shell.v2";
             /** Session Id */
             session_id: string;
             /** Type */

@@ -29,6 +29,7 @@ from .contracts import (
     Conflict,
     ConflictCode,
     ControlOutcome,
+    EffectReconciliation,
     OptionalCommand,
     PendingConfirmation,
     PendingQuestion,
@@ -131,7 +132,7 @@ class CoreRuntimeSessionPort:
             return (
                 Conflict(
                     command_id=command.command_id,
-                    code="runtime_conflict",
+                    code=_public_conflict_code(exc.code),
                     snapshot=_snapshot(exc.snapshot, self.viewer_projector(handle)),
                 ),
                 (),
@@ -170,7 +171,7 @@ class CoreRuntimeSessionPort:
             return (
                 Conflict(
                     command_id=command.command_id,
-                    code=_revision_conflict_code(exc.code),
+                    code=_public_conflict_code(exc.code),
                     snapshot=_snapshot(exc.snapshot, self.viewer_projector(handle)),
                 ),
                 (),
@@ -183,11 +184,11 @@ class CoreRuntimeSessionPort:
         await handle.close()
 
 
-_REVISION_CONFLICT_CODES = frozenset(get_args(ConflictCode))
+_PUBLIC_CONFLICT_CODES = frozenset(get_args(ConflictCode))
 
 
-def _revision_conflict_code(code: str) -> ConflictCode:
-    if code in _REVISION_CONFLICT_CODES:
+def _public_conflict_code(code: str) -> ConflictCode:
+    if code in _PUBLIC_CONFLICT_CODES:
         return cast(ConflictCode, code)
     return "runtime_conflict"
 
@@ -236,6 +237,19 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         if source.last_control_outcome is not None
         else None
     )
+    effect_reconciliation = (
+        EffectReconciliation(
+            status=source.effect_reconciliation.status,
+            code=source.effect_reconciliation.code,
+            original_effect_ref=source.effect_reconciliation.original_effect_ref,
+            original_action=source.effect_reconciliation.original_action,
+            resource_ref=source.effect_reconciliation.resource_ref,
+            reversibility=source.effect_reconciliation.reversibility,
+            compensation_effect_ref=source.effect_reconciliation.compensation_effect_ref,
+        )
+        if source.effect_reconciliation is not None
+        else None
+    )
     return RuntimeSessionSnapshot(
         session_id=source.session_id,
         task_id=source.task_id,
@@ -261,6 +275,7 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         checkpoint_id=source.checkpoint_id,
         resume_eligible=source.resume_eligible,
         last_control_outcome=control_outcome,
+        effect_reconciliation=effect_reconciliation,
         expires_at=source.expires_at,
     )
 

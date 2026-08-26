@@ -48,9 +48,10 @@ stay with the deployment, while the returned handle keeps `RunState` private.
 The Runtime/public port owns one event epoch and cursor; the Shell manager only
 forwards `events(after)` and never keeps a second event log.
 The configured port supports start, AskUser answer, confirmation approve/reject,
-cooperative cancel, durable pause/resume, bounded zero-prior-effect task revision,
-and close. Effect reconciliation/compensation, new task, and takeover remain
-typed unavailable.
+cooperative cancel, durable pause/resume, bounded task revision, one retained
+known reversible/compensatable effect through the ordinary compensation pipeline,
+and close. Multiple retained effects, uncertain/irreversible effects, new-task
+replacement, and takeover remain typed fail-closed or unavailable.
 
 For revision, the manager attaches an immutable language-only snapshot of at
 most six turns and 16 KiB to the single Runtime command. Runtime adds its own

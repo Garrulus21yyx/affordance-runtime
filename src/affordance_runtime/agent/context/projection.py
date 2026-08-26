@@ -134,6 +134,7 @@ def _project_action_options(
                 verification_family=option.verification_family,
                 verification_contract_digest=option.verification_contract_digest,
                 reversibility=option.reversibility,
+                resource_ref=option.resource_ref,
             )
             for action_id in visible_action_ids
             if (option := by_id.get(action_id)) is not None

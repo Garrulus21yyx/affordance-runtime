@@ -17,7 +17,7 @@ import { useShellSession } from "./use-shell-session";
 const created = {
   session_key: "session-key",
   snapshot: {
-    schema_version: "interaction-shell.v1",
+    schema_version: "interaction-shell.v2",
     session_id: "session:strict-mode",
     task_id: null,
     task_revision: 0,

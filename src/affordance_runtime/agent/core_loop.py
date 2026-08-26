@@ -8,6 +8,11 @@ from typing import assert_never
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
+from affordance_runtime.actions.reconciliation import (
+    EffectReconciliationReason,
+    EffectReconciliationStatus,
+)
+from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.canonical_world_projection import (
@@ -56,6 +61,7 @@ from affordance_runtime.agent.policy import (
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_control import (
     CooperativeRunControl,
+    RunControlAdmissionKind,
     RunControlBoundary,
     RunControlKind,
     RunControlOutcome,
@@ -330,6 +336,8 @@ class CoreAgentLoop:
             decision_counts=dict(facts.decision_counts),
             currentness_probe_count=facts.currentness_probe_count,
             control_boundary=facts.pause_boundary,
+            latest_effect=facts.latest_effect,
+            effect_reconciliation=facts.effect_reconciliation,
         )
         state.install_delivery_index(region_index)
         state.install_canonical_world(projection)
@@ -427,6 +435,7 @@ class CoreAgentLoop:
             decision_counts=dict(state.decision_counts),
             currentness_probe_count=state.currentness_probe_count,
             control_boundary=state.control_boundary,
+            latest_effect=state.latest_effect,
         )
         candidate.install_delivery_index(region_index)
         candidate.install_canonical_world(projection)
@@ -553,6 +562,8 @@ class CoreAgentLoop:
         state: RunState,
     ) -> RunState:
         while state.status is RunStatus.RUNNING and state.control_boundary is None:
+            if self._pause_unavailable_reconciliation(state, task):
+                break
             if self._apply_control_before_policy(state):
                 break
             try:
@@ -586,6 +597,44 @@ class CoreAgentLoop:
             return False
         state.apply_control_boundary(outcome)
         return True
+
+    def _pause_unavailable_reconciliation(
+        self,
+        state: RunState,
+        task: TaskGoal,
+    ) -> bool:
+        reconciliation = state.effect_reconciliation
+        if reconciliation is None:
+            return False
+        if reconciliation.status is EffectReconciliationStatus.PENDING:
+            action_space = self.action_space_builder.build(task, state.current_world)
+            if any(
+                option.resource_ref == reconciliation.original_effect.resource_ref
+                for option in action_space.options
+            ):
+                return False
+            state.require_reconciliation_input(
+                EffectReconciliationReason.COMPENSATION_UNAVAILABLE
+            )
+        elif reconciliation.status is not EffectReconciliationStatus.NEEDS_INPUT:
+            return False
+        self._request_reconciliation_pause(state, "needs-input")
+        if not self._apply_control_before_policy(state):
+            raise RuntimeError("effect reconciliation pause boundary was not admitted")
+        return True
+
+    def _request_reconciliation_pause(self, state: RunState, suffix: str) -> None:
+        reconciliation = state.effect_reconciliation
+        if reconciliation is None:
+            raise ValueError("run has no effect reconciliation to pause")
+        command_id = (
+            f"runtime-reconcile:{state.task_revision}:"
+            f"{reconciliation.original_effect.effect_ref[-24:]}:"
+            f"{state.execution_count}:{suffix}"
+        )
+        admission = self.run_control.request(command_id, RunControlKind.PAUSE)
+        if admission.outcome is not RunControlAdmissionKind.ACCEPTED:
+            raise RuntimeError("effect reconciliation pause command was not admitted")
 
     def _apply_control_after_closed_step(
         self,
@@ -943,7 +992,14 @@ class CoreAgentLoop:
             )
             self._commit_step(state, declined, consume_step=False)
             return await self._run_until_pause(environment, task, state)
-        action_space = self.action_space_builder.build(task, state.current_world)
+        complete_action_space = self.action_space_builder.build(
+            task,
+            state.current_world,
+        )
+        action_space = self._reconciliation_action_space(
+            state,
+            complete_action_space,
+        )
         action_page = self.context_builder.page(action_space, state.current_world)
         result = await self._select(
             environment,
@@ -955,6 +1011,8 @@ class CoreAgentLoop:
             pending.decision,
             confirmed_subject_id=pending.confirmation.subject_id,
         )
+        result = self._close_reconciliation_attempt(state, result)
+        result = self._apply_control_after_closed_step(state, result)
         result = self._attach_canonical_worlds(task, state, result)
         self._commit_step(state, result, consume_step=False)
         return await self._run_until_pause(environment, task, state)
@@ -967,7 +1025,19 @@ class CoreAgentLoop:
     ) -> StepResult:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
-        action_space = self.action_space_builder.build(task, state.current_world)
+        complete_action_space = self.action_space_builder.build(
+            task,
+            state.current_world,
+        )
+        action_space = self._reconciliation_action_space(
+            state,
+            complete_action_space,
+        )
+        canonical_world = (
+            state.canonical_world
+            if action_space.action_space_id == complete_action_space.action_space_id
+            else None
+        )
         region_index = state.delivery_index
         if (
             region_index is None
@@ -1008,8 +1078,8 @@ class CoreAgentLoop:
                 goal_resolution=state.goal_resolution,
                 runtime_controls=self.runtime_controls,
                 region_index=region_index,
-                canonical_world=state.canonical_world,
-                control_feedback=_recovery_feedback(state.recovery_signal),
+                canonical_world=canonical_world,
+                control_feedback=_control_feedback(state),
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,
             )
@@ -1114,6 +1184,17 @@ class CoreAgentLoop:
                     None,
                 ),
             )
+        if state.reconciliation_pending and isinstance(decision, (FinalResponse, Abort)):
+            state.require_reconciliation_input(
+                EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED
+            )
+            self._request_reconciliation_pause(state, "action-not-allowed")
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.RUNNING,
+                "effect_reconciliation:compensation_action_required",
+            )
         match decision.kind:
             case DecisionKind.SELECT_ACTION:
                 assert isinstance(decision, SelectAction)
@@ -1163,6 +1244,7 @@ class CoreAgentLoop:
                 )
             case unexpected:
                 assert_never(unexpected)
+        result = self._close_reconciliation_attempt(state, result)
         return replace(
             result,
             policy_observation=context.actor_world,
@@ -1172,6 +1254,74 @@ class CoreAgentLoop:
                 "last_model_delivery",
                 None,
             ),
+        )
+
+    def _reconciliation_action_space(
+        self,
+        state: RunState,
+        action_space: ActionSpace,
+    ) -> ActionSpace:
+        reconciliation = state.effect_reconciliation
+        if (
+            reconciliation is None
+            or reconciliation.status is not EffectReconciliationStatus.PENDING
+        ):
+            return action_space
+        resource_ref = reconciliation.original_effect.resource_ref
+        return ActionSpace(
+            action_space.observation_id,
+            tuple(
+                option
+                for option in action_space.options
+                if option.resource_ref == resource_ref
+            ),
+            action_space.issues,
+        )
+
+    def _close_reconciliation_attempt(
+        self,
+        state: RunState,
+        result: StepResult,
+    ) -> StepResult:
+        if not state.reconciliation_pending or self.run_control.pending is not None:
+            return result
+        receipts = (
+            ()
+            if result.execution_receipts is None
+            else result.execution_receipts.receipts
+        )
+        if receipts:
+            if result.task_evaluation is None:
+                return result
+            self._request_reconciliation_pause(state, "attempt-closed")
+            return replace(
+                result,
+                status_after=RunStatus.RUNNING,
+                failure_code=None,
+                runtime_failure=None,
+                control_termination=None,
+            )
+        if not isinstance(result.decision, SelectAction):
+            return result
+        if result.status_after not in {RunStatus.BLOCKED, RunStatus.FAILED}:
+            return result
+        if result.runtime_failure is not None or result.task_evaluation is None:
+            return result
+        reason = (
+            EffectReconciliationReason.COMPENSATION_NOT_SENT
+            if result.execution_receipts is not None
+            else EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED
+            if result.feedback.startswith(("risk_blocked", "admission_rejected"))
+            else EffectReconciliationReason.COMPENSATION_UNAVAILABLE
+        )
+        state.require_reconciliation_input(reason)
+        self._request_reconciliation_pause(state, "attempt-rejected")
+        return replace(
+            result,
+            status_after=RunStatus.RUNNING,
+            failure_code=None,
+            runtime_failure=None,
+            control_termination=None,
         )
 
     async def _finalize(
@@ -1532,6 +1682,19 @@ class CoreAgentLoop:
             assert admission.issue is not None
             return _same_world_step(state, decision, RunStatus.BLOCKED, f"admission_rejected:{admission.issue.code}")
         selection = admission.admitted
+        reconciliation = state.effect_reconciliation
+        if (
+            reconciliation is not None
+            and reconciliation.status is EffectReconciliationStatus.PENDING
+            and selection.resource_ref
+            != reconciliation.original_effect.resource_ref
+        ):
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.BLOCKED,
+                "effect_reconciliation:resource_mismatch",
+            )
         if _repeats_recovery_signature(state.recovery_signal, selection, state.current_world):
             return _same_world_step(
                 state,
@@ -2078,6 +2241,24 @@ def _recovery_feedback(signal) -> dict[str, object]:
             "to choose a materially different route, or yield if no supported route exists."
         ),
     }
+
+
+def _control_feedback(state: RunState) -> dict[str, object]:
+    feedback = _recovery_feedback(state.recovery_signal)
+    reconciliation = state.effect_reconciliation
+    if (
+        reconciliation is not None
+        and reconciliation.status is EffectReconciliationStatus.PENDING
+    ):
+        feedback["effect_reconciliation"] = {
+            **reconciliation.public_summary(),
+            "instruction": (
+                "Choose one current ordinary action that compensates the retained effect on "
+                "this same resource. Do not blindly replay the original request or continue the "
+                "revised goal until compensation is verified; ask the user if no safe action exists."
+            ),
+        }
+    return feedback
 
 
 def _repeats_recovery_signature(signal, selection, world) -> bool:

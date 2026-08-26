@@ -22,6 +22,24 @@ function PanelHeader({ eyebrow, title, state }: { eyebrow: string; title: string
   );
 }
 
+export function EffectReconciliationNotice({ snapshot }: { snapshot: Snapshot | null }) {
+  const reconciliation = snapshot?.effect_reconciliation;
+  if (!reconciliation) return null;
+  return (
+    <Card className="reconciliation-card" data-testid="effect-reconciliation">
+      <Text size="1" color={reconciliation.status === "compensated" ? "green" : "orange"}>
+        EFFECT · {reconciliation.status}
+      </Text>
+      <Text as="p" size="3">
+        {reconciliation.original_action} · {reconciliation.resource_ref}
+      </Text>
+      <Text as="p" size="1" color="gray">
+        {reconciliation.code} · {reconciliation.reversibility}
+      </Text>
+    </Card>
+  );
+}
+
 function Conversation({ snapshot, submitMessage, confirm }: {
   snapshot: Snapshot | null;
   submitMessage: (message: string) => Promise<void>;
@@ -43,6 +61,7 @@ function Conversation({ snapshot, submitMessage, confirm }: {
           <Text as="p">{snapshot.completion.message}</Text>
         </Card>
       )}
+      <EffectReconciliationNotice snapshot={snapshot} />
       <div className="chat-frame">
         <CopilotChatView
           key={snapshot?.run_status ?? "opening"}

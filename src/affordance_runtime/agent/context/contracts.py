@@ -186,6 +186,7 @@ class AgentActionOptionView:
     verification_family: str = ""
     verification_contract_digest: str = ""
     reversibility: Reversibility = Reversibility.UNKNOWN
+    resource_ref: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameter_schema", freeze_json(self.parameter_schema))
@@ -195,6 +196,7 @@ class AgentActionOptionView:
         object.__setattr__(self, "target_state", freeze_json(self.target_state))
         if not isinstance(self.reversibility, Reversibility):
             raise TypeError("model action reversibility must be typed")
+        object.__setattr__(self, "resource_ref", self.resource_ref.strip() or self.target_id)
         closed = bool(
             self.operation
             and self.target_ref

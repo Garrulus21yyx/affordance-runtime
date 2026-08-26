@@ -11,8 +11,14 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
+from affordance_runtime.actions.reconciliation import (
+    EffectReconciliation,
+    EffectReconciliationStatus,
+    EffectRevisionDisposition,
+    assess_effect_revision,
+)
 from affordance_runtime.agent.decisions import AskUser
 from affordance_runtime.agent.observability import FanoutRunTraceSink, NullRunTraceSink
 from affordance_runtime.agent.run_control import (
@@ -21,7 +27,7 @@ from affordance_runtime.agent.run_control import (
     RunControlOutcomeKind,
 )
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
-from affordance_runtime.evaluation.contracts import TaskOutcomeKind
+from affordance_runtime.evaluation.contracts import TaskEvaluationStatus, TaskOutcomeKind
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
     NaturalLanguageTaskRequest,
@@ -56,7 +62,11 @@ from .checkpoint import (
 )
 from .runtime import TargetRuntime, TargetRuntimeRunOutcome
 
-PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v1"
+PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v2"
+# Revision command identity is an independently versioned, durable wire fact.  The
+# Phase 7 snapshot projection is additive and must not change digests already
+# stored for the unchanged Phase 6 revision command payload.
+_PUBLIC_REVISION_COMMAND_DIGEST_VERSION = "affordance-runtime.session.v1"
 PublicRevisionConversationContext = RevisionConversationContext
 PublicRevisionConversationTurn = RevisionConversationTurn
 
@@ -113,7 +123,7 @@ class PublicTaskRevisionCommand:
             "expected_run_status": self.expected_run_status.value,
             "expected_task_revision": self.expected_task_revision,
             "kind": "revise_task",
-            "schema_version": PUBLIC_SESSION_SCHEMA_VERSION,
+            "schema_version": _PUBLIC_REVISION_COMMAND_DIGEST_VERSION,
             "conversation": {
                 "latest_turn_id": self.conversation.latest_turn_id,
                 "turns": [
@@ -204,6 +214,17 @@ class PublicControlOutcome:
 
 
 @dataclass(frozen=True)
+class PublicEffectReconciliation:
+    status: Literal["pending", "compensated", "needs_input"]
+    code: str
+    original_effect_ref: str
+    original_action: str
+    resource_ref: str
+    reversibility: Literal["reversible", "compensatable", "irreversible", "unknown"]
+    compensation_effect_ref: str = ""
+
+
+@dataclass(frozen=True)
 class PublicRuntimeSessionSnapshot:
     session_id: str
     expires_at: datetime
@@ -221,6 +242,7 @@ class PublicRuntimeSessionSnapshot:
     checkpoint_id: str | None = None
     resume_eligible: bool = False
     last_control_outcome: PublicControlOutcome | None = None
+    effect_reconciliation: PublicEffectReconciliation | None = None
     schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
 
 
@@ -482,6 +504,16 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("resume_command_conflict", self._project())
             state = self._state
             if (
+                state is not None
+                and state.effect_reconciliation is not None
+                and state.effect_reconciliation.status
+                is EffectReconciliationStatus.NEEDS_INPUT
+            ):
+                raise PublicSessionConflict(
+                    state.effect_reconciliation.reason.value,
+                    self._project(),
+                )
+            if (
                 state is None
                 or state.status is not RunStatus.PAUSED
                 or not self._resume_eligible
@@ -549,10 +581,11 @@ class TargetRuntimeSession:
                     command.command_id,
                     checkpoint_id=(existing.result_checkpoint_id if existing.outcome == "revised" else None),
                     message=existing.message,
+                    code=existing.result_code,
                 )
                 if existing.outcome == "revised":
                     return self._project()
-                raise PublicSessionConflict(existing.outcome, self._project())
+                raise PublicSessionConflict(existing.result_code, self._project())
             if admitted_at_entry is None or state_at_entry is None:
                 raise PublicSessionConflict("run_not_revisable", self._project())
             if not command_matches_entry:
@@ -589,13 +622,41 @@ class TargetRuntimeSession:
                 self._set_revision_outcome("checkpoint_not_found", command.command_id)
                 self._emit("CONTROL_FAILED")
                 raise PublicSessionConflict("checkpoint_not_found", self._project())
-            if state.execution_count > 0:
+            if (
+                state.effect_reconciliation is not None
+                and state.effect_reconciliation.status
+                is not EffectReconciliationStatus.COMPENSATED
+            ):
                 await self._reject_revision(
                     command,
                     source_checkpoint_id,
                     state.task_revision,
                     "effect_reconciliation_required",
-                    "The current revision has committed GUI effects.",
+                    "The current revision still has an unresolved effect reconciliation.",
+                )
+            early_effect = assess_effect_revision(
+                execution_count=state.execution_count,
+                latest_effect=state.latest_effect,
+                revised_goal_satisfied=False,
+            )
+            if early_effect.disposition in {
+                EffectRevisionDisposition.UNKNOWN,
+                EffectRevisionDisposition.UNSUPPORTED,
+            } and (
+                state.execution_count != 1 or state.latest_effect is None
+            ):
+                code = (
+                    "effect_reconciliation_unsupported"
+                    if early_effect.disposition is EffectRevisionDisposition.UNSUPPORTED
+                    else "effect_reconciliation_unknown"
+                )
+                await self._reject_revision(
+                    command,
+                    source_checkpoint_id,
+                    state.task_revision,
+                    code,
+                    early_effect.reason.value,
+                    outcome="effect_reconciliation_required",
                 )
             compiled = await self.runtime.compile_task_revision(
                 admitted_at_entry,
@@ -623,6 +684,42 @@ class TargetRuntimeSession:
                     revised.task,
                     state,
                 )
+                evaluation = candidate.current_task_evaluation
+                effect_assessment = assess_effect_revision(
+                    execution_count=state.execution_count,
+                    latest_effect=state.latest_effect,
+                    revised_goal_satisfied=(
+                        evaluation is not None
+                        and evaluation.status is TaskEvaluationStatus.COMPLETE
+                    ),
+                )
+                if effect_assessment.disposition is EffectRevisionDisposition.COMPENSATION_REQUIRED:
+                    assert effect_assessment.effect is not None
+                    candidate.install_effect_reconciliation(
+                        EffectReconciliation(
+                            effect_assessment.effect,
+                            revised.task.revision,
+                        )
+                    )
+                elif effect_assessment.disposition in {
+                    EffectRevisionDisposition.NON_COMPENSABLE,
+                    EffectRevisionDisposition.UNKNOWN,
+                    EffectRevisionDisposition.UNSUPPORTED,
+                }:
+                    await self._restore_revision_source(runtime, source_checkpoint)
+                    code = {
+                        EffectRevisionDisposition.NON_COMPENSABLE: "effect_non_compensable",
+                        EffectRevisionDisposition.UNKNOWN: "effect_reconciliation_unknown",
+                        EffectRevisionDisposition.UNSUPPORTED: "effect_reconciliation_unsupported",
+                    }[effect_assessment.disposition]
+                    await self._reject_revision(
+                        command,
+                        source_checkpoint_id,
+                        state.task_revision,
+                        code,
+                        effect_assessment.reason.value,
+                        outcome="effect_reconciliation_required",
+                    )
                 runtime.rebind_checkpoint_history(
                     task_id=self.session_id,
                     current_revision=current.task.revision,
@@ -635,6 +732,8 @@ class TargetRuntimeSession:
                     model_history=await runtime.persist_checkpoint_history(),
                     environment_reference=self.lease.reconnect_reference,
                 )
+            except PublicSessionConflict:
+                raise
             except Exception as exc:
                 await self._restore_revision_source(runtime, source_checkpoint)
                 await self._reject_revision(
@@ -717,22 +816,26 @@ class TargetRuntimeSession:
         task_revision: int,
         code: str,
         message: str,
+        *,
+        outcome: str | None = None,
     ) -> None:
         store = self.checkpoint_store
         assert store is not None
         message = message[:2000]
-        outcome = RuntimeCheckpointRevisionOutcome(
+        durable_outcome = outcome or code
+        stored = RuntimeCheckpointRevisionOutcome(
             self.session_id,
             command.command_id,
             source_checkpoint_id,
             source_checkpoint_id,
             task_revision,
-            code,
+            durable_outcome,
             command.payload_digest,
             message,
+            code,
         )
         try:
-            await store.commit_revision(None, outcome)
+            await store.commit_revision(None, stored)
         except Exception as exc:
             self._set_revision_outcome(
                 "revision_persistence_failed",
@@ -744,7 +847,12 @@ class TargetRuntimeSession:
                 "revision_persistence_failed",
                 self._project(),
             ) from exc
-        self._set_revision_outcome(code, command.command_id, message=message)
+        self._set_revision_outcome(
+            durable_outcome,
+            command.command_id,
+            message=message,
+            code=code,
+        )
         self._emit("TASK_REVISION_REJECTED")
         raise PublicSessionConflict(code, self._project())
 
@@ -779,6 +887,7 @@ class TargetRuntimeSession:
         *,
         checkpoint_id: str | None = None,
         message: str = "",
+        code: str | None = None,
     ) -> None:
         public_outcome = {
             "revised": "revised",
@@ -795,7 +904,7 @@ class TargetRuntimeSession:
             command_id,
             "revise",
             public_outcome,  # type: ignore[arg-type]
-            outcome,
+            code or outcome,
             checkpoint_id,
             message,
         )
@@ -1052,6 +1161,17 @@ class TargetRuntimeSession:
         request = self._request
         task = self._admitted.task if self._admitted is not None else None
         completion = self._failure or _completion(state, status)
+        reconciliation = (
+            _public_effect_reconciliation(state.effect_reconciliation)
+            if state is not None
+            else None
+        )
+        reconciliation_blocks_control = (
+            reconciliation is not None
+        )
+        public_resume_eligible = self._resume_eligible and (
+            reconciliation is None or reconciliation.status != "needs_input"
+        )
         return PublicRuntimeSessionSnapshot(
             self.session_id,
             self.expires_at,
@@ -1063,12 +1183,16 @@ class TargetRuntimeSession:
                 | ({PublicSessionCapability.PAUSE_TASK} if self.checkpoint_store is not None else set())
                 | (
                     {PublicSessionCapability.RESUME_TASK}
-                    if status is PublicSessionStatus.PAUSED and self._resume_eligible
+                    if (
+                        status is PublicSessionStatus.PAUSED
+                        and public_resume_eligible
+                    )
                     else set()
                 )
                 | (
                     {PublicSessionCapability.REVISE_TASK}
                     if self.checkpoint_store is not None
+                    and not reconciliation_blocks_control
                     and status
                     in {
                         PublicSessionStatus.RUNNING,
@@ -1087,8 +1211,9 @@ class TargetRuntimeSession:
             completion=completion,
             progress=tuple(self._progress),
             checkpoint_id=self._checkpoint_id,
-            resume_eligible=self._resume_eligible,
+            resume_eligible=public_resume_eligible,
             last_control_outcome=self._last_control_outcome,
+            effect_reconciliation=reconciliation,
         )
 
     def _require_open(self) -> None:
@@ -1306,6 +1431,32 @@ async def _cleanup_environment_lease(lease: RuntimeEnvironmentLease) -> None:
 def _revision_pause_command_id(command_id: str) -> str:
     digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
     return f"revision-pause:{digest}"
+
+
+def _public_effect_reconciliation(
+    reconciliation: EffectReconciliation | None,
+) -> PublicEffectReconciliation | None:
+    if reconciliation is None:
+        return None
+    return PublicEffectReconciliation(
+        cast(
+            Literal["pending", "compensated", "needs_input"],
+            reconciliation.status.value,
+        ),
+        reconciliation.reason.value,
+        reconciliation.original_effect.effect_ref,
+        reconciliation.original_effect.semantic_action,
+        reconciliation.original_effect.resource_ref,
+        cast(
+            Literal["reversible", "compensatable", "irreversible", "unknown"],
+            reconciliation.original_effect.reversibility.value,
+        ),
+        (
+            reconciliation.compensation_effect.effect_ref
+            if reconciliation.compensation_effect is not None
+            else ""
+        ),
+    )
 
 
 def _revision_rejection(

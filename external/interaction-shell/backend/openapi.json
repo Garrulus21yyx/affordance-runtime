@@ -325,7 +325,17 @@
               "revision_persistence_failed",
               "revision_command_conflict",
               "command_identity_reused",
-              "effect_reconciliation_required"
+              "effect_reconciliation_required",
+              "effect_non_compensable",
+              "effect_reconciliation_unknown",
+              "effect_reconciliation_unsupported",
+              "compensation_unavailable",
+              "compensation_not_sent",
+              "compensation_effect_unknown",
+              "compensation_unverified",
+              "compensation_resource_mismatch",
+              "compensation_action_not_allowed",
+              "compensation_multiple_effects"
             ],
             "title": "Code",
             "type": "string"
@@ -686,6 +696,70 @@
           "trace"
         ],
         "title": "DiagnosisRequest",
+        "type": "object"
+      },
+      "EffectReconciliation": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "compensation_effect_ref": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Compensation Effect Ref",
+            "type": "string"
+          },
+          "original_action": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Original Action",
+            "type": "string"
+          },
+          "original_effect_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Original Effect Ref",
+            "type": "string"
+          },
+          "resource_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Resource Ref",
+            "type": "string"
+          },
+          "reversibility": {
+            "enum": [
+              "reversible",
+              "compensatable",
+              "irreversible",
+              "unknown"
+            ],
+            "title": "Reversibility",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "compensated",
+              "needs_input"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "original_effect_ref",
+          "original_action",
+          "resource_ref",
+          "reversibility"
+        ],
+        "title": "EffectReconciliation",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1174,6 +1248,16 @@
               }
             ]
           },
+          "effect_reconciliation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectReconciliation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "event_cursor": {
             "default": 0,
             "minimum": 0.0,
@@ -1239,8 +1323,8 @@
             "default": "idle"
           },
           "schema_version": {
-            "const": "interaction-shell.v1",
-            "default": "interaction-shell.v1",
+            "const": "interaction-shell.v2",
+            "default": "interaction-shell.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -1334,8 +1418,8 @@
             "type": "string"
           },
           "schema_version": {
-            "const": "interaction-shell.v1",
-            "default": "interaction-shell.v1",
+            "const": "interaction-shell.v2",
+            "default": "interaction-shell.v2",
             "title": "Schema Version",
             "type": "string"
           },

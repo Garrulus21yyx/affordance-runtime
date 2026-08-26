@@ -8,6 +8,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from affordance_runtime.actions.paging import ActionDiscoveryResult, InternalActionPage
+from affordance_runtime.actions.reconciliation import (
+    EffectReconciliation,
+    EffectReconciliationReason,
+    EffectReconciliationStatus,
+)
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
@@ -35,10 +40,15 @@ from affordance_runtime.agent.runtime_failure import FailureStage, RuntimeFailur
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation.contracts import (
     ActionOutcome,
+    LocalPostconditionStatus,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
-from affordance_runtime.execution.contracts import ExecutionCompletion, ExecutionReceiptBatch
+from affordance_runtime.execution.contracts import (
+    CommittedEffect,
+    ExecutionCompletion,
+    ExecutionReceiptBatch,
+)
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
@@ -310,6 +320,8 @@ class RunCheckpointFacts:
     currentness_probe_count: int
     workspace: AgentWorkspace
     pause_boundary: RunControlOutcome
+    latest_effect: CommittedEffect | None = None
+    effect_reconciliation: EffectReconciliation | None = None
     last_decision: AgentDecision | None = None
     last_confirmation: RiskAssessment | None = None
     last_feedback: str = "checkpoint_restored"
@@ -336,6 +348,12 @@ class RunCheckpointFacts:
             raise ValueError("checkpoint facts contain invalid counters")
         if not isinstance(self.workspace, AgentWorkspace):
             raise TypeError("checkpoint facts require one typed workspace")
+        _validate_effect_state(
+            self.execution_count,
+            self.task_revision,
+            self.latest_effect,
+            self.effect_reconciliation,
+        )
         if (
             self.pause_boundary.kind is not RunControlKind.PAUSE
             or self.pause_boundary.outcome
@@ -395,6 +413,8 @@ class RunState:
     durable_checkpoint_id: str = ""
     paused_from_status: RunStatus | None = None
     action_discovery: ActionDiscoveryResult | None = None
+    latest_effect: CommittedEffect | None = None
+    effect_reconciliation: EffectReconciliation | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -497,6 +517,12 @@ class RunState:
             self.action_discovery, ActionDiscoveryResult
         ):
             raise TypeError("run action discovery must be typed")
+        _validate_effect_state(
+            self.execution_count,
+            self.task_revision,
+            self.latest_effect,
+            self.effect_reconciliation,
+        )
 
     @property
     def terminal(self) -> bool:
@@ -531,6 +557,36 @@ class RunState:
     @property
     def sent_unknown_count(self) -> int:
         return self.committed_sent_unknown_count
+
+    @property
+    def reconciliation_pending(self) -> bool:
+        return (
+            self.effect_reconciliation is not None
+            and self.effect_reconciliation.status is EffectReconciliationStatus.PENDING
+        )
+
+    def install_effect_reconciliation(self, reconciliation: EffectReconciliation) -> None:
+        if (
+            not isinstance(reconciliation, EffectReconciliation)
+            or reconciliation.revised_task_revision != self.task_revision
+            or reconciliation.original_effect != self.latest_effect
+            or self.effect_reconciliation is not None
+        ):
+            raise ValueError("run cannot install this effect reconciliation")
+        self.effect_reconciliation = reconciliation
+
+    def require_reconciliation_input(
+        self,
+        reason: EffectReconciliationReason,
+        compensation_effect: CommittedEffect | None = None,
+    ) -> None:
+        reconciliation = self.effect_reconciliation
+        if reconciliation is None:
+            raise ValueError("run has no effect reconciliation")
+        self.effect_reconciliation = reconciliation.needs_input(
+            reason,
+            compensation_effect,
+        )
 
     def next_context_generation(self) -> int:
         self.context_generation += 1
@@ -655,6 +711,31 @@ class RunState:
             self.latest_action_outcome = result.action_outcome
         if result.execution_receipts is not None:
             self.committed_sent_unknown_count += result.execution_receipts.sent_unknown_count
+            if result.execution_receipts.receipts:
+                committed = CommittedEffect.from_receipt(
+                    result.execution_receipts.receipts[-1],
+                    task_revision=self.task_revision,
+                )
+                reconciliation = self.effect_reconciliation
+                if (
+                    reconciliation is not None
+                    and reconciliation.status is EffectReconciliationStatus.PENDING
+                ):
+                    if len(result.execution_receipts.receipts) != 1:
+                        self.effect_reconciliation = reconciliation.needs_input(
+                            EffectReconciliationReason.COMPENSATION_MULTIPLE_EFFECTS,
+                            committed,
+                        )
+                    else:
+                        self.effect_reconciliation = reconciliation.close_attempt(
+                            committed,
+                            verified=(
+                                result.action_outcome is not None
+                                and result.action_outcome.local_postcondition
+                                is LocalPostconditionStatus.SATISFIED
+                            ),
+                        )
+                self.latest_effect = committed
         self.step_count += int(consume_step)
         if not isinstance(result.decision, PolicyFailure):
             kind = result.decision.kind
@@ -692,3 +773,28 @@ def _validate_finalization_run_status(
         return
     if status not in {RunStatus.FAILED, RunStatus.CANCELLED}:
         raise ValueError("finalization without native outcome requires failure or cancellation")
+
+
+def _validate_effect_state(
+    execution_count: int,
+    task_revision: int,
+    latest_effect: CommittedEffect | None,
+    reconciliation: EffectReconciliation | None,
+) -> None:
+    if latest_effect is not None:
+        if not isinstance(latest_effect, CommittedEffect) or execution_count < 1:
+            raise ValueError("run latest effect requires committed execution lineage")
+        if latest_effect.task_revision > task_revision:
+            raise ValueError("run latest effect belongs to a future task revision")
+    if reconciliation is None:
+        return
+    if not isinstance(reconciliation, EffectReconciliation):
+        raise TypeError("run effect reconciliation must be typed")
+    if reconciliation.revised_task_revision != task_revision:
+        raise ValueError("run effect reconciliation belongs to another task revision")
+    if reconciliation.status is EffectReconciliationStatus.PENDING:
+        if latest_effect != reconciliation.original_effect:
+            raise ValueError("pending reconciliation must retain its original latest effect")
+    elif reconciliation.compensation_effect is not None:
+        if latest_effect != reconciliation.compensation_effect:
+            raise ValueError("closed reconciliation must retain its compensation effect")

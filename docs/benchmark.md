@@ -38,6 +38,18 @@ recovery credentials. Held-out process-boundary tests cover a first post-restart
 contextual revision, lost-response exact replay with one compiler invocation,
 and same-ID changed-payload rejection. This is not a second command-result store
 or a Runtime checkpoint.
+Phase 7 provider-free verification now adds one bounded retained-effect path:
+typed `resource_ref` and reversibility survive the existing binding/execution
+chain, a fresh complete revised evaluation preserves the effect, and one known
+reversible/compensatable conflict can resume through the same ActionPolicy,
+Binder, Risk/Confirmation, Executor, fresh World, ActionOutcome, checkpoint, and
+public Shell projection. The original receipt remains immutable and the
+compensation receipt is appended. Unknown, irreversible, missing, multiple,
+unavailable, mismatched, or unverified effect cases fail closed without replay.
+Checkpoint v3 remains backward-readable for v2, and the additive public snapshot
+is v2 without changing historical revision-command digests. This evidence uses
+generic/provider-free fixtures and properties only; no browser compensation
+witness or benchmark case was run, so it does not change benchmark closure.
 The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.

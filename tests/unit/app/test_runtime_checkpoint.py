@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field, replace
@@ -8,9 +9,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from affordance_runtime.actions.effect_semantics import Reversibility
+from affordance_runtime.actions.reconciliation import EffectReconciliationStatus
 from affordance_runtime.agent import SelectAction
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.app.checkpoint import (
+    RuntimeCheckpoint,
     RuntimeCheckpointCommandOutcome,
     RuntimeCheckpointError,
     RuntimeCheckpointResumeOutcome,
@@ -28,7 +32,13 @@ from affordance_runtime.app.public_session import (
 )
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
+from affordance_runtime.evaluation import (
+    CriterionEvaluation,
+    CriterionEvaluationStatus,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
+from affordance_runtime.execution.contracts import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequired, NotRequiredGoalCompiler
 from affordance_runtime.task import (
     NaturalLanguageTaskRequest,
@@ -40,9 +50,12 @@ from affordance_runtime.task import (
     TaskBoundary,
     TaskRevisionProposal,
 )
+from affordance_runtime.task.contracts import criterion_id
+from affordance_runtime.world import SemanticTarget, StateFact, WorldFusion
 from tests.integration.agent.test_core_loop import (
     CoreActionOutcomeProjector,
     CoreTaskEvaluator,
+    DispatchPostconditionProjector,
 )
 from tests.integration.agent.test_core_loop import (
     _world as _action_world,
@@ -71,6 +84,39 @@ def _revision_command(
         text,
         context,
     )
+
+
+def test_revision_command_digest_remains_compatible_across_snapshot_v2() -> None:
+    command = _revision_command(
+        "revise:digest-compatibility",
+        "runtime-checkpoint:" + "a" * 64,
+        "Use the second account",
+    )
+    expected_payload = {
+        "conversation": {
+            "latest_turn_id": "revise:digest-compatibility",
+            "turns": [
+                {
+                    "role": "user",
+                    "text": "Use the second account",
+                    "turn_id": "revise:digest-compatibility",
+                }
+            ],
+        },
+        "expected_checkpoint_id": "runtime-checkpoint:" + "a" * 64,
+        "expected_run_status": "paused",
+        "expected_task_revision": 1,
+        "kind": "revise_task",
+        "schema_version": "affordance-runtime.session.v1",
+    }
+    canonical = json.dumps(
+        expected_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    assert command.payload_digest == hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class RecoverableAskPolicy(AskForAccountPolicy):
@@ -176,12 +222,242 @@ class CountingGoalCompiler:
 
 
 @dataclass
+class EffectRevisionCompiler:
+    desired_enabled: bool
+    risk_profile: RiskProfile = RiskProfile.LOW
+    calls: int = 0
+
+    async def compile(self, request):
+        self.calls += 1
+        desired = self.desired_enabled
+        return RevisionReady(
+            request.current_task.revision,
+            TaskRevisionProposal(
+                "Enable shared state" if desired else "Disable shared state",
+                TaskBoundary(
+                    allowed_effects=("shared_state_enabled",),
+                    success_criteria=(
+                        {"target_id": "shared-toggle", "state": {"enabled": desired}},
+                    ),
+                    risk_profile=self.risk_profile,
+                ),
+            ),
+        )
+
+
+class DesiredEnabledEvaluator:
+    async def evaluate(self, task, observation):
+        target_id = str(task.success_criteria[0]["target_id"])
+        desired = bool(task.success_criteria[0]["state"]["enabled"])
+        target = next(item for item in observation.targets if item.target_id == target_id)
+        enabled = bool(target.state.get("enabled"))
+        satisfied = enabled is desired
+        evidence_ref = next(
+            item.fact_id for item in observation.facts if item.subject_id == target_id
+        )
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            (
+                TaskEvaluationStatus.COMPLETE
+                if satisfied
+                else TaskEvaluationStatus.INCOMPLETE
+            ),
+            "desired shared state observed" if satisfied else "shared state needs change",
+            tuple(
+                CriterionEvaluation(
+                    criterion_id(item),
+                    (
+                        CriterionEvaluationStatus.SATISFIED
+                        if satisfied
+                        else CriterionEvaluationStatus.UNSATISFIED
+                    ),
+                    (evidence_ref,),
+                    "criterion evaluated from current shared state",
+                )
+                for item in task.success_criteria
+            ),
+            (evidence_ref,) if satisfied else (),
+        )
+
+
+@dataclass
 class RevisionEnvironment(ScriptedEnvironment):
     revised_tasks: list = field(default_factory=list, init=False)
 
     async def revise_task(self, task):
         self.revised_tasks.append(task)
         await super().revise_task(task)
+
+
+def _effect_world(
+    observation_id: str,
+    enabled: bool,
+    *,
+    reversibility: Reversibility = Reversibility.REVERSIBLE,
+):
+    world = _action_world(observation_id, enabled)
+    source = world.sources[0]
+    bindings = tuple(
+        replace(
+            binding,
+            resource_ref="shared-state",
+            reversibility=reversibility,
+        )
+        for binding in source.bindings
+    )
+    return replace(
+        world,
+        bindings=bindings,
+        sources=(replace(source, bindings=bindings),),
+    )
+
+
+def _with_decoy_resource(world):
+    source = world.sources[0]
+    original_target = source.targets[0]
+    original_fact = source.facts[0]
+    original_binding = source.bindings[0]
+    decoy_target = SemanticTarget(
+        "decoy-toggle",
+        original_target.role,
+        "Unrelated state",
+        {"enabled": False},
+    )
+    decoy_fact = StateFact(
+        f"fact:{source.observation_id}:decoy:enabled",
+        decoy_target.target_id,
+        original_fact.predicate,
+        False,
+        source.observation_id,
+    )
+    decoy_binding = replace(
+        original_binding,
+        binding_id=f"binding:{source.observation_id}:decoy",
+        target_fingerprint=f"fingerprint:{source.observation_id}:decoy",
+        target_id=decoy_target.target_id,
+        source_target_id=decoy_target.target_id,
+        resource_ref="unrelated-state",
+    )
+    revised_source = replace(
+        source,
+        targets=(*source.targets, decoy_target),
+        facts=(*source.facts, decoy_fact),
+        bindings=(*source.bindings, decoy_binding),
+    )
+    fused = WorldFusion().fuse((revised_source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
+async def _effect_revision_session(
+    tmp_path,
+    *,
+    desired_enabled: bool,
+    revised_risk: RiskProfile = RiskProfile.LOW,
+    reversibility: Reversibility = Reversibility.REVERSIBLE,
+    first_dispatch_status: DispatchStatus = DispatchStatus.SENT,
+    candidate_action_available: bool = True,
+    compensation_post_enabled: bool = False,
+    candidate_decoy: bool = False,
+    policy_override=None,
+):
+    dispatch_entered = asyncio.Event()
+    dispatch_release = asyncio.Event()
+
+    class FirstDispatchBlockingEnvironment(RevisionEnvironment):
+        first_dispatch = True
+
+        async def execute(self, request):
+            if self.first_dispatch:
+                self.first_dispatch = False
+                dispatch_entered.set()
+                await dispatch_release.wait()
+            return await super().execute(request)
+
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "effect-revision.sqlite3")
+    policy = policy_override or RecoverableSelectPolicy()
+    compiler = EffectRevisionCompiler(desired_enabled, revised_risk)
+    candidate_world = _effect_world(
+        "effect-revision",
+        True,
+        reversibility=reversibility,
+    )
+    if not candidate_action_available:
+        candidate_world = replace(
+            candidate_world,
+            bindings=(),
+            sources=(replace(candidate_world.sources[0], bindings=()),),
+        )
+    elif candidate_decoy:
+        candidate_world = _with_decoy_resource(candidate_world)
+    environment = FirstDispatchBlockingEnvironment(
+        initial_observation=_effect_world(
+            "effect-before",
+            False,
+            reversibility=reversibility,
+        ),
+        independent_observations=(candidate_world,),
+        post_observations=(
+            _effect_world(
+                "effect-sent",
+                False,
+                reversibility=reversibility,
+            ),
+            _effect_world(
+                "effect-compensated",
+                compensation_post_enabled,
+                reversibility=reversibility,
+            ),
+        ),
+        results=(
+            ActionResult(
+                "*",
+                first_dispatch_status,
+                "dom",
+                first_dispatch_status is DispatchStatus.SENT,
+                (
+                    None
+                    if first_dispatch_status is DispatchStatus.SENT
+                    else ActionError.EXECUTION_FAILED
+                ),
+            ),
+            ActionResult("*", DispatchStatus.SENT, "dom", True),
+        ),
+    )
+    runtime = TargetRuntime(
+        AgentDecisionPorts(policy),
+        DispatchPostconditionProjector(),
+        DesiredEnabledEvaluator(),
+        goal_compiler=CountingGoalCompiler(),
+        task_revision_compiler=compiler,
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: runtime,
+        lambda _session_id: RuntimeEnvironmentLease(
+            environment,
+            reconnect_reference="browser-lease:effect-revision",
+        ),
+        request_factory=_action_request,
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:effect-revision",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Enable shared state")
+    await asyncio.wait_for(dispatch_entered.wait(), timeout=1)
+    await handle.pause("pause:effect-source")
+    dispatch_release.set()
+    for _ in range(100):
+        source = await handle.snapshot()
+        if source.status is PublicSessionStatus.PAUSED:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("effect source did not reach a durable pause")
+    assert source.checkpoint_id is not None
+    return handle, store, policy, compiler, environment, source
 
 
 @dataclass(frozen=True)
@@ -288,6 +564,18 @@ class RecoverableSelectPolicy(RecoverableAskPolicy):
             context.actions.options[0].action_id,
             tool_call_id="provider-call:recover-confirmation",
         )
+
+
+class ResourceRecordingSelectPolicy(RecoverableSelectPolicy):
+    def __init__(self):
+        super().__init__()
+        self.seen_resources: list[tuple[str, ...]] = []
+
+    async def decide(self, context):
+        self.seen_resources.append(
+            tuple(option.resource_ref for option in context.actions.options)
+        )
+        return await super().decide(context)
 
 
 def _confirmation_runtime(policy: RecoverableSelectPolicy) -> TargetRuntime:
@@ -1033,6 +1321,48 @@ async def test_checkpoint_load_rejects_row_and_payload_scope_mismatch(tmp_path) 
 
 
 @pytest.mark.asyncio
+async def test_checkpoint_v2_remains_readable_without_effect_projection(tmp_path) -> None:
+    handle, store = await _waiting_checkpoint_session(tmp_path)
+    paused = await handle.pause("pause:v2-compatibility")
+    assert paused.checkpoint_id is not None
+    checkpoint = await store.load("session:checkpoint", paused.checkpoint_id)
+    assert checkpoint is not None
+    raw = json.loads(checkpoint.to_json())
+    raw["schema_version"] = "affordance-runtime.checkpoint.v2"
+    raw["run"].pop("latest_effect", None)
+    raw["run"].pop("effect_reconciliation", None)
+    for receipt in (raw.get("last_step") or {}).get("receipts", []):
+        receipt.pop("resource_ref", None)
+        receipt.pop("semantic_effects", None)
+        receipt.pop("reversibility", None)
+    unsigned = {
+        key: value
+        for key, value in raw.items()
+        if key not in {"checkpoint_id", "digest"}
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    raw["digest"] = digest
+    raw["checkpoint_id"] = f"runtime-checkpoint:{digest}"
+
+    restored = RuntimeCheckpoint.from_json(
+        json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+
+    assert restored.schema_version == "affordance-runtime.checkpoint.v2"
+    facts = restored.restore_run_facts()
+    assert facts.latest_effect is None
+    assert facts.effect_reconciliation is None
+    await handle.close()
+
+
+@pytest.mark.asyncio
 async def test_revision_outcome_schema_migrates_legacy_rows_fail_closed(tmp_path) -> None:
     path = tmp_path / "legacy-revision-outcomes.sqlite3"
     checkpoint_id = "runtime-checkpoint:" + "a" * 64
@@ -1066,9 +1396,10 @@ async def test_revision_outcome_schema_migrates_legacy_rows_fail_closed(tmp_path
     assert outcome is not None
     assert outcome.payload_digest == "0" * 64
     assert outcome.message == ""
+    assert outcome.result_code == "revision_no_change"
     with sqlite3.connect(path) as connection:
         columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(runtime_revision_outcomes)")}
-    assert {"payload_digest", "message"} <= columns
+    assert {"payload_digest", "message", "result_code"} <= columns
 
 
 @pytest.mark.asyncio
@@ -1532,13 +1863,13 @@ async def test_revision_rejection_persistence_failure_projects_current_command(t
 
 
 @pytest.mark.asyncio
-async def test_revision_requires_phase7_when_any_gui_effect_was_committed(tmp_path) -> None:
+async def test_revision_rejects_missing_effect_lineage_as_typed_unknown(tmp_path) -> None:
     handle, store, _policy, compiler, goal_compiler, environment, source = await _revisable_checkpoint_session(tmp_path)
     assert source.checkpoint_id is not None
     assert handle._state is not None
     handle._state.execution_count = 1
 
-    with pytest.raises(PublicSessionConflict, match="effect_reconciliation_required"):
+    with pytest.raises(PublicSessionConflict, match="effect_reconciliation_unknown"):
         await handle.revise(
             _revision_command(
                 "revise:effect",
@@ -1553,11 +1884,375 @@ async def test_revision_requires_phase7_when_any_gui_effect_was_committed(tmp_pa
     assert current.checkpoint_id == source.checkpoint_id
     assert current.last_control_outcome is not None
     assert current.last_control_outcome.outcome == "effect_reconciliation_required"
+    assert current.last_control_outcome.code == "effect_reconciliation_unknown"
     assert compiler.calls == 0
     assert goal_compiler.revisions == [1]
     assert environment.revised_tasks == []
     outcome = await store.revision_outcome("session:revision", "revise:effect")
     assert outcome is not None and outcome.outcome == "effect_reconciliation_required"
+    assert outcome.result_code == "effect_reconciliation_unknown"
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_compatible_sent_effect_is_retained_without_compensation_dispatch(tmp_path) -> None:
+    handle, store, _policy, compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=True,
+    )
+    assert source.checkpoint_id is not None
+
+    revised = await handle.revise(
+        _revision_command(
+            "revise:compatible-effect",
+            source.checkpoint_id,
+            "Keep shared state enabled",
+        )
+    )
+
+    assert revised.status is PublicSessionStatus.PAUSED
+    assert revised.task_revision == 2
+    assert revised.effect_reconciliation is None
+    assert environment.execute_calls == 1
+    assert compiler.calls == 1
+    checkpoint = await store.load("session:effect-revision", revised.checkpoint_id or "")
+    assert checkpoint is not None
+    assert checkpoint.restore_run_facts().latest_effect is not None
+    assert checkpoint.restore_run_facts().effect_reconciliation is None
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_reversible_effect_uses_same_pipeline_and_pauses_after_verified_compensation(
+    tmp_path,
+) -> None:
+    handle, store, policy, compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+    )
+    assert source.checkpoint_id is not None
+
+    revised = await handle.revise(
+        _revision_command(
+            "revise:compensate-effect",
+            source.checkpoint_id,
+            "Disable shared state instead",
+        )
+    )
+
+    assert revised.status is PublicSessionStatus.PAUSED
+    assert revised.task_revision == 2
+    assert revised.effect_reconciliation is not None
+    assert revised.effect_reconciliation.status == "pending"
+    assert revised.effect_reconciliation.resource_ref == "shared-state"
+    assert environment.execute_calls == 1
+
+    await handle.resume("resume:compensate-effect", revised.checkpoint_id or "")
+    for _ in range(100):
+        compensated = await handle.snapshot()
+        if (
+            compensated.status is PublicSessionStatus.PAUSED
+            and compensated.effect_reconciliation is not None
+            and compensated.effect_reconciliation.status == "compensated"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"compensation did not reach a durable pause: {compensated!r}")
+
+    assert environment.execute_calls == 2
+    assert policy.calls == 2
+    assert compiler.calls == 1
+    assert compensated.resume_eligible is True
+    assert compensated.checkpoint_id is not None
+    checkpoint = await store.load(
+        "session:effect-revision",
+        compensated.checkpoint_id,
+    )
+    assert checkpoint is not None
+    facts = checkpoint.restore_run_facts()
+    assert facts.effect_reconciliation is not None
+    assert (
+        facts.effect_reconciliation.status
+        is EffectReconciliationStatus.COMPENSATED
+    )
+    assert facts.effect_reconciliation.compensation_effect == facts.latest_effect
+
+    await handle.resume("resume:after-compensation", compensated.checkpoint_id)
+    finished = await handle.snapshot()
+    assert finished.status is PublicSessionStatus.DONE
+    assert environment.execute_calls == 2
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_compensation_keeps_existing_confirmation_boundary(tmp_path) -> None:
+    handle, _store, _policy, _compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+        revised_risk=RiskProfile.MEDIUM,
+    )
+    assert source.checkpoint_id is not None
+    revised = await handle.revise(
+        _revision_command(
+            "revise:confirmed-compensation",
+            source.checkpoint_id,
+            "Disable shared state instead",
+        )
+    )
+    assert revised.checkpoint_id is not None
+
+    await handle.resume("resume:confirmed-compensation", revised.checkpoint_id)
+    for _ in range(100):
+        waiting = await handle.snapshot()
+        if waiting.status is PublicSessionStatus.WAITING_CONFIRMATION:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"compensation did not request confirmation: {waiting!r}")
+    assert waiting.pending_confirmation is not None
+    assert environment.execute_calls == 1
+
+    await handle.confirm(waiting.pending_confirmation.interrupt_id, approved=True)
+    for _ in range(100):
+        compensated = await handle.snapshot()
+        if (
+            compensated.status is PublicSessionStatus.PAUSED
+            and compensated.effect_reconciliation is not None
+            and compensated.effect_reconciliation.status == "compensated"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"confirmed compensation did not pause: {compensated!r}")
+    assert environment.execute_calls == 2
+    await handle.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reversibility", "dispatch_status", "expected_code"),
+    (
+        (
+            Reversibility.IRREVERSIBLE,
+            DispatchStatus.SENT,
+            "effect_non_compensable",
+        ),
+        (
+            Reversibility.REVERSIBLE,
+            DispatchStatus.SENT_UNKNOWN,
+            "effect_reconciliation_unknown",
+        ),
+    ),
+)
+async def test_unrecoverable_effect_revision_stays_on_source_pause_with_typed_result(
+    tmp_path,
+    reversibility,
+    dispatch_status,
+    expected_code,
+) -> None:
+    handle, store, _policy, compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+        reversibility=reversibility,
+        first_dispatch_status=dispatch_status,
+    )
+    assert source.checkpoint_id is not None
+
+    with pytest.raises(PublicSessionConflict, match=expected_code):
+        await handle.revise(
+            _revision_command(
+                f"revise:{expected_code}",
+                source.checkpoint_id,
+                "Disable shared state instead",
+            )
+        )
+
+    current = await handle.snapshot()
+    assert current.status is PublicSessionStatus.PAUSED
+    assert current.task_revision == 1
+    assert current.checkpoint_id == source.checkpoint_id
+    assert current.effect_reconciliation is None
+    assert current.last_control_outcome is not None
+    assert current.last_control_outcome.code == expected_code
+    assert environment.execute_calls == 1
+    assert compiler.calls == 1
+    stored = await store.revision_outcome(
+        "session:effect-revision",
+        f"revise:{expected_code}",
+    )
+    assert stored is not None
+    assert stored.outcome == "effect_reconciliation_required"
+    assert stored.result_code == expected_code
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_restart_preserves_pending_reconciliation_without_replaying_original_effect(
+    tmp_path,
+) -> None:
+    handle, store, _policy, _compiler, _environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+    )
+    assert source.checkpoint_id is not None
+    revised = await handle.revise(
+        _revision_command(
+            "revise:restart-reconciliation",
+            source.checkpoint_id,
+            "Disable shared state instead",
+        )
+    )
+    assert revised.checkpoint_id is not None
+    await handle.close()
+
+    recovered_policy = RecoverableSelectPolicy()
+    recovered_environment = RevisionEnvironment(
+        initial_observation=_effect_world("reconnect-initial", True),
+        independent_observations=(_effect_world("reconnect-current", True),),
+        post_observations=(_effect_world("reconnect-compensated", False),),
+        results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+    )
+    recovered_runtime = TargetRuntime(
+        AgentDecisionPorts(recovered_policy),
+        DispatchPostconditionProjector(),
+        DesiredEnabledEvaluator(),
+        goal_compiler=CountingGoalCompiler(),
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: recovered_runtime,
+        lambda _session_id: (_ for _ in ()).throw(
+            AssertionError("normal environment open is forbidden")
+        ),
+        request_factory=_action_request,
+        checkpoint_store=store,
+        environment_reconnector=lambda _session_id, reference: RuntimeEnvironmentLease(
+            recovered_environment,
+            reconnect_reference=reference,
+        ),
+    )
+    recovered = await factory.recover(
+        "session:effect-revision",
+        revised.checkpoint_id,
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    restored = await recovered.snapshot()
+    assert restored.effect_reconciliation is not None
+    assert restored.effect_reconciliation.status == "pending"
+    assert recovered_environment.execute_calls == 0
+    assert recovered_policy.calls == 0
+
+    await recovered.resume("resume:restart-reconciliation", revised.checkpoint_id)
+    for _ in range(100):
+        compensated = await recovered.snapshot()
+        if (
+            compensated.status is PublicSessionStatus.PAUSED
+            and compensated.effect_reconciliation is not None
+            and compensated.effect_reconciliation.status == "compensated"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"restored reconciliation did not close: {compensated!r}")
+    assert recovered_environment.execute_calls == 1
+    assert recovered_policy.calls == 1
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("candidate_action_available", "compensation_post_enabled", "expected_code", "expected_calls"),
+    (
+        (False, False, "compensation_unavailable", 1),
+        (True, True, "compensation_unverified", 2),
+    ),
+)
+async def test_compensation_failure_closes_as_non_resumable_typed_pause(
+    tmp_path,
+    candidate_action_available,
+    compensation_post_enabled,
+    expected_code,
+    expected_calls,
+) -> None:
+    handle, _store, policy, _compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+        candidate_action_available=candidate_action_available,
+        compensation_post_enabled=compensation_post_enabled,
+    )
+    assert source.checkpoint_id is not None
+    revised = await handle.revise(
+        _revision_command(
+            f"revise:{expected_code}",
+            source.checkpoint_id,
+            "Disable shared state instead",
+        )
+    )
+    assert revised.checkpoint_id is not None
+
+    await handle.resume(f"resume:{expected_code}", revised.checkpoint_id)
+    for _ in range(100):
+        paused = await handle.snapshot()
+        if (
+            paused.status is PublicSessionStatus.PAUSED
+            and paused.effect_reconciliation is not None
+            and paused.effect_reconciliation.status == "needs_input"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"failed compensation did not close at a pause: {paused!r}")
+
+    assert paused.effect_reconciliation.code == expected_code
+    assert paused.resume_eligible is False
+    assert PublicSessionCapability.RESUME_TASK not in paused.capabilities
+    assert environment.execute_calls == expected_calls
+    assert policy.calls == expected_calls
+    assert paused.checkpoint_id is not None
+    with pytest.raises(PublicSessionConflict, match=expected_code):
+        await handle.resume(f"resume-again:{expected_code}", paused.checkpoint_id)
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_compensation_policy_and_executor_are_scoped_to_original_resource(tmp_path) -> None:
+    policy = ResourceRecordingSelectPolicy()
+    handle, _store, _policy, _compiler, environment, source = await _effect_revision_session(
+        tmp_path,
+        desired_enabled=False,
+        candidate_decoy=True,
+        policy_override=policy,
+    )
+    assert source.checkpoint_id is not None
+    revised = await handle.revise(
+        _revision_command(
+            "revise:resource-scoped-compensation",
+            source.checkpoint_id,
+            "Disable shared state instead",
+        )
+    )
+    assert revised.checkpoint_id is not None
+
+    await handle.resume("resume:resource-scoped-compensation", revised.checkpoint_id)
+    for _ in range(100):
+        compensated = await handle.snapshot()
+        if (
+            compensated.status is PublicSessionStatus.PAUSED
+            and compensated.effect_reconciliation is not None
+            and compensated.effect_reconciliation.status == "compensated"
+        ):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError(f"resource-scoped compensation did not close: {compensated!r}")
+
+    assert policy.seen_resources == [("shared-state",), ("shared-state",)]
+    assert environment.executed_requests[-1].selection.resource_ref == "shared-state"
+    assert all(
+        request.selection.resource_ref != "unrelated-state"
+        for request in environment.executed_requests
+    )
     await handle.close()
 
 

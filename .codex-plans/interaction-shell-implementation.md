@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 6/6.5 closed; Phase 7 bounded effect reconciliation in progress
+Status: Phase 7 bounded provider-free implementation complete; live compensation/browser witness not run
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -490,7 +490,7 @@ Constraints:
       Documentation now identifies this as a Shell language projection rather
       than a Runtime checkpoint or command-result authority. No live benchmark,
       Viewer, OTel exporter, Phase 7, or compensation work ran.
-21. **in progress — Phase 7 bounded effect reconciliation and compensation.**
+21. **done for the bounded provider-free contract — Phase 7 effect reconciliation and compensation.**
     - Owner model: `Reversibility` and operation semantics classify the original
       effect; the immutable execution receipt owns dispatch truth; fresh World
       owns currentness; `RunState` owns one bounded reconciliation requirement;
@@ -547,6 +547,36 @@ Constraints:
       user-required sixth maintained Markdown document). Ruff and diff checks
       pass. Repository-wide MyPy still reports 46 pre-existing inference errors
       outside changed lines, so it is not claimed as a passing gate.
+    - Runtime/checkpoint milestone implemented: one dispatch-crossing
+      `CommittedEffect` and one optional compensation effect are conserved in
+      `RunState` and checkpoint v3; v2 remains readable. Fresh revised-goal
+      `COMPLETE` preserves the effect. Otherwise one known
+      reversible/compensatable effect commits revision `n+1` with a pending
+      reconciliation and remains paused. A separate Resume gives the same
+      ActionPolicy only current same-resource actions; the existing Binder,
+      currentness, Risk, Confirmation, Executor, fresh World, ActionOutcome,
+      and TaskEvaluator boundaries remain unchanged. Verified compensation
+      appends its receipt, atomically checkpoints, and pauses again until a
+      second Resume. Unknown dispatch/semantics, irreversible, missing or
+      multiple effects, unavailable/mismatched actions, multi-receipt
+      compensation, and unverified postconditions close typed and fail closed.
+    - Public milestone implemented: Runtime public session and Shell snapshot
+      v2 expose one bounded semantic reconciliation projection and exact result
+      codes; no private binding or GUI state crosses the port. Historical
+      revision command identity stays on its unchanged durable payload version,
+      so the additive snapshot upgrade cannot invalidate stored retries. Shell
+      OpenAPI/generated TypeScript and the operator UI show the owner-produced
+      state but own no effect logic. Viewer remains typed unavailable and its
+      configured key was not read or used.
+    - Provider-free evidence: 42 focused checkpoint/reconciliation tests, 216
+      owner/Runtime/architecture tests with 3 optional skips, and 64 external
+      backend/architecture tests passed. Frontend unit/lint/typecheck/build,
+      backend Pyright, repository Ruff, compileall, and diff checks passed.
+      Compatibility witnesses cover checkpoint v2, revision digest stability,
+      restart without replay, confirmation, resource scoping, exact typed
+      rejections, unavailable/unverified compensation, and public/private
+      projection. No live browser compensation witness or benchmark was run;
+      this does not claim a multi-effect ledger, rollback, or general Saga.
 
 ## Current-work produced files
 

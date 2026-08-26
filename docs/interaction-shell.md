@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Local real execution, durable control, and bounded task revision implemented; Viewer and effect reconciliation unavailable**
+Status: **Local real execution, durable control, bounded task revision, and single-effect compensation implemented; Viewer unavailable**
 
 Date: 2026-08-27
 
@@ -21,9 +21,11 @@ profile are implemented. The production-safe default deliberately uses an unavai
 `interaction_shell.deployment_app:app` composes one real Runtime, policy/history, BrowserGym environment, browser
 context, trace sink, and idempotent resource cleanup owner per Web session. The local profile has passed real API/UI
 execution and two-session isolation witnesses. Cooperative `CancelRun` is now a distinct public terminal capability;
-durable `PauseRun`/`ResumeRun` and zero-prior-effect `ReviseTask` are also public Runtime capabilities. Viewer, local
-BrowserGym process-restart reconnection, effect reconciliation/compensation, and takeover remain visible as typed
-unavailable states rather than being hidden by the UI or simulated by the shell.
+durable `PauseRun`/`ResumeRun` and bounded `ReviseTask` are also public Runtime capabilities. A single retained known
+effect can be kept when fresh evaluation proves the revised goal complete or compensated through the same
+ActionPolicy/Binder/Risk/Executor chain. Viewer, local BrowserGym process-restart reconnection, multi-effect
+reconciliation, and takeover remain visible as typed unavailable/unsupported states rather than being hidden by the
+UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -97,17 +99,17 @@ The following states must not be collapsed into one label such as "implemented":
 | Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
-| Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, zero-prior-effect task revision, snapshot/event, and close; SQLite remains private to Runtime. |
+| Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, bounded task revision/effect reconciliation, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
 | Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
-| Running-task revision | Implemented for zero prior dispatched effects | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. Any prior `SENT`/`SENT_UNKNOWN` returns typed `effect_reconciliation_required` without changing the old goal. |
+| Running-task revision | Implemented with bounded single-effect reconciliation | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. One retained known effect is either kept by fresh complete evaluation or attached to revision `n+1` as pending compensation; uncertain, irreversible, missing, or multiple effect truth fails closed without replacing revision `n`. |
 | Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
-| Effect reconciliation/compensation | Unavailable | Phase 6 preserves and blocks on prior dispatched truth; Phase 7 has not implemented observation/compensation or automatic undo. |
+| Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Closed through Phase 6.5 | Phase 0–6 plus checkpoint identity, bounded cross-restart conversation projection, Runtime-owned idempotency, tests, documentation, and milestone evidence agree in the current commit. |
+| Delivery hygiene | Phase 7 provider-free implementation verified | Phase 0–6.5 plus typed effect conservation, single-effect reconciliation, checkpoint v2/v3 compatibility, Runtime-owned result codes, Shell v2 projection, and provider-free tests agree. No live compensation/browser witness or benchmark was run for this change. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -661,13 +663,17 @@ user message is not injected directly into ActionPolicy and does not mutate an e
 ReviseTask(command_id, expected_task_revision=n, bounded_conversation)
 → cooperative pause at a Runtime safe boundary
 → commit checkpoint for the last closed step
-→ if any prior receipt is SENT/SENT_UNKNOWN, keep revision n and return effect_reconciliation_required
+→ validate bounded dispatch-crossing effect lineage; missing/multiple truth fails closed on revision n
 → TaskRevisionCompiler interprets bounded user-owned language
 → TaskIntake validates a proposed complete TaskGoal(revision=n+1)
 → public Runtime revision boundary stages environment.revise_task
 → acquire fresh WorldObservation
 → GoalCompiler runs exactly once with TASK_REVISION
-→ atomically commit TaskGoal(n+1), invalidation, GoalPlan outcome, fresh World lineage, and revised checkpoint
+→ classify the retained effect against fresh revised-goal evaluation and typed reversibility
+→ no effect / fresh COMPLETE: commit TaskGoal(n+1) with no pending compensation
+→ one reversible/compensatable conflict: commit TaskGoal(n+1) with pending reconciliation
+→ SENT_UNKNOWN / irreversible / unknown: restore revision n and return the exact typed result
+→ atomically commit the accepted TaskGoal(n+1), invalidation, GoalPlan outcome, fresh World lineage, and checkpoint
 → owner snapshot reports PAUSED with revised + checkpoint_id
 → a later ResumeRun lets the same ActionPolicy continue from the committed revision
 ```
@@ -699,8 +705,10 @@ Compiler/conversion outcomes have closed control semantics:
 
 | Outcome | Goal authority | Run/control result |
 |---|---|---|
-| Prior `SENT`/`SENT_UNKNOWN` before compilation | remains `n` | remain `PAUSED` with durable `effect_reconciliation_required`; Phase 7 is required before revising that goal |
-| `RevisionReady` + atomic commit, with no prior dispatched effect | becomes `n+1` | remain `PAUSED` with `revised`; separate `ResumeRun` is legal |
+| No retained dispatch-crossing effect | becomes `n+1` | remain `PAUSED` with `revised`; separate `ResumeRun` is legal |
+| One retained effect + fresh revised TaskEvaluator `COMPLETE` | becomes `n+1` | preserve effect, remain `PAUSED`, and require no compensation dispatch |
+| One retained known reversible/compensatable conflict | becomes `n+1` | remain `PAUSED` with pending `effect_reconciliation`; separate `ResumeRun` enters the ordinary compensation pipeline |
+| `SENT_UNKNOWN`, irreversible, unknown, missing, or multiple effect truth | remains `n` | remain `PAUSED` with exact typed `effect_reconciliation_required` result; no blind retry or invented rollback |
 | `NeedsInput` | remains `n` | remain `PAUSED` with typed `revision_needs_input`; no GUI dispatch occurs |
 | `NoChange` | remains `n` | remain `PAUSED`; user may resume, revise again, cancel, or close |
 | `Unsupported` / `Failed` / TaskIntake rejection | remains `n` | remain `PAUSED` with typed conversion failure; original task may resume |
@@ -1305,14 +1313,15 @@ GoalCompiler, and existing ActionPolicy.
    add a revision Agent, per-step compiler, mutable task plan, or second loop.
 7. Test revision during policy, before dispatch, during confirmation, after known dispatch, and after unknown dispatch;
    test stale and duplicate revision commands.
-8. Commit `revised` when no prior dispatched receipt exists. If retained `SENT`/`SENT_UNKNOWN` truth exists, keep the
-   old goal/checkpoint authoritative and return typed `effect_reconciliation_required`; Phase 7 will own later
-   reconciliation before that revision can be accepted.
+8. Commit `revised` directly when no dispatched receipt exists. The Phase 7 extension may also accept one known effect
+   as fresh-compatible or commit one reversible/compensatable conflict with pending reconciliation. Unknown,
+   irreversible, missing, or multiple effect truth keeps the old goal/checkpoint authoritative and returns the exact
+   typed `effect_reconciliation_required` result.
 
 Exit evidence: every revision command ends in one table-defined paused/waiting outcome; all subsequent resumed actions
 use revision `n+1`; no revision-`n` selection or approval can dispatch; old
-effects are preserved as immutable receipts; GoalCompiler is called exactly once for the accepted revision; known and
-unknown prior dispatches reach `effect_reconciliation_required` without compiling or executing a new action.
+effects are preserved as immutable receipts; GoalCompiler is called exactly once for an accepted candidate revision;
+and every prior-effect branch has one typed paused result without replaying the old action.
 
 Implementation status (2026-08-27): complete for the bounded Phase 6/6.5 scope. `ReviseTask` is a dedicated Shell command
 and endpoint that makes one `RuntimeSessionPort.revise` call. Runtime reuses the Phase 5 cooperative pause and source
@@ -1332,10 +1341,10 @@ the projection before recovering the Runtime handle, and deletes the projection 
 failure prevents the Runtime call. This projection owns neither Runtime outcome nor TaskGoal/GUI state. The Shell
 always forwards revision attempts under its per-session lock and does not decide revision idempotency or staleness. Task admission
 also binds model-history identity before initialization, so a pre-policy pause can persist and recover an empty settled
-Harness snapshot. Prior dispatched truth fails closed as
-`effect_reconciliation_required` while keeping revision `n`; effect reconciliation, compensation, Viewer, and
-takeover remain unavailable. OTel exporter wiring remains a non-blocking deployment task and is not part of this
-closure.
+Harness snapshot. Phase 7 now extends the prior-dispatch boundary without changing Phase 6 compiler ownership:
+single known compatible/compensatable truth can reach a revised checkpoint, while uncertain, irreversible, missing,
+or multiple effect truth fails closed and keeps revision `n`. Viewer and takeover remain unavailable. OTel exporter
+wiring remains a non-blocking deployment task and is not part of this closure.
 
 ### Phase 7 — bounded compensation for already-applied effects
 
@@ -1356,6 +1365,26 @@ Owner: existing effect authority, ActionPolicy, Binder/Risk/Executor, and TaskEv
 
 Exit evidence: reversible and compensatable cases converge through the ordinary action pipeline; irreversible and
 unknown cases fail closed; no test requires a production branch keyed to a fixture or page string.
+
+Implementation status (2026-08-27): provider-free implementation and public projection are verified for one retained
+dispatch-crossing effect. ActionBinding, ActionOption, admitted selection, bound request, receipt, checkpoint, and
+public snapshot conserve one typed `resource_ref` plus
+`REVERSIBLE | COMPENSATABLE | IRREVERSIBLE | UNKNOWN`; semantic conflicts fail closed and BrowserGym remains
+conservatively `UNKNOWN` unless its surface contract supplies stronger metadata. Revision `n+1` is accepted directly
+when its fresh TaskEvaluator already reports `COMPLETE`. Otherwise one known reversible/compensatable `SENT` effect
+becomes a Runtime-owned pending reconciliation and remains `PAUSED`. A separate Resume gives the existing ActionPolicy
+only currently offered actions for the same resource plus the bounded original-effect summary. The selected action
+still passes the existing Binder, currentness, Risk, Confirmation, Executor, fresh World, ActionOutcome, and
+TaskEvaluator boundaries. A fresh satisfied local postcondition appends a new compensation effect and atomically
+checkpoints `compensated`; the task remains paused until another separate Resume. `SENT_UNKNOWN`, irreversible,
+missing lineage, more than one retained dispatch-crossing receipt, no current same-resource action, mismatched
+resource, multiple compensation receipts, or unverified compensation produce a typed paused/needs-input/unsupported
+result without retrying or rewriting the original receipt. Runtime checkpoints are v3 and continue reading v2;
+revision command digests remain frozen to their existing command-payload version, independent of the additive public
+session/Shell v2 snapshot. The Shell projects the bounded reconciliation value and exact conflict codes but owns no
+effect state or compensation logic. This is intentionally not a general effect ledger, task rollback, multi-effect
+Saga, or proof that an incomplete revised goal is semantically compatible with a retained effect. No live browser
+compensation witness or benchmark was run for this implementation milestone.
 
 ### Phase 8 — optional user takeover and return
 

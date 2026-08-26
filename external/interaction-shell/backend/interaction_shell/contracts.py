@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
-SCHEMA_VERSION = "interaction-shell.v1"
+SCHEMA_VERSION = "interaction-shell.v2"
 
 
 class StrictModel(BaseModel):
@@ -148,8 +148,18 @@ class ControlOutcome(StrictModel):
     message: str = Field(default="", max_length=2000)
 
 
+class EffectReconciliation(StrictModel):
+    status: Literal["pending", "compensated", "needs_input"]
+    code: str = Field(min_length=1, max_length=128)
+    original_effect_ref: str = Field(min_length=1, max_length=256)
+    original_action: str = Field(min_length=1, max_length=256)
+    resource_ref: str = Field(min_length=1, max_length=512)
+    reversibility: Literal["reversible", "compensatable", "irreversible", "unknown"]
+    compensation_effect_ref: str = Field(default="", max_length=256)
+
+
 class RuntimeSessionSnapshot(StrictModel):
-    schema_version: Literal["interaction-shell.v1"] = SCHEMA_VERSION
+    schema_version: Literal["interaction-shell.v2"] = SCHEMA_VERSION
     session_id: str
     task_id: str | None = None
     task_revision: int = Field(default=0, ge=0)
@@ -167,6 +177,7 @@ class RuntimeSessionSnapshot(StrictModel):
     checkpoint_id: str | None = Field(default=None, max_length=200)
     resume_eligible: bool = False
     last_control_outcome: ControlOutcome | None = None
+    effect_reconciliation: EffectReconciliation | None = None
     expires_at: datetime
 
     @field_validator("expires_at")
@@ -178,7 +189,7 @@ class RuntimeSessionSnapshot(StrictModel):
 
 
 class ShellEvent(StrictModel):
-    schema_version: Literal["interaction-shell.v1"] = SCHEMA_VERSION
+    schema_version: Literal["interaction-shell.v2"] = SCHEMA_VERSION
     session_id: str
     event_epoch: str = Field(min_length=16, max_length=128)
     cursor: int = Field(ge=1)
@@ -325,6 +336,16 @@ ConflictCode = Literal[
     "revision_command_conflict",
     "command_identity_reused",
     "effect_reconciliation_required",
+    "effect_non_compensable",
+    "effect_reconciliation_unknown",
+    "effect_reconciliation_unsupported",
+    "compensation_unavailable",
+    "compensation_not_sent",
+    "compensation_effect_unknown",
+    "compensation_unverified",
+    "compensation_resource_mismatch",
+    "compensation_action_not_allowed",
+    "compensation_multiple_effects",
 ]
 
 

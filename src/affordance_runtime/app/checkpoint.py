@@ -12,6 +12,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from affordance_runtime.actions.effect_semantics import Reversibility
+from affordance_runtime.actions.reconciliation import (
+    EffectReconciliation,
+    EffectReconciliationReason,
+    EffectReconciliationStatus,
+)
 from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
@@ -32,7 +38,7 @@ from affordance_runtime.agent.workspace import (
     SemanticEvent,
     SemanticEventKind,
 )
-from affordance_runtime.execution.contracts import DispatchStatus
+from affordance_runtime.execution.contracts import CommittedEffect, DispatchStatus
 from affordance_runtime.goals.plan import (
     Failed,
     GoalPlan,
@@ -56,7 +62,13 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v2"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v3"
+_SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
+    {
+        "affordance-runtime.checkpoint.v2",
+        RUNTIME_CHECKPOINT_SCHEMA_VERSION,
+    }
+)
 _MAX_CHECKPOINT_BYTES = 8 * 1024 * 1024
 _LEGACY_REVISION_PAYLOAD_DIGEST = "0" * 64
 _RECOVERABLE_MODEL_HISTORY_FORMATS = frozenset(
@@ -106,7 +118,7 @@ class RuntimeCheckpoint:
         object.__setattr__(self, "model_history", freeze_json(self.model_history))
         if not self.session_id.strip() or len(self.session_id) > 200:
             raise RuntimeCheckpointError("checkpoint_session_invalid")
-        if self.schema_version != RUNTIME_CHECKPOINT_SCHEMA_VERSION:
+        if self.schema_version not in _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS:
             raise RuntimeCheckpointError("checkpoint_schema_unsupported")
         if not self.pause_command_id.strip() or len(self.pause_command_id) > 128:
             raise RuntimeCheckpointError("checkpoint_command_invalid")
@@ -297,6 +309,11 @@ _REVISION_OUTCOMES = frozenset(
         "effect_reconciliation_required",
     }
 )
+_REVISION_RESULT_CODES = _REVISION_OUTCOMES | {
+    "effect_non_compensable",
+    "effect_reconciliation_unknown",
+    "effect_reconciliation_unsupported",
+}
 
 
 @dataclass(frozen=True)
@@ -311,8 +328,11 @@ class RuntimeCheckpointRevisionOutcome:
     outcome: str
     payload_digest: str
     message: str
+    result_code: str = ""
 
     def __post_init__(self) -> None:
+        result_code = self.result_code.strip() or self.outcome
+        object.__setattr__(self, "result_code", result_code)
         if (
             not self.session_id.strip()
             or not self.command_id.strip()
@@ -322,9 +342,24 @@ class RuntimeCheckpointRevisionOutcome:
             or type(self.task_revision) is not int
             or self.task_revision < 1
             or self.outcome not in _REVISION_OUTCOMES
+            or result_code not in _REVISION_RESULT_CODES
             or len(self.payload_digest) != 64
             or any(character not in "0123456789abcdef" for character in self.payload_digest)
             or len(self.message) > 2000
+            or (
+                self.outcome != "effect_reconciliation_required"
+                and result_code != self.outcome
+            )
+            or (
+                self.outcome == "effect_reconciliation_required"
+                and result_code
+                not in {
+                    "effect_reconciliation_required",
+                    "effect_non_compensable",
+                    "effect_reconciliation_unknown",
+                    "effect_reconciliation_unsupported",
+                }
+            )
             or (
                 self.outcome == "revised"
                 and self.result_checkpoint_id == self.source_checkpoint_id
@@ -684,7 +719,7 @@ class SQLiteRuntimeCheckpointStore:
                 raise RuntimeCheckpointError("checkpoint_not_found")
             existing = connection.execute(
                 "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome, "
-                "payload_digest, message "
+                "payload_digest, message, result_code "
                 "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
                 (outcome.session_id, outcome.command_id),
             ).fetchone()
@@ -695,6 +730,7 @@ class SQLiteRuntimeCheckpointStore:
                 outcome.outcome,
                 outcome.payload_digest,
                 outcome.message,
+                outcome.result_code,
             )
             if existing is not None:
                 if existing != expected:
@@ -714,8 +750,8 @@ class SQLiteRuntimeCheckpointStore:
             connection.execute(
                 "INSERT INTO runtime_revision_outcomes "
                 "(session_id, command_id, source_checkpoint_id, result_checkpoint_id, "
-                "task_revision, outcome, payload_digest, message, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "task_revision, outcome, payload_digest, message, result_code, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     outcome.session_id,
                     outcome.command_id,
@@ -725,6 +761,7 @@ class SQLiteRuntimeCheckpointStore:
                     outcome.outcome,
                     outcome.payload_digest,
                     outcome.message,
+                    outcome.result_code,
                     datetime.now(UTC).isoformat(),
                 ),
             )
@@ -744,7 +781,7 @@ class SQLiteRuntimeCheckpointStore:
         try:
             row = connection.execute(
                 "SELECT source_checkpoint_id, result_checkpoint_id, task_revision, outcome, "
-                "payload_digest, message "
+                "payload_digest, message, result_code "
                 "FROM runtime_revision_outcomes WHERE session_id = ? AND command_id = ?",
                 (session_id, command_id),
             ).fetchone()
@@ -761,6 +798,7 @@ class SQLiteRuntimeCheckpointStore:
             str(row[3]),
             str(row[4]),
             str(row[5]),
+            str(row[6]),
         )
 
     def _checkpoint_revision_outcome(
@@ -772,7 +810,7 @@ class SQLiteRuntimeCheckpointStore:
         try:
             row = connection.execute(
                 "SELECT command_id, result_checkpoint_id, task_revision, outcome, "
-                "payload_digest, message "
+                "payload_digest, message, result_code "
                 "FROM runtime_revision_outcomes "
                 "WHERE session_id = ? AND source_checkpoint_id = ? AND outcome = 'revised'",
                 (session_id, checkpoint_id),
@@ -790,6 +828,7 @@ class SQLiteRuntimeCheckpointStore:
             str(row[3]),
             str(row[4]),
             str(row[5]),
+            str(row[6]),
         )
 
 
@@ -814,6 +853,10 @@ def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, obje
         "workspace": to_json_compatible(state.workspace),
         "pause_boundary": to_json_compatible(boundary),
         "current_observation_id": state.current_world.observation_id,
+        "latest_effect": _committed_effect_payload(state.latest_effect),
+        "effect_reconciliation": _effect_reconciliation_payload(
+            state.effect_reconciliation
+        ),
     }
 
 
@@ -831,6 +874,73 @@ def _goal_resolution_payload(resolution: object | None) -> object:
     if kind is None:
         raise RuntimeCheckpointError("checkpoint_goal_resolution_invalid")
     return {"kind": kind, "value": to_json_compatible(resolution)}
+
+
+def _committed_effect_payload(effect: CommittedEffect | None) -> dict[str, object] | None:
+    if effect is None:
+        return None
+    return {
+        "effect_ref": effect.effect_ref,
+        "task_revision": effect.task_revision,
+        "request_id": effect.request_id,
+        "semantic_action": effect.semantic_action,
+        "resource_ref": effect.resource_ref,
+        "semantic_effects": list(effect.semantic_effects),
+        "reversibility": effect.reversibility.value,
+        "dispatch_status": effect.dispatch_status.value,
+        "before_observation_id": effect.before_observation_id,
+        "after_observation_id": effect.after_observation_id,
+    }
+
+
+def _effect_reconciliation_payload(
+    reconciliation: EffectReconciliation | None,
+) -> dict[str, object] | None:
+    if reconciliation is None:
+        return None
+    return {
+        "original_effect": _committed_effect_payload(reconciliation.original_effect),
+        "revised_task_revision": reconciliation.revised_task_revision,
+        "status": reconciliation.status.value,
+        "reason": reconciliation.reason.value,
+        "compensation_effect": _committed_effect_payload(
+            reconciliation.compensation_effect
+        ),
+    }
+
+
+def _restore_committed_effect(payload: object) -> CommittedEffect | None:
+    if payload is None:
+        return None
+    value = _mapping(payload)
+    return CommittedEffect(
+        str(value["effect_ref"]),
+        _integer(value["task_revision"]),
+        str(value["request_id"]),
+        str(value["semantic_action"]),
+        str(value["resource_ref"]),
+        tuple(_string_sequence(value.get("semantic_effects", []))),
+        Reversibility(str(value["reversibility"])),
+        DispatchStatus(str(value["dispatch_status"])),
+        str(value["before_observation_id"]),
+        str(value["after_observation_id"]),
+    )
+
+
+def _restore_effect_reconciliation(payload: object) -> EffectReconciliation | None:
+    if payload is None:
+        return None
+    value = _mapping(payload)
+    original = _restore_committed_effect(value["original_effect"])
+    if original is None:
+        raise RuntimeCheckpointError("checkpoint_effect_reconciliation_invalid")
+    return EffectReconciliation(
+        original,
+        _integer(value["revised_task_revision"]),
+        EffectReconciliationStatus(str(value["status"])),
+        EffectReconciliationReason(str(value["reason"])),
+        _restore_committed_effect(value.get("compensation_effect")),
+    )
 
 
 def _last_step_payload(state: RunState) -> dict[str, object] | None:
@@ -853,6 +963,9 @@ def _last_step_payload(state: RunState) -> dict[str, object] | None:
                 "request_id": receipt.request.request_id,
                 "tool_call_id": receipt.request.tool_call_id,
                 "semantic_action": receipt.request.intent.semantic_action,
+                "resource_ref": receipt.request.selection.resource_ref,
+                "semantic_effects": list(receipt.request.selection.semantic_effects),
+                "reversibility": receipt.request.selection.reversibility.value,
                 "dispatch_status": receipt.result.dispatch_status.value,
                 "backend": receipt.result.backend,
                 "transport_success": receipt.result.transport_success,
@@ -957,25 +1070,36 @@ def _restore_run_facts(
             last_step_payload,
         )
         counts_payload = _mapping(run_payload.get("decision_counts", {}))
+        latest_effect = _restore_committed_effect(run_payload.get("latest_effect"))
+        reconciliation = _restore_effect_reconciliation(
+            run_payload.get("effect_reconciliation")
+        )
         return RunCheckpointFacts(
-            status,
-            _integer(run_payload["remaining_steps"]),
-            _integer(run_payload["observation_count"]),
-            _integer(run_payload["execution_count"]),
-            _integer(run_payload["step_count"]),
-            _integer(run_payload["context_generation"]),
-            _integer(run_payload["waited_ms"]),
-            _integer(run_payload["task_revision"]),
-            resolution,
-            _integer(run_payload["goal_plan_version_counter"]),
-            _integer(run_payload["committed_sent_unknown_count"]),
-            {DecisionKind(str(kind)): _integer(value) for kind, value in counts_payload.items()},
-            _integer(run_payload["currentness_probe_count"]),
-            workspace,
-            boundary,
-            last_decision,
-            confirmation,
-            feedback,
+            status_before_pause=status,
+            remaining_steps=_integer(run_payload["remaining_steps"]),
+            observation_count=_integer(run_payload["observation_count"]),
+            execution_count=_integer(run_payload["execution_count"]),
+            step_count=_integer(run_payload["step_count"]),
+            context_generation=_integer(run_payload["context_generation"]),
+            waited_ms=_integer(run_payload["waited_ms"]),
+            task_revision=_integer(run_payload["task_revision"]),
+            goal_resolution=resolution,
+            goal_plan_version_counter=_integer(run_payload["goal_plan_version_counter"]),
+            committed_sent_unknown_count=_integer(
+                run_payload["committed_sent_unknown_count"]
+            ),
+            decision_counts={
+                DecisionKind(str(kind)): _integer(value)
+                for kind, value in counts_payload.items()
+            },
+            currentness_probe_count=_integer(run_payload["currentness_probe_count"]),
+            workspace=workspace,
+            pause_boundary=boundary,
+            latest_effect=latest_effect,
+            effect_reconciliation=reconciliation,
+            last_decision=last_decision,
+            last_confirmation=confirmation,
+            last_feedback=feedback,
         )
     except RuntimeCheckpointError:
         raise
@@ -1253,6 +1377,7 @@ CREATE TABLE IF NOT EXISTS runtime_revision_outcomes (
     )),
     payload_digest TEXT NOT NULL,
     message TEXT NOT NULL,
+    result_code TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (session_id, command_id),
     FOREIGN KEY (session_id, source_checkpoint_id)
@@ -1280,6 +1405,10 @@ def _migrate_revision_outcome_schema(connection: sqlite3.Connection) -> None:
         ),
         "message": (
             "ALTER TABLE runtime_revision_outcomes ADD COLUMN message "
+            "TEXT NOT NULL DEFAULT ''"
+        ),
+        "result_code": (
+            "ALTER TABLE runtime_revision_outcomes ADD COLUMN result_code "
             "TEXT NOT NULL DEFAULT ''"
         ),
     }
