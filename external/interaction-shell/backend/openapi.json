@@ -1,0 +1,2245 @@
+{
+  "components": {
+    "schemas": {
+      "Accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "accepted",
+            "default": "accepted",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "command_id",
+          "snapshot"
+        ],
+        "title": "Accepted",
+        "type": "object"
+      },
+      "AnswerQuestion": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "answer_question",
+            "default": "answer_question",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "request_id",
+          "answer"
+        ],
+        "title": "AnswerQuestion",
+        "type": "object"
+      },
+      "ApproveAction": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "approve_action",
+            "default": "approve_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "request_id"
+        ],
+        "title": "ApproveAction",
+        "type": "object"
+      },
+      "Capability": {
+        "enum": [
+          "start_task",
+          "answer_question",
+          "approve_action",
+          "reject_action",
+          "close_session",
+          "cancel_task",
+          "revise_task",
+          "start_new_task",
+          "take_over",
+          "return_control"
+        ],
+        "title": "Capability",
+        "type": "string"
+      },
+      "CaseDiagnosis": {
+        "additionalProperties": true,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "context_health": {
+            "$ref": "#/components/schemas/ContextHealth"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "first_abnormal_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Abnormal Step"
+          },
+          "last_progress_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Progress Step"
+          },
+          "likely_upstream_stage": {
+            "title": "Likely Upstream Stage",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "interaction-shell.diagnosis.v1",
+            "default": "interaction-shell.diagnosis.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "success": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success"
+          },
+          "terminal_code": {
+            "title": "Terminal Code",
+            "type": "string"
+          },
+          "terminal_stage": {
+            "title": "Terminal Stage",
+            "type": "string"
+          },
+          "trajectory_metrics": {
+            "$ref": "#/components/schemas/TrajectoryMetrics"
+          }
+        },
+        "required": [
+          "case_id",
+          "status",
+          "success",
+          "terminal_stage",
+          "terminal_code",
+          "first_abnormal_step",
+          "last_progress_step",
+          "likely_upstream_stage",
+          "confidence",
+          "context_health",
+          "trajectory_metrics",
+          "evidence_refs"
+        ],
+        "title": "CaseDiagnosis",
+        "type": "object"
+      },
+      "CloseSession": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "close_session",
+            "default": "close_session",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status"
+        ],
+        "title": "CloseSession",
+        "type": "object"
+      },
+      "Completion": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "title": "Message",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "failure",
+              "blocked"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "code",
+          "message"
+        ],
+        "title": "Completion",
+        "type": "object"
+      },
+      "Conflict": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "duplicate_command",
+              "stale_command",
+              "pending_request_mismatch",
+              "session_closed",
+              "runtime_conflict"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "conflict",
+            "default": "conflict",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "command_id",
+          "code",
+          "snapshot"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "ContextHealth": {
+        "additionalProperties": true,
+        "properties": {
+          "capacity_rejections": {
+            "minimum": 0.0,
+            "title": "Capacity Rejections",
+            "type": "integer"
+          },
+          "classification": {
+            "enum": [
+              "healthy",
+              "pressure",
+              "capacity_failure",
+              "unknown"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "fill_ratio": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Ratio"
+          }
+        },
+        "required": [
+          "classification",
+          "capacity_rejections"
+        ],
+        "title": "ContextHealth",
+        "type": "object"
+      },
+      "CreateSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ttl_seconds": {
+            "default": 1800,
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "CreateSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "title": "Session Key",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "session_key",
+          "snapshot"
+        ],
+        "title": "CreateSessionResponse",
+        "type": "object"
+      },
+      "DiagnosisRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "compaction_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Compaction Count",
+            "type": "integer"
+          },
+          "complete_request_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complete Request Tokens"
+          },
+          "completion_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "context_capacity_rejections": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Context Capacity Rejections",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "cycle_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Cycle Count",
+            "type": "integer"
+          },
+          "effective_input_limit": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Input Limit"
+          },
+          "failure_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Origin"
+          },
+          "history_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "History Tokens",
+            "type": "integer"
+          },
+          "model_latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Model Latency Ms",
+            "type": "number"
+          },
+          "no_progress_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "No Progress Count",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "reporting_failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporting Failure Code"
+          },
+          "runtime_latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Runtime Latency Ms",
+            "type": "number"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "success": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success"
+          },
+          "terminal_code": {
+            "default": "unknown",
+            "title": "Terminal Code",
+            "type": "string"
+          },
+          "terminal_stage": {
+            "default": "unknown",
+            "title": "Terminal Stage",
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/PublicTraceExport"
+          }
+        },
+        "required": [
+          "schema_version",
+          "case_id",
+          "status",
+          "trace"
+        ],
+        "title": "DiagnosisRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "OptionalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "cancel_task",
+              "revise_task",
+              "start_new_task",
+              "take_over",
+              "return_control"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind"
+        ],
+        "title": "OptionalCommand",
+        "type": "object"
+      },
+      "PendingConfirmation": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "risk": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Risk",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "summary",
+          "risk"
+        ],
+        "title": "PendingConfirmation",
+        "type": "object"
+      },
+      "PendingQuestion": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "prompt"
+        ],
+        "title": "PendingQuestion",
+        "type": "object"
+      },
+      "PublicStep": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "label": {
+            "maxLength": 500,
+            "title": "Label",
+            "type": "string"
+          },
+          "latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "recovery_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Recovery Count",
+            "type": "integer"
+          },
+          "retry_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "stage": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "stage",
+          "status",
+          "label"
+        ],
+        "title": "PublicStep",
+        "type": "object"
+      },
+      "PublicTraceExport": {
+        "additionalProperties": true,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TraceStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "case_id"
+        ],
+        "title": "PublicTraceExport",
+        "type": "object"
+      },
+      "RejectAction": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "reject_action",
+            "default": "reject_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "request_id"
+        ],
+        "title": "RejectAction",
+        "type": "object"
+      },
+      "Rejected": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rejected",
+            "default": "rejected",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "command_id",
+          "code",
+          "message",
+          "snapshot"
+        ],
+        "title": "Rejected",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "idle",
+          "running",
+          "waiting_user",
+          "waiting_confirmation",
+          "done",
+          "failed",
+          "blocked"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "RuntimeSessionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            },
+            "title": "Capabilities",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Completion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_cursor": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "pending_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingConfirmation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingQuestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "public_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PublicStep"
+            },
+            "title": "Public Steps",
+            "type": "array"
+          },
+          "run_status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "default": "idle"
+          },
+          "schema_version": {
+            "const": "interaction-shell.v1",
+            "default": "interaction-shell.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Task Revision",
+            "type": "integer"
+          },
+          "task_text": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Text"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSummary",
+            "default": {
+              "completion_tokens": 0,
+              "model_latency_ms": 0.0,
+              "prompt_tokens": 0,
+              "runtime_latency_ms": 0.0
+            }
+          },
+          "viewer": {
+            "$ref": "#/components/schemas/ViewerState",
+            "default": {
+              "read_only": true,
+              "reason_code": "viewer_not_configured",
+              "status": "unavailable"
+            }
+          }
+        },
+        "required": [
+          "session_id",
+          "capabilities",
+          "expires_at"
+        ],
+        "title": "RuntimeSessionSnapshot",
+        "type": "object"
+      },
+      "ShellEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 1.0,
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "durable": {
+            "default": true,
+            "title": "Durable",
+            "type": "boolean"
+          },
+          "emitted_at": {
+            "format": "date-time",
+            "title": "Emitted At",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "interaction-shell.v1",
+            "default": "interaction-shell.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "cursor",
+          "type"
+        ],
+        "title": "ShellEvent",
+        "type": "object"
+      },
+      "StartTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "start_task",
+            "default": "start_task",
+            "title": "Kind",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "task"
+        ],
+        "title": "StartTask",
+        "type": "object"
+      },
+      "TraceStep": {
+        "additionalProperties": true,
+        "properties": {
+          "abnormal": {
+            "default": false,
+            "title": "Abnormal",
+            "type": "boolean"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "progress": {
+            "default": false,
+            "title": "Progress",
+            "type": "boolean"
+          },
+          "provider_attempts": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Provider Attempts",
+            "type": "integer"
+          },
+          "recoveries": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Recoveries",
+            "type": "integer"
+          },
+          "retries": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Retries",
+            "type": "integer"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "step": {
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "stage"
+        ],
+        "title": "TraceStep",
+        "type": "object"
+      },
+      "TrajectoryMetrics": {
+        "additionalProperties": true,
+        "properties": {
+          "completion_tokens": {
+            "minimum": 0.0,
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "cycle_count": {
+            "minimum": 0.0,
+            "title": "Cycle Count",
+            "type": "integer"
+          },
+          "model_latency_ms": {
+            "minimum": 0.0,
+            "title": "Model Latency Ms",
+            "type": "number"
+          },
+          "no_progress_count": {
+            "minimum": 0.0,
+            "title": "No Progress Count",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "minimum": 0.0,
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "provider_attempts": {
+            "minimum": 0.0,
+            "title": "Provider Attempts",
+            "type": "integer"
+          },
+          "recoveries": {
+            "minimum": 0.0,
+            "title": "Recoveries",
+            "type": "integer"
+          },
+          "retries": {
+            "minimum": 0.0,
+            "title": "Retries",
+            "type": "integer"
+          },
+          "runtime_latency_ms": {
+            "minimum": 0.0,
+            "title": "Runtime Latency Ms",
+            "type": "number"
+          },
+          "steps": {
+            "minimum": 0.0,
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "steps",
+          "provider_attempts",
+          "retries",
+          "recoveries",
+          "no_progress_count",
+          "cycle_count",
+          "model_latency_ms",
+          "runtime_latency_ms",
+          "prompt_tokens",
+          "completion_tokens"
+        ],
+        "title": "TrajectoryMetrics",
+        "type": "object"
+      },
+      "Unsupported": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/Capability"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "unsupported",
+            "default": "unsupported",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "command_id",
+          "capability",
+          "reason",
+          "snapshot"
+        ],
+        "title": "Unsupported",
+        "type": "object"
+      },
+      "UsageSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "model_latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Model Latency Ms",
+            "type": "number"
+          },
+          "prompt_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "runtime_latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Runtime Latency Ms",
+            "type": "number"
+          }
+        },
+        "title": "UsageSummary",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ViewerState": {
+        "additionalProperties": false,
+        "properties": {
+          "protected_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protected Path"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "steel",
+                  "browserbase"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "default": "viewer_not_configured",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "status": {
+            "default": "unavailable",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "ViewerState",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Affordance Interaction Shell",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/diagnostics": {
+      "get": {
+        "operationId": "list_diagnostics_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CaseDiagnosis"
+                  },
+                  "title": "Response List Diagnostics Diagnostics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Diagnostics"
+      },
+      "post": {
+        "operationId": "project_diagnostic_diagnostics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDiagnosis"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Diagnostic"
+      }
+    },
+    "/diagnostics/{case_id}": {
+      "get": {
+        "operationId": "get_diagnostic_diagnostics__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDiagnosis"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Diagnostic"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/schemas/shell-event": {
+      "get": {
+        "description": "Concrete versioned schema anchor used by OpenAPI TypeScript generation.",
+        "operationId": "shell_event_schema_schemas_shell_event_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShellEvent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Shell Event Schema"
+      }
+    },
+    "/sessions": {
+      "post": {
+        "operationId": "create_session_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session"
+      }
+    },
+    "/sessions/{session_id}": {
+      "get": {
+        "operationId": "get_snapshot_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Snapshot"
+      }
+    },
+    "/sessions/{session_id}/commands/answer": {
+      "post": {
+        "operationId": "answer_sessions__session_id__commands_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerQuestion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Answer Sessions  Session Id  Commands Answer Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer"
+      }
+    },
+    "/sessions/{session_id}/commands/approve": {
+      "post": {
+        "operationId": "approve_sessions__session_id__commands_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Approve Sessions  Session Id  Commands Approve Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve"
+      }
+    },
+    "/sessions/{session_id}/commands/close": {
+      "post": {
+        "operationId": "close_sessions__session_id__commands_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Close Sessions  Session Id  Commands Close Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close"
+      }
+    },
+    "/sessions/{session_id}/commands/optional": {
+      "post": {
+        "operationId": "optional_sessions__session_id__commands_optional_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptionalCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Optional Sessions  Session Id  Commands Optional Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Optional"
+      }
+    },
+    "/sessions/{session_id}/commands/reject": {
+      "post": {
+        "operationId": "reject_sessions__session_id__commands_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Reject Sessions  Session Id  Commands Reject Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject"
+      }
+    },
+    "/sessions/{session_id}/events": {
+      "get": {
+        "operationId": "subscribe_events_sessions__session_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subscribe Events"
+      }
+    },
+    "/sessions/{session_id}/tasks": {
+      "post": {
+        "operationId": "start_sessions__session_id__tasks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartTask"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Start Sessions  Session Id  Tasks Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start"
+      }
+    }
+  }
+}

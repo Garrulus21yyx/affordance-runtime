@@ -4,6 +4,20 @@ from affordance_runtime.app.composition import (
     compose_target_runtime,
     compose_target_runtime_from_environment,
 )
+from affordance_runtime.app.public_session import (
+    PUBLIC_SESSION_SCHEMA_VERSION,
+    PublicRuntimeSessionEvent,
+    PublicRuntimeSessionHandle,
+    PublicRuntimeSessionSnapshot,
+    PublicSessionCapability,
+    PublicSessionConflict,
+    PublicSessionStatus,
+    PublicTaskRequestFactory,
+    RuntimeEnvironmentLease,
+    TargetRuntimeSession,
+    TargetRuntimeSessionFactory,
+    default_public_task_request,
+)
 from affordance_runtime.app.runtime import (
     TargetRuntime,
     TargetRuntimeRunOutcome,
@@ -12,6 +26,18 @@ from affordance_runtime.app.runtime import (
 __all__ = [
     "TargetRuntime",
     "TargetRuntimeRunOutcome",
+    "PUBLIC_SESSION_SCHEMA_VERSION",
+    "PublicRuntimeSessionEvent",
+    "PublicRuntimeSessionHandle",
+    "PublicRuntimeSessionSnapshot",
+    "PublicSessionCapability",
+    "PublicSessionConflict",
+    "PublicSessionStatus",
+    "PublicTaskRequestFactory",
+    "RuntimeEnvironmentLease",
+    "TargetRuntimeSession",
+    "TargetRuntimeSessionFactory",
+    "default_public_task_request",
     "compose_target_runtime",
     "compose_target_runtime_from_environment",
 ]

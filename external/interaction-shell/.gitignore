@@ -1,0 +1,9 @@
+backend/.venv/
+frontend/.next/
+frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
+frontend/output/
+frontend/*.tsbuildinfo
+**/__pycache__/
+*.pyc

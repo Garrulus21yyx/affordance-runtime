@@ -1,8 +1,13 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Proposed external product shell**  
-Date: 2026-08-26  
-Scope: standalone Web product and evaluation proposal outside the core Runtime
+Status: **Contract/demo implemented; real deployment and resumable control not yet closed**
+
+Date: 2026-08-26
+
+Scope: standalone Web product, deployment composition, resumable control, and evaluation design outside the core Runtime
+
+Status authority: this document owns only the external interaction-shell/deployment capability status. Core GUI-agent
+architecture and benchmark closure remain governed by the main Runtime architecture and benchmark documents.
 
 ## 1. Decision
 
@@ -10,6 +15,13 @@ Build one external Web shell. It is neither a second GUI Agent nor an internal C
 lifecycle, command serialization, bounded conversational revision input, event delivery, evaluation projection, and
 browser viewing. It consumes only versioned typed Runtime commands, events, snapshots, trace exports, and benchmark
 artifacts. It does not import, mutate, or drive `CoreAgentLoop` internals.
+
+The shell contract, synthetic demo, frontend, diagnosis projection, and provider-free tests are implemented. That is
+not the same as a deployable product path. The production-safe default deliberately uses an unavailable Runtime port;
+the demo owns no real browser or GUI action; no deployment entry currently composes a real per-session Runtime,
+environment lease, viewer lease, and cleanup; and running pause, cancellation, revision, durable resume, and takeover
+are not public Runtime capabilities. These gaps must remain visible as typed unavailable states rather than being
+hidden by the UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -40,25 +52,64 @@ framework can own without duplicating Runtime authority.
 | Browser automation | existing Playwright/BrowserGym Runtime | browser actions, currentness, or selectors |
 | Browser media/input | Steel Live View or Browserbase | screenshot polling, video encoding, or mouse/keyboard transport |
 | Structured model calls | existing PydanticAI/provider boundary | another LLM or Agent framework |
+| Model-history persistence | PydanticAI `ModelMessagesTypeAdapter` and deferred-tool results | a parallel transcript schema or prose reconstruction |
+| Initial durable session storage | SQLite transaction/WAL, with Postgres only when multi-process deployment requires it | a custom event store or event-sourcing platform |
 | Trace, usage, and cost | existing local trace plus Langfuse | another observability platform |
 | Charts | shadcn chart components/Recharts | custom SVG charting |
 | Web end-to-end tests | Playwright | a custom browser test harness |
 
-Only the following proposal-specific code is expected:
+The only public shell-specific concepts remain the four values in Section 1.3. The following are private
+implementation details behind those boundaries, not additional cross-layer APIs:
 
 1. `RuntimeSessionPort`: one thin translation boundary over supported public Runtime capabilities;
-2. `RunSessionManager`: session lifetime, serialized/idempotent commands, event cursor, viewer handle, and cleanup;
-3. `TaskRevisionCompiler`: bounded input and closed structured-output contract using the existing model provider;
-4. `CaseDiagnosisProjector`: deterministic interpretation of exported benchmark/trace evidence;
-5. Web composition and small domain renderers over the reused UI components.
+2. `RunSessionManager`: external session authentication/TTL, serialized commands, in-process duplicate protection,
+   bounded conversation, and exactly-once invocation of port cleanup; it streams port-owned events without retaining or
+   renumbering a second event log;
+3. deployment-private session construction: per-session Runtime, environment/browser lease, optional viewer reference,
+   Runtime-owned checkpoint persistence, and idempotent cleanup, returned only as one opaque public handle;
+4. Runtime-private checkpoint storage: persistence of Runtime-owner state and execution truth, never exposed to the
+   Shell as a DTO and never a second evaluator or workflow state machine;
+5. `TaskRevisionCompiler`: a one-shot conversion dependency invoked inside `RuntimeSessionPort.revise`, with bounded
+   user input and a closed structured-output contract using the existing PydanticAI/provider boundary;
+6. `CaseDiagnosisProjector`: deterministic interpretation of exported benchmark/trace evidence;
+7. Web composition and small domain renderers over the reused UI components.
 
 The proposal does not introduce Temporal, Celery, a custom workflow engine, a custom event store, or multiple tracing
-platforms for the initial scope. It also does not embed Agent TARS, Qwen-Agent, LangGraph, AutoGen, CrewAI, or another
+platforms for the initial scope. Process restart between committed safe points is handled by explicit typed snapshots,
+PydanticAI message serialization, and a reconnectable browser lease. If a later declared requirement demands durable
+recovery while arbitrary external activities are in flight, evaluate an existing PydanticAI durable-execution
+integration before introducing custom orchestration. The proposal also does not embed Agent TARS, Qwen-Agent,
+LangGraph, AutoGen, CrewAI, or another
 top-level Agent kernel: those would duplicate the existing goal, policy, state, or execution authority. A dependency is
 admitted when it supplies a mature boundary capability without becoming a second GUI Agent, task authority, state
 machine, or Runtime loop.
 
-### 1.2 Simplicity contract
+### 1.2 Delivery-state truth
+
+The following states must not be collapsed into one label such as "implemented":
+
+| Layer | Current state | Meaning |
+|---|---|---|
+| Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
+| Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
+| `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
+| Core public session adapter | Implemented but in-memory | It wraps currently supported start, answer, confirmation, snapshot/event, and close operations. |
+| Real Runtime/environment composition | Missing | No ASGI entry constructs the configured Runtime and one real browser/environment lease per session. |
+| Live View deployment | Missing | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
+| Running pause/revise/cancel and durable resume | Missing | The public Runtime port does not advertise these transitions. |
+| Real end-to-end deployment witness | Missing | No real browser task has passed through the deployed Shell-to-Runtime path. |
+| Delivery hygiene | Open | The implementation remains uncommitted in the current worktree at this document date. |
+
+An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
+single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
+
+```text
+runtime_execution
+viewer
+durable_resume
+```
+
+### 1.3 Simplicity contract
 
 The external shell is organized around four public concepts:
 
@@ -74,14 +125,15 @@ closed command union with command identity and expected public revision/status. 
 admission result: `Accepted | Conflict | Unsupported | Rejected`. The port does not expose Binder, Monitor, provider,
 step-commit, selector, or private World APIs.
 
-There is one current public `RuntimeSessionSnapshot` per session and one ordered `ShellEvent` stream. Runtime facts are
+There is one current public `RuntimeSessionSnapshot` per session and one ordered `ShellEvent` stream, including one
+port-owned event epoch/cursor. Runtime facts are
 converted to their public shell representation once at the adapter boundary, then reused unchanged by SSE, snapshot
 hydration, UI rendering, and optional persistence. The frontend and Langfuse adapters must not independently rebuild
 run status, pending input, task completion, or execution outcomes. Benchmark diagnosis separately consumes the
 versioned benchmark/trace export and never round-trips through UI events.
 
-`RunSessionManager` keeps only external resource state: session identity, Runtime/viewer handles, command lock or
-queue, event cursor, expiry, and whether the external session is open or closed. Runtime status remains in the public
+`RunSessionManager` keeps only external resource state: session identity, opaque Runtime handle, command lock or
+queue, expiry, and whether the external session is open or closed. Runtime status and event position remain in the public
 snapshot. Conversation revision keeps one bounded context. No mirrored Runtime state machine, workflow graph, mutable
 plan progress, event-sourced reconstruction, or collection of partially overlapping session projections is added.
 
@@ -94,6 +146,44 @@ security-specific retry/state machine.
 New abstraction is justified only by a demonstrated second consumer or a contract that cannot be expressed through
 the four public concepts above. Prefer one direct adapter and a small explicit union over registries, plugin systems,
 generic orchestration layers, nested projections, and extensibility designed for hypothetical future surfaces.
+
+### 1.4 Coupling and projection budget
+
+The control/resume design must remain shallower than the Agent loop it exposes:
+
+- each authoritative fact is produced once and publicly projected once at `RuntimeSessionPort`; snapshot, SSE, and UI
+  reuse that projection instead of deriving parallel status/effect/completion values;
+- one product command makes one Shell-to-`RuntimeSessionPort` call. Deployment factories run only when opening or
+  restoring a session; checkpoint stores, browser providers, GoalCompiler, and Executor are not separate Shell calls;
+- the Shell sees `checkpoint_id`, `resume_eligible`, bounded status/effect summaries, and capability flags only. It never
+  receives `RunState`, PydanticAI messages, full World, execution receipt internals, provider reconnect locator, or
+  checkpoint payload;
+- Runtime owns effectful command idempotency because it alone knows whether dispatch/control commit occurred. The Shell
+  may reject concurrent/duplicate requests in process, but durable replay truth is not duplicated in a Shell store;
+- Viewer and diagnosis remain side projections. Neither participates in the command success path, checkpoint commit,
+  Runtime resume, or task completion;
+- no distributed transaction spans Shell, Runtime, browser provider, Viewer, and trace. Runtime commits its own resume
+  boundary, then emits an owner snapshot/event; other projections recover from that value;
+- persistence is not inserted into every Agent step. A resume checkpoint is written only at an explicit durable pause,
+  an existing `WAITING_USER`/`WAITING_CONFIRMATION` interruption selected for durable support, and the atomic revision
+  commit. Ordinary running steps keep the existing execution/trace path; a crash outside a committed boundary is not
+  advertised as resumable;
+- Trace/Langfuse and Viewer updates remain fail-open/asynchronous projections. Only the Runtime checkpoint write is on
+  the acknowledgement path for `PAUSED`/durable revision;
+- capability-specific fields are optional and bounded. Adding Pause does not require Viewer, adding Viewer does not
+  require checkpoint, and adding diagnosis does not enlarge the control command or Runtime snapshot payload.
+
+The dependency direction is one-way:
+
+```text
+UI → Shell command/manager → RuntimeSessionPort → opaque Runtime session handle
+                                      │
+                                      ├→ owner-produced public snapshot/event → UI
+                                      └→ deployment-private Runtime/environment/checkpoint internals
+
+Viewer proxy ← opaque viewer reference (independent side channel)
+Diagnosis    ← exported trace/benchmark artifacts (independent side channel)
+```
 
 ## 2. Why this is an external proposal
 
@@ -123,15 +213,21 @@ Runtime state from traces, interpret the current GUI, or add a control path besi
         ▼               ▼                               ▲
 ┌──────────────────── Python interaction service ───────────────────┐
 │ RunSessionManager                                                 │
-│   command serialization │ surface lifecycle │ event cursor         │
-│   bounded conversation  │ control lease     │ UI event projection  │
+│   command serialization │ auth/expiry       │ event passthrough    │
+│   bounded conversation  │ capability view  │ UI event projection  │
 └──────────────────────────────┬─────────────────────────────────────┘
                                │ RuntimeSessionPort only
                                ▼
-                       existing Runtime public API
+                  opaque public Runtime session handle
                                │
                                ▼
-                     existing Web environment
+                       existing Core Runtime
+
+session open/restore only:
+deployment-private factory ──> isolated Runtime + environment/browser + checkpoint
+
+independent side channel:
+viewer proxy ──> opaque viewer reference from the same browser lease
 
 benchmark artifacts / exported trace
               │
@@ -154,8 +250,15 @@ are exposed only when the Runtime independently publishes those typed capabiliti
 | Binding, legality, currentness, risk | existing Runtime owners |
 | Run control state and step commit | `CoreAgentLoop` and `RunState` |
 | Task completion | `TaskEvaluator` or native verifier |
-| Web browser/session lifetime | `RunSessionManager` |
-| User/agent control lease | interaction control boundary |
+| Per-session Runtime/provider-history lifetime | deployment-private session constructor |
+| Web browser/environment lifetime and cleanup | deployment-private environment lease |
+| Pause/cancel/revision admission and safe-point transition | public Runtime session/Core control boundary |
+| Resume checkpoint facts | existing Runtime owners, persisted by `RunResumeCheckpointStore` |
+| External session identity, authentication, TTL, in-process serialization | `RunSessionManager` |
+| Durable effectful/control command idempotency | public Runtime session boundary |
+| Ordered public event epoch/cursor/envelopes | public Runtime session/`RuntimeSessionPort` projection |
+| Viewer URL protection and provider session lookup | deployment viewer projector/proxy |
+| User/agent surface-control lease | Runtime control boundary plus deployment viewer lease |
 | UI-visible event projection | AG-UI projection adapter |
 | Conversation window used for revision interpretation | bounded conversation context |
 
@@ -164,19 +267,39 @@ current goal, run status, pending question, or pending confirmation.
 
 ### 3.2 Session value
 
-Illustrative shape:
+The manager-facing value stays small:
 
 ```python
 @dataclass
 class RunSession:
     session_id: str
     runtime_handle: RuntimeSessionHandle
-    browser_view: BrowserViewHandle
-    public_snapshot: RuntimeSessionSnapshot
-    control_state: SessionControlState
     conversation: BoundedConversationContext
-    event_cursor: int
+    expires_at: datetime
 ```
+
+Web v0 uses one Shell session for exactly one Runtime task/run identity. `StartTask` is legal only from `IDLE`; waiting,
+paused, and terminal states remain part of that same run; a terminal/closed session cannot be reused for another task.
+An unrelated instruction or explicit replacement creates a new Shell session and therefore new private
+Runtime/environment resources. Within this bounded algebra, `session_id` is also the public run identity, while
+`task_id` and consecutive `task_revision` address the goal. Commands need no additional `run_id`; expanding one session
+to multiple runs would be
+a new schema/lifecycle migration rather than an implicit behavior of the plural `/tasks` route.
+
+The deployment owner constructs private resources behind `runtime_handle`, but exposes only one small callable to the
+Shell composition root:
+
+```python
+async def open_runtime_session(
+    session_id: str,
+    expires_at: datetime,
+) -> RuntimeSessionHandle: ...
+```
+
+Its closure privately creates one Runtime, environment/browser lease, optional viewer reference, optional Runtime
+checkpoint store, and idempotent cleanup. No general `Bundle` DTO crosses a module boundary. If any required resource
+fails to initialize, the constructor returns one typed deployment error and cleans up already-created resources once.
+Closing, expiry, terminal completion, and failed creation share the same cleanup owner.
 
 Derived UI facts come only from the latest versioned public snapshot/event:
 
@@ -186,35 +309,99 @@ Derived UI facts come only from the latest versioned public snapshot/event:
 - pending confirmation identity;
 - owner-produced completion outcome.
 
-`SessionControlState` is not a second task status. It only identifies who currently owns input and whether the
-interaction service has requested a boundary pause, cancellation, or teardown.
+An optional shell `SessionControlState` is not a second task status. It may expose only transient ownership such as
+`agent | user` and a submitted boundary request such as `pause_requested`; the durable `PAUSED`, `CANCELLED`, waiting,
+and terminal facts come from the Runtime snapshot.
+
+### 3.3 Per-session Runtime isolation
+
+The current factory shape accepts one `TargetRuntime` and reuses it for every opened session. That is unsuitable for the
+configured PydanticAI policy because the provider bridge currently retains `message_history`, active task identity,
+compaction state, recovery-event consumption, and last-invocation diagnostics on the policy instance. Sharing that
+instance can mix histories or overwrite diagnostics across concurrent sessions.
+
+The first real deployment must therefore accept a small `runtime_factory(session_id)` behind the private session
+constructor above and create one Runtime/provider-policy instance per session. Provider clients,
+immutable model configuration, HTTP connection pools proven concurrency-safe, schemas, and stateless builders may be
+shared; task identity, model history, mutable diagnostics, Runtime trace fanout, World environment, browser context,
+and cleanup state may not be shared.
+
+This is the smallest coherent deployment repair. A later refactor may move all provider conversation state into the
+serializable Runtime checkpoint and make `TargetRuntime` genuinely stateless and reusable, but the deployment must not
+assume that property before the policy boundary exposes and verifies it.
 
 ## 4. Reused Runtime behavior and current gaps
 
-The current implementation can be wrapped behind `RuntimeSessionPort` using:
+The implemented public Core session boundary already wraps:
 
-- `TargetRuntime.initialize_task(...)`;
-- `TargetRuntime.continue_task(...)`;
-- `TargetRuntime.resume_user(...)`;
-- `TargetRuntime.resume_confirmation(...)`;
+- initial task intake and `TargetRuntime.run_request(...)`;
+- consecutive task revision while answering an open `AskUser` through `TargetRuntime.resume_request(...)`;
+- confirmation approval/rejection through `TargetRuntime.resume_confirmation(...)`;
 - `RunStatus.WAITING_USER` and `RunStatus.WAITING_CONFIRMATION`;
-- consecutive task revision on `resume_user`;
 - typed `StepResult`, execution receipts, task evaluation, and trace events.
 
-The adapter may use supported Runtime entrypoints internally, but the external shell depends only on the port contract.
+`CoreRuntimeSessionPort` translates those owner values into shell contracts. The external shell depends only on that
+port and must not import the private `RunState` held behind its opaque handle.
+
+### 4.1 Default startup is deliberately non-operational
+
+Running:
+
+```bash
+uvicorn interaction_shell.api:app
+```
+
+constructs `UnavailableRuntimeSessionPort`; real task commands therefore return typed `Unsupported`. Setting
+`INTERACTION_SHELL_DEMO=true` selects `ContractDemoPort`, which owns a synthetic contract flow and performs no browser
+or GUI action. These modes are valuable fail-closed and UI-test paths, but neither is a real deployment.
+
+`interaction_shell.runtime_app.create_runtime_app(factory)` is only a composition hook. There is no concrete ASGI
+module that loads product configuration and creates a per-session Runtime, environment/browser lease, protected viewer
+reference, persistence handle, and cleanup. A real deployment must start that explicit module rather than
+`interaction_shell.api:app`.
+
+### 4.2 Current state is process-local
+
+The public Core session currently retains request, admitted task, private `RunState`, progress, events, active asyncio
+task, locks, and cleanup flags in memory. `RunSessionManager` likewise retains session-key material, Runtime handles,
+command IDs, bounded conversation, events, and expiry in an in-memory dictionary. A service restart loses both layers.
+
+This is acceptable for the implemented contract/demo scope and is not a deadlock. It is insufficient for a claim of
+durable pause/resume or multi-process deployment. Trace and Langfuse must not be used to reconstruct this state because
+they are observation projections, not control authority.
+
+### 4.3 Close is not cancel
+
+The current `close()` marks the external session closed and, if a run is active, waits for it to finish before calling
+cleanup. It does not interrupt the Runtime or establish whether an action was dispatched. The UI must therefore not
+label Close as Stop/Cancel and must not report a running task cancelled when only viewer/session teardown was requested.
 
 The following are not currently general supported transitions and must not be simulated in the manager:
 
 - interrupting a running policy or executor in the middle of an atomic action;
 - cancelling a running task through an external product command;
 - revising a task while `RunState` is still `RUNNING`;
+- resuming a task after a service process restart;
 - returning control after arbitrary manual page mutation;
 - treating a new unrelated instruction as a revision of the current run.
 
-Cancellation, running-task pause, revision, and takeover remain disabled until the Runtime exposes corresponding typed
-public capabilities. The external proposal does not prescribe an internal CoreLoop change and does not simulate these
-transitions. Closing a Web session may release external viewer resources, but it cannot be reported as a Runtime task
-cancellation unless the Runtime returns that typed outcome.
+The existing public status also has no `PAUSED` value and currently projects Runtime `CANCELLED` as public `FAILED`.
+Pause and cancellation therefore require an end-to-end public algebra migration; adding only HTTP endpoints or buttons
+would be a false implementation.
+
+### 4.4 Capability-separated operational status
+
+A deployed session snapshot or health projection should distinguish:
+
+| Capability | Ready condition | Typed unavailable examples |
+|---|---|---|
+| Runtime execution | per-session Runtime and environment reset/capture succeed | `runtime_factory_unavailable`, `environment_unavailable` |
+| Viewer | protected provider route resolves an active viewer lease | `viewer_provider_not_configured`, `viewer_session_lost` |
+| Durable resume | latest committed checkpoint and reconnectable environment lease exist | `checkpoint_store_unavailable`, `environment_not_reconnectable` |
+
+Viewer failure must not stop an otherwise valid Agent run. Checkpoint failure must prevent a durable-pause
+acknowledgement but need not retroactively turn a live single-process task into a GUI failure. Deployment/reporting
+failures remain distinct from provider, environment, execution, and evaluator outcomes.
 
 ## 5. Frontend composition without hand-built primitives
 
@@ -267,7 +454,7 @@ No single transport should carry commands, structured run events, and high-frequ
 | Run lifecycle, steps, tools, messages, UI snapshots | AG-UI over SSE | ordered server-to-browser stream; official AG-UI default |
 | Answer and confirm; capability-gated revise/cancel/takeover | typed HTTP `POST` | explicit command identity, validation, idempotency, and response |
 | Browser video and manual mouse/keyboard | Live View iframe using WebRTC/screencast | avoids base64 screenshot streaming and custom input protocol |
-| Reload and lost-event recovery | snapshot plus event cursor | deterministic resynchronization |
+| Reload and lost-event recovery | snapshot plus event epoch/cursor | deterministic resynchronization |
 | External provider callback | webhook only when required | server-to-server completion notification, not UI streaming |
 | Health/status fallback | bounded polling | fallback only, never primary step delivery |
 
@@ -277,9 +464,17 @@ AG-UI defines lifecycle, step, text, tool-call, tool-result, state snapshot/delt
 official Python package provides typed Pydantic models and SSE encoding. The interaction service should project current
 Runtime events into this wire vocabulary rather than replacing Runtime contracts with AG-UI state.
 
-Commands travel on separate HTTP requests while the SSE stream remains open. Reconnection uses an event cursor or
-`Last-Event-ID`; durable owner events are replayed, while transient streaming deltas may be dropped or reconstructed
-from the final durable event.
+Commands travel on separate HTTP requests while the SSE stream remains open. Within one process epoch, reconnection
+uses `event_epoch + cursor` or an epoch-qualified `Last-Event-ID` and replays the port owner's bounded retained public
+events. `RunSessionManager` forwards `events(after)` without copying, renumbering, or rebuilding envelopes. The initial
+scope does not persist an event journal. After process restart, the restored Runtime projects one
+fresh snapshot baseline under a new event epoch; a client presenting an old epoch receives `resync_required` and
+hydrates that baseline rather than requesting unavailable historical envelopes. Transient streaming deltas may be
+dropped because the current owner snapshot remains sufficient for UI hydration.
+
+Persisting a cursor without its event envelopes is never described as replay. If a later product requirement needs
+cross-restart event history, store bounded public event envelopes or use a mature log; do not reconstruct them from
+Trace, checkpoint internals, or UI conversation.
 
 ### 6.2 Why not webhook or primary polling
 
@@ -334,13 +529,16 @@ GET  /sessions/{session_id}
 GET  /sessions/{session_id}/events
 
 POST /sessions/{session_id}/commands/answer
-POST /sessions/{session_id}/commands/confirm
+POST /sessions/{session_id}/commands/approve
+POST /sessions/{session_id}/commands/reject
 POST /sessions/{session_id}/commands/close
 ```
 
-Later endpoints after their Runtime contracts exist:
+Capability-gated endpoints are added only after their Runtime contracts exist:
 
 ```http
+POST /sessions/{session_id}/commands/pause
+POST /sessions/{session_id}/commands/resume
 POST /sessions/{session_id}/commands/cancel
 POST /sessions/{session_id}/commands/revise
 POST /sessions/{session_id}/commands/takeover
@@ -355,11 +553,28 @@ command_id
 session_id
 expected_task_revision
 expected_run_status or pending request identity where applicable
+expected_checkpoint_id where a paused/recovered state is addressed
 typed payload
 ```
 
-The manager serializes commands per session and rejects stale or duplicate commands deterministically. An HTTP success
-means the command was admitted, not that the GUI task succeeded. Task outcome continues to arrive through owner events.
+The manager serializes commands per session and rejects stale commands deterministically. An HTTP success means the
+command was admitted, not that the GUI task succeeded. Task outcome continues to arrive through owner events.
+`command_id` and expected values provide optimistic concurrency across reconnects; a stale revision or checkpoint
+returns `Conflict` with the current owner-produced snapshot. The current in-memory implementation treats every reused
+command ID as `duplicate_command`. The durable target algebra is stricter and genuinely idempotent:
+
+```text
+same command_id + same canonical payload digest
+→ return the originally committed admission/result summary without re-executing
+
+same command_id + different canonical payload digest
+→ Conflict(command_identity_reused)
+```
+
+For effectful/control commands, the public Runtime session boundary persists command ID, canonical payload digest, and
+bounded owner-produced result reference/summary alongside its control commit. The Shell forwards the identity and may
+cache the response, but durable replay truth is not duplicated there. It may not infer that a submitted pause request
+has reached a Runtime safe point.
 
 ## 9. User interaction flows
 
@@ -367,9 +582,9 @@ means the command was admitted, not that the GUI task succeeded. Task outcome co
 
 ```text
 StartTask
-→ TaskIntake
+→ RunSessionManager calls RuntimeSessionPort.start once
+→ public Runtime session runs TaskIntake internally
 → admitted task / typed intake outcome
-→ RunSessionManager asks RuntimeSessionPort.start
 → SSE until waiting or terminal status
 ```
 
@@ -379,8 +594,8 @@ StartTask
 Runtime → public user-input-required event
 → user_input.required event
 → AnswerQuestion command with pending request identity
-→ TaskIntake produces consecutive TaskGoal revision
-→ RuntimeSessionPort.answer
+→ RunSessionManager calls RuntimeSessionPort.answer once
+→ public Runtime session runs TaskIntake and consecutive TaskGoal revision internally
 → owner-produced revised snapshot/event
 ```
 
@@ -395,27 +610,157 @@ RiskPolicy → WAITING_CONFIRMATION
 
 No revision compiler participates in a boolean confirmation decision.
 
-### 9.4 Running-task revision
+### 9.4 Pause, resume, cancel, and close
 
-This feature is absent until `RuntimeSessionPort` advertises a typed running-revision capability:
+The UI must expose separate intentions:
+
+| Command | Runtime meaning | Resumable |
+|---|---|---|
+| `PauseRun` | request a cooperative boundary pause and commit a resume checkpoint | yes |
+| `ResumeRun` | restore/revalidate the paused session and continue the same task revision | yes |
+| `CancelRun` | terminally stop the task after closing execution truth | no |
+| `CloseSession` | release the external session/viewer according to lifecycle policy | no; it is not task cancellation |
+
+A pause request is acknowledged in two stages:
 
 ```text
-ReviseTask command
-→ TaskRevisionCompiler
-→ proposed revision command
-→ RuntimeSessionPort.revise
-→ owner-produced accepted / needs-input / unsupported outcome
+PauseRun admitted
+→ pause_requested event (the Agent may still be closing one atomic step)
+→ Core reaches a safe boundary and closes dispatch truth
+→ RunResumeCheckpoint durably commits
+→ owner snapshot/event reports PAUSED + checkpoint_id
 ```
 
-The shell does not implement pause, invalidation, fresh acquisition, or resume itself. A completely unrelated
-instruction yields `NewTaskSuggested`; after explicit user confirmation, the shell requests a new Runtime session
-rather than forcing it into the old task identity.
+The frontend shows "Stopping…" or "Pause requested" until the last event. It must not render `PAUSED` from the HTTP
+admission response alone. A pure pause preserves the task revision. Resume obtains a fresh World and revalidates
+currentness before another action can dispatch.
 
-### 9.5 Takeover and return
+`CancelRun` is also cooperative around the execution boundary: cancelling an LLM policy request cannot undo a GUI
+effect, and cancelling during dispatch must close as `NOT_SENT`, `SENT`, or `SENT_UNKNOWN` before terminal projection.
+Cancel persists final audit/receipt truth but produces no resumable checkpoint. Close remains resource teardown.
+
+### 9.5 Running-task revision
+
+This feature is absent until `RuntimeSessionPort` advertises typed pause and running-revision capabilities. The user
+message is not injected directly into ActionPolicy and does not mutate an existing `GoalPlan`:
+
+```text
+ReviseTask(command_id, expected_task_revision=n)
+→ cooperative pause at a Runtime safe boundary
+→ commit checkpoint for the last closed step
+→ TaskRevisionCompiler interprets bounded user-owned language
+→ TaskIntake validates a proposed complete TaskGoal(revision=n+1)
+→ public Runtime revision boundary stages environment.revise_task with an idempotent revision token
+→ acquire fresh WorldObservation
+→ GoalCompiler runs exactly once with TASK_REVISION
+→ atomically commit TaskGoal(n+1), invalidation, GoalPlan outcome, fresh World lineage, and revised checkpoint
+→ owner snapshot reports PAUSED with revision_applied_ready or effect_reconciliation_required
+→ a later ResumeRun lets the same ActionPolicy continue from the committed revision
+```
+
+These arrows describe one internal Runtime transition, not a Shell-orchestrated chain of services. Externally the Shell
+makes one `RuntimeSessionPort.revise(command)` call and receives one typed admission/current snapshot; it never calls
+TaskIntake, environment revision, GoalCompiler, checkpoint storage, or ActionPolicy separately.
+
+Structured Pause/Resume/Cancel commands need no LLM. `TaskRevisionCompiler` is a one-shot model-backed conversion
+boundary only when free-form language must be interpreted. It cannot perform GUI actions, decide completion, expand
+permissions, or own control state. `GoalCompiler` produces new bounded static guidance; it does not compute old-plan
+progress or rollback. On a later `ResumeRun`, the same ActionPolicy decides subsequent semantic action selection from
+the revised authoritative goal and current World.
+
+The proposed task is not authoritative merely because the compiler or TaskIntake returned it. The public Runtime
+revision boundary owns one serialized commit. `environment.revise_task` must be idempotent for the revision token and
+must not perform an unrelated GUI effect. If environment revision/fresh acquisition fails, revision `n` remains public
+authority, the run stays `PAUSED`, and the staged revision returns typed `revision_environment_unavailable`; it may be
+retried with the same token but no action dispatches. `GoalCompiler` `Unsupported|Failed` commits revision `n+1` with
+plan guidance unavailable and retains the ordinary loop behavior; only genuine missing user facts becomes
+`WAITING_USER`. Failure to commit the revised checkpoint leaves the run quiescent in a typed
+`revision_commit_failed` state and never resumes either revision until the same staged transaction is durably resolved
+or the session is cancelled/closed.
+
+Any pending action, binding, action page, or confirmation created under revision `n` is stale under revision `n+1`.
+An accepted-but-not-dispatched PydanticAI deferred tool proposal must receive a Runtime-projected `not_dispatched /
+task_revised` result so tool-call history remains structurally paired; it must not be silently dropped or represented
+by invented assistant prose.
+
+Compiler/conversion outcomes have closed control semantics:
+
+| Outcome | Goal authority | Run/control result |
+|---|---|---|
+| `RevisionReady` + commit, with no retained `SENT`/`SENT_UNKNOWN` | becomes `n+1` | remain `PAUSED` with `revision_applied_ready`; `ResumeRun` is legal |
+| `RevisionReady` + commit, with retained `SENT`/`SENT_UNKNOWN` | becomes `n+1` | remain `PAUSED` with `effect_reconciliation_required`; Phase 7 support is required before resume can dispatch |
+| `NeedsInput` | remains `n` | `WAITING_USER`; checkpoint remains resumable and no GUI dispatch occurs |
+| `NoChange` | remains `n` | remain `PAUSED`; user may resume, revise again, cancel, or close |
+| `Unsupported` / `Failed` / TaskIntake rejection | remains `n` | remain `PAUSED` with typed conversion failure; original task may resume |
+| `NewTaskSuggested` | remains `n` | remain `PAUSED` while asking whether to create a new session |
+
+Accepting `NewTaskSuggested` creates a new Shell/Runtime session and then cancels or closes the old paused session only
+according to the user's explicit choice. Rejecting it leaves the old session paused. The shell never forces unrelated
+language into the old task identity.
+
+### 9.6 Already-applied effects and compensation
+
+A revised instruction does not imply that every earlier action should be undone. Runtime first preserves immutable
+execution truth, while the policy evaluates the new desired state against fresh World evidence:
+
+| Execution/effect fact | Required handling |
+|---|---|
+| No dispatch or `NOT_SENT` | invalidate the old proposal and plan forward from the revised goal |
+| `SENT` and still compatible with the revised goal | preserve it; no compensating action is needed |
+| `SENT` and conflicting, with a current reversible/compensatable capability | select and execute that capability as a new action |
+| `SENT_UNKNOWN` | reacquire/verify before retry or compensation; unresolved truth yields typed unknown/needs-input |
+| Irreversible or unsupported compensation | disclose the retained effect and return typed unsupported/needs-input |
+
+Undo is not checkpoint rewind. A checkbox can be toggled back, a cart item can be removed, and an order can be
+cancelled only when the fresh action space exposes those operations. A sent email or external transaction cannot be
+made nonexistent by restoring model history. Compensation follows the unchanged product path:
+
+```text
+ResumeRun + fresh World + revised TaskGoal + retained execution receipt
+→ ActionPolicy selects one currently available compensation
+→ Binder → RiskPolicy/confirmation → Executor
+→ new ExecutionReceipt → TaskEvaluator/native verifier
+```
+
+The original receipt remains immutable; compensation produces another receipt. Runtime owns dispatch facts,
+currentness, risk, and typed reversibility. The same ActionPolicy owns the semantic choice of whether a prior effect
+conflicts with the new goal and which offered compensation to select. No rollback Agent, mutable achievement record,
+second Binder, or second Runtime loop is introduced.
+
+The first supported scope guarantees forward revision and compensation only when the relevant effect is visible in
+fresh World or represented by retained typed execution evidence. If the product later promises compensation for old
+external effects across process restarts, persist only the minimum Executor-owned resource/effect references needed to
+address those provider capabilities; do not turn Trace/Langfuse into an effect ledger.
+
+### 9.7 Takeover and return
 
 This is also capability-gated. The viewer becomes interactive only after `RuntimeSessionPort` returns a typed
 user-control lease. The shell does not infer that the Agent stopped from viewer state. Returning control is complete
 only when the Runtime returns a new public snapshot/event after handling any required invalidation and observation.
+
+### 9.8 User feedback for unfinished states
+
+The shell does not need a conversational supervisor Agent to explain control state. It renders deterministic copy and
+available next actions from the typed Runtime snapshot; optional natural-language polish cannot alter the facts.
+"Not finished" must not collapse waiting, pausing, blocked, failed, cancelled, unknown effect, and unsupported into one
+message:
+
+| Owner state | Required user feedback | Allowed next actions |
+|---|---|---|
+| `RUNNING` | current bounded progress; no completion claim | request pause/cancel/revision only when advertised |
+| `pause_requested` | Agent is closing the current safe boundary; an action may still be in flight | wait for owner event |
+| `PAUSED` | checkpoint ID/time and whether environment reconnect is healthy | resume, revise, cancel, close |
+| `WAITING_USER` | exact Runtime question and requested fields | answer, cancel, close |
+| `WAITING_CONFIRMATION` | exact effect/risk subject; approval is scoped to this request identity | approve, reject, revise/cancel when advertised |
+| `BLOCKED` | owner-produced reason/code and retained effects; not presented as success | revise/new session/close as supported |
+| `FAILED` | failing owner/stage and safe error code; distinguish deployment/reporting from GUI failure | retry only when contract says no unknown side effect |
+| `CANCELLED` | terminal cancellation plus the last closed execution truth | close or start a new session |
+| `SENT_UNKNOWN` | explicitly state that the effect may have happened | reconcile/ask user; never show a blind Retry button |
+| `Unsupported` | unavailable capability and dependency, e.g. Viewer versus Runtime versus durable resume | show only supported alternatives |
+
+Every non-terminal view must answer: what is known, what may already have happened, who currently owns input/control,
+and which typed command is legal next. The UI must not invent success, failure, rollback, or progress from assistant
+text, elapsed time, viewer connectivity, or an accepted HTTP status.
 
 ## 10. Bounded conversation and revision compiler
 
@@ -425,16 +770,14 @@ Conversation history is used only to interpret user-owned task revision language
 ```python
 @dataclass(frozen=True)
 class BoundedConversationContext:
-    current_task_id: str
-    current_task_revision: int
-    recent_turns: tuple[ConversationTurn, ...]  # normally 3–6
-    pending_question: AskUser | None
-    pending_confirmation: ConfirmationRequest | None
-    latest_user_message: str
+    turns: tuple[ConversationTurn, ...]  # bounded, normally 3–6; includes the latest user turn exactly once
 ```
 
-The later `TaskRevisionCompiler` receives the current `TaskGoal`, pending question if any, bounded recent turns, latest
-message, and the fields the user is permitted to modify. Its closed outcomes are:
+The Shell includes only this bounded user-owned conversation value in one `ReviseTask` command. Inside the single
+`RuntimeSessionPort.revise(...)` call, the public Runtime revision boundary reads current `TaskGoal`, revision, pending
+question/confirmation, and modifiable fields from its owner state, then invokes `TaskRevisionCompiler`. Runtime facts
+are invocation inputs, not copied into Shell conversation storage or exposed back through the command. The compiler's
+closed outcomes are:
 
 ```text
 RevisionReady
@@ -448,7 +791,130 @@ Failed
 It cannot produce GUI actions, selectors, coordinates, plan progress, task completion, or expanded permissions. Its
 output must pass through TaskIntake before becoming a new `TaskGoal` revision.
 
-## 11. Evaluation and bad-case diagnosis
+### 10.1 Transcript separation
+
+Three records serve different owners and must not be merged:
+
+| Record | Purpose | Persistence/visibility |
+|---|---|---|
+| Shell bounded conversation | interpret user-owned follow-up/revision language and render chat | bounded shell/session projection; no GUI execution authority |
+| PydanticAI model messages | preserve exact ActionPolicy tool-call/result conversation | private Runtime checkpoint through PydanticAI serializers |
+| Trace/Langfuse transcript | observe provider calls, repairs, latency, and lineage | append-only diagnosis projection; never resume/control authority |
+
+The shell conversation is necessary for user experience and revision interpretation, but it is not sufficient to
+resume the Agent. The PydanticAI transcript is necessary for model continuity, but it is not sufficient to restore the
+Runtime or browser. Trace is necessary for diagnosis, but must never reconstruct either one. Each provider initial and
+repair attempt remains captured at the provider boundary even when the enclosing policy call is cancelled.
+
+## 11. Resume checkpoint and persistence contract
+
+### 11.1 A checkpoint is a committed owner snapshot, not a frozen coroutine
+
+`RunResumeCheckpoint` captures the last stable Runtime boundary. It does not serialize an active Python coroutine,
+rewind a browser, or prove that an in-flight network request was not sent. A submitted pause command remains pending
+until the current phase reaches one of the following closures:
+
+| Current phase | Pause behavior | Checkpoint boundary |
+|---|---|---|
+| ActionPolicy/provider call | cooperatively cancel or let the bounded call return; no GUI effect is inferred | last committed step, plus typed aborted provider attempt |
+| Selected/bound action before dispatch | invalidate it and commit a paired non-dispatched tool result | after `NOT_SENT` closure |
+| Dispatch in progress | do not claim immediate pause; Executor determines `SENT`, `NOT_SENT`, or `SENT_UNKNOWN` | only after dispatch truth is recorded |
+| Post-action capture or evaluation | finish capture/evaluation or record its typed cancellation phase | after the atomic `StepResult` commits |
+| Between steps / waiting for user / waiting confirmation | already stable; persist current owner state | current stable boundary |
+
+No action selected under a stale World, task revision, binding, or confirmation may survive resume/revision without the
+existing currentness and risk checks.
+
+### 11.2 Persisted value
+
+The private checkpoint contains only owner facts and deterministic resume metadata:
+
+```text
+checkpoint_id and schema_version
+session_id and TaskGoal (including task_id/revision)
+authoritative RunStatus and pause reason
+accepted GoalPlan resolution/version
+RunState counters, budgets, bounded AgentWorkspace, Runtime World-delivery index
+last committed StepResult, including its typed ExecutionReceiptBatch
+pending AskUser or confirmation identity when applicable
+PydanticAI message history and unresolved-call identity, if any
+opaque environment_lease_ref and lease expiry
+bounded Runtime command-id → payload-digest + committed-outcome references
+integrity digest and committed_at
+```
+
+Shell-owned recovery facts are a separate value, linked but never copied into the Runtime checkpoint:
+
+```text
+ShellSessionRecord
+  session_id, hashed session credential, expires_at, closed
+  current opaque runtime_session_ref
+```
+
+These records do not form a distributed transaction. Runtime first commits its resume snapshot and command outcome,
+then exposes `PAUSED + checkpoint_id + resume_eligible` through the existing public handle. The Shell persists only its
+directory/projection facts and can recover them from the public Runtime snapshot if its own write fails. Each fact has
+one owner: the private resume snapshot does not copy Shell authentication state; the public Runtime session owns and
+projects event epoch/cursor/envelopes; and the Shell record never copies event position, command effect truth,
+checkpoint ID as authority, private RunState, TaskGoal, PydanticAI history, World, or execution receipts.
+
+The checkpoint is a serialization of existing authorities, not a second status or evaluator. `TaskGoal` remains goal
+authority, fresh `WorldObservation` remains environment authority, execution receipts remain effect authority, and
+`TaskEvaluator`/native verifier remains completion authority. Public snapshots and AG-UI events are projections of the
+restored Runtime value; they are not inputs used to rebuild it.
+
+PydanticAI history is serialized/deserialized through `ModelMessagesTypeAdapter`. Deferred external tool calls resume
+through the existing `DeferredToolResults`/`ToolReturn`/`ToolFailed` pairing. The deployment must not define a parallel
+transcript JSON shape, summarize an unresolved tool call into prose, or use the UI conversation as ActionPolicy model
+history. Existing bounded history compaction remains the model-boundary owner.
+
+### 11.3 Storage and commit ordering
+
+SQLite is sufficient for the first single-process deployment. Use an explicit transaction, WAL, foreign keys, schema
+versioning, unique `(session_id, checkpoint_id)`, and a monotonic session version. Persist the checkpoint before
+emitting `PAUSED`. While persistence is pending, Runtime is quiescent at the safe boundary and the public snapshot
+remains its prior run status with shell control projection `pause_requested`; there is no public half-paused state.
+This transaction is not on the ordinary per-step hot path and does not wait for Viewer, SSE delivery, Langfuse, or
+Shell projection persistence.
+
+If the commit fails, emit typed `pause_persistence_failed`, clear the pause request, reacquire fresh World, and continue
+the same task revision from that boundary. There is no automatic persistence retry and no `PAUSED` claim. If fresh
+World/currentness cannot be re-established, transition through the existing typed environment/currentness failure
+contract rather than dispatching or pretending the pause succeeded. The user may submit a new pause command with a new
+command ID after observing the failure.
+
+The external session directory stores hashed session credentials, TTL, and one opaque Runtime-session reference.
+Runtime owns durable command payload/result idempotency and the public event epoch/cursor/envelopes. Provider reconnect
+locators and credentials stay in the deployment lease registry; Runtime-private checkpoint payloads stay behind the
+Core public session boundary. If multi-process replicas become a declared requirement, move the relevant owner
+repositories to Postgres and use database-backed optimistic concurrency; do not create a cross-layer transaction or
+add a workflow engine merely to replace an in-memory dictionary.
+
+`ResumeRun` consumes no checkpoint; it advances the same checkpoint version to a running snapshot after environment
+revalidation. `CancelRun`, `CloseSession`, and TTL expiry revoke `resume_eligible` before releasing the browser lease.
+The checkpoint may remain under bounded audit retention, but it can no longer reopen the session. Cleanup failure cannot
+restore resume eligibility or change the last Runtime task outcome.
+
+### 11.4 Environment resume
+
+Logical state is only half of GUI recovery. The deployment must reconnect the browser provider session/context, then
+capture a fresh World before ActionPolicy continues:
+
+```text
+load checkpoint
+→ reconnect browser/environment lease
+→ capture fresh WorldObservation
+→ validate task revision, session identity, and currentness
+→ restore PydanticAI history and bounded Runtime state
+→ publish restored snapshot as a new event-epoch baseline
+→ continue only after an explicit ResumeRun or accepted ReviseTask
+```
+
+If the browser session is lost or cannot be proven to represent the same task environment, return typed
+`environment_not_reconnectable`/`currentness_unavailable`. Do not reset a new page and replay old GUI actions. Viewer
+reconnection is separately projected and may fail without changing a valid Runtime resume.
+
+## 12. Evaluation and bad-case diagnosis
 
 Evaluation is an external consumer of exported evidence. It does not add an evaluator, monitor, state machine, or
 trace-dependent control path to the Runtime.
@@ -493,16 +959,17 @@ latency, steps, retries, recoveries, no-progress/cycles, context fill ratio, and
 viewer for these projections. The shell neither changes benchmark status nor treats Langfuse availability as evidence
 of task success.
 
-## 12. Surface viewing
+## 13. Surface viewing
 
-### 12.1 Web v0
+### 13.1 Web v0
 
-Steel returns a session `debugUrl` that can be embedded in an iframe. The default Agent view is read-only. A later
-takeover flow enables interaction only while the user holds the control lease.
+Steel or Browserbase supplies an existing Live View for the browser session. The default Agent view is read-only. A
+later takeover flow enables interaction only while the user holds the typed control lease. The provider URL is stored
+only in the deployment viewer registry; the browser receives a protected same-origin shell path:
 
 ```tsx
 <iframe
-  src={`${debugUrl}?interactive=false&showControls=true`}
+  src={`/viewer/${sessionId}`}
   className="h-full w-full border-0"
 />
 ```
@@ -511,7 +978,40 @@ Steel's headful Live View uses WebRTC/H.264. Its debug URLs are unauthenticated 
 protect access and must never expose a reusable URL outside the authorized session. Browserbase provides a managed
 Live View and session inspector and is the alternative when operational speed is more important than local ownership.
 
-## 13. Core-isolation contract
+`ViewerStateProjector` publishes only readiness and a secret-free `/viewer/...` path. The deployment proxy
+authenticates the shell session, resolves the opaque provider viewer reference, enforces read-only mode unless a valid
+control lease exists, and applies expiry/cleanup. The shell does not implement screenshot polling, video encoding, or
+mouse/keyboard forwarding.
+
+### 13.2 Concrete deployment entry
+
+The production module must be explicit and separate from the fail-closed `interaction_shell.api:app`:
+
+```text
+interaction_shell.deployment_app
+├── validate provider/model/browser/checkpoint configuration
+├── create private open_runtime_session(session_id, expires_at)
+│   ├── compose one TargetRuntime/provider-policy instance per session
+│   ├── create BrowserSession + WorldEnvironment lease
+│   ├── register protected viewer reference when configured
+│   ├── inject Runtime-private checkpoint repository when configured
+│   └── provide idempotent cleanup
+├── create public TargetRuntime session factory/port
+├── create RunSessionManager
+└── app = create_runtime_app(...)
+```
+
+The exact provider-specific constructors stay in deployment code, not in the public Shell package or Core loop. The
+deployment loads credentials from its environment/configuration without logging them. Startup validates configuration
+needed to create sessions, while per-session browser/provider failures return typed session-creation errors and clean
+up partial resources.
+
+The initial real vertical slice may use the existing local Playwright/BrowserGym environment with Viewer reported
+unavailable. That proves real GUI execution independently. A later Steel/Browserbase profile supplies both a
+reconnectable remote browser lease and Live View. These are separate acceptance gates so viewer work cannot mask a
+Runtime composition failure.
+
+## 14. Core-isolation contract
 
 The proposal lives outside the core package and depends on versioned ports/artifacts only:
 
@@ -535,69 +1035,322 @@ and never converts it into a revision, permission, or confirmation. It relies on
 task, risk, binding, and execution boundaries. No security Agent, injection detector, security benchmark, or security
 dashboard is proposed.
 
-## 14. Implementation sequence
+## 15. Implementation sequence
 
-### Phase A — external diagnosis projection
+The order below follows authority and dependency, not UI visibility. A later phase cannot be declared complete using a
+demo or adapter fake when its prerequisite owner capability is absent.
 
-1. Freeze the versioned benchmark-result and public trace-export inputs consumed by the proposal.
-2. Implement `CaseDiagnosisProjector` without Runtime imports.
-3. Project token, latency, trajectory, context-health, terminal-stage, and evidence-linked diagnosis to Langfuse.
-4. Add the Web bad-case list and case-detail timeline.
+```text
+Phase 0 → Phase 1 → Phase 2 ───────────────→ Phase 3 (read-only Viewer)
+                       │                         │
+                       └→ Phase 4 → Phase 5 → Phase 6 → Phase 7
+                                      │                    │
+                                      └────────────────────┴→ Phase 8 (optional takeover; also requires Phase 3)
 
-### Phase B — Web shell v0
+Phase 9 reviews whichever release profile is declared below.
+```
 
-1. Define `RuntimeSessionPort` and implement a thin adapter over currently supported `TargetRuntime` entrypoints.
-2. Add `RunSessionManager` with one serialized command queue, event cursor, browser-view handle, and expiry per session.
-3. Add cursor-based SSE/AG-UI projection and StartTask, AnswerQuestion, Confirm, Close, snapshot, and event endpoints.
-4. Scaffold Next.js, CopilotKit, and shadcn/ui.
-5. Embed one read-only Steel or Browserbase live view.
-6. Render public task, step, execution, evaluation, output, token, and diagnosis projections.
-7. Record one end-to-end Web demo without any core modification.
+Release profiles keep optional work from blocking an already honest capability:
 
-### Phase C — bounded user revision
+| Profile | Required phases | Claim permitted |
+|---|---|---|
+| Contract/demo | 0 | synthetic UI and public-contract behavior only |
+| Real execution | 0–2 | one-session real GUI execution; Viewer and durable resume may remain unavailable |
+| Observed real execution | 0–3 | real GUI execution plus protected read-only Live View |
+| Resumable revision | 0–2 and 4–7 | durable pause/resume, running revision, and bounded compensation; Viewer optional |
+| Full Web control | 0–8 | adds protected user takeover/return |
 
-1. Add bounded conversation storage in the external service.
-2. Implement the typed `TaskRevisionCompiler` as a one-shot proposal compiler.
-3. Support explicit/pending-question revision only through currently available port capabilities.
-4. Enable running-task revision and new-task replacement only if later public Runtime capabilities advertise them.
+Phase 5 additionally requires a reconnectable environment lease. That may be supplied by a local browser context with
+proven reattachment or by the remote browser-session portion of Phase 3; Live View itself is not the dependency. Phase
+9 runs all fixed gates for the selected profile and cannot require or waive an optional phase implicitly.
 
-### Phase D — optional takeover
+Across all phases, the public interface delta is capped at new closed command/status/capability variants,
+`checkpoint_id | resume_eligible | bounded effect uncertainty`, and `event_epoch`. No phase may expose a deployment
+bundle, store interface, provider session, GoalPlan progress, PydanticAI history, World, binding, raw receipt, or trace
+payload through Shell contracts. If implementation appears to require another cross-layer coordinator or projection,
+first prove why the existing `RuntimeSessionPort` command/snapshot/event algebra cannot express it.
 
-Enable interactive viewer control only after the public port exposes an exclusive control lease and typed return
-outcome. No CoreLoop or binding behavior is implemented in this proposal.
+### Phase 0 — preserve and attest the implemented foundation
 
-Android and desktop are deferred indefinitely from this sequence. No Android/ADB/UIAutomator, desktop/AT-SPI/VNC,
-cross-surface abstraction, dependency, or acceptance gate belongs to the current proposal.
+Status: implemented in the current worktree; delivery hygiene still open.
 
-## 15. Acceptance criteria
+1. Keep `RuntimeSessionPort`, the closed command union, snapshot/event schemas, cursor-based SSE, duplicate/stale
+   command handling, bounded conversation, diagnosis projection, frontend, and contract demo unchanged except for
+   migrations required by later public capabilities.
+2. Run existing backend, architecture, frontend unit, lint, typecheck, build, and demo E2E gates.
+3. Commit/review the worktree before calling this foundation delivered.
 
-The Web v0 is acceptable when:
+Exit evidence: provider-free gates pass; default startup remains typed unavailable; demo remains explicitly synthetic;
+the public shell imports no private Core loop, Binder, Executor, World, or provider history.
+
+### Phase 1 — correct session-scoped composition ownership
+
+Owner: Core public-session boundary plus deployment composition.
+
+1. Replace the singleton `TargetRuntime` assumption with one private session constructor using
+   `runtime_factory(session_id)`; keep the Shell-facing result as the existing opaque handle.
+2. Define typed session-creation/cleanup outcomes and ensure partial initialization cleanup is exactly once; do not add
+   a general bundle registry or DTO.
+3. Create one PydanticAI ActionPolicy/provider-history owner, trace fanout, Runtime handle, World environment, and
+   browser context per session; share only explicitly stateless/concurrency-safe dependencies.
+4. Move event epoch/cursor/envelope ownership to the public Runtime session/port; make `RunSessionManager` stream
+   `events(after)` without retaining, renumbering, or reprojecting a second event list.
+5. Add two-session concurrency tests proving task identity, PydanticAI history, events, World observations, viewer
+   references, and cleanup cannot cross sessions.
+6. Add creation-failure tests at each private resource-construction stage.
+
+Exit evidence: simultaneous sessions produce disjoint model histories and browser contexts; closing or failing one
+session cannot alter the other; no global mutable Runtime/provider-policy instance is shared.
+
+### Phase 2 — real deployment entry and execution vertical slice
+
+Owner: deployment package.
+
+1. Add `interaction_shell.deployment_app` that loads the existing model/provider configuration and constructs the Phase
+   1 private session constructor.
+2. First profile: reuse the existing Playwright/BrowserGym `WorldEnvironment`; expose Viewer as typed unavailable.
+3. Start FastAPI through the deployment module, not `interaction_shell.api:app`.
+4. Run one real task through session creation → TaskIntake → ActionPolicy → Binder/Risk → Executor → fresh World →
+   TaskEvaluator → public event/UI projection.
+5. Verify cleanup on normal close, terminal outcome, expiry, session-creation failure, and application shutdown.
+6. Add deployment health that reports Runtime, Viewer, and durable-resume readiness separately without secrets.
+
+Exit evidence: at least one real browser task moves the actual page and reaches an owner-produced waiting or terminal
+status through the deployed API. `Viewer unavailable` does not prevent it. No live benchmark is implied; any benchmark
+run still requires separate user authorization.
+
+### Phase 3 — read-only Live View deployment
+
+Owner: deployment viewer registry/proxy and browser lease.
+
+This phase depends on Phase 2 but does not block Phases 4–7; it can be scheduled later if Runtime control and resume are
+the nearer product priority.
+
+1. Select Steel as the first profile or Browserbase as the managed alternative; use its existing session and Live View
+   APIs rather than custom pixels/input transport.
+2. Bind the provider session to the same environment lease used by Runtime execution.
+3. Implement authenticated, expiring, same-origin `/viewer/{session_id}` resolution without exposing provider URLs or
+   credentials.
+4. Enforce read-only viewer mode while the Agent owns control.
+5. Test unauthorized access, wrong-session access, expiry, provider disconnect, terminal cleanup, and the invariant that
+   viewer loss does not change Runtime outcome.
+
+Exit evidence: an authorized user can observe the same browser session controlled by Runtime; no reusable provider URL
+appears in public snapshots, events, HTML, logs, or browser storage.
+
+### Phase 4 — Runtime-owned pause and cancellation safe points
+
+Owner: `CoreAgentLoop`, `RunState`, Executor cancellation algebra, and public Runtime session; Shell only projects.
+
+This phase builds and verifies the control substrate. `CancelRun` may be advertised after its terminal semantics pass;
+durable `PauseRun` remains unadvertised until Phase 5 commits a real checkpoint before `PAUSED`.
+
+1. Add distinct `CANCELLED` status/capability and stop mapping cancelled to failed. Define an internal typed
+   `pause_boundary_reached` result, but do not yet add or emit public `PAUSED`.
+2. Add cooperative `PauseRun`, `ResumeRun`, and `CancelRun` control requests that can be admitted while the background
+   run is active without allowing arbitrary concurrent mutation.
+3. Check the control request at defined policy/pre-dispatch/post-dispatch/post-capture/evaluation boundaries.
+4. Reuse `DispatchStatus`, `ExecutionCompletion`, and `ExecutionCancellationPhase` to close each atomic action; never
+   infer dispatch truth from task cancellation.
+5. Invalidate or structurally close accepted-but-not-dispatched PydanticAI deferred calls.
+6. Verify `pause_requested → pause_boundary_reached` internally while the public pause capability remains disabled;
+   keep CloseSession as separate teardown.
+7. Add state-machine/property tests for command races, confirmation races, exact receipt closure, no dispatch after an
+   acknowledged pause boundary, and cleanup idempotency.
+
+Exit evidence: every exercised control request has one typed outcome; every dispatch-crossing attempt has one closed
+execution truth; no stale action/binding/confirmation dispatches after an internal pause/resume boundary. Durable pause
+is not yet advertised.
+
+### Phase 5 — durable checkpoint and process-boundary resume
+
+Owner: Runtime snapshot boundary, `RunResumeCheckpointStore`, and deployment browser lease.
+
+1. Define a versioned checkpoint DTO from the Section 11 owner facts; do not serialize asyncio tasks, locks, clients,
+   trace projections, or frontend conversation as Runtime truth.
+2. Serialize PydanticAI history with `ModelMessagesTypeAdapter` and validate deferred-call pairing on write/read.
+3. Implement a transactional SQLite repository plus schema migration, integrity digest, monotonic version, and atomic
+   checkpoint-before-`PAUSED` ordering.
+4. Persist Runtime-owned command-result idempotency with the private control commit and let the public Runtime session
+   own the new event-epoch baseline. Keep only Shell auth/TTL and opaque Runtime-session reference in the Shell record;
+   do not add a cross-layer transaction or duplicate event/checkpoint/effect truth.
+5. Add browser/environment reconnect locator support; restore only after same-session validation and fresh World
+   acquisition.
+6. Add restart tests at every supported safe point, corrupted/stale checkpoint tests, missing/lost browser tests, and
+   injected persistence failures.
+7. Keep in-flight crash recovery outside the supported scope: unknown dispatch stays unknown and is never replayed.
+8. Add public `PAUSED`, project `pause_requested → PAUSED + checkpoint_id`, and advertise `PauseRun`/`ResumeRun` only
+   after checkpoint commit ordering and restart recovery gates pass.
+
+Exit evidence: stop service after a committed pause, restart it, authenticate the same session, reconnect the same
+environment, hydrate an equivalent public snapshot under a new event epoch, and resume without replaying a committed
+GUI effect. An old epoch deterministically yields `resync_required` rather than fabricated event replay.
+
+### Phase 6 — bounded running-task revision
+
+Owner: Shell bounded user-conversation input plus the public Runtime revision boundary, TaskIntake/TaskGoal,
+GoalCompiler, and existing ActionPolicy.
+
+1. Add `ReviseTask` with `command_id`, expected task revision/status/checkpoint, and bounded text.
+2. Implement one-shot PydanticAI-backed `TaskRevisionCompiler` outcomes:
+   `RevisionReady | NeedsInput | NoChange | NewTaskSuggested | Unsupported | Failed`.
+3. Require a cooperative safe-point checkpoint before accepting the authoritative revision.
+4. Pass the complete proposed goal through TaskIntake; only an accepted consecutive `TaskGoal` becomes authority.
+5. Invalidate old GoalPlan/action-page/binding/confirmation values, acquire fresh World, and invoke GoalCompiler exactly
+   once with `TASK_REVISION`.
+6. Commit every accepted revision back to `PAUSED`; a separate `ResumeRun` later continues the same ActionPolicy. Do not
+   add a revision Agent, per-step compiler, mutable task plan, or second loop.
+7. Test revision during policy, before dispatch, during confirmation, after known dispatch, and after unknown dispatch;
+   test stale and duplicate revision commands.
+8. Emit `revision_applied_ready` when no prior dispatched receipt exists. A revision with retained
+   `SENT`/`SENT_UNKNOWN` truth commits the new goal but remains `PAUSED` with typed
+   `effect_reconciliation_required`; `ResumeRun` cannot dispatch until Phase 7 closes that outcome.
+
+Exit evidence: every revision command ends in one table-defined paused/waiting outcome; all subsequent resumed actions
+use revision `n+1`; no revision-`n` selection or approval can dispatch; old
+effects are preserved as immutable receipts; GoalCompiler is called exactly once for the accepted revision; known and
+unknown prior dispatches reach `effect_reconciliation_required` without executing a new action.
+
+### Phase 7 — bounded compensation for already-applied effects
+
+Owner: existing effect authority, ActionPolicy, Binder/Risk/Executor, and TaskEvaluator.
+
+1. Ensure action/effect contracts expose typed `REVERSIBLE | COMPENSATABLE | IRREVERSIBLE | UNKNOWN` and the minimum
+   current resource reference needed by offered provider actions.
+2. Make fresh World plus retained execution evidence visible to the existing ActionPolicy after revision.
+3. Represent undo/cancel/refund/remove only as normal currently offered actions; keep all currentness, risk,
+   confirmation, execution, and evaluation gates.
+4. Preserve original receipts and append compensation receipts; never rewrite history or infer success from intent.
+5. Return typed unknown/needs-input/unsupported for `SENT_UNKNOWN`, unavailable compensation, or irreversible effects.
+6. Use generic reversible/compensatable fixtures and real surface witnesses; do not add site-, label-, task-, or
+   benchmark-specific undo branches.
+7. On `ResumeRun` from `effect_reconciliation_required`, produce one closed outcome: preserve a compatible effect and
+   continue; dispatch a normal offered compensation; or remain paused/ask user for unknown, irreversible, or
+   unsupported cases. Only then advertise resume for revised sessions with prior effects.
+
+Exit evidence: reversible and compensatable cases converge through the ordinary action pipeline; irreversible and
+unknown cases fail closed; no test requires a production branch keyed to a fixture or page string.
+
+### Phase 8 — optional user takeover and return
+
+Owner: Runtime control lease plus deployment viewer lease.
+
+1. Enable interactive viewer control only after the public port returns an exclusive user-control lease.
+2. Prevent Agent dispatch while the user holds the lease.
+3. On return, invalidate stale action material, acquire fresh World, and resume only from an owner-produced snapshot.
+4. Do not infer takeover/return from iframe focus, viewer connectivity, or mouse activity.
+
+Exit evidence: control has one exclusive owner, stale Agent actions cannot dispatch across the lease transition, and
+return-control produces fresh World lineage.
+
+### Phase 9 — release and closure review
+
+1. Declare one release profile and freeze its supported status × command × execution-phase matrix before running gates.
+2. Produce the applicable fixed evidence artifacts: provider-free/architecture report; frontend unit/lint/typecheck/
+   build/demo E2E report; two-session isolation report; real deployment smoke record; control state-machine/property
+   report; checkpoint fault-injection/restart record; and revision/compensation matrix.
+3. Test held-out command orderings and two-session concurrency from a fresh process.
+4. Verify implementation, this document, external README/start commands, OpenAPI-generated frontend types, and public
+   capability advertisement agree.
+5. Record separately which gates are contract/demo, real Runtime, Viewer, durable resume, revision, compensation, and
+   optional takeover; do not use one green UI test as closure for all layers.
+6. Commit/review all changes and publish the real deployment entry/configuration instructions.
+
+Android and desktop remain outside this sequence. No Android/ADB/UIAutomator, desktop/AT-SPI/VNC, cross-surface
+abstraction, dependency, or acceptance gate belongs to the current scope.
+
+## 16. Acceptance criteria
+
+Closure is reported per layer. A layer may be complete while a later capability remains unavailable, but no layer may
+borrow evidence from a demo or projection that does not exercise its owner.
+
+### 16.1 Contract/demo foundation
 
 - the external API consists of one `RuntimeSessionPort`, one closed command union, one public snapshot schema, and one
   ordered event envelope rather than parallel per-feature protocols;
 - a session survives multiple HTTP requests without reconstructing Runtime state from events;
-- one task runs through `RuntimeSessionPort` without the shell importing or driving `CoreAgentLoop`;
-- event order is stable, cursor-resumable, and duplicate commands are rejected;
+- event order is stable and cursor-resumable within one event epoch; the current in-memory duplicate-command conflict
+  behavior is explicit rather than described as durable idempotent replay;
 - `AskUser` and confirmation pause and resume through existing typed Runtime entrypoints;
-- unsupported cancel, revision, or takeover capabilities are disabled rather than simulated;
-- the viewer is read-only while the Agent controls the surface;
+- unsupported execution, viewer, durable resume, cancel, revision, and takeover capabilities are independently disabled
+  rather than simulated;
+- waiting, pause-requested, paused, blocked, failed, cancelled, `SENT_UNKNOWN`, and unsupported states render distinct
+  owner-backed feedback and legal next actions;
 - public events contain no selector, coordinate, private binding, credential, or full World payload;
 - completion shown in the UI exactly matches `TaskEvaluator` or native-verifier output;
-- external browser/session cleanup happens once on close, terminal completion, or expiry;
-- a reload hydrates from snapshot plus event cursor without creating a second run;
+- a reload hydrates from snapshot plus event epoch/cursor without creating a second run;
 - no frontend component directly invokes an executor or silently revises `TaskGoal`;
 - diagnosis consumes exports only and cannot change task, failure, Monitor, or benchmark truth;
 - Langfuse failure cannot change or erase the local exported result;
 - each Runtime fact is publicly projected once and reused by snapshot/event consumers without a second status,
   completion, pending-input, or execution-outcome derivation;
-- shell-owned state remains limited to external resource lifetime, serialization, cursor, expiry, and bounded
-  conversation context;
+- each product command makes one `RuntimeSessionPort` call; deployment construction, checkpoint storage, Viewer, trace,
+  TaskIntake, GoalCompiler, and Executor are not independently orchestrated by Shell;
+- shell-owned state remains limited to external resource lifetime, in-process command serialization, expiry, and
+  bounded conversation context; any browser-held delivery cursor is only a non-authoritative request position against
+  the Runtime-owned event epoch and is never persisted by the Shell as event truth;
 - safety code remains limited to ordinary product-boundary checks and reuses Runtime enforcement for task effects.
 
-Running-task revision and takeover are acceptable only when the public Runtime port returns their typed outcomes; the
-external shell is tested only for correct command admission, stale-command rejection, and event projection.
+### 16.2 Real deployment
 
-## 16. Alternatives considered
+- the actual ASGI deployment entry constructs isolated per-session Runtime/environment resources behind one opaque
+  handle;
+- two concurrent sessions cannot observe or mutate each other's task, model history, World, events, browser, viewer,
+  checkpoint, or cleanup state;
+- the public Runtime session/port owns the only event epoch/cursor/envelopes; the manager only forwards
+  `events(after)` and creates no second event log;
+- one real GUI task runs through `RuntimeSessionPort` without the shell importing or driving `CoreAgentLoop`;
+- external browser/session cleanup happens exactly once on close, terminal completion, expiry, failed creation, and
+  shutdown;
+- default unavailable and demo startup remain visibly distinct from the real deployment command;
+- Runtime, Viewer, and durable-resume readiness are reported separately.
+
+### 16.3 Viewer
+
+- the viewer displays the exact browser session leased to Runtime and is read-only while the Agent owns control;
+- only an authenticated same-origin `/viewer/...` path is public;
+- provider URL/token/session secrets do not appear in snapshots, events, HTML, logs, or client storage;
+- viewer loss cannot change Runtime task status, execution receipts, or completion.
+
+### 16.4 Pause, cancel, and durable resume
+
+- HTTP admission and durable `PAUSED` acknowledgement are distinct events;
+- no dispatch begins after the acknowledged pause boundary until a valid resume/revision;
+- every in-flight attempt closes deterministically as `NOT_SENT`, `SENT`, or `SENT_UNKNOWN` with the existing typed
+  completion/cancellation phase;
+- CloseSession never masquerades as CancelRun, and CancelRun never masquerades as failure;
+- `PAUSED` is emitted only after its checkpoint commits;
+- checkpoint commit failure emits `pause_persistence_failed`, never exposes a half-paused status, and resumes only after
+  fresh World/currentness is re-established;
+- service restart restores the same task revision, PydanticAI history, bounded Runtime state, equivalent public
+  snapshot, and reconnectable browser session under a new event epoch without replaying a committed GUI effect;
+- an old event epoch yields `resync_required`; no cross-restart event replay is claimed without stored envelopes;
+- same command ID plus the same payload returns the committed result without re-execution, while a different payload
+  under that ID returns `command_identity_reused`;
+- missing, stale, corrupt, or incompatible checkpoints and lost environments fail in typed deterministic ways.
+
+### 16.5 Running revision and compensation
+
+- one accepted revision creates exactly one consecutive authoritative `TaskGoal` revision and one GoalCompiler call;
+- every revision command ends paused or waiting according to the closed outcome table; only a later `ResumeRun` may
+  enter ActionPolicy, and prior dispatched effects must first pass the Phase 7 gate;
+- compiler/TaskIntake/environment/commit outcomes each leave either revision `n` or `n+1` unambiguous and the run in a
+  documented paused/waiting/running state; no half-committed public goal is visible;
+- all old GoalPlan, action-page, binding, and confirmation material is invalid before another dispatch;
+- accepted PydanticAI tool calls remain structurally paired across pause/revision;
+- fresh World, not old plan progress or chat text, determines the current environment;
+- existing compatible effects are preserved; reversible/compensatable conflicts use a new ordinary action and receipt;
+- original receipts are immutable; `SENT_UNKNOWN`, irreversible, and unsupported compensation fail closed without blind
+  retry or invented rollback;
+- the implementation contains no site-, selector-, label-, task-, fixture-, or benchmark-specific undo behavior.
+
+### 16.6 Takeover
+
+Takeover is acceptable only when the public Runtime port returns an exclusive typed control lease, Agent dispatch is
+disabled for the lease duration, and return-control reacquires fresh World before resuming. The shell is tested for
+admission, lease projection, stale-command rejection, and viewer protection; it does not implement a second executor.
+
+## 17. Alternatives considered
 
 ### assistant-ui instead of CopilotKit
 
@@ -625,7 +1378,36 @@ admission and idempotency. High-frequency viewer input remains on its own existi
 
 Rejected. Polling remains a bounded recovery path only.
 
-## 17. References
+### One global `TargetRuntime` for every Web session
+
+Rejected while the configured policy/provider boundary retains mutable task history and invocation state. Reuse the
+composition recipe and concurrency-safe clients, but instantiate session-scoped Runtime/provider-history owners. A
+singleton becomes valid only after the Runtime is proven stateless and all session state is passed explicitly.
+
+### Cancelling the background asyncio task as Pause
+
+Rejected. Task cancellation does not establish dispatch truth, can turn a cooperative user request into a generic
+failure, and cannot persist a resumable boundary. Core-owned safe points and execution receipts are required.
+
+### Persisting only chat or PydanticAI messages
+
+Rejected as a resume design. Model history cannot restore RunState, task revision, execution receipts, current browser
+session, World lineage, pending confirmation, or event/idempotency state. Reuse PydanticAI serialization as one field of
+the Runtime checkpoint, not as the checkpoint authority.
+
+### Automatic rollback after every task revision
+
+Rejected. A prior effect may remain compatible, may be compensatable rather than reversible, may be irreversible, or
+may have unknown dispatch status. Preserve receipts and let the existing policy/action pipeline select a currently
+offered compensation only when required by the revised goal.
+
+### Workflow engine or event sourcing in the initial deployment
+
+Deferred. Explicit safe-point snapshots, SQLite, reconnectable browser leases, and PydanticAI history are sufficient for
+the declared single-process/restart boundary. If durable in-flight activities or multi-service orchestration becomes a
+measured requirement, evaluate mature PydanticAI durable-execution integrations and Postgres before custom machinery.
+
+## 18. References
 
 - [AG-UI event concepts](https://docs.copilotkit.ai/ag-ui/concepts/events)
 - [AG-UI protocol repository and Python SDK](https://github.com/ag-ui-protocol/ag-ui)
@@ -635,4 +1417,7 @@ Rejected. Polling remains a bounded recovery path only.
 - [Steel Live Sessions](https://docs.steel.dev/overview/sessions-api/embed-sessions/live-sessions)
 - [Steel human-in-the-loop sessions](https://docs.steel.dev/overview/sessions-api/human-in-the-loop)
 - [Browserbase Session Live View](https://docs.browserbase.com/platform/browser/observability/session-live-view)
+- [PydanticAI message history](https://ai.pydantic.dev/message-history/)
+- [PydanticAI deferred tools](https://ai.pydantic.dev/deferred-tools/)
+- [PydanticAI durable execution](https://ai.pydantic.dev/durable_execution/overview/)
 - [OpenHands system architecture](https://github.com/OpenHands/OpenHands/blob/main/openhands/architecture/system-architecture.md)

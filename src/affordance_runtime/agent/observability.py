@@ -189,6 +189,78 @@ class NullRunTraceSink:
         return None
 
 
+@dataclass(frozen=True)
+class FanoutRunTraceSink:
+    """Forward each observation to ordered sinks without owning Runtime facts."""
+
+    sinks: tuple[RunTraceSink, ...]
+
+    def __post_init__(self) -> None:
+        if not self.sinks:
+            raise ValueError("trace fanout requires at least one sink")
+
+    def _call(self, name: str, *args: object, **kwargs: object) -> None:
+        for sink in self.sinks:
+            getattr(sink, name)(*args, **kwargs)
+
+    def run_started(self, task: object, state: object) -> None:
+        self._call("run_started", task, state)
+
+    def benchmark_case_started(self, **event: object) -> None:
+        self._call("benchmark_case_started", **event)
+
+    def benchmark_case_finished(self, **event: object) -> None:
+        self._call("benchmark_case_finished", **event)
+
+    def run_start_failed(self, task: object, acquisition: object) -> None:
+        self._call("run_start_failed", task, acquisition)
+
+    def goal_compiler_completed(self, diagnostic: object) -> None:
+        self._call("goal_compiler_completed", diagnostic)
+
+    def model_turn(self, context: object, outcome: object, policy: object, *, exception: str = "") -> None:
+        self._call("model_turn", context, outcome, policy, exception=exception)
+
+    def finalization_protocol(self, **event: object) -> None:
+        self._call("finalization_protocol", **event)
+
+    def native_evaluator_returned(self, evaluation: object) -> None:
+        self._call("native_evaluator_returned", evaluation)
+
+    def native_evaluator_failed(self, **event: object) -> None:
+        self._call("native_evaluator_failed", **event)
+
+    def official_outcome_persistence(self, **event: object) -> None:
+        self._call("official_outcome_persistence", **event)
+
+    def benchmark_lifecycle_phase(self, phase: str, **event: object) -> None:
+        self._call("benchmark_lifecycle_phase", phase, **event)
+
+    def case_lifecycle_phase(self, phase: str) -> None:
+        self._call("case_lifecycle_phase", phase)
+
+    def primary_result_available(self, **event: object) -> None:
+        self._call("primary_result_available", **event)
+
+    def benchmark_watchdog(self, code: str, **event: object) -> None:
+        self._call("benchmark_watchdog", code, **event)
+
+    def step_completed(self, step_number: int, result: object) -> None:
+        self._call("step_completed", step_number, result)
+
+    def run_paused(self, state: object) -> None:
+        self._call("run_paused", state)
+
+    def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
+        self._call("run_resumed", kind, details)
+
+    def run_error(self, error: BaseException, state: object) -> None:
+        self._call("run_error", error, state)
+
+    def run_finished(self, state: object) -> None:
+        self._call("run_finished", state)
+
+
 @dataclass
 class RunTraceRecorder:
     """Append complete Runtime facts locally; tracing failures never alter the run."""
