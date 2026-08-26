@@ -1271,8 +1271,17 @@ ref-free GUI sequence still blocks recurrence of a proven cycle. `TaskGoal.loop_
 turn bound. This is one Monitor-owner rule for every tool and action, not a `find_controls`, task, site, or result-shape
 exception. Generated tests cover up to twenty distinct same-World attempts, and a CoreLoop vertical test covers
 no-result recovery -> nonempty control discovery -> next ActionPolicy turn -> dispatch -> fresh completed World.
-Task97 remains empirically open until a fresh run reaches native evaluation; this repair only removes the premature
-Runtime termination and does not claim that the model will choose the correct remaining research strategy.
+At that checkpoint Task97 remained empirically open: the repair only removed the premature Runtime termination and
+did not claim that the model would choose the correct remaining research strategy.
+
+The authorized post-repair
+[`run4`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run4/run.json) crossed that exact boundary at commit
+`c0158be2`. It completed after 67 valid single-call policy turns, 24 GUI executions, 26 observations, one STOP, one
+post-STOP capture, and one native evaluation. The native evaluator returned `verified_success`; the run recorded zero
+waits, grounding gaps, representation repairs, fallbacks, invalid arguments, stale catalogs, or context-capacity
+rejections. This accepts the exercised large-World lifecycle and Monitor recovery-handoff path. It does not close the
+broader W2 cohort, and its 1,142,228 aggregate tokens remain an explicit efficiency target rather than a correctness
+reason to alter the now-verified control contract.
 
 ## World, perception, and action boundaries
 

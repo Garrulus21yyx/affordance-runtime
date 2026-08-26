@@ -1130,8 +1130,18 @@ attempt budget. Exact attempt replay, typed prohibited-call replay, and recurren
 bounded; the existing TaskGoal turn budget remains the generic fallback. A generated property covers arbitrary unique
 query sequences and a CoreLoop vertical gate covers two empty results -> nonempty current control discovery -> next
 ActionPolicy turn -> dispatch -> fresh native-complete World. No tool-specific branch, threshold increase, World,
-history, cursor, ToolReturn, PydanticAI, BrowserGym, or benchmark behavior was added. Task97 remains open pending a
-fresh post-repair witness.
+history, cursor, ToolReturn, PydanticAI, BrowserGym, or benchmark behavior was added. At that checkpoint Task97
+remained open pending a fresh post-repair witness.
+
+Task97
+[`run4`](../evidence/live/w2-task-97-deepseek-v4-flash-20260826-run4/run.json) is the accepted post-repair witness at
+commit `c0158be2`. Formal acceptance is true and the case ended `done / verified_success` after about 583 seconds. It
+made 67 valid single-call policy turns, 24 GUI executions, 26 observations, one STOP, one post-STOP capture, and one
+native evaluation. It recorded zero waits, grounding gaps, representation repairs, fallbacks, invalid arguments,
+stale catalogs, and context-capacity rejections. Aggregate total tokens were 1,142,228. This live-validates the exact
+run3 handoff that had been cut short: different recovery attempts no longer form a Runtime semantic budget, while the
+Agent remains bounded and reaches native completion. The exercised Task97 path is accepted; broader W2 correctness
+and efficiency remain open.
 
 ## Live-run authorization and execution
 
