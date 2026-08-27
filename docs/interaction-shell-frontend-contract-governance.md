@@ -6,7 +6,7 @@
 > 范围：`external/interaction-shell/backend`、`external/interaction-shell/frontend` 与 Runtime `public_session` 边界。
 > 排除：主工作树中的遗留 `affordance_runtime.benchmarks.console`。
 > 状态 authority：本文件描述目标设计、迁移与治理门；当前 Interaction Shell 实施状态仍以 `docs/interaction-shell.md` 为准，Core/benchmark 状态仍以 `docs/architecture.md`、`docs/benchmark.md` 为准。
-> 主线集成：本合同已在独立 integration worktree 中以本地 `codex/simplify-core-runtime@baebf2e2` 为底适配；集成保留 simplify 的 delivery/context/provider/history 热路径，只在原 owner 中加入 Shell control/checkpoint 语义。该 provider-free 集成证据不改变 Phase 4 blocked 状态，也不构成 live benchmark 表现证据。
+> 主线集成：本合同已在独立 integration worktree 中以本地 `codex/simplify-core-runtime@baebf2e2` 为底适配并达到 provider-free verified closure，merge commit 为 `04dcc4ac`，独立 fresh-context review 结论为 APPROVE，post-commit regenerate-and-diff 无差异。集成保留 simplify 的 delivery/context/provider/history 热路径，只在原 owner 中加入 Shell control/checkpoint 语义。该证据不改变 Phase 4 blocked 状态，也不构成 live benchmark 表现证据。
 
 ## 1. 决策
 

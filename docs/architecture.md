@@ -464,6 +464,11 @@ one matching canonical World and observation projection instead of reusing the c
 StepPersistence conversation/run lineage is attached inside the current physical SDK invocation path; it does not
 restore the superseded direct provider call. There is still one `CoreAgentLoop`, one `RunState`, one ActionPolicy
 history and one Runtime checkpoint authority.
+The reviewed integration snapshot is merge commit `04dcc4ac`. Root provider-free verification reports 1,942 passed,
+19 skipped and one explicit deselection for the repository's missing historical live trace; Shell backend/architecture
+reports 91 passed and one optional Harness skip. Independent fresh-context review returned APPROVE, and post-commit
+OpenAPI/Hey API regeneration produced no artifact drift. This closes provider-free integration only, not the live
+benchmark acceptance status below.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym
