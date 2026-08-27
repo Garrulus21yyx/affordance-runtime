@@ -313,9 +313,7 @@ def test_deepseek_deliberate_thinking_uses_official_wire_and_roundtrips_tool_rea
     assert requests[0]["reasoning_effort"] == "medium"
     assert requests[1]["reasoning_effort"] == "medium"
     replayed_assistant = requests[1]["messages"][1]
-    assert replayed_assistant["reasoning_content"] == (
-        "The current route is exhausted; choose another source."
-    )
+    assert replayed_assistant["reasoning_content"] == ("The current route is exhausted; choose another source.")
     assert replayed_assistant["tool_calls"][0]["id"] == "deepseek-call:1"
     assert requests[1]["messages"][2] == {
         "role": "tool",
@@ -550,15 +548,9 @@ def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_polic
         base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
         interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
         assert base is not None and interaction is not None
-        base_refs = {
-            item.candidate.target_ref
-            for item in base.records
-            if isinstance(item, ActionRouteFragment)
-        }
+        base_refs = {item.candidate.target_ref for item in base.records if isinstance(item, ActionRouteFragment)}
         interaction_refs = {
-            item.candidate.target_ref
-            for item in interaction.records
-            if isinstance(item, ActionRouteFragment)
+            item.candidate.target_ref for item in interaction.records if isinstance(item, ActionRouteFragment)
         }
         assert base_refs.isdisjoint(interaction_refs)
         delivery = build_model_turn_delivery(context, include_images=False)
@@ -605,9 +597,7 @@ def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_polic
             RunStatus.RUNNING,
             feedback="local_tool_result",
         )
-        second = await policy.port.generate(
-            ModelDecisionRequest("request:grounding-rejection:2", context, committed)
-        )
+        second = await policy.port.generate(ModelDecisionRequest("request:grounding-rejection:2", context, committed))
 
         assert second.failure is None and second.output is not None
         assert isinstance(second.output.decision, SelectAction)
@@ -1986,12 +1976,237 @@ def test_history_projection_keeps_closed_tool_only_reasoning_until_semantic_comp
         message
         for message in projected
         if isinstance(message, ModelResponse)
-        and any(
-            isinstance(part, ToolCallPart) and part.tool_call_id == "call:0"
-            for part in message.parts
-        )
+        and any(isinstance(part, ToolCallPart) and part.tool_call_id == "call:0" for part in message.parts)
     )
     assert any(isinstance(part, ThinkingPart) for part in first_projected.parts)
+    canonical_envelope_module._project_pydantic_history(projected)
+
+
+def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> None:
+    original = (
+        ModelRequest(parts=[UserPromptPart("search results World")]),
+        ModelResponse(
+            parts=[
+                TextPart("Search found More results at E6."),
+                ToolCallPart(
+                    "search_page_content",
+                    {"query": "More results"},
+                    "call:search",
+                ),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "search_page_content",
+                    {
+                        "items": (
+                            {
+                                "label": "More results",
+                                "target_ref": "E6",
+                                "verbs": ("activate",),
+                                "region_ref": "R2",
+                            },
+                        ),
+                        "next_cursor": "opaque-old-page",
+                    },
+                    "call:search",
+                    metadata={
+                        "before_world": "observation:search",
+                        "after_world": "observation:search",
+                    },
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                TextPart("Open More results E6."),
+                ToolCallPart("activate", {"target": "E6"}, "call:activate"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "activate",
+                    {"status": "stable", "outcome": "Not Found page loaded"},
+                    "call:activate",
+                    metadata={
+                        "before_world": "observation:search",
+                        "after_world": "observation:not-found",
+                    },
+                )
+            ]
+        ),
+        ModelResponse(parts=[ToolCallPart("find_controls", {"query": "different route"}, "call:pending")]),
+    )
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=100_000,
+        current_world_observation_id="observation:not-found",
+    )
+
+    calls = {
+        part.tool_call_id: part
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    }
+    returns = {
+        part.tool_call_id: part
+        for message in projected
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    }
+    search_content = returns["call:search"].content
+    assert calls["call:search"].args == {"query": "More results"}
+    assert calls["call:activate"].args == {}
+    assert calls["call:pending"].args == {"query": "different route"}
+    assert search_content == {"items": ({"label": "More results"},)}
+    assert returns["call:activate"].content == {
+        "status": "stable",
+        "outcome": "Not Found page loaded",
+    }
+    assert set(calls) == {"call:search", "call:activate", "call:pending"}
+    assert set(returns) == {"call:search", "call:activate"}
+    assert original[3].parts[1].args == {"target": "E6"}
+    assert original[2].parts[0].content["items"][0]["target_ref"] == "E6"
+    assert all(
+        "E6" not in part.content
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, TextPart)
+    )
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "find_controls",
+        {"query": "different route"},
+        "call:pending",
+    )
+    canonical_envelope_module._project_pydantic_history(projected)
+
+
+def test_history_projection_keeps_same_world_read_grounding_exact() -> None:
+    tool_return = ToolReturnPart(
+        "search_page_content",
+        {"items": ({"label": "More results", "target_ref": "E6", "verbs": ("activate",)},)},
+        "call:search",
+        metadata={
+            "before_world": "observation:search",
+            "after_world": "observation:search",
+        },
+    )
+    original = (
+        ModelResponse(
+            parts=[
+                TextPart("Use E6 More results."),
+                ToolCallPart("search_page_content", {"query": "More results"}, "call:search"),
+            ]
+        ),
+        ModelRequest(parts=[tool_return]),
+        ModelResponse(parts=[ToolCallPart("activate", {"target": "E6"}, "call:pending")]),
+    )
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=100_000,
+        current_world_observation_id="observation:search",
+    )
+
+    assert projected == original
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "activate",
+        {"target": "E6"},
+        "call:pending",
+    )
+
+
+@given(turns=st.integers(min_value=2, max_value=8))
+@settings(max_examples=12)
+def test_history_projection_conserves_pairs_and_semantics_while_degrounding_expired_worlds(
+    turns: int,
+) -> None:
+    messages: list[object] = []
+    for index in range(turns):
+        ref = f"E{index + 1}"
+        messages.extend(
+            (
+                ModelResponse(
+                    parts=[
+                        TextPart(f"Inspect result {index} at {ref}."),
+                        ToolCallPart("activate", {"target": ref}, f"call:{index}"),
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            "activate",
+                            {
+                                "label": f"Result {index}",
+                                "target_ref": ref,
+                                "verbs": ("activate",),
+                                "outcome": "stable",
+                            },
+                            f"call:{index}",
+                            metadata={
+                                "before_world": f"observation:{index}",
+                                "after_world": f"observation:{index + 1}",
+                            },
+                        )
+                    ]
+                ),
+            )
+        )
+    messages.append(ModelResponse(parts=[ToolCallPart("activate", {"target": "E999"}, "call:pending")]))
+    original = tuple(messages)
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=100_000,
+        current_world_observation_id="observation:current",
+    )
+
+    calls = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+    returns = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    assert tuple(part.tool_call_id for part in calls) == (
+        *(f"call:{index}" for index in range(turns)),
+        "call:pending",
+    )
+    assert tuple(part.tool_call_id for part in returns) == tuple(f"call:{index}" for index in range(turns))
+    assert all(part.args == {} for part in calls[:-1])
+    assert calls[-1].args == {"target": "E999"}
+    assert tuple(part.content for part in returns) == tuple(
+        {"label": f"Result {index}", "outcome": "stable"} for index in range(turns)
+    )
+    assert all(
+        part.args == {"target": f"E{index + 1}"}
+        for index, part in enumerate(
+            part
+            for message in original
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+            if isinstance(part, ToolCallPart) and part.tool_call_id != "call:pending"
+        )
+    )
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "activate",
+        {"target": "E999"},
+        "call:pending",
+    )
     canonical_envelope_module._project_pydantic_history(projected)
 
 
@@ -3299,9 +3514,7 @@ def test_representation_repair_accepts_new_provider_call_id_and_pairs_that_ident
                         )
                     ]
                 ),
-                ModelResponse(
-                    parts=[ToolCallPart("list_regions", {}, "provider-call:next-turn")]
-                ),
+                ModelResponse(parts=[ToolCallPart("list_regions", {}, "provider-call:next-turn")]),
             ]
         )
         policy = _policy(scripted.build())

@@ -20,7 +20,9 @@ from affordance_runtime.agent.attempt_signature import (
     PublicAttemptSignature,
     public_attempt_signature,
 )
+from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -497,13 +499,9 @@ class PydanticAIGroundedDecisionPort:
                     request,
                 )
             last_step = request.last_step
-            if (
-                pending_call is not None
-                and (
-                    last_step is None
-                    or str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
-                    != pending_call.call_id
-                )
+            if pending_call is not None and (
+                last_step is None
+                or str(getattr(getattr(last_step, "decision", None), "tool_call_id", "")) != pending_call.call_id
             ):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
@@ -558,6 +556,7 @@ class PydanticAIGroundedDecisionPort:
             projected_history = _project_expired_history(
                 history_messages,
                 max_estimated_tokens=recent_exact_tokens,
+                current_world_observation_id=request.agent_context.current_observation.observation_id,
             )
             if projected_history != history_messages:
                 history_messages = projected_history
@@ -652,6 +651,7 @@ class PydanticAIGroundedDecisionPort:
                     resolution_error,
                     initial_calls,
                     request.agent_context,
+                    catalog.manifest,
                     source_response=source_response,
                 )
             if accepted_exchange is not None:
@@ -1794,6 +1794,7 @@ def _grounded_rejection_exchange(
     error: GroundedToolResolutionError | None,
     calls: tuple[ToolCall, ...],
     context: AgentContext,
+    manifest: DeliveryManifest,
     *,
     source_response,
 ) -> AcceptedToolExchange | None:
@@ -1819,7 +1820,13 @@ def _grounded_rejection_exchange(
     discarded_call_count = max(0, len(proposed_calls) - 1)
     return AcceptedToolExchange(
         call,
-        grounded_tool_rejection_decision(error, call, context.context_id, context),
+        grounded_tool_rejection_decision(
+            error,
+            call,
+            context.context_id,
+            context,
+            manifest,
+        ),
         _accepted_model_response(
             source_response,
             call,
@@ -1978,9 +1985,7 @@ def _closed_history_after_failed_output(
     )
     pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
     closing_requests = tuple(
-        message
-        for message in current_requests
-        if any(isinstance(part, ToolReturnPart) for part in message.parts)
+        message for message in current_requests if any(isinstance(part, ToolReturnPart) for part in message.parts)
     )
     returned_identities = tuple(
         (part.tool_name, part.tool_call_id)
@@ -2149,6 +2154,7 @@ def _fold_expired_world_prompts(
     if max_estimated_tokens < 1:
         raise ValueError("recent World history target must be positive")
     from pydantic_ai.messages import ModelRequest, UserPromptPart
+
     candidates: list[tuple[int, UserPromptPart]] = []
     for index, message in enumerate(messages):
         if not isinstance(message, ModelRequest):
@@ -2183,29 +2189,128 @@ def _project_expired_history(
     messages: tuple[object, ...],
     *,
     max_estimated_tokens: int,
+    current_world_observation_id: str = "",
 ) -> tuple[object, ...]:
-    """Project bounded exact history without changing history facts.
+    """Project bounded semantic history plus an exact current-world suffix.
 
     Historical World prompts are temporal observations and are removed because
-    TurnPacker supplies exactly one fresh World.  A completed response may drop
-    its private ``ThinkingPart`` only when the same response already carries a
-    public ``TextPart`` conclusion; its ToolCall/ToolReturn pair remains exact.
-    The unresolved response is never changed.  Outside the same recent token
-    window, only equivalent repeated model prose is removed, retaining its
-    newest instance.  This is deterministic structural history processing;
-    semantic replacement remains exclusively owned by Harness compaction under
-    its typed schedule.
+    TurnPacker supplies exactly one fresh World.  Closed exchanges retain their
+    ToolCall/ToolReturn identity and semantic values, but observation-local refs
+    are removed once the exchange's World is not the current World.  Same-world
+    reads and the unresolved response remain exact.  A completed response may
+    also drop private ``ThinkingPart`` only when the same response already
+    carries a public conclusion.  Harness remains the only semantic compactor.
     """
 
     folded = _fold_expired_world_prompts(
         messages,
         max_estimated_tokens=max_estimated_tokens,
     )
-    projected = _strip_completed_private_reasoning(folded)
+    projected = _deground_expired_tool_exchanges(
+        folded,
+        current_world_observation_id=current_world_observation_id,
+    )
+    projected = _strip_completed_private_reasoning(projected)
     return _deduplicate_expired_model_prose(
         projected,
         max_estimated_tokens=max_estimated_tokens,
     )
+
+
+def _deground_expired_tool_exchanges(
+    messages: tuple[object, ...],
+    *,
+    current_world_observation_id: str,
+) -> tuple[object, ...]:
+    """Remove stale operational handles without changing call/result pairing."""
+
+    if not messages or not current_world_observation_id:
+        return messages
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        TextPart,
+        ThinkingPart,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+
+    expired_call_ids: set[str] = set()
+    expired_return_ids: set[str] = set()
+    for _response, returns in _completed_tool_exchanges(messages):
+        for part in returns:
+            if not isinstance(part, ToolReturnPart) or not isinstance(part.metadata, Mapping):
+                continue
+            before_world = str(part.metadata.get("before_world", ""))
+            after_world = str(part.metadata.get("after_world", ""))
+            if before_world and before_world != current_world_observation_id:
+                expired_call_ids.add(part.tool_call_id)
+            if after_world and after_world != current_world_observation_id:
+                expired_return_ids.add(part.tool_call_id)
+    if not expired_call_ids and not expired_return_ids:
+        return _deground_compaction_summaries(messages)
+
+    projected: list[object] = []
+    for message in messages:
+        if isinstance(message, ModelResponse):
+            response_expired = any(
+                isinstance(part, ToolCallPart) and part.tool_call_id in expired_call_ids for part in message.parts
+            )
+            if not response_expired:
+                projected.append(message)
+                continue
+            parts: list[object] = []
+            for part in message.parts:
+                if isinstance(part, ToolCallPart) and part.tool_call_id in expired_call_ids:
+                    parts.append(replace(part, args=sanitize_history_value(part.args)))
+                elif response_expired and isinstance(part, (TextPart, ThinkingPart)):
+                    content = str(sanitize_history_value(part.content))
+                    if content:
+                        parts.append(replace(part, content=content))
+                else:
+                    parts.append(part)
+            projected.append(replace(message, parts=tuple(parts)))
+            continue
+        if isinstance(message, ModelRequest):
+            if not any(
+                isinstance(part, ToolReturnPart) and part.tool_call_id in expired_return_ids for part in message.parts
+            ):
+                projected.append(message)
+                continue
+            parts = tuple(
+                replace(part, content=sanitize_history_value(part.content))
+                if isinstance(part, ToolReturnPart) and part.tool_call_id in expired_return_ids
+                else part
+                for part in message.parts
+            )
+            projected.append(replace(message, parts=parts))
+            continue
+        projected.append(message)
+    return _deground_compaction_summaries(tuple(projected))
+
+
+def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Keep Harness summaries semantic if an older run emitted a local ref."""
+
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart
+
+    projected: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            projected.append(message)
+            continue
+        parts: list[object] = []
+        changed = False
+        for part in message.parts:
+            if isinstance(part, SystemPromptPart) and part.content.startswith("Summary of previous conversation"):
+                content = str(sanitize_history_value(part.content))
+                if content != part.content:
+                    changed = True
+                    parts.append(replace(part, content=content))
+                    continue
+            parts.append(part)
+        projected.append(replace(message, parts=tuple(parts)) if changed else message)
+    return tuple(projected)
 
 
 def _strip_completed_private_reasoning(
@@ -2224,9 +2329,7 @@ def _strip_completed_private_reasoning(
         return messages
     from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
 
-    completed_response_ids = {
-        id(response) for response, _returns in _completed_tool_exchanges(messages)
-    }
+    completed_response_ids = {id(response) for response, _returns in _completed_tool_exchanges(messages)}
     if not completed_response_ids:
         return messages
     projected = list(messages)
@@ -2325,8 +2428,7 @@ def _history_economy_compaction_required(
         not messages
         or max_estimated_tokens < 1
         or available_history_tokens < 1
-        or observed_history_tokens
-        < int(available_history_tokens * _HISTORY_ECONOMY_PRESSURE_RATIO)
+        or observed_history_tokens < int(available_history_tokens * _HISTORY_ECONOMY_PRESSURE_RATIO)
     ):
         return False
     from pydantic_ai.messages import ModelRequest, SystemPromptPart
@@ -2343,10 +2445,7 @@ def _history_economy_compaction_required(
             isinstance(message, ModelRequest)
             and (
                 bool((message.metadata or {}).get(_TASK_ANCHOR_METADATA_KEY))
-                or (
-                    bool(message.parts)
-                    and all(isinstance(part, SystemPromptPart) for part in message.parts)
-                )
+                or (bool(message.parts) and all(isinstance(part, SystemPromptPart) for part in message.parts))
             )
         )
     )
@@ -2550,9 +2649,7 @@ async def _compact_pydantic_history(
     )
 
     activation_ratio = (
-        _HISTORY_COMPACTION_PRESSURE_RATIO
-        if trigger == "token_pressure"
-        else _HISTORY_ECONOMY_PRESSURE_RATIO
+        _HISTORY_COMPACTION_PRESSURE_RATIO if trigger == "token_pressure" else _HISTORY_ECONOMY_PRESSURE_RATIO
     )
     activation_threshold = max(
         1,

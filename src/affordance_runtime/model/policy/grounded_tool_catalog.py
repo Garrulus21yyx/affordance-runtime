@@ -161,6 +161,7 @@ class _CountChildrenBinding:
 class _WorldReadBinding:
     context: AgentContext
     kind: str
+    admitted_region_refs: frozenset[str] = frozenset()
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
         observation, region_index = _current_world_read_authority(self.context)
@@ -171,6 +172,11 @@ class _WorldReadBinding:
             tool_name = GroundedLocalToolName.READ_REGION.value
             action = "read_region"
             region_ref = str(arguments["region_ref"])
+            if region_ref not in self.admitted_region_refs:
+                raise GroundedToolResolutionError(
+                    GroundedToolResolutionCode.GROUNDING_GAP,
+                    "region reference is unavailable in the current delivery",
+                )
         elif self.kind == "find":
             tool_name = GroundedLocalToolName.SEARCH_PAGE_CONTENT.value
             action = "find"
@@ -281,6 +287,9 @@ def compile_grounded_tool_catalog(
         for item in GroundedToolCompiler().compile(
             context.complete_actions,
             context_id=context.context_id,
+            admitted_routes=frozenset(
+                (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+            ),
         )
     )
 
@@ -315,7 +324,7 @@ def compile_grounded_tool_catalog(
             )
         )
 
-    if context.canonical_world.region_refs:
+    if delivery.manifest.region_refs:
         registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
@@ -337,7 +346,7 @@ def compile_grounded_tool_catalog(
                         ("region_ref",),
                     ),
                 ),
-                _WorldReadBinding(context, "region"),
+                _WorldReadBinding(context, "region", frozenset(delivery.manifest.region_refs)),
             )
         )
     registered.extend(

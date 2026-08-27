@@ -267,11 +267,13 @@ def _bound_public_context(context) -> dict[str, object]:
         delivery,
     )
     binder = GroundedPolicyContextBinder()
-    public = dict(binder._public_context_sections(  # noqa: SLF001 - owner-boundary fixture
-        context,
-        False,
-        delivery,
-    )["public"])
+    public = dict(
+        binder._public_context_sections(  # noqa: SLF001 - owner-boundary fixture
+            context,
+            False,
+            delivery,
+        )["public"]
+    )
     public["tools"] = tuple(
         {
             "name": item.name,
@@ -1047,8 +1049,7 @@ def test_final_response_tool_accepts_content_without_world_fact_lineage() -> Non
 
 def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_projection() -> None:
     guidance = (
-        "JSON object: task_type RETRIEVE|MUTATE|NAVIGATE. "
-        "Derive task_type and payload from task, never goal_plan."
+        "JSON object: task_type RETRIEVE|MUTATE|NAVIGATE. Derive task_type and payload from task, never goal_plan."
     )
     context = replace(_context(), final_response_guidance=guidance)
     catalog = _compile_catalog(context)
@@ -1174,9 +1175,7 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
 
     activate_spec = next(item for item in catalog.specs if item.name == "activate")
     activate_binding = catalog.bindings[catalog.specs.index(activate_spec)]
-    admitted_refs = {
-        item.selector_values["target"] for item in activate_binding.private_resolutions
-    }
+    admitted_refs = {item.selector_values["target"] for item in activate_binding.private_resolutions}
     assert admitted_refs == {close_ref, *actionable_refs}
 
     inspected = inspect_actor_world(
@@ -1206,6 +1205,7 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
         initial,
         context.context_id,
         context,
+        catalog.manifest,
     )
     assert isinstance(feedback, LocalToolResult)
     assert feedback.result["failure_kind"] == "tool_grounding_gap"
@@ -1236,9 +1236,7 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
     assert search_step.action_page_result.result_coverage == "empty"
     assert search_step.action_page_result.matches == ()
     assert not hasattr(search_step.action_page_result, "continuation_available")
-    assert readonly_ref not in {
-        item.target_ref for item in search_step.action_page_result.matches
-    }
+    assert readonly_ref not in {item.target_ref for item in search_step.action_page_result.matches}
 
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     local = SearchPageContentResult(

@@ -2,6 +2,30 @@
 
 ## Current status
 
+Task426
+[`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
+is the current failed pre-repair witness for generation-local grounding. The run made 31 policy calls, 18 executions,
+19 observations, and no STOP/native evaluation. A prior search ToolReturn exposed `E6` as `More results`; after a
+fresh navigation World reused `E6` for an undelivered `Go` button, the model called `activate(E6)` while describing
+the old link. Because Catalog resolver rows still came from every `complete_action` instead of the sibling
+`DeliveryManifest`, Runtime legally but incorrectly bound the call to `Go`. This explains the wrong dispatch without
+reopening BrowserGym execution, task context, Monitor, or cursor design.
+
+The implemented repair makes manifest admission and callability identical. Generated zero/partial/full delivery
+tests verify that compiled private action routes equal manifest routes, including destination actions; an omitted ref
+of an otherwise offered operation now returns typed `tool_grounding_gap`, and its rejection feedback cannot reveal the
+undelivered control or verbs through `complete_actions`. A same-World search-result test proves an
+explicitly returned current E-ref/verb is first intersected with the current ActionSpace, added to the same manifest,
+and then resolves normally. The environment-profile test also verifies that all six authorized browser-context
+primitives survive the required base delivery together, without a URL/site branch. PydanticAI history tests preserve
+call IDs, pairing, labels, factual results, current
+grounding, and the unresolved suffix while removing refs/cursors/attached verbs from closed exchanges belonging to a
+noncurrent World. Raw source messages remain unchanged. Focused action/catalog/BrowserGym/provider verification
+reports 188 passed and 1 skipped; the direct delivery/history set reports 131 passed. A fresh authorized live witness
+is still required, so broader benchmark status remains non-closed. The fixed BrowserGym Python full suite reports
+1,827 passed and 19 skipped; its sole failure is the already tracked documentation-governance rejection of
+`docs/interaction-shell.md`, not a product or grounding failure.
+
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:
 
@@ -109,7 +133,8 @@ The post-Task740 efficiency repair changes no control path: repeated read record
 their producer, browser-context tools expose the registry's stable parameter family while private current bindings
 validate exact domains, and PydanticAI history removes every historical World before supplying the one fresh current
 World. Closed private reasoning expires only behind its own retained public conclusion; pending/tool-only reasoning,
-public progress, and every ToolCall/ToolReturn remain exact. Harness uses an 80% complete-request capacity arm plus a
+public progress, call/result pairing, semantic values, and current-World handles remain exact; expired closed
+exchanges retain semantics without generation-local handles. Harness uses an 80% complete-request capacity arm plus a
 50% history high-water arm gated by a 15% minimum-reclaim batch; accepted compaction targets 30% history and retains a
 12% exact pair-safe suffix. Initial ActionPolicy requests remain `tool_choice=auto`; only the bounded PydanticAI
 output retry uses `thinking=false + required`. No memory, replanner, result-specific scheduler, or second
@@ -571,10 +596,11 @@ anchor, makes all other historical user prompts World-only, and removes only exp
 admission-derived 12% recent tail before applying the existing 80% Harness pressure gate. Model-authored progress,
 thinking, and all result-bearing messages remain raw in that recent tail. Outside it, only whitespace-equivalent
 repeated model prose is removed, with the newest occurrence retained; unique conclusions, ToolCalls, and ToolReturns
-remain exact. Retained multimodal Worlds keep their media, and Harness preserves the anchor when semantic compaction
+retain pair identity and semantic content, while only current-World handles remain executable. Retained multimodal
+Worlds keep their media, and Harness preserves the anchor when semantic compaction
 is needed by full-request pressure or when expired unsummarized model prose fills an age/size batch bounded by the
 smaller of the recent-tail target and existing maximum summary-output budget. This is not semantic matching or a
-reducer. Generated history tests cover 5--12 turns, exact call/result and stable-conclusion conservation, bounded
+reducer. Generated history tests cover 5--12 turns, call/result pairing and stable-conclusion conservation, bounded
 repeated prose, one task anchor, a bounded recent raw tail, provider-boundary equality, and multimodal grounding.
 Task7 [`run1`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run1/run.json) is the failed pre-repair witness
 for incremental pair conservation. The project's summary-only view had changed each `ToolReturnPart` into a
@@ -931,13 +957,15 @@ A second Recording PydanticAI gate emits `ThinkingPart + N ToolCallPart`. Exactl
 later calls are not executed, queued, or used as fallback. Canonical history first preserves the exact response,
 including thinking and every proposal. The next physical input pairs the first with its owner result and the rest with
 same-ID native failed returns. After that exchange is closed and a newer response is pending, private thinking may
-expire only if its own public text conclusion remains; calls, returns, text, tool-only reasoning, and the unresolved
-response remain exact. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
+expire only if its own public text conclusion remains; pair identities, semantic values, tool-only reasoning, and the
+unresolved response remain exact, while noncurrent operational handles expire. A generated 1..8-call property verifies
+complete call/result pairing, a longitudinal gate
 verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
 Before semantic compaction, generated 5..12-turn properties verify one task/plan anchor, no historical World prompts,
-exact model conclusions and call/result pairs, exact pending and tool-only reasoning, expiry only of closed private
-reasoning with its own public conclusion, bounded equivalent repeated prose, and canonical provider projection. The
+model conclusions and call/result pairing, exact pending and tool-only reasoning, degrounding only of closed
+noncurrent exchanges, expiry only of closed private reasoning with its own public conclusion, bounded equivalent
+repeated prose, and canonical provider projection. The
 same final `RequestAdmission` breakdown counts history, pending ToolReturn, the one fresh World,
 tools, and overhead. PydanticAI Harness pair-safe compaction runs at 80% complete-request pressure, or at 50% history
 pressure only when at least 15% of history capacity is reclaimable outside the exact suffix. It targets 30% history
@@ -1044,9 +1072,10 @@ Production negative searches must find no:
 
 ### G8 — atomic current delivery
 
-Every `DeliveryManifest` ref must occur in the same admitted text or exact media. The gate covers oversized optional
-region descriptions, hidden/de-duplicated node facts, zero-candidate delivery, partial prefixes, and ordinary full
-delivery. It does not allow TurnPacker or the provider bridge to ignore missing refs.
+Every `DeliveryManifest` ref must occur in the same admitted text, exact media, or current same-call ToolReturn. The
+gate covers oversized optional region descriptions, hidden/de-duplicated node facts, zero-candidate delivery, partial
+prefixes, and ordinary full delivery. It does not allow TurnPacker or the provider bridge to ignore missing refs, and
+the Catalog's private action routes must equal the manifest route set.
 
 Readable search is checked separately against structural pollution: DOM tag, class, and ID values cannot trigger or
 appear in a search result, while visible content with the same query still matches.
@@ -1439,7 +1468,8 @@ existing PydanticAI retry, while a deliberate retry with `thinking=true + tool_c
 DeepSeek wire contract. The owner repair keeps every initial request at `auto`, changes only an output-validation retry
 to `thinking=false + required`, and expires private reasoning only after its response has a same-ID ToolReturn and its
 own public text conclusion. The pending exchange, public progress text, calls, returns, raw Trace, and existing Harness
-50%/15%/30%/12% schedule are unchanged. A real OpenAI-compatible wire test and generated 2--12 turn history properties
+50%/15%/30%/12% schedule remain; later closed noncurrent exchanges retain pair identity and semantic content without
+operational handles. A real OpenAI-compatible wire test and generated 2--12 turn history properties
 exercise these invariants.
 
 The authorized Task740
@@ -1493,12 +1523,15 @@ The final read-only review for this cutover must answer:
 2. Can any generic continuation tool still be registered or resolved?
 3. Does every registered local producer return the subtype declared by its contract?
 4. Can a result exceed its owner byte bound or require fragment reassembly?
-5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs, append the current
-   same-call result, exclude old World prompts, and clear on terminal completion?
-6. Does a multi-call response retain every exact proposal in SDK history, resolve and dispatch only its first call,
-   pair later calls with same-ID native failed returns on the next turn, and create no Runtime queue or fallback?
-7. Does every route in a same-World `find_controls` ToolReturn appear in the next frozen catalog, including when the
-   soft target cannot admit unrelated optional inventory?
+5. Does physical PydanticAI history preserve bounded completed accepted call ID/result pairs and their semantic
+   values, append the current same-call result, exclude old World prompts and noncurrent operational handles, and
+   clear on terminal completion?
+6. Does a multi-call response retain every exact proposal in raw Trace and its paired identity in model history,
+   resolve and dispatch only its first call, pair later calls with same-ID native failed returns on the next turn,
+   and create no Runtime queue or fallback?
+7. Does every route explicitly returned by a same-World `find_controls`, `read_region`, or `search_page_content`
+   ToolReturn enter the same frozen manifest/catalog only after intersecting the current ActionSpace, including when
+   the soft target cannot admit unrelated optional inventory?
 8. Does a discovery/current-ActionSpace route mismatch fail closed before provider invocation?
 9. Is the BrowserGym change limited to preserving informational AX text and explicitly marking bounded control labels,
    without changing Binder, Executor, GoalPlan, evaluator, or benchmark semantics?
@@ -1515,10 +1548,11 @@ The final read-only review for this cutover must answer:
 15. Are browser-global actions selected explicitly by the environment profile and executed through BrowserGym's
     existing ActionSpace/Binder/Executor path, with unrestricted generic navigation and WebArena's configured netlocs
     preserved identically through World, ActionBinding, Catalog, and resolver?
-16. Does SDK history preserve exact pending/tool-only thinking and all calls/results, expire closed private thinking
-    only behind its own retained public conclusion, use the complete RequestAdmission capacity arm plus the declared
-    history high-water/minimum-reclaim arm for Harness pair-safe compaction, retain an exact pair-safe suffix, and
-    restore raw projected history on summary failure?
+16. Does SDK history preserve exact pending/tool-only thinking, call/result pairing, and semantic values; remove
+    operational handles only from closed noncurrent exchanges; expire closed private thinking only behind its own
+    retained public conclusion; use the complete RequestAdmission capacity arm plus the declared history
+    high-water/minimum-reclaim arm for Harness pair-safe compaction; and restore raw projected history on summary
+    failure?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
@@ -1556,11 +1590,11 @@ The final read-only review for this cutover must answer:
     summary prose into claim state, and does GoalCompiler disable thinking only through the selected provider's
     declared wire capability?
 30. Does physical SDK history contain exactly one current task/plan anchor and no historical World/media prompts,
-    while retaining exact model progress, ToolCall/ToolReturn pairing, pending/tool-only thinking, and the unresolved
-    suffix, with closed private thinking expiring only behind its own public conclusion; and does the physical request
-    contain exactly one fresh World with current media?
+    while retaining model progress, ToolCall/ToolReturn pairing and semantic results, exact pending/tool-only thinking,
+    and the unresolved suffix; deground only closed noncurrent exchanges; and supply exactly one fresh World with
+    current media?
 31. Does every admitted action-delivery prefix render each E-ref once with the complete current verb set while leaving
-    the Catalog resolver's complete route set unchanged?
+    the Catalog resolver with exactly the manifest's route set?
 32. Does a schema-valid operation/target mismatch return the existing `ToolRejectedResult` under the original call ID
     to the next ordinary PydanticAI turn, without representation repair, Binder/Executor dispatch, or terminal policy
     failure?

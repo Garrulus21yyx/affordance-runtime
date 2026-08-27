@@ -61,6 +61,9 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
+from affordance_runtime.model.policy.grounded_tool_rejection import (
+    grounded_tool_rejection_decision,
+)
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyCallProfile,
@@ -527,9 +530,7 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
         (option.operation, option.target_ref, destination_ref)
         for option in context.actions.options
         for destination_ref in (
-            tuple(item.grounding_ref for item in option.destinations.items)
-            if option.destination_required
-            else ("",)
+            tuple(item.grounding_ref for item in option.destinations.items) if option.destination_required else ("",)
         )
     }
     assert base.required_record_count == len(base.records)
@@ -1263,11 +1264,19 @@ def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_acti
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     ).decision
+    with pytest.raises(GroundedToolResolutionError) as stale_region:
+        resolve_grounded_tool_call(
+            catalog,
+            ToolCall("read_region", {"region_ref": "R999999"}, "call:stale-region"),
+            expected_context_id=context.context_id,
+            expected_delivery_id=delivery.delivery_id,
+        )
 
     assert selected.action_id == candidate.action_id
     assert opened.kind is DecisionKind.READ_REGION
     assert found_content.kind is DecisionKind.SEARCH_PAGE_CONTENT
     assert found_actions.kind is DecisionKind.FIND_CONTROLS
+    assert stale_region.value.code is GroundedToolResolutionCode.GROUNDING_GAP
     assert "read_region" not in tuple(item.semantic_action for item in context.complete_actions)
 
 
@@ -1376,7 +1385,7 @@ def test_only_admitted_action_route_fragments_enter_manifest_and_rank_cannot_exp
     assert mandatory_only.view.coverage["candidate_region_expansion_reason"] == "none"
 
 
-def test_packed_candidate_prefix_cannot_remove_a_current_action_from_the_catalog() -> None:
+def test_unadmitted_current_actions_cannot_bypass_the_delivery_manifest() -> None:
     _task, _world, _actions, _evaluation, context = _context()
     plan = context.action_delivery_plan
     assert plan is not None
@@ -1391,20 +1400,114 @@ def test_packed_candidate_prefix_cannot_remove_a_current_action_from_the_catalog
 
     hidden_catalog = compile_grounded_action_catalog(context, hidden_delivery)
     visible_catalog = compile_grounded_action_catalog(context, visible_delivery)
-    hidden_activate = next(item for item in hidden_catalog.specs if item.name == "activate")
     visible_activate = next(item for item in visible_catalog.specs if item.name == "activate")
-    assert hidden_activate.input_schema == visible_activate.input_schema
-    assert "enum" not in hidden_activate.input_schema["properties"]["target"]
+    assert all(item.name != "activate" for item in hidden_catalog.specs)
+    assert "enum" not in visible_activate.input_schema["properties"]["target"]
 
     current = next(item for item in context.complete_actions if item.operation == "activate")
     assert current.target_ref not in hidden_delivery.manifest.executable_refs
+    with pytest.raises(GroundedToolResolutionError) as exc_info:
+        resolve_grounded_tool_call(
+            hidden_catalog,
+            ToolCall("activate", {"target": current.target_ref}, "call:hidden-current-action"),
+            expected_context_id=context.context_id,
+            expected_delivery_id=hidden_delivery.delivery_id,
+        )
+    assert exc_info.value.code is GroundedToolResolutionCode.UNKNOWN_OPERATION
+
+
+def test_unadmitted_ref_cannot_alias_a_delivered_route_of_the_same_operation() -> None:
+    _task, _world, _actions, _evaluation, context = _context()
+    plan = context.action_delivery_plan
+    assert plan is not None
+    counts = {item.kind.value: 0 for item in plan.obligations}
+    counts[DeliveryObligationKind.BASE_ACTIONS.value] = 1
+    delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records=counts,
+    )
+    catalog = compile_grounded_action_catalog(context, delivery)
+    delivered = {
+        (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+    }
+    omitted = next(
+        option
+        for option in context.complete_actions
+        if option.destination_mode == "forbidden"
+        and (option.operation, option.target_ref, "") not in delivered
+        and any(route.operation == option.operation for route in delivery.manifest.action_routes)
+    )
+
+    with pytest.raises(GroundedToolResolutionError) as exc_info:
+        stale_call = ToolCall(
+            omitted.operation,
+            {"target": omitted.target_ref},
+            "call:stale-alias",
+        )
+        resolve_grounded_tool_call(
+            catalog,
+            stale_call,
+            expected_context_id=context.context_id,
+            expected_delivery_id=delivery.delivery_id,
+        )
+    assert exc_info.value.code is GroundedToolResolutionCode.GROUNDING_GAP
+    feedback = grounded_tool_rejection_decision(
+        exc_info.value,
+        stale_call,
+        context.context_id,
+        context,
+        delivery.manifest,
+    )
+    assert feedback.result["target"] == {}
+    assert feedback.result["supported_operations"] == ()
+
+
+def test_same_world_search_result_admits_its_exact_returned_action_route() -> None:
+    _task, world, _actions, evaluation, context = _context()
+    target = next(item for item in context.complete_actions if item.target_label == "Zulu control")
+    result = inspect_outcome_public(
+        inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            canonical_world=context.canonical_world,
+            observation=world,
+            action="find",
+            query="Zulu control",
+        )
+    )
+    decision = SearchPageContentResult(
+        context.context_id,
+        "search_page_content",
+        {"query": "Zulu control"},
+        result,
+        "call:same-world-search",
+    )
+    committed = StepResult(decision, world, world, evaluation, feedback="local_tool_result")
+    empty_counts = {item.kind.value: 0 for item in context.action_delivery_plan.obligations}
+    delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records=empty_counts,
+        committed_step=committed,
+        pending_tool_call_id=decision.tool_call_id,
+        pending_tool_name=decision.tool_name,
+    )
+    catalog = compile_grounded_action_catalog(context, delivery)
+
+    assert target.target_ref not in delivery.view.text
+    assert target.target_ref in json.dumps(to_json_compatible(delivery.tool_result.return_value))
+    assert (target.operation, target.target_ref, "") in {
+        (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+    }
     selected = resolve_grounded_tool_call(
-        hidden_catalog,
-        ToolCall("activate", {"target": current.target_ref}, "call:hidden-current-action"),
+        catalog,
+        ToolCall(target.operation, {"target": target.target_ref}, "call:returned-route"),
         expected_context_id=context.context_id,
-        expected_delivery_id=hidden_delivery.delivery_id,
+        expected_delivery_id=delivery.delivery_id,
     ).decision
-    assert selected.action_id == current.action_id
+    assert selected.action_id == target.action_id
 
 
 def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_oversized_region() -> None:
@@ -1440,6 +1543,7 @@ def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_overs
             include_images=False,
             admitted_records=counts,
         )
+        catalog = compile_grounded_action_catalog(context, delivery)
         manifest_refs = (
             *delivery.manifest.executable_refs,
             *delivery.manifest.readonly_refs,
@@ -1447,6 +1551,21 @@ def test_manifest_ref_conservation_for_zero_partial_and_full_prefixes_with_overs
             *delivery.manifest.region_refs,
         )
         assert all(f"[{ref}]" in delivery.view.text for ref in manifest_refs)
+        compiled_routes = {
+            (
+                binding.canonical_operation,
+                str(
+                    dict(row.selector_values).get("target") or dict(row.selector_values).get("source") or row.target_ref
+                ),
+                str(dict(row.selector_values).get("destination", "")),
+            )
+            for binding in catalog.bindings
+            if hasattr(binding, "private_resolutions")
+            for row in binding.private_resolutions
+        }
+        assert compiled_routes == {
+            (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+        }
 
 
 def test_recent_action_target_does_not_implicitly_expand_its_current_region() -> None:

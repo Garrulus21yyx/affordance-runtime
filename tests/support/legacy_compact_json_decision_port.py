@@ -123,7 +123,11 @@ class ProtocolFeedback(ToolRejectedResult):
             context_id,
             "tool_rejected",
             {},
-            {"feedback_kind": feedback_kind.value, "call_count": call_count, "detail": detail},
+            {
+                "feedback_kind": feedback_kind.value,
+                "call_count": call_count,
+                "detail": detail,
+            },
         )
         object.__setattr__(self, "feedback_kind", feedback_kind)
         object.__setattr__(self, "call_count", call_count)
@@ -238,7 +242,18 @@ class _LegacyContextBinder:
                 + request_budget.safety_margin_tokens
             ),
             attempt_phase="initial",
-            diagnostics=(delivery.view.projection, 0, 0, 0, 0, 0, 0, 0, len(delivery.manifest.action_routes), 0),
+            diagnostics=(
+                delivery.view.projection,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                len(delivery.manifest.action_routes),
+                0,
+            ),
             history_messages=(),
             tool_result=None,
         )
@@ -288,12 +303,8 @@ class CompactJsonDecisionPort:
     last_structured_output_violations: tuple[StructuredOutputViolation, ...] = field(
         default=(), init=False, compare=False
     )
-    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(
-        default=(), init=False, compare=False
-    )
-    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(
-        default=(), init=False, compare=False
-    )
+    last_generation_attempts: tuple[ModelGenerationAttempt, ...] = field(default=(), init=False, compare=False)
+    last_request_breakdowns: tuple[ModelRequestBreakdown, ...] = field(default=(), init=False, compare=False)
     last_invocation_result: ModelInvocationResult[ResolvedModelDecision] | None = field(
         default=None, init=False, compare=False
     )
@@ -303,17 +314,19 @@ class CompactJsonDecisionPort:
         compare=False,
     )
     deliberate_recovery_events: tuple[str, ...] = field(default=(), init=False, compare=False)
+
     def __post_init__(self) -> None:
         configured_timeout_retries = (
-            self.config.transient_retries
-            if self.config.timeout_retries is None
-            else self.config.timeout_retries
+            self.config.transient_retries if self.config.timeout_retries is None else self.config.timeout_retries
         )
-        if max(
-            self.config.rate_limit_retries,
-            self.config.transient_retries,
-            configured_timeout_retries,
-        ) > 1:
+        if (
+            max(
+                self.config.rate_limit_retries,
+                self.config.transient_retries,
+                configured_timeout_retries,
+            )
+            > 1
+        ):
             raise ValueError("grounded-tools bridge allows at most one transport retry")
         profile = DecisionPerceptionProfile(self.perception_profile)
         object.__setattr__(self, "perception_profile", profile)
@@ -391,9 +404,7 @@ class CompactJsonDecisionPort:
         object.__setattr__(
             self,
             "last_image_input_count",
-            len(request.agent_context.image_inputs)
-            if perception_uses_images(request, self.perception_profile)
-            else 0,
+            len(request.agent_context.image_inputs) if perception_uses_images(request, self.perception_profile) else 0,
         )
         object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.NETWORK)
         return catalog
@@ -429,18 +440,14 @@ class CompactJsonDecisionPort:
         if reconciliation.issue_code in _NON_NORMALIZABLE_ISSUES:
             # Unknown operation is not representation-equivalent. Preserve the
             # rejection and never make another provider call to choose a tool.
-            error = GroundedToolResolutionError(
-                _resolution_code_for_reconciliation(reconciliation.issue_code)
-            )
-            return self._rejection_resolution(request, original_call, error)
+            error = GroundedToolResolutionError(_resolution_code_for_reconciliation(reconciliation.issue_code))
+            return self._rejection_resolution(request, original_call, error, catalog.manifest)
         elif (
             reconciliation.status is not ToolCallReconciliationStatus.EXACT
             and reconciliation.issue_code is not ToolCallIssueCode.INVALID_ARGUMENT
         ):
-            error = GroundedToolResolutionError(
-                _resolution_code_for_reconciliation(reconciliation.issue_code)
-            )
-            return self._rejection_resolution(request, original_call, error)
+            error = GroundedToolResolutionError(_resolution_code_for_reconciliation(reconciliation.issue_code))
+            return self._rejection_resolution(request, original_call, error, catalog.manifest)
         try:
             decision = resolver(
                 catalog,
@@ -453,7 +460,7 @@ class CompactJsonDecisionPort:
             # Current target, grounding, stale-context, and semantic-argument
             # rejection are not repairable representations. Local catalog-aware
             # normalization already ran above; return the rejection unchanged.
-            return self._rejection_resolution(request, original_call, exc)
+            return self._rejection_resolution(request, original_call, exc, catalog.manifest)
         object.__setattr__(self, "last_resolution_code", GroundedToolResolutionCode.ACCEPTED)
         return decision, _metadata(
             self.port,
@@ -468,6 +475,7 @@ class CompactJsonDecisionPort:
         request: ModelDecisionRequest,
         call: ToolCall,
         error: GroundedToolResolutionError,
+        manifest,
     ) -> tuple[GroundedActionResolution, ModelMetadata]:
         object.__setattr__(self, "last_resolution_code", error.code)
         decision = grounded_tool_rejection_decision(
@@ -475,6 +483,7 @@ class CompactJsonDecisionPort:
             call,
             request.context_id,
             request.agent_context,
+            manifest,
         )
         return GroundedActionResolution(decision), _metadata(
             self.port,
@@ -582,9 +591,7 @@ class CompactJsonDecisionPort:
                     retryable=exc.resumable,
                     provider_code=ProviderFailureCode.TIMEOUT,
                     attempt_origin=(
-                        ProviderAttemptOrigin.LOCAL_CIRCUIT
-                        if exc.circuit_open
-                        else ProviderAttemptOrigin.NETWORK
+                        ProviderAttemptOrigin.LOCAL_CIRCUIT if exc.circuit_open else ProviderAttemptOrigin.NETWORK
                     ),
                 )
             provider_code = (
@@ -609,7 +616,10 @@ class CompactJsonDecisionPort:
                 attempt_origin=ProviderAttemptOrigin.NETWORK,
             )
         if isinstance(exc, StructuredModelError):
-            return _failure(ModelFailureKind.INVALID_RESPONSE, "grounded cognition response was invalid")
+            return _failure(
+                ModelFailureKind.INVALID_RESPONSE,
+                "grounded cognition response was invalid",
+            )
         if isinstance(exc, ModelRequestCapacityError):
             self._append_request_breakdown(exc.breakdown)
             object.__setattr__(self, "last_attempt_origin", ProviderAttemptOrigin.LOCAL_RUNTIME)
@@ -653,15 +663,17 @@ class CompactJsonDecisionPort:
                 if bool(getattr(self.port, "supports_thinking_control", False))
                 else None
             )
-            retry_config = self.config.model_copy(update={
-                "max_tokens": self.timeout_fast_retry_max_tokens,
-                "timeout_s": self.timeout_fast_retry_timeout_s,
-                "provider_total_timeout_s": self.timeout_fast_retry_timeout_s,
-                "rate_limit_retries": 0,
-                "transient_retries": 0,
-                "timeout_retries": 0,
-                "thinking_mode": retry_thinking,
-            })
+            retry_config = self.config.model_copy(
+                update={
+                    "max_tokens": self.timeout_fast_retry_max_tokens,
+                    "timeout_s": self.timeout_fast_retry_timeout_s,
+                    "provider_total_timeout_s": self.timeout_fast_retry_timeout_s,
+                    "rate_limit_retries": 0,
+                    "transient_retries": 0,
+                    "timeout_retries": 0,
+                    "thinking_mode": retry_thinking,
+                }
+            )
             recovery_messages = (
                 *messages,
                 ModelMessage(
@@ -687,14 +699,14 @@ class CompactJsonDecisionPort:
                 raise
             repair_profile = self.reasoning_policy.repair()
             retry_thinking = (
-                repair_profile.thinking_mode
-                if bool(getattr(self.port, "supports_thinking_control", False))
-                else None
+                repair_profile.thinking_mode if bool(getattr(self.port, "supports_thinking_control", False)) else None
             )
-            retry_config = self.config.model_copy(update={
-                "max_tokens": repair_profile.max_output_tokens,
-                "thinking_mode": retry_thinking,
-            })
+            retry_config = self.config.model_copy(
+                update={
+                    "max_tokens": repair_profile.max_output_tokens,
+                    "thinking_mode": retry_thinking,
+                }
+            )
             recovery_messages = (
                 *messages,
                 ModelMessage(
@@ -711,17 +723,15 @@ class CompactJsonDecisionPort:
                     recovery_messages,
                     specs,
                     payload_type,
-                phase="representation_repair",
-                config=retry_config,
-                trigger="representation_error",
+                    phase="representation_repair",
+                    config=retry_config,
+                    trigger="representation_error",
                 )
             except StructuredOutputError as retry_error:
                 self._record_structured_output(retry_error)
                 raise
             if _semantic_choice(payload) != preserve:
-                raise StructuredModelError(
-                    "representation repair changed the semantic operation or target"
-                )
+                raise StructuredModelError("representation repair changed the semantic operation or target")
         return (ToolCall(payload.name, payload.command_arguments()),)
 
     def _record_structured_output(
@@ -767,17 +777,18 @@ class CompactJsonDecisionPort:
                 object.__setattr__(
                     self,
                     "deliberate_recovery_events",
-                    (*self.deliberate_recovery_events, profile.recovery_event_signature)[-32:],
+                    (
+                        *self.deliberate_recovery_events,
+                        profile.recovery_event_signature,
+                    )[-32:],
                 )
-            thinking = (
-                profile.thinking_mode
-                if bool(getattr(self.port, "supports_thinking_control", False))
-                else None
+            thinking = profile.thinking_mode if bool(getattr(self.port, "supports_thinking_control", False)) else None
+            invocation_config = self.config.model_copy(
+                update={
+                    "max_tokens": profile.max_output_tokens,
+                    "thinking_mode": thinking,
+                }
             )
-            invocation_config = self.config.model_copy(update={
-                "max_tokens": profile.max_output_tokens,
-                "thinking_mode": thinking,
-            })
             catalog = self._compile_catalog(request, delivery)
             admitted = self.context_binder.action_request(
                 request,
@@ -819,7 +830,10 @@ class CompactJsonDecisionPort:
             return self._invocation_failure(self._failure_from_exception(exc), request, delivery)
         if not isinstance(resolution, GroundedActionResolution):
             return self._invocation_failure(
-                _failure(ModelFailureKind.INTERNAL_ERROR, "action adapter resolved an objective"),
+                _failure(
+                    ModelFailureKind.INTERNAL_ERROR,
+                    "action adapter resolved an objective",
+                ),
                 request,
                 delivery,
             )
@@ -917,23 +931,15 @@ class CompactJsonDecisionPort:
                 for item in self.last_generation_attempts
                 if item.output_failure_kind is not None
             ),
-            "provider_finish_reasons": tuple(
-                item.finish_reason for item in self.last_generation_attempts
-            ),
+            "provider_finish_reasons": tuple(item.finish_reason for item in self.last_generation_attempts),
             "representation_repair_count": sum(
-                item.phase == "representation_repair"
-                for item in self.last_generation_attempts
+                item.phase == "representation_repair" for item in self.last_generation_attempts
             ),
             "timeout_fast_retry_count": sum(
-                item.trigger == "transport_timeout_retry"
-                for item in self.last_generation_attempts
+                item.trigger == "transport_timeout_retry" for item in self.last_generation_attempts
             ),
-            "provider_retry_count": sum(
-                _attempt_retry_count(item) for item in self.last_generation_attempts
-            ) + sum(
-                item.trigger == "transport_timeout_retry"
-                for item in self.last_generation_attempts
-            ),
+            "provider_retry_count": sum(_attempt_retry_count(item) for item in self.last_generation_attempts)
+            + sum(item.trigger == "transport_timeout_retry" for item in self.last_generation_attempts),
             "provider_physical_attempt_count": sum(
                 _attempt_physical_count(item) for item in self.last_generation_attempts
             ),
@@ -984,14 +990,16 @@ def _generation_attempt(
         finish_reason=str(getattr(record, "finish_reason", "")),
         max_output_tokens=int(getattr(record, "max_output_tokens", 0)),
         final_content_present=bool(getattr(record, "final_content_present", False)),
-        reasoning_content_present=bool(
-            getattr(record, "reasoning_content_present", False)
-        ),
+        reasoning_content_present=bool(getattr(record, "reasoning_content_present", False)),
         response_fields=tuple(getattr(record, "response_fields", ())),
         role="action_policy",
         mode=phase,
-        thinking_requested=(config.thinking_mode if config is not None and config.thinking_mode else "provider_default"),
-        thinking_effective=(config.thinking_mode if config is not None and config.thinking_mode else "provider_default"),
+        thinking_requested=(
+            config.thinking_mode if config is not None and config.thinking_mode else "provider_default"
+        ),
+        thinking_effective=(
+            config.thinking_mode if config is not None and config.thinking_mode else "provider_default"
+        ),
         trigger=trigger,
         reasoning_tokens=int(getattr(record, "reasoning_tokens", 0)),
         final_content_tokens=int(getattr(record, "final_content_tokens", 0)),
@@ -1030,7 +1038,15 @@ def _semantic_choice(value) -> dict[str, object] | None:
         return None
     target = {
         key: arguments[key]
-        for key in ("target", "source", "destination", "region_ref", "query", "key", "evidence_ref")
+        for key in (
+            "target",
+            "source",
+            "destination",
+            "region_ref",
+            "query",
+            "key",
+            "evidence_ref",
+        )
         if key in arguments
     }
     return {"operation": name, "semantic_target": target}
@@ -1078,9 +1094,9 @@ def _attempt_transcript_int(attempt: ModelGenerationAttempt, key: str) -> int:
 
 
 def _attempt_retry_count(attempt: ModelGenerationAttempt) -> int:
-    return _attempt_transcript_int(
-        attempt, "network.rate_limit_retry_count"
-    ) + _attempt_transcript_int(attempt, "network.transient_retry_count")
+    return _attempt_transcript_int(attempt, "network.rate_limit_retry_count") + _attempt_transcript_int(
+        attempt, "network.transient_retry_count"
+    )
 
 
 def _attempt_physical_count(attempt: ModelGenerationAttempt) -> int:
@@ -1117,33 +1133,33 @@ def _metadata(
         prompt_version=prompt_version or (record.prompt_version if record is not None else ""),
         schema_version=GROUNDED_TOOLS_PROTOCOL,
         latency_ms=(
-            sum(item.latency_ms for item in attempts)
-            if attempts
-            else record.latency_ms if record is not None else 0.0
+            sum(item.latency_ms for item in attempts) if attempts else record.latency_ms if record is not None else 0.0
         ),
         prompt_tokens=(
             sum(item.prompt_tokens for item in attempts)
             if attempts
-            else record.prompt_tokens if record is not None else 0
+            else record.prompt_tokens
+            if record is not None
+            else 0
         ),
         completion_tokens=(
             sum(item.completion_tokens for item in attempts)
             if attempts
-            else record.completion_tokens if record is not None else 0
+            else record.completion_tokens
+            if record is not None
+            else 0
         ),
         total_tokens=(
             sum(item.total_tokens for item in attempts)
             if attempts
-            else record.total_tokens if record is not None else 0
+            else record.total_tokens
+            if record is not None
+            else 0
         ),
         rate_limit_retry_count=sum(
-            _attempt_transcript_int(item, "network.rate_limit_retry_count")
-            for item in attempts
+            _attempt_transcript_int(item, "network.rate_limit_retry_count") for item in attempts
         ),
-        transient_retry_count=sum(
-            _attempt_transcript_int(item, "network.transient_retry_count")
-            for item in attempts
-        ),
+        transient_retry_count=sum(_attempt_transcript_int(item, "network.transient_retry_count") for item in attempts),
         perception_profile=perception_profile.value,
         grounding_variant="grounded-tools",
         grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,

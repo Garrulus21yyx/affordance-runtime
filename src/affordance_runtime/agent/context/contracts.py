@@ -16,6 +16,15 @@ from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 _GENERATION_REF = re.compile(rf"\b{PublicRefCodec.token_pattern()}\b")
 _LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
+_OPERATIONAL_HISTORY_KEYS = frozenset(
+    {
+        "cursor",
+        "executable_grounding",
+        "follow_up",
+        "next_cursor",
+        "verbs",
+    }
+)
 
 
 def sanitize_history_value(value: object) -> object:
@@ -31,7 +40,12 @@ def _sanitize_history_value(value: object) -> object:
         sanitized: dict[str, object] = {}
         for key, item in value.items():
             raw_key = str(key)
-            if raw_key in _PRIVATE_HISTORY_KEYS or raw_key.endswith("_ref") or _GENERATION_REF.fullmatch(raw_key):
+            if (
+                raw_key in _PRIVATE_HISTORY_KEYS
+                or raw_key in _OPERATIONAL_HISTORY_KEYS
+                or raw_key.endswith(("_ref", "_refs", "_cursor"))
+                or _GENERATION_REF.fullmatch(raw_key)
+            ):
                 continue
             clean_key = _strip_generation_refs(raw_key)
             if not clean_key:
@@ -125,6 +139,7 @@ class AgentTaskView:
     public_inputs_total_count: int = 0
     public_inputs_truncated: bool = False
     evaluation: AgentTaskEvaluationView = field(default_factory=lambda: AgentTaskEvaluationView("unknown"))
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "public_inputs", freeze_json(self.public_inputs))
         if self.public_inputs_total_count < len(self.public_inputs):
@@ -144,9 +159,7 @@ class AgentDestinationView:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "semantics", freeze_json(self.semantics))
-        if self.grounding_ref and not PublicRefCodec.accepts(
-            self.grounding_ref, expected=PublicRefKind.EXECUTABLE
-        ):
+        if self.grounding_ref and not PublicRefCodec.accepts(self.grounding_ref, expected=PublicRefKind.EXECUTABLE):
             raise ValueError("destination grounding ref is invalid")
         if any((self.grounding_ref, self.semantics, self.grounding_context_id)) and not all(
             (self.grounding_ref, self.semantics, self.grounding_context_id)
@@ -214,9 +227,7 @@ class AgentActionOptionView:
             and not closed
         ):
             raise ValueError("action candidate target projection is incomplete")
-        if self.target_ref and not PublicRefCodec.accepts(
-            self.target_ref, expected=PublicRefKind.EXECUTABLE
-        ):
+        if self.target_ref and not PublicRefCodec.accepts(self.target_ref, expected=PublicRefKind.EXECUTABLE):
             raise ValueError("action candidate target ref is invalid")
         if self.destination_mode and self.destination_mode not in {"forbidden", "required", "optional"}:
             raise ValueError("action candidate destination mode is invalid")

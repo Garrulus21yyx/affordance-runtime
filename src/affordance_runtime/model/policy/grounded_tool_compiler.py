@@ -79,32 +79,20 @@ class CompiledGroundedTool:
     ) -> AgentDecision:
         selector_names = tuple(item.public_name for item in self.selector_fields)
         selector_values = {name: arguments[name] for name in selector_names}
-        matches = tuple(
-            item
-            for item in self.private_resolutions
-            if dict(item.selector_values) == selector_values
-        )
+        matches = tuple(item for item in self.private_resolutions if dict(item.selector_values) == selector_values)
         if not matches:
             raise GroundedToolResolutionError(
                 GroundedToolResolutionCode.GROUNDING_GAP,
                 "executable reference is unavailable for this operation in the current World",
             )
         if len(matches) != 1:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.CATALOG_INVALID
-            )
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         match = matches[0]
-        parameters = {
-            name: value
-            for name, value in arguments.items()
-            if name not in selector_names
-        }
+        parameters = {name: value for name, value in arguments.items() if name not in selector_names}
         try:
             validate_value(parameters, match.parameter_schema, path="command")
         except ValueError as exc:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.INVALID_ARGUMENTS
-            ) from exc
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS) from exc
         return SelectAction(
             context_id,
             match.action_id,
@@ -115,6 +103,14 @@ class CompiledGroundedTool:
         )
 
 
+def _row_route(row: ConcreteActionCandidateRow) -> tuple[str, str, str]:
+    return (
+        row.option.operation,
+        row.option.target_ref,
+        row.destination.grounding_ref if row.destination is not None else "",
+    )
+
+
 class GroundedToolCompiler:
     """Publish one registry-owned tool per operation for the current action page."""
 
@@ -123,12 +119,23 @@ class GroundedToolCompiler:
         options: tuple[AgentActionOptionView, ...],
         *,
         context_id: str,
+        admitted_routes: frozenset[tuple[str, str, str]] | None = None,
     ) -> tuple[CompiledGroundedTool, ...]:
         grouped: dict[str, list[ConcreteActionCandidateRow]] = defaultdict(list)
+        compiled_routes: set[tuple[str, str, str]] = set()
         for option in options:
             INTERACTION_CAPABILITY_REGISTRY.require(option.operation)
             for row in self.expand_rows(option):
+                route = _row_route(row)
+                if admitted_routes is not None and route not in admitted_routes:
+                    continue
                 grouped[option.operation].append(row)
+                compiled_routes.add(route)
+        if admitted_routes is not None and compiled_routes != set(admitted_routes):
+            raise GroundedToolResolutionError(
+                GroundedToolResolutionCode.CATALOG_INVALID,
+                "DeliveryManifest contains a route absent from the current ActionSpace",
+            )
         return tuple(
             self._compile_operation(
                 operation,
@@ -143,19 +150,12 @@ class GroundedToolCompiler:
         if option.destination_mode == "forbidden":
             return (ConcreteActionCandidateRow(option, None),)
         if option.destination_mode == "optional":
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.UNSUPPORTED_DESTINATION_MODE
-            )
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.UNSUPPORTED_DESTINATION_MODE)
         if option.destination_mode != "required":
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         if not option.destinations.items:
-            raise GroundedToolResolutionError(
-                GroundedToolResolutionCode.DESTINATION_UNAVAILABLE
-            )
-        return tuple(
-            ConcreteActionCandidateRow(option, destination)
-            for destination in option.destinations.items
-        )
+            raise GroundedToolResolutionError(GroundedToolResolutionCode.DESTINATION_UNAVAILABLE)
+        return tuple(ConcreteActionCandidateRow(option, destination) for destination in option.destinations.items)
 
     def _compile_operation(
         self,
@@ -206,16 +206,11 @@ class GroundedToolCompiler:
     ) -> None:
         for row in rows:
             if not row.option.target_ref or row.option.grounding_context_id != context_id:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.GROUNDING_FALLBACK_UNAVAILABLE
-                )
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.GROUNDING_FALLBACK_UNAVAILABLE)
             if row.destination is not None and (
-                not row.destination.grounding_ref
-                or row.destination.grounding_context_id != context_id
+                not row.destination.grounding_ref or row.destination.grounding_context_id != context_id
             ):
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.GROUNDING_FALLBACK_UNAVAILABLE
-                )
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.GROUNDING_FALLBACK_UNAVAILABLE)
 
     @staticmethod
     def _validate_private_parameter_contracts(
@@ -225,18 +220,14 @@ class GroundedToolCompiler:
         for row in rows:
             properties, _required = _business_schema(row.option.parameter_schema)
             if set(properties).intersection(_RESERVED_NAMES):
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.CATALOG_INVALID
-                )
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
             try:
                 INTERACTION_CAPABILITY_REGISTRY.validate_parameter_schema(
                     operation,
                     row.option.parameter_schema,
                 )
             except ValueError as exc:
-                raise GroundedToolResolutionError(
-                    GroundedToolResolutionCode.CATALOG_INVALID
-                ) from exc
+                raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID) from exc
 
 
 def _current_reference_selectors(
@@ -247,9 +238,7 @@ def _current_reference_selectors(
     SelectorMode,
 ]:
     browser_context_rows = tuple(
-        row
-        for row in rows
-        if row.option.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value
+        row for row in rows if row.option.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value
     )
     if browser_context_rows:
         if len(browser_context_rows) != len(rows) or len(rows) != 1 or rows[0].destination is not None:
@@ -311,10 +300,7 @@ def _public_operation_schema(
     parameter_schemas: tuple[Mapping[str, object], ...],
     fields: tuple[CompiledSelectorField, ...],
 ) -> Mapping[str, object]:
-    branches = tuple(
-        _public_operation_branch(schema, fields)
-        for schema in parameter_schemas
-    )
+    branches = tuple(_public_operation_branch(schema, fields) for schema in parameter_schemas)
     return branches[0] if len(branches) == 1 else {"anyOf": list(branches)}
 
 
@@ -325,10 +311,7 @@ def _public_operation_branch(
     properties, required = _business_schema(parameter_schema)
     if set(properties).intersection(_RESERVED_NAMES):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    selector_properties = {
-        field.public_name: to_json_compatible(field.input_schema)
-        for field in fields
-    }
+    selector_properties = {field.public_name: to_json_compatible(field.input_schema) for field in fields}
     return {
         "type": "object",
         "properties": {**selector_properties, **properties},
@@ -384,10 +367,7 @@ def _description(
     fields: tuple[CompiledSelectorField, ...],
 ) -> str:
     if not fields:
-        return (
-            f"Use {operation} on the current browser context. "
-            "Current URL and tab state come from the fresh World."
-        )
+        return f"Use {operation} on the current browser context. Current URL and tab state come from the fresh World."
     endpoints = " and ".join(field.public_name for field in fields)
     return (
         f"Use {operation} on current executable {endpoints} from the current World "

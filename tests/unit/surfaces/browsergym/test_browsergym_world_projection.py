@@ -40,16 +40,17 @@ _IDENTITY = BrowserGymEntityIdentityMap(b"browsergym-world-projection-tests")
 
 
 def test_public_page_route_excludes_credentials_query_and_fragment() -> None:
-    assert projection_module._public_page_route(
-        "https://user:secret@example.test:8443/catalog/item-7?token=private#details"
-    ) == "https://example.test:8443/catalog/item-7"
+    assert (
+        projection_module._public_page_route(
+            "https://user:secret@example.test:8443/catalog/item-7?token=private#details"
+        )
+        == "https://example.test:8443/catalog/item-7"
+    )
     assert projection_module._public_page_route("javascript:alert(1)") == ""
 
 
 def test_public_page_title_is_browser_owned_bounded_display_metadata() -> None:
-    assert projection_module._public_page_title("  OpenStreetMap\nDirections  ") == (
-        "OpenStreetMap Directions"
-    )
+    assert projection_module._public_page_title("  OpenStreetMap\nDirections  ") == ("OpenStreetMap Directions")
     assert len(projection_module._public_page_title("x" * 500)) == 240
 
 
@@ -134,10 +135,12 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
 
 def test_explicit_browser_profile_projects_navigation_without_page_identity_inference() -> None:
     raw = raw_observation(ax_node("search", "textbox", "Search"), url="https://docs.example.test/guide")
-    raw["open_pages_urls"] = np.asarray((
-        "https://example.test/start?private=1",
-        "https://docs.example.test/guide",
-    ))
+    raw["open_pages_urls"] = np.asarray(
+        (
+            "https://example.test/start?private=1",
+            "https://docs.example.test/guide",
+        )
+    )
     raw["open_pages_titles"] = np.asarray(("Example start", "Documentation guide"))
     raw["active_page_index"] = np.asarray([1])
     common = {
@@ -153,7 +156,12 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     webarena = project_browsergym_observation(
         raw,
         browser_global_primitives=(
-            "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
+            "goto",
+            "go_back",
+            "go_forward",
+            "new_tab",
+            "tab_focus",
+            "tab_close",
         ),
         **common,
     )
@@ -172,19 +180,17 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         risk_profile=RiskProfile.LOW,
     )
     action_space = ActionSpaceBuilder().build(task, webarena.world)
-    actions = {
-        item.semantic_action: item
-        for item in action_space.options
-        if item.target_id == browser.target_id
-    }
+    actions = {item.semantic_action: item for item in action_space.options if item.target_id == browser.target_id}
     assert set(actions) == {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
     assert actions["tab_focus"].parameter_schema["properties"]["index"]["enum"] == (0,)
     changed_title_raw = dict(raw)
     changed_title_raw["open_pages_titles"] = np.asarray(("Changed title", "Another title"))
-    changed_title_raw["open_pages_urls"] = np.asarray((
-        "https://example.test/start?private=2",
-        "https://docs.example.test/guide",
-    ))
+    changed_title_raw["open_pages_urls"] = np.asarray(
+        (
+            "https://example.test/start?private=2",
+            "https://docs.example.test/guide",
+        )
+    )
     changed_title = project_browsergym_observation(
         changed_title_raw,
         observation_id="obs:navigation-title-change",
@@ -194,16 +200,17 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         task_state=reset_task_state("obs:navigation-title-change"),
         entity_identity=BrowserGymEntityIdentityMap(b"browser-navigation-profile"),
         browser_global_primitives=(
-            "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
+            "goto",
+            "go_back",
+            "go_forward",
+            "new_tab",
+            "tab_focus",
+            "tab_close",
         ),
         browser_navigation_locations=None,
     )
-    original_tab_focus = next(
-        item for item in webarena.world.bindings if item.semantic_action == "tab_focus"
-    )
-    changed_tab_focus = next(
-        item for item in changed_title.world.bindings if item.semantic_action == "tab_focus"
-    )
+    original_tab_focus = next(item for item in webarena.world.bindings if item.semantic_action == "tab_focus")
+    changed_tab_focus = next(item for item in changed_title.world.bindings if item.semantic_action == "tab_focus")
     assert changed_tab_focus.target_fingerprint == original_tab_focus.target_fingerprint
 
     evaluation = TaskEvaluation(
@@ -234,6 +241,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
         if item.name in {"goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close"}
     }
     assert set(browser_specs) == set(actions)
+    assert {route.operation for route in delivery.manifest.action_routes if route.operation in actions} == set(actions)
     assert all("target" not in item.input_schema["properties"] for item in browser_specs.values())
     assert browser_specs["tab_focus"].input_schema["properties"]["index"] == {
         "type": "integer",
@@ -261,10 +269,12 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
 
 def test_environment_navigation_scope_does_not_publish_its_private_location_allowlist() -> None:
     raw = raw_observation(url="https://wiki.example.test/wiki/Portland")
-    raw["open_pages_urls"] = np.asarray((
-        "https://map.example.test:3000/",
-        "https://wiki.example.test/wiki/Portland",
-    ))
+    raw["open_pages_urls"] = np.asarray(
+        (
+            "https://map.example.test:3000/",
+            "https://wiki.example.test/wiki/Portland",
+        )
+    )
     raw["open_pages_titles"] = np.asarray(("OpenStreetMap", "Portland, Maine"))
     raw["active_page_index"] = np.asarray([1])
     projected = project_browsergym_observation(
@@ -316,9 +326,7 @@ def test_environment_navigation_scope_does_not_publish_its_private_location_allo
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     )
-    assert allowed.decision.parameters == {
-        "url": "https://map.example.test:3000/search?q=Acadia"
-    }
+    assert allowed.decision.parameters == {"url": "https://map.example.test:3000/search?q=Acadia"}
     external = resolve_grounded_tool_call(
         catalog,
         ToolCall(
@@ -329,9 +337,7 @@ def test_environment_navigation_scope_does_not_publish_its_private_location_allo
         expected_context_id=context.context_id,
         expected_delivery_id=delivery.delivery_id,
     )
-    assert external.decision.parameters == {
-        "url": "https://external.example.test/resource"
-    }
+    assert external.decision.parameters == {"url": "https://external.example.test/resource"}
 
 
 def test_screenshot_grounding_is_viewport_bounded_and_prioritizes_actions() -> None:
@@ -386,7 +392,8 @@ def test_hidden_native_select_keeps_one_semantic_binding_on_existing_projection_
     binding = _page_bindings(projected.world)[0]
     assert binding.semantic_action == binding.primitive_action == "select_option"
     assert binding.parameter_schema["properties"]["value"]["enum"] == (
-        "5ft 10in", "6 ft",
+        "5ft 10in",
+        "6 ft",
     )
     assert "private-select" not in repr(projected.world)
 
@@ -462,9 +469,10 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     checkbox = next(item for item in omitted.world.targets if item.role == "checkbox")
     assert checkbox.label == "Remember"
     assert len(_page_bindings(omitted.world)) == len(_page_bindings(baseline.world)) + 2
-    assert {
-        item.semantic_action for item in _page_bindings(omitted.world) if item.target_id == checkbox.target_id
-    } == {"activate", "press_key"}
+    assert {item.semantic_action for item in _page_bindings(omitted.world) if item.target_id == checkbox.target_id} == {
+        "activate",
+        "press_key",
+    }
     assert omitted.world.source_manifest[0].coverage is CoverageState.COMPLETE
     assert baseline.world.source_manifest[0].coverage is CoverageState.COMPLETE
     task = TaskGoal(
@@ -488,10 +496,7 @@ def test_focused_executable_bid_has_one_element_press_route_without_focused_fall
 
     projected = _project(raw)
     focused_target = next(item for item in projected.world.targets if item.label == "Search")
-    press_bindings = tuple(
-        item for item in _page_bindings(projected.world)
-        if item.semantic_action == "press_key"
-    )
+    press_bindings = tuple(item for item in _page_bindings(projected.world) if item.semantic_action == "press_key")
 
     assert len(press_bindings) == 1
     assert press_bindings[0].target_id == focused_target.target_id
@@ -504,7 +509,8 @@ def test_focused_context_fallback_remains_when_no_concrete_press_target_exists()
 
     focused = next(item for item in projected.world.targets if item.role == "focused_context")
     binding = next(
-        item for item in projected.world.bindings
+        item
+        for item in projected.world.bindings
         if item.target_id == focused.target_id and item.semantic_action == "press_key"
     )
 
@@ -550,17 +556,21 @@ def test_drag_source_publishes_one_finite_semantic_destination_domain() -> None:
         ax_node("source-private", "generic", "Quarterly report"),
         ax_node("destination-private", "generic", "Archive"),
     )
-    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["source-private"].update({
-        "gesture_role": "draggable",
-        "gesture_group": "group-private",
-        "gesture_kind": "move",
-        "bbox": [10, 10, 40, 20],
-    })
-    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["destination-private"].update({
-        "gesture_role": "drop_target",
-        "gesture_group": "group-private",
-        "bbox": [80, 10, 60, 40],
-    })
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["source-private"].update(
+        {
+            "gesture_role": "draggable",
+            "gesture_group": "group-private",
+            "gesture_kind": "move",
+            "bbox": [10, 10, 40, 20],
+        }
+    )
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["destination-private"].update(
+        {
+            "gesture_role": "drop_target",
+            "gesture_group": "group-private",
+            "bbox": [80, 10, 60, 40],
+        }
+    )
 
     projected = _project(raw)
     by_role = {item.role: item for item in projected.world.targets}
@@ -642,10 +652,7 @@ def test_actor_world_snapshot_preserves_hierarchy_and_actionable_nodes() -> None
 
     assert "Products" in repr(context.actor_world)
     assert "MacBook Pro" in repr(context.actor_world)
-    button_line = next(
-        line for line in observation.splitlines()
-        if f"[{option.target_ref}] button" in line
-    )
+    button_line = next(line for line in observation.splitlines() if f"[{option.target_ref}] button" in line)
     assert '"Add to cart"' in button_line
     assert 'verbs=["activate","press_key"]' in button_line
     assert 'path=["MacBook Pro","Add to cart"]' in button_line
@@ -668,7 +675,9 @@ def test_browsergym_clickable_generic_uses_descendant_text_without_exposing_rout
     label = next(item for item in projected.world.targets if item.role == "StaticText")
     assert clickable.label == "Open account"
     assert clickable.relations["child_ids"] == (label.target_id,)
-    clickable_bindings = tuple(item for item in _page_bindings(projected.world) if item.target_id == clickable.target_id)
+    clickable_bindings = tuple(
+        item for item in _page_bindings(projected.world) if item.target_id == clickable.target_id
+    )
     assert {item.semantic_action for item in clickable_bindings} == {"activate"}
     assert "container" not in repr(projected.world)
 
@@ -706,13 +715,19 @@ def test_inactive_tab_panel_descendants_do_not_gain_action_authority() -> None:
     def accordion(selected: bool):
         raw = raw_observation(
             ax_node(
-                "header", "tab", "Section #37",
-                properties=(("selected", selected),), child_ids=("header-text",),
+                "header",
+                "tab",
+                "Section #37",
+                properties=(("selected", selected),),
+                child_ids=("header-text",),
             ),
             ax_node("header-text", "StaticText", "Section #37", parent_id="header"),
             ax_node(
-                "panel", "tab", " Submit",
-                properties=(("selected", selected),), child_ids=("submit",),
+                "panel",
+                "tab",
+                " Submit",
+                properties=(("selected", selected),),
+                child_ids=("submit",),
             ),
             ax_node("submit", "button", "Submit", parent_id="panel"),
         )
@@ -760,13 +775,13 @@ def test_projected_non_executable_and_large_option_domain_are_distinct() -> None
 
 @pytest.mark.parametrize("option_count", (12, 13, 16, 17, 512, 513))
 def test_select_option_domain_has_one_shared_capacity_contract(option_count: int) -> None:
-    projected = _project(raw_observation(
-        ax_node("select", "combobox", "Choice"),
-        *(ax_node(f"option-{index}", "option", f"Choice {index}") for index in range(option_count)),
-    ))
-    select_bindings = tuple(
-        item for item in _page_bindings(projected.world) if item.semantic_action == "select_option"
+    projected = _project(
+        raw_observation(
+            ax_node("select", "combobox", "Choice"),
+            *(ax_node(f"option-{index}", "option", f"Choice {index}") for index in range(option_count)),
+        )
     )
+    select_bindings = tuple(item for item in _page_bindings(projected.world) if item.semantic_action == "select_option")
 
     if option_count <= 512:
         assert len(select_bindings) == 1
@@ -835,9 +850,9 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
 
 
 def test_action_inventory_does_not_publish_a_first_512_partial_world() -> None:
-    projected = _project(raw_observation(
-        *(ax_node(f"button-{index}", "button", f"Button {index}") for index in range(513))
-    ))
+    projected = _project(
+        raw_observation(*(ax_node(f"button-{index}", "button", f"Button {index}") for index in range(513)))
+    )
 
     assert len(_page_targets(projected.world)) == 513
     assert len(_page_bindings(projected.world)) == 1_026
@@ -871,12 +886,7 @@ def test_action_target_is_pinned_without_starving_fair_inventory_traversal() -> 
         evaluation,
     )
 
-    nodes = tuple(
-        node
-        for document in context.actor_world.documents
-        for root in document.roots
-        for node in _walk(root)
-    )
+    nodes = tuple(node for document in context.actor_world.documents for root in document.roots for node in _walk(root))
     assert any(item.label == "Continue task" for item in nodes)
     assert context.actor_world.traversal is None
     assert len(nodes) == 73
@@ -896,11 +906,13 @@ def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None
     )
     for index in range(40):
         bid = f"control-{index}"
-        raw["extra_element_properties"][bid].update({
-            "clickable": True,
-            "visibility": 1.0 if index < 8 else 0.0,
-            "bbox": [20.0 + (index % 4) * 40.0, 40.0 + (index // 4) * 80.0, 24.0, 24.0],
-        })
+        raw["extra_element_properties"][bid].update(
+            {
+                "clickable": True,
+                "visibility": 1.0 if index < 8 else 0.0,
+                "bbox": [20.0 + (index % 4) * 40.0, 40.0 + (index // 4) * 80.0, 24.0, 24.0],
+            }
+        )
         raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid]["bbox"] = raw["extra_element_properties"][bid]["bbox"]
 
     world = _project(raw).world

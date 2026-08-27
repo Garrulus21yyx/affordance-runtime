@@ -12,6 +12,7 @@ from enum import StrEnum
 from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     DestinationMode,
+    InteractionSubjectKind,
 )
 from affordance_runtime.actions.paging import ActionDiscoveryResult, ActionReranker
 from affordance_runtime.actions.space_contracts import ActionSpaceIssue
@@ -113,9 +114,7 @@ class ActionCandidate:
     reasons: tuple[str, ...] = ()
     destination_required: bool = False
     destinations: tuple[ActionCandidateDestination, ...] = ()
-    private_option: object | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
+    private_option: object | None = field(default=None, repr=False, compare=False, metadata={"serialize": False})
 
     def __post_init__(self) -> None:
         if (
@@ -323,9 +322,7 @@ class ActionDeliveryPlan:
             or any(not isinstance(item, DeliveryObligation) for item in obligations)
         ):
             raise ValueError("action delivery plan is invalid")
-        expected_foreground = next(
-            (item.scope or item.kind.value for item in obligations if item.remaining), None
-        )
+        expected_foreground = next((item.scope or item.kind.value for item in obligations if item.remaining), None)
         if self.foreground_scope != expected_foreground:
             raise ValueError("delivery foreground must be mechanically derived")
         payload = {
@@ -396,8 +393,7 @@ class ActionDeliveryPlan:
                 destinations=destinations,
             )
         candidates = tuple(
-            replace(candidates_by_target[target_ref], rank=index)
-            for index, target_ref in enumerate(target_order, 1)
+            replace(candidates_by_target[target_ref], rank=index) for index, target_ref in enumerate(target_order, 1)
         )
         return ActionCandidateProjection(
             self.action_space_id,
@@ -413,10 +409,8 @@ class ActionDeliveryPlan:
     def bounded_preview_counts(self) -> dict[str, int]:
         """Bounded non-authoritative preview for non-provider diagnostics."""
 
-        return {
-            item.kind.value: min(len(item.remaining), 5)
-            for item in self.obligations
-        }
+        return {item.kind.value: min(len(item.remaining), 5) for item in self.obligations}
+
 
 def build_action_delivery_plan(
     *,
@@ -443,10 +437,9 @@ def build_action_delivery_plan(
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
     groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
+
     def append(option: AgentActionOptionView, *, kind: DeliveryObligationKind, reason: str) -> None:
-        candidate = _candidate_from_option(
-            option, region_index, region_refs, rank=1, reasons=(reason,)
-        )
+        candidate = _candidate_from_option(option, region_index, region_refs, rank=1, reasons=(reason,))
         atomic_candidates = (
             tuple(replace(candidate, destinations=(destination,)) for destination in candidate.destinations)
             if candidate.destination_required
@@ -511,9 +504,7 @@ def build_action_delivery_plan(
             if isinstance(record, ActionRouteFragment)
         }
         if returned_routes != delivered_routes:
-            raise ValueError(
-                "action discovery result must close every returned route over the current ActionSpace"
-            )
+            raise ValueError("action discovery result must close every returned route over the current ActionSpace")
 
     options_by_target = {item.target_id: item for item in complete_actions}
     focused_containers = {
@@ -524,6 +515,7 @@ def build_action_delivery_plan(
         and target_id in options_by_target
         and options_by_target[target_id].target_role in _FOCUS_CONTAINER_SOURCE_ROLES
     }
+
     def interaction_order(option: AgentActionOptionView) -> tuple[object, ...]:
         target_context = region_index.target_contexts.get(option.target_id)
         return (
@@ -549,6 +541,20 @@ def build_action_delivery_plan(
         for record in groups[DeliveryObligationKind.INTERACTION]
         if isinstance(record, ActionRouteFragment)
     }
+
+    # Browser-context primitives are declared by the selected environment
+    # profile, not discovered from page text.  Keep that small fixed profile
+    # in the same required base capability set so observation packing cannot
+    # silently turn a generic browser into a partial browser.
+    for option in sorted(
+        (item for item in complete_actions if item.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value),
+        key=_public_option_view_order,
+    ):
+        append(
+            option,
+            kind=DeliveryObligationKind.BASE_ACTIONS,
+            reason="browser_profile",
+        )
 
     option_by_id = {item.action_id: item for item in complete_actions}
     for ranked in automatic.candidates:
@@ -626,17 +632,18 @@ def build_action_delivery_plan(
     for kind, records in groups.items():
         if not records:
             continue
-        order_digest = "sha256:" + hashlib.sha256(
-            json.dumps(
-                to_json_compatible(tuple(_public_record_value(item) for item in records)),
-                sort_keys=True,
-                ensure_ascii=False,
-            ).encode()
-        ).hexdigest()
+        order_digest = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    to_json_compatible(tuple(_public_record_value(item) for item in records)),
+                    sort_keys=True,
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()
+        )
         result_lineage = (
-            discovery.query
-            if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None
-            else "current"
+            discovery.query if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery is not None else "current"
         )
         scope = scope_by_kind[kind]
         inventory = DeliveryInventorySnapshot(
@@ -659,7 +666,9 @@ def build_action_delivery_plan(
                 priorities[kind],
                 inventory,
                 scope_by_kind[kind],
-                discovery.source_coverage if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery else "complete",
+                discovery.source_coverage
+                if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery
+                else "complete",
                 "empty" if not inventory.records else "complete",
                 ("current_world", kind.value),
                 len(inventory.records) if kind is DeliveryObligationKind.BASE_ACTIONS else 0,

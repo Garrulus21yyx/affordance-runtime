@@ -6,6 +6,43 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+Task426
+[`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
+reopens one narrower observation-local grounding contract. A completed search-page read had exposed `E6` as the
+`More results` link. After navigation, the fresh `/relation/189076` `Not Found` World independently allocated `E6`
+to its `Go` button, but that current control was absent from the delivered action manifest. The model's prose still
+identified `More results` and called `activate(E6)`; the Catalog had compiled every `complete_action`, so Runtime
+mechanically resolved the token to the current undelivered `Go` route. The run later blocked after 31 policy calls;
+this is failed pre-repair evidence, not a model-planning or BrowserGym execution defect.
+
+The positive contract has one current execution authority:
+
+```text
+fresh World + bounded observation + same-call ToolReturn
+-> one DeliveryManifest
+-> exactly the same private Catalog resolver rows
+-> Binder -> Executor
+```
+
+`complete_actions` remains the current binding inventory and `find_controls` search domain; it is not independently
+model-callable. Browser-context primitives declared by the environment profile enter the existing required base
+capability set as a group, so observation packing cannot expose only a lexical/ActionPager subset of `goto`,
+back/forward, or tab operations; this is profile-driven and contains no URL, site, or task inference. A same-World
+read/search result can add an action route only when its typed ToolReturn explicitly
+declares attached executable grounding, both private before/after World IDs equal the current observation, and the
+exact `(operation, source, destination)` route still exists in `complete_actions`. `ModelTurnDelivery` performs that
+intersection and includes the ToolReturn in the same manifest-visibility invariant. `GroundedToolCompiler` then
+compiles exactly `manifest.action_routes`; typed grounding rejection derives target semantics and supported operations
+from that same manifest rather than the full ActionSpace; region reads likewise accept only R-refs in the manifest. No Store,
+cursor owner, retry, alternate resolver, or currentness state was added.
+
+Observation-local handles also have one temporal rule. Trace retains the original physical provider calls and
+results. Model-facing PydanticAI history retains same-ID call/result pairing, names, labels, factual values, outcomes,
+and current-World grounding, but its existing history processor removes E/N/F/R refs, cursors, and attached verbs
+from a closed exchange once the ToolReturn's owner-produced before/after World metadata no longer identifies the
+fresh World. The unresolved call and same-World read result remain exact. This uses the existing SDK history and
+`sanitize_history_value`; it creates neither a second history nor a memory/progress path.
+
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
 could not reach the current `Submit` link; Task556 read the exact `Christopher Nolan filmography` link text, then
@@ -185,7 +222,8 @@ large expired Worlds, while only 39 prompts represented the authoritative curren
 The history owner now performs a cheap structural projection before deciding whether semantic compaction is needed.
 One metadata-marked SDK `UserPromptPart` anchors the current `TaskGoal + GoalPlan`. Every historical World prompt is
 removed before packing because `TurnPacker` supplies exactly one authoritative fresh World for the current call;
-every ToolCall/ToolReturn and public model `TextPart` remain exact. Once a ToolReturn has closed an older response, its
+ToolCall/ToolReturn identities and semantic content remain paired, while generation-local handles remain exact only
+for the fresh World. Once a ToolReturn has closed an older response, its
 private `ThinkingPart` may expire only when that same response already contains a non-empty public `TextPart` carrying
 the model-visible conclusion. The unresolved response and a tool-only reasoning response remain exact. Harness
 `SummarizingCompaction` has two size-only admission arms: the existing 80% complete-request capacity guard, and a 50%
@@ -222,8 +260,9 @@ number repeated under `Verified facts` and `Remaining questions` as the same con
 restored raw history, so the run paid both 198,783 compactor input tokens and the ordinary ActionPolicy requests;
 prompt tokens rose to 1,379,172. Claim identity is open-world semantics, not a deterministic history invariant. The
 history owner now accepts Harness summary prose after typed message and exact suffix validation; the shared prompt
-remains guidance, and the current task, one fresh World, and exact call/result history remain available to the single
-ActionPolicy. No retry or alternate summary path was added. A post-repair live efficiency witness was required.
+remains guidance, and the current task, one fresh World, paired semantic call/result history, and exact unresolved
+suffix remain available to the single ActionPolicy. No retry or alternate summary path was added. A post-repair live
+efficiency witness was required.
 
 [`run39`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run39/run.json) crossed that scheduling repair: one
 28,734-token summary was accepted, later ActionPolicy requests fell from about 33k to 13--20k, and the native evaluator
@@ -1711,7 +1750,8 @@ This cutover is implementation-complete only when all of the following agree:
    recapture before a fresh World is admitted; the action is never replayed;
 6. production contains no generic result continuation/evidence inventory/reassembly path;
 7. focused and full provider-free suites, Ruff, compileall, negative searches, and fresh diff review pass.
-8. every Manifest ref is present in the same admitted text/media for zero, partial, and full action-prefix selections;
+8. every Manifest ref is present in the same admitted text/media/current ToolReturn for zero, partial, and full
+   action-prefix selections, and Catalog private routes equal Manifest routes;
 9. readable search cannot match or return DOM tag/class/ID scaffolding.
 10. a unique semantic/structure occurrence has one public identity, every accepted finite World public record has a
     representable generation-local ordinal, every accepted World fact/artifact remains resolvable, and large-World
@@ -1720,9 +1760,9 @@ This cutover is implementation-complete only when all of the following agree:
     information novelty that clears Monitor.
 12. WebArena-family browser navigation is published only through the existing ActionSpace/BrowserGym route, while
     MiniWoB remains unchanged.
-13. proactive SDK history processing preserves exact call/result pairs and unique model conclusions across tool-only
-    turns without requiring a per-step progress artifact, and a partial PageMap remains aggregate-bounded and
-    recoverable through the existing read tools.
+13. proactive SDK history processing preserves call/result pairing and unique model conclusions across tool-only
+    turns, deactivates only noncurrent observation-local handles, requires no per-step progress artifact, and leaves a
+    partial PageMap aggregate-bounded and recoverable through the existing read tools.
 14. dispatched GUI attempts have one bounded ref-free Monitor history; every repeated cycle representable in that
     window recovers once and blocks only on recurrence. Different public attempt signatures retain recovery feedback
     but never accumulate into a hidden semantic-attempt budget; exact replay still blocks after one recovery, and the
@@ -1762,6 +1802,9 @@ This cutover is implementation-complete only when all of the following agree:
 27. Public identity/fact churn remains available as exact transition lineage but cannot become `semantic_change` or
     `ObservedChange.CHANGED` when both identity-free World meaning and screenshot are unchanged; repeated equivalent
     GUI attempts must therefore reach the existing Monitor recovery independent of target-ID reallocation.
+28. Catalog private resolver rows equal the current `DeliveryManifest.action_routes`; same-World read/search results
+    may extend that manifest only by intersecting explicit returned grounding with the current ActionSpace, while
+    closed noncurrent SDK exchanges preserve pair identity and semantic facts without executable refs or cursors.
 
 These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
 paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark

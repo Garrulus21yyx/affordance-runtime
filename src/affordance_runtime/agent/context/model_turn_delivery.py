@@ -14,6 +14,7 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteIssueFragment,
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
+    DeliveredActionRoute,
     DeliveryManifest,
     WorldDeliveryView,
     render_compact_actor_world,
@@ -71,9 +72,8 @@ class DeliveredMedia:
         ):
             raise ValueError("delivered media payload is invalid")
         marks = tuple(self.actual_marks)
-        if (
-            any(not isinstance(item, DeliveredMediaMark) for item in marks)
-            or len({item.ref for item in marks}) != len(marks)
+        if any(not isinstance(item, DeliveredMediaMark) for item in marks) or len({item.ref for item in marks}) != len(
+            marks
         ):
             raise ValueError("delivered media marks are invalid")
         object.__setattr__(self, "actual_marks", marks)
@@ -86,9 +86,7 @@ class DeferredToolDelivery:
     tool_call_id: str
     tool_name: str
     return_value: Mapping[str, object]
-    metadata: Mapping[str, object] = field(
-        repr=False, compare=False, metadata={"serialize": False}
-    )
+    metadata: Mapping[str, object] = field(repr=False, compare=False, metadata={"serialize": False})
     failed: bool = False
 
     def __post_init__(self) -> None:
@@ -154,16 +152,16 @@ class ModelTurnDelivery:
         if self.tool_result is not None and not isinstance(self.tool_result, DeferredToolDelivery):
             raise TypeError("model turn deferred result must be typed")
         route_refs = {
-            ref
-            for route in self.manifest.action_routes
-            for ref in (route.source_ref, route.destination_ref)
-            if ref
+            ref for route in self.manifest.action_routes for ref in (route.source_ref, route.destination_ref) if ref
         }
         if set(self.manifest.executable_refs) != route_refs:
             raise ValueError("every delivered executable must participate in an exact action route")
-        visible_refs = set(re.findall(r"\b[ENFR][1-9][0-9]*\b", self.view.text)) | {
-            mark.ref for item in media for mark in item.actual_marks
-        }
+        tool_result_value = self.tool_result.return_value if self.tool_result is not None else {}
+        visible_refs = (
+            set(re.findall(rf"\b{PublicRefCodec.token_pattern()}\b", self.view.text))
+            | {mark.ref for item in media for mark in item.actual_marks}
+            | _public_refs_in_value(tool_result_value)
+        )
         manifest_refs = {
             *self.manifest.executable_refs,
             *self.manifest.readonly_refs,
@@ -171,7 +169,7 @@ class ModelTurnDelivery:
             *self.manifest.region_refs,
         }
         if not manifest_refs.issubset(visible_refs):
-            raise ValueError("delivery Manifest contains a ref absent from admitted text/media")
+            raise ValueError("delivery Manifest contains a ref absent from admitted text/media/tool result")
         object.__setattr__(self, "media", media)
 
 
@@ -189,11 +187,17 @@ def build_model_turn_delivery(
 
     if context.action_delivery_plan is None:
         raise ValueError("AgentContext requires an ActionDeliveryPlan before model delivery")
-    selected_counts = (
-        context.action_delivery_plan.bounded_preview_counts()
-        if admitted_records is None
-        else dict(admitted_records)
-    )
+    if admitted_records is None:
+        selected_counts = context.action_delivery_plan.bounded_preview_counts()
+        selected_counts.update(
+            {
+                obligation.kind.value: obligation.required_record_count
+                for obligation in context.action_delivery_plan.obligations
+                if obligation.required_record_count
+            }
+        )
+    else:
+        selected_counts = dict(admitted_records)
     selected_candidates = context.action_delivery_plan.projection(selected_counts)
     selected_records = _selected_records(context.action_delivery_plan, selected_counts)
     tool_result = _deferred_tool_delivery(
@@ -201,9 +205,7 @@ def build_model_turn_delivery(
         pending_tool_call_id,
         pending_tool_name,
     )
-    selected_issues = tuple(
-        item for item in selected_records if isinstance(item, ActionRouteIssueFragment)
-    )
+    selected_issues = tuple(item for item in selected_records if isinstance(item, ActionRouteIssueFragment))
     rendered = render_compact_actor_world(
         context.actor_world,
         context.grounding,
@@ -228,6 +230,7 @@ def build_model_turn_delivery(
     )
     media = _delivered_media(context.image_inputs) if include_images else ()
     manifest = _manifest_with_media_evidence(rendered.manifest, media)
+    manifest = _manifest_with_same_world_tool_grounding(manifest, tool_result, context)
     payload = {
         "projection": view.projection,
         "text": view.text,
@@ -351,6 +354,127 @@ def _manifest_with_media_evidence(
         text_manifest.region_refs,
         text_manifest.action_routes,
     )
+
+
+def _manifest_with_same_world_tool_grounding(
+    manifest: DeliveryManifest,
+    tool_result: DeferredToolDelivery | None,
+    context: AgentContext,
+) -> DeliveryManifest:
+    """Admit exact live refs returned by a read tool into this same delivery.
+
+    The ToolReturn is presentation, not action authority.  Its explicit
+    ``executable_grounding`` contract may only select routes that still exist
+    in the sibling current ActionSpace, and only while both sides of the local
+    read identify the one fresh World used by this turn.
+    """
+
+    if tool_result is None or tool_result.failed or context.current_observation is None:
+        return manifest
+    current_world = context.current_observation.observation_id
+    if (
+        tool_result.metadata.get("before_world") != current_world
+        or tool_result.metadata.get("after_world") != current_world
+        or tool_result.return_value.get("executable_grounding") != "attached_to_returned_readable_targets"
+    ):
+        return manifest
+
+    returned_refs = _public_refs_in_value(tool_result.return_value)
+    current_regions = set(context.canonical_world.region_refs.values())
+    current_nodes = set(context.grounding.target_refs.values())
+    current_facts = set(context.private_fact_bindings)
+    readonly = [*manifest.readonly_refs]
+    facts = [*manifest.fact_refs]
+    regions = [*manifest.region_refs]
+    for ref in sorted(returned_refs, key=_public_ref_order):
+        if ref.startswith("N") and ref in current_nodes and ref not in readonly:
+            readonly.append(ref)
+        elif ref.startswith("F") and ref in current_facts and ref not in facts:
+            facts.append(ref)
+        elif ref.startswith("R") and ref in current_regions and ref not in regions:
+            regions.append(ref)
+
+    claimed_routes = _returned_read_routes(tool_result.return_value)
+    current_routes = {
+        (option.operation, option.target_ref, ""): option
+        for option in context.complete_actions
+        if option.destination_mode == "forbidden"
+    }
+    executable = [*manifest.executable_refs]
+    routes = [*manifest.action_routes]
+    existing = {(route.operation, route.source_ref, route.destination_ref) for route in routes}
+    for route_key in sorted(claimed_routes):
+        option = current_routes.get(route_key)
+        if option is None or route_key in existing:
+            continue
+        _operation, source_ref, _destination_ref = route_key
+        if source_ref not in executable:
+            executable.append(source_ref)
+        routes.append(
+            DeliveredActionRoute(
+                option.operation,
+                source_ref,
+                private_action_id=option.action_id,
+                private_option=option,
+            )
+        )
+        existing.add(route_key)
+
+    return DeliveryManifest(
+        tuple(executable),
+        tuple(readonly),
+        tuple(facts),
+        tuple(regions),
+        tuple(routes),
+    )
+
+
+def _returned_read_routes(value: object) -> frozenset[tuple[str, str, str]]:
+    routes: set[tuple[str, str, str]] = set()
+
+    def visit(item: object) -> None:
+        if isinstance(item, Mapping):
+            target_ref = str(item.get("target_ref", ""))
+            verbs = item.get("verbs", ())
+            if PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE) and isinstance(
+                verbs, (tuple, list)
+            ):
+                routes.update(
+                    (str(operation), target_ref, "")
+                    for operation in verbs
+                    if isinstance(operation, str) and operation.strip()
+                )
+            for child in item.values():
+                visit(child)
+        elif isinstance(item, (tuple, list)):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return frozenset(routes)
+
+
+def _public_refs_in_value(value: object) -> set[str]:
+    refs: set[str] = set()
+
+    def visit(item: object) -> None:
+        if isinstance(item, str):
+            refs.update(re.findall(rf"\b{PublicRefCodec.token_pattern()}\b", item))
+        elif isinstance(item, Mapping):
+            for key, child in item.items():
+                visit(str(key))
+                visit(child)
+        elif isinstance(item, (tuple, list)):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return refs
+
+
+def _public_ref_order(ref: str) -> tuple[str, int]:
+    decoded = PublicRefCodec.decode(ref)
+    return decoded.kind.value, decoded.index
 
 
 def _selected_records(
