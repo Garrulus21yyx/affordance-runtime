@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded compensation complete; Steel Viewer implementation complete with live media gate open on provider-native WHEP 400; takeover unavailable
+Status: Phase 7 bounded compensation and protected Steel Viewer verified complete; takeover unavailable
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -587,7 +587,7 @@ Constraints:
       module's established startup behavior, but Phase 7 did not inspect,
       print, or use the Viewer credential and did not start Viewer, a live
       model/provider, a browser compensation profile, or a benchmark.
-22. **in progress — protected read-only Viewer deployment; provider-native live media gate open.**
+22. **complete — protected read-only Viewer deployment.**
     - Owner model: the deployment browser/environment lease owns the provider
       session locator and cleanup; a deployment-private viewer registry/proxy
       owns authenticated short-lived resolution; the Runtime public session
@@ -663,18 +663,25 @@ Constraints:
       and 19 skipped; only the two unchanged baseline failures remained (the
       five-document governance assertion and an absent historical live trace).
       Demo Playwright E2E passed one Chromium test.
-    - Live media finding: Steel's current document appends its session region
-      to the WHEP request. The proxy now admits only the documented current
+    - Live media convergence: Steel's current document appends its session
+      region to the WHEP request. The proxy admits only the documented current
       Steel region algebra and forwards that value to the fixed provider host;
-      missing/unknown values fail typed. The same-origin browser still receives
-      502 because Steel returns WHEP 400. A held-out control opened the original
-      unauthenticated Steel `debugUrl` with no Shell proxy and observed the same
-      provider-native WHEP 400, video `readyState=0`, and zero page errors; a
-      default session without `debugConfig` behaved identically. Therefore the
-      remaining live-media failure is upstream/provider state, not evidence for
-      another Shell transport branch. CDP execution, protected document/ICE,
-      cleanup, and provider-free contracts pass, but this step stays non-closed
-      until Steel's native viewer completes WHEP in the configured account.
+      missing/unknown values fail typed. The earlier WHEP 400 witness was not a
+      provider outage: the bundled Playwright Chromium used by that probe
+      advertised VP8/VP9/AV1 but no H.264, while Steel's documented headful
+      stream requires H.264 baseline. A held-out native control using an
+      H.264-capable Steel browser completed WHEP with 201 and rendered 1280x720
+      video at `readyState=4`. The protected same-origin product route was then
+      verified with a temporary official Chrome-for-Testing client: unauthenticated
+      access returned 401, the authenticated document returned 200, the proxied
+      WHEP returned 201, video reached `readyState=4` at 1280x720, no page error
+      occurred, provider locators remained absent, and cleanup released the
+      exact provider lease. The first protected-path polling attempt also
+      exposed an acceptance-harness constraint: the production CSP correctly
+      rejects Playwright string `wait_for_function` because it requires
+      `unsafe-eval`; the final witness used Python-side polling without weakening
+      CSP. No alternate media path, second Runtime browser, model call, GUI
+      action, compensation action, input WebSocket, takeover, or benchmark ran.
 
 ## Current-work produced files
 

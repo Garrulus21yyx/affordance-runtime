@@ -127,14 +127,20 @@ exchange. Viewer failure never changes Runtime status, receipt, evaluation, or
 cleanup truth. The local BrowserGym profile remains Viewer unavailable, and a
 cloud profile rejects loopback/private task sources instead of opening a second
 browser. Provider-free tests plus a no-model/no-action live Steel CDP reset and
-document/ICE probe verify this deployment boundary. Full live media remains an
-open deployment gate: the configured provider returns WHEP 400 from both the
-same-origin proxy and Steel's original unproxied `debugUrl`, including a control
-session created without `debugConfig`. The proxy preserves the document's
-bounded Steel region value, but no second media path or retry branch is added to
-hide an upstream-native failure. These are not benchmark witnesses and do not
-alter the reopened overall project status. No live compensation action or
-benchmark was performed.
+document/ICE probe verify this deployment boundary. The earlier WHEP 400 from
+both the proxy and Steel's native `debugUrl` was traced to the validation
+client: Playwright's bundled Linux Chromium advertised no H.264 codec, while
+Steel's headful stream requires H.264 baseline. A held-out native control with
+an H.264-capable Steel browser completed WHEP with 201 and rendered 1280x720
+video at `readyState=4`. A separate protected-path witness using temporary
+official Chrome for Testing observed unauthenticated 401, authenticated document
+200, proxied WHEP 201, 1280x720 video at `readyState=4`, no page error, no
+provider locator in the delivered HTML, and exact lease release. The strict CSP
+was not weakened; acceptance used Python-side polling because Playwright string
+`wait_for_function` requires `unsafe-eval`. No second media path or retry branch
+was added. These are Viewer deployment witnesses, not benchmark evidence, and
+do not alter the reopened overall project status. No live compensation action
+or benchmark was performed.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

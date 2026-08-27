@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Local/Steel real execution, durable control, bounded task revision, and single-effect compensation implemented; protected Steel Viewer code complete with live media verification blocked by provider-native WHEP 400**
+Status: **Local/Steel real execution, durable control, bounded task revision, single-effect compensation, and protected read-only Steel Viewer implemented and verified**
 
 Date: 2026-08-27
 
@@ -102,7 +102,7 @@ The following states must not be collapsed into one label such as "implemented":
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
 | Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, bounded task revision/effect reconciliation, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
-| Live View deployment | Implementation complete; live media gate open | `INTERACTION_SHELL_BROWSER_PROVIDER=steel` creates one Steel session used by both BrowserGym CDP execution and the read-only Live View. The public snapshot contains only `/viewer/{session}`; HttpOnly same-session auth protects the route, and the server rewrites/proxies the provider document plus its bounded `ice-servers`/`whep` media calls. CDP reset and document/ICE probes pass, but the configured Steel account currently returns WHEP 400 from its own unproxied native `debugUrl` as well as the proxy, so live video is not yet claimed verified. The local profile remains typed unavailable. |
+| Live View deployment | Implemented and verified | `INTERACTION_SHELL_BROWSER_PROVIDER=steel` creates one Steel session used by both BrowserGym CDP execution and the read-only Live View. The public snapshot contains only `/viewer/{session}`; HttpOnly same-session auth protects the route, and the server rewrites/proxies the provider document plus its bounded `ice-servers`/`whep` media calls. A live H.264-capable client completed the protected WHEP path with 201 and rendered the same provider session at 1280×720 with video `readyState=4`. The local profile remains typed unavailable. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
@@ -110,7 +110,7 @@ The following states must not be collapsed into one label such as "implemented":
 | Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
 | Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Phase 7 compensation verified; Viewer implementation verified provider-free | Phase 0–6.5 plus typed effect conservation, single-effect reconciliation, checkpoint v2/v3 compatibility, Runtime-owned result codes, Shell v2 projection, and provider-free tests agree. The Viewer change additionally passed a no-model/no-action Steel CDP BrowserGym reset and a live protected-document/ICE proxy probe. Full live video remains open because Steel's native and proxied WHEP both return 400. No live compensation action or benchmark was run. |
+| Delivery hygiene | Phase 7 compensation and protected Viewer verified | Phase 0–6.5 plus typed effect conservation, single-effect reconciliation, checkpoint v2/v3 compatibility, Runtime-owned result codes, Shell v2 projection, and provider-free tests agree. The Viewer change additionally passed a no-model/no-action Steel CDP BrowserGym reset, protected document/ICE probes, native H.264 playback, and the authenticated same-origin WHEP/video path. No live compensation action or benchmark was run. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1051,12 +1051,16 @@ Steel-native short-lived ICE credentials remain the provider media transport. Th
 provider session ID, and RTC bearer do not enter snapshots, events, HTML, browser storage, or logs. Production HTTPS
 deployments set `INTERACTION_SHELL_SECURE_COOKIES=true`.
 
-Live verification on 2026-08-27 found that the configured Steel account accepts session creation, CDP attachment,
-debug-document fetch, and ICE lookup, but returns HTTP 400 for the document's own region-scoped WHEP offer. Opening the
-original provider `debugUrl` directly, without this proxy, produced the same WHEP 400 and an unready video element;
-creating the session without `debugConfig` did not change it. The proxy now preserves Steel's documented region route,
-but the product does not claim live video verified until the provider-native viewer succeeds. A WHEP/provider failure
-downgrades only Viewer state and does not release or change Runtime task truth.
+Live verification on 2026-08-27 initially produced WHEP 400 in both the proxy and provider-native page. The shared
+trigger was the validation client, not Steel or the proxy: Playwright's bundled Linux Chromium advertised VP8, VP9,
+and AV1 but no H.264, while Steel's documented headful stream requires H.264 baseline. An H.264-capable Steel browser
+then completed the native WHEP exchange with 201 and rendered 1280×720 video at `readyState=4`. The protected product
+path was independently exercised with temporary official Chrome for Testing: unauthenticated access returned 401,
+the authenticated document returned 200, the same-origin WHEP proxy returned 201, video reached `readyState=4` at
+1280×720, no page error occurred, provider locators remained absent, and cleanup released the exact provider lease.
+The production CSP remained strict; the final acceptance harness polled from Python because Playwright's string
+`wait_for_function` requires forbidden `unsafe-eval`. A WHEP/provider failure still downgrades only Viewer state and
+does not release or change Runtime task truth.
 
 ### 13.2 Concrete deployment entry
 
@@ -1373,8 +1377,9 @@ always forwards revision attempts under its per-session lock and does not decide
 also binds model-history identity before initialization, so a pre-policy pause can persist and recover an empty settled
 Harness snapshot. Phase 7 now extends the prior-dispatch boundary without changing Phase 6 compiler ownership:
 single known compatible/compensatable truth can reach a revised checkpoint, while uncertain, irreversible, missing,
-or multiple effect truth fails closed and keeps revision `n`. Viewer and takeover remain unavailable. OTel exporter
-wiring remains a non-blocking deployment task and is not part of this closure.
+or multiple effect truth fails closed and keeps revision `n`. Phase 6 did not depend on Viewer; the protected read-only
+Steel Viewer is now independently verified, while takeover remains unavailable. OTel exporter wiring remains a
+non-blocking deployment task and is not part of this closure.
 
 ### Phase 7 — bounded compensation for already-applied effects
 
