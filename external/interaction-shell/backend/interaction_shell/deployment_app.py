@@ -29,6 +29,7 @@ from affordance_runtime.app.public_session import (
     TargetRuntimeSession,
     TargetRuntimeSessionFactory,
 )
+from affordance_runtime.benchmarks.lab import BenchmarkLabManager
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.model.policy import model_roles_from_environment
 from affordance_runtime.surfaces.browsergym import (
@@ -577,5 +578,14 @@ app = create_app(
     ),
     evidence_access_key=_deployment_environment.get(
         "INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""
+    ),
+    lab_manager=BenchmarkLabManager(
+        Path(
+            _deployment_environment.get(
+                "INTERACTION_SHELL_LABS_EVIDENCE_ROOT",
+                str(Path(__file__).resolve().parents[4] / "evidence" / "live"),
+            )
+        ),
+        environment=_deployment_environment,
     ),
 )

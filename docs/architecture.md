@@ -6,6 +6,23 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+### 2026-08-27 single Interaction Console
+
+The mint/apricot Next.js Interaction Shell is now the sole frontend. The initial Flight Deck presentation and the
+standalone `affordance_runtime.benchmarks.console` HTTP/static application are removed. The single UI consumes two
+existing typed owners without becoming a state authority:
+
+```text
+ordinary task → public_session command offers + SSE snapshot + protected viewer
+Labs task     → benchmark-owned formal run launcher + append-only evidence projection
+```
+
+Ordinary task input, AskUser/confirmation, revision, pause/resume, takeover, progress, completion, and live surface
+remain owned by the existing Runtime/Shell contracts. Labs owns only frozen benchmark configuration, formal subprocess
+launch, public activity, digest-verified Runtime frames, Bad Cases, raw local evidence, and runner output. It does not
+write Runtime state or create another agent loop. FastAPI/Pydantic remains the public schema authority and the frontend
+uses regenerated named SDK operations and validators for both surfaces.
+
 Task426
 [`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
 reopens one narrower observation-local grounding contract. A completed search-page read had exposed `E6` as the

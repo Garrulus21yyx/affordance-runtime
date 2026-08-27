@@ -49,7 +49,7 @@ def test_resolver_reads_only_configured_results_and_exposes_no_absolute_path(tmp
     assert summary.turns == 3
     assert summary.provider_input_tokens == 100
     assert summary.langfuse_url.endswith("/sessions/attempt%3A" + "a" * 32)
-    assert summary.local_evidence_url == f"/diagnostics/evidence/{summary.locator_id}/result"
+    assert summary.local_evidence_url == f"/labs/completed-runs/evidence/{summary.locator_id}/result"
     assert str(tmp_path) not in summary.model_dump_json()
     assert resolver.result_path(summary.locator_id) == result.resolve()
 
@@ -77,15 +77,15 @@ def test_diagnostics_api_is_read_only_summary_and_fixed_result_locator(tmp_path)
         evidence_access_key="engineering-test-key",
     )
     with TestClient(app) as client:
-        listed = client.get("/diagnostics")
+        listed = client.get("/labs/completed-runs")
         summary = listed.json()[0]
         unauthorized = client.get(summary["local_evidence_url"])
         result = client.get(
             summary["local_evidence_url"],
             headers={"X-Engineering-Key": "engineering-test-key"},
         )
-        post = client.post("/diagnostics", json={})
-        traversal = client.get("/diagnostics/evidence/../../run.json/result")
+        post = client.post("/labs/completed-runs", json={})
+        traversal = client.get("/labs/completed-runs/evidence/../../run.json/result")
 
     assert listed.status_code == 200
     assert unauthorized.status_code == 404

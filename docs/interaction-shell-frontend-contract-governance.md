@@ -4,7 +4,7 @@
 > 日期：2026-08-27。
 > 适用工作树：`/home/yang/projects/affordance-runtime-interaction-shell`，审查基线 `codex/external-interaction-shell@7af330c7`，并包含该工作树当前未提交改动。
 > 范围：`external/interaction-shell/backend`、`external/interaction-shell/frontend` 与 Runtime `public_session` 边界。
-> 排除：主工作树中的遗留 `affordance_runtime.benchmarks.console`。
+> 2026-08-27 后续整合：遗留静态 `affordance_runtime.benchmarks.console` 与初版 Flight Deck UI 已删除；松绿 Console 成为唯一 presentation，并通过生成 SDK 同时消费 v3 session 与 benchmark-owned Labs 合同。下文关于独立 `/diagnostics` 页面和排除遗留 Console 的内容仅记录整合前基线。
 > 状态 authority：本文件描述目标设计、迁移与治理门；当前 Interaction Shell 实施状态仍以 `docs/interaction-shell.md` 为准，Core/benchmark 状态仍以 `docs/architecture.md`、`docs/benchmark.md` 为准。
 > 主线集成：本合同已在独立 integration worktree 中以本地 `codex/simplify-core-runtime@baebf2e2` 为底适配并达到 provider-free verified closure，merge commit 为 `04dcc4ac`，独立 fresh-context review 结论为 APPROVE，post-commit regenerate-and-diff 无差异。集成保留 simplify 的 delivery/context/provider/history 热路径，只在原 owner 中加入 Shell control/checkpoint 语义。该证据不改变 Phase 4 blocked 状态，也不构成 live benchmark 表现证据。
 

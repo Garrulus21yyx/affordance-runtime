@@ -2,16 +2,17 @@
 
 Standalone Web interaction and evaluation shell for the Affordance Runtime.
 Everything here is independently packaged and imports no Core loop, Binder,
-Executor, Monitor, private World, or internal `RunState`. Its production adapter
-imports only the versioned `affordance_runtime.app.public_session` boundary.
+Executor, Monitor, private World, or internal `RunState`. Its product path imports
+the versioned `affordance_runtime.app.public_session` boundary; its Labs API calls
+the benchmark-owned `affordance_runtime.benchmarks.lab` service.
 
 ## Layout
 
 ```text
 external/interaction-shell/
 ├── backend/       FastAPI, Pydantic contracts, session manager, port boundary
-├── frontend/      Next.js, CopilotKit, Radix primitives, Playwright
-├── diagnostics/   completed-run resolver notes
+├── frontend/      single Next.js Console and Playwright verification
+├── diagnostics/   completed-run resolver notes consumed by the Labs drawer
 ├── langfuse/      reproducible analysis-view configuration
 ├── tests/         backend contracts/properties and architecture guards
 ├── docs/          standalone public contract documentation
@@ -156,31 +157,29 @@ npm install
 SHELL_BACKEND_URL=http://127.0.0.1:8200 npm run dev -- --port 3100
 ```
 
-Open `http://127.0.0.1:3100` for the operator shell. It contains only
-conversation/HITL, the live surface, Runtime-offered takeover/return controls,
-and concise Runtime-projected progress hydrated from SSE. The surface is
-read-only unless Runtime projects the current user-control lease. The UI does not
-load or render token, latency, evaluation, or attribution data.
+Open `http://127.0.0.1:3100` for the only Console. The main task thread combines
+ordinary conversation/HITL, Runtime progress, completion, and the live surface.
+The surface is read-only unless Runtime projects the current user-control lease.
+The Labs drawer contains the formal benchmark launcher, Bad Cases, completed-run
+summaries, raw local evidence, and runner output. Ordinary task rendering does not
+request those engineering endpoints until Labs is opened.
 
-`http://127.0.0.1:3100/diagnostics` is a read-only completed-run index. It has no
-POST ingestion, process-local diagnosis store, transcript reader, chart engine,
-or evaluator. Configure exact run directories and the authenticated Langfuse UI:
+Configure exact completed-run directories and the authenticated Langfuse UI:
 
 ```bash
 export INTERACTION_SHELL_EVIDENCE_RUNS=/absolute/evidence/run-a:/absolute/evidence/run-b
 export LANGFUSE_BASE_URL=https://langfuse.example.test
 ```
 
-The route shows only benchmark status, turns, provider input/output usage,
-recovery/stall counts, `suspected_detour | not_assessed`, and independent links.
+The Labs completed-run projection shows only benchmark status, turns, provider
+input/output usage, recovery/stall counts, `suspected_detour | not_assessed`, and independent links.
 `INTERACTION_SHELL_LOCAL_EVIDENCE_ENABLED=true` plus a nonblank
 `INTERACTION_SHELL_EVIDENCE_ACCESS_KEY` enables the opaque fixed-result route.
 The engineering reverse proxy must inject the matching `X-Engineering-Key`;
 unauthorized and unknown locators both return 404.
-It never accepts or exposes filesystem paths. Full token, cost, latency, trace,
-dashboard, and annotation analysis stays in Langfuse. An ordinary product task
-without `BenchmarkCaseResult` explicitly displays benchmark result
-`not_applicable`. See `docs/interaction-shell.md`, Section 12 and Phase 10.
+The authenticated completed-result route never accepts arbitrary filesystem paths.
+Full cross-run token, cost, latency, dashboard, and annotation analysis stays in
+Langfuse; the local Labs evidence view remains bounded to the selected formal run.
 
 ## Viewer and optional services
 

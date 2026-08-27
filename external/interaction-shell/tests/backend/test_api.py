@@ -7,6 +7,12 @@ from interaction_shell.demo_port import ContractDemoPort
 from interaction_shell.manager import RunSessionManager
 from interaction_shell.port import RuntimeSessionUnavailable
 
+from affordance_runtime.benchmarks.external_breadth.contracts import (
+    MiniWobBreadthCase,
+    MiniWobBreadthManifest,
+)
+from affordance_runtime.benchmarks.lab import BenchmarkLabManager
+
 
 @pytest.mark.asyncio
 async def test_unified_command_route_is_typed_and_auth_isolated():
@@ -84,6 +90,44 @@ def test_openapi_has_fixed_unique_operation_ids_and_one_command_operation():
     assert "submitCommand" in operation_ids
     assert "/sessions/{session_id}/commands" in schema["paths"]
     assert not any(path.endswith(("/tasks", "/commands/revise", "/commands/takeover", "/commands/optional")) for path in schema["paths"])
+    assert {"getLabConfiguration", "startLabRun", "getLabRunActivity", "getLabRunBrowserFrame"} <= set(operation_ids)
+
+
+@pytest.mark.asyncio
+async def test_labs_routes_use_the_injected_benchmark_owner(tmp_path):
+    case = MiniWobBreadthCase(
+        "miniwob-60-17",
+        "browsergym/miniwob.social-media-all",
+        "current_primitives",
+        ("activate",),
+        10,
+        180.0,
+        7,
+    )
+    manifest = MiniWobBreadthManifest(
+        "test.v1",
+        "test-campaign",
+        "browsergym-miniwob",
+        "0.14.3",
+        "source",
+        "registry",
+        "inventory",
+        "selection",
+        "model",
+        "grounding",
+        0.0,
+        (case,),
+    )
+    lab = BenchmarkLabManager(tmp_path, manifest=manifest, environment={})
+    app = create_app(RunSessionManager(ContractDemoPort()), lab_manager=lab)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        config = await client.get("/labs/config")
+        runs = await client.get("/labs/runs")
+        current = await client.get("/labs/runs/current")
+    assert config.status_code == 200
+    assert config.json()["cases"][0]["case_id"] == "miniwob-60-17"
+    assert runs.json() == {"runs": []}
+    assert current.json() is None
 
 
 @pytest.mark.asyncio

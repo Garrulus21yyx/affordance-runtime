@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parse, ValiError } from "valibot";
-import { createClient } from "@/generated/client";
 import {
   createSession as createSessionRequest,
   getSession,
@@ -18,10 +17,9 @@ import {
   vSubmitCommandResponse,
 } from "@/generated/valibot.gen";
 import { buildCommand, offerFor, type CommandIntent } from "@/session/command-builder";
+import { authenticatedShellClient, shellClient } from "@/session/client";
 import type { CommandAdmission, ConnectionState, ShellEventEnvelope, Snapshot } from "@/session/types";
 import { projectShellView } from "@/session/view-model";
-
-const BASE_URL = "/shell-api";
 
 export type CausalEventDecision = "apply" | "duplicate" | "resync" | "protocol_mismatch";
 
@@ -72,11 +70,17 @@ export function useShellSession() {
     return () => { active = false; };
   }, [install]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
   const sessionId = snapshot?.session_id;
   useEffect(() => {
     if (!sessionId || !sessionKey || connection === "protocol_mismatch") return;
     const abort = new AbortController();
-    const client = authenticatedClient(sessionKey);
+    const client = authenticatedShellClient(sessionKey);
 
     const resyncOnce = async () => {
       const current = latestSnapshot.current;
@@ -168,7 +172,7 @@ export function useShellSession() {
     if (!offer) return null;
     const command = buildCommand(current, offer, intent, crypto.randomUUID());
     const response = await submitCommand({
-      client: authenticatedClient(sessionKey),
+      client: authenticatedShellClient(sessionKey),
       path: { session_id: current.session_id },
       body: command,
       throwOnError: true,
@@ -194,6 +198,21 @@ export function useShellSession() {
   }, [sendIntent]);
 
   const viewModel = useMemo(() => projectShellView(snapshot), [snapshot]);
+  const newSession = useCallback(async () => {
+    const current = latestSnapshot.current;
+    if (current && offerFor(current, "close_session")) {
+      await sendIntent({ kind: "close_session" });
+    }
+    opening.current = openSession();
+    const created = await opening.current;
+    setSessionKey(created.session_key);
+    install(created.snapshot);
+    attemptedRecovery.current = "";
+    attemptedResync.current = "";
+    setConnection("connecting");
+    setStreamGeneration((generation) => generation + 1);
+    setNotice("");
+  }, [install, sendIntent]);
   return {
     snapshot,
     viewModel,
@@ -208,20 +227,17 @@ export function useShellSession() {
     takeOver: () => sendIntent({ kind: "take_over" }),
     returnControl: () => sendIntent({ kind: "return_control" }),
     close: () => sendIntent({ kind: "close_session" }),
+    newSession,
   };
 }
 
 async function openSession() {
   const response = await createSessionRequest({
-    client: createClient({ baseUrl: BASE_URL }),
+    client: shellClient,
     body: {},
     throwOnError: true,
   });
   return parse(vCreateSessionResponse, response.data);
-}
-
-function authenticatedClient(sessionKey: string) {
-  return createClient({ baseUrl: BASE_URL, auth: sessionKey });
 }
 
 function admissionNotice(admission: CommandAdmission): string {

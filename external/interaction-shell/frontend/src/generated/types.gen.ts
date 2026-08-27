@@ -88,6 +88,182 @@ export type ApproveAction = {
 };
 
 /**
+ * BenchmarkLabCase
+ */
+export type BenchmarkLabCase = {
+    /**
+     * Case Id
+     */
+    case_id: string;
+    /**
+     * Max Turns
+     */
+    max_turns: number;
+    /**
+     * Seed
+     */
+    seed: number;
+    /**
+     * Task Id
+     */
+    task_id: string;
+    /**
+     * Timeout S
+     */
+    timeout_s: number;
+};
+
+/**
+ * BenchmarkLabConfiguration
+ */
+export type BenchmarkLabConfiguration = {
+    /**
+     * Action Models
+     */
+    action_models: Array<BenchmarkLabModel>;
+    /**
+     * Action Wire Capabilities
+     */
+    action_wire_capabilities: Array<string>;
+    /**
+     * Cases
+     */
+    cases: Array<BenchmarkLabCase>;
+    /**
+     * Goal Models
+     */
+    goal_models: Array<string>;
+    /**
+     * Manifest
+     */
+    manifest: string;
+    /**
+     * Perception Profiles
+     */
+    perception_profiles: Array<string>;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Provider Ready
+     */
+    provider_ready: boolean;
+};
+
+/**
+ * BenchmarkLabEventPage
+ */
+export type BenchmarkLabEventPage = {
+    /**
+     * Events
+     */
+    events: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Next Cursor
+     */
+    next_cursor: number;
+    run: BenchmarkLabRunSummary;
+};
+
+/**
+ * BenchmarkLabModel
+ */
+export type BenchmarkLabModel = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Multimodal
+     */
+    multimodal?: boolean;
+};
+
+/**
+ * BenchmarkLabRunList
+ */
+export type BenchmarkLabRunList = {
+    /**
+     * Runs
+     */
+    runs: Array<BenchmarkLabRunSummary>;
+};
+
+/**
+ * BenchmarkLabRunSpec
+ */
+export type BenchmarkLabRunSpec = {
+    /**
+     * Action Model
+     */
+    action_model: string;
+    /**
+     * Action Wire Capability
+     */
+    action_wire_capability?: string;
+    /**
+     * Case Id
+     */
+    case_id: string;
+    /**
+     * Goal Compiler Mode
+     */
+    goal_compiler_mode: 'model' | 'disabled';
+    /**
+     * Goal Compiler Model
+     */
+    goal_compiler_model?: string;
+    /**
+     * Perception Profile
+     */
+    perception_profile?: string;
+    /**
+     * Profile
+     */
+    profile?: string;
+};
+
+/**
+ * BenchmarkLabRunSummary
+ */
+export type BenchmarkLabRunSummary = {
+    /**
+     * Evidence Dir
+     */
+    evidence_dir: string;
+    /**
+     * Report
+     */
+    report?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Return Code
+     */
+    return_code: number | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    spec: BenchmarkLabRunSpec;
+    /**
+     * Started At
+     */
+    started_at: string;
+    /**
+     * Status
+     */
+    status: 'running' | 'completed' | 'failed';
+    /**
+     * Stdout Tail
+     */
+    stdout_tail?: Array<string>;
+};
+
+/**
  * CancelTask
  */
 export type CancelTask = {
@@ -1090,11 +1266,31 @@ export type ValidationError = {
     type: string;
 };
 
+export type GetHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/health';
+};
+
+export type GetHealthResponses = {
+    /**
+     * Response Gethealth
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
 export type ListCompletedRunsData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/diagnostics';
+    url: '/labs/completed-runs';
 };
 
 export type ListCompletedRunsResponses = {
@@ -1123,7 +1319,7 @@ export type GetCompletedRunResultData = {
         locator_id: string;
     };
     query?: never;
-    url: '/diagnostics/evidence/{locator_id}/result';
+    url: '/labs/completed-runs/evidence/{locator_id}/result';
 };
 
 export type GetCompletedRunResultErrors = {
@@ -1142,25 +1338,238 @@ export type GetCompletedRunResultResponses = {
     200: unknown;
 };
 
-export type GetHealthData = {
+export type GetLabConfigurationData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/health';
+    url: '/labs/config';
 };
 
-export type GetHealthResponses = {
+export type GetLabConfigurationResponses = {
     /**
-     * Response Gethealth
+     * Successful Response
+     */
+    200: BenchmarkLabConfiguration;
+};
+
+export type GetLabConfigurationResponse = GetLabConfigurationResponses[keyof GetLabConfigurationResponses];
+
+export type ListLabRunsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/labs/runs';
+};
+
+export type ListLabRunsResponses = {
+    /**
+     * Successful Response
+     */
+    200: BenchmarkLabRunList;
+};
+
+export type ListLabRunsResponse = ListLabRunsResponses[keyof ListLabRunsResponses];
+
+export type StartLabRunData = {
+    body: BenchmarkLabRunSpec;
+    path?: never;
+    query?: never;
+    url: '/labs/runs';
+};
+
+export type StartLabRunErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StartLabRunError = StartLabRunErrors[keyof StartLabRunErrors];
+
+export type StartLabRunResponses = {
+    /**
+     * Successful Response
+     */
+    201: BenchmarkLabRunSummary;
+};
+
+export type StartLabRunResponse = StartLabRunResponses[keyof StartLabRunResponses];
+
+export type GetCurrentLabRunData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/labs/runs/current';
+};
+
+export type GetCurrentLabRunResponses = {
+    /**
+     * Response Getcurrentlabrun
      *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: BenchmarkLabRunSummary | null;
 };
 
-export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+export type GetCurrentLabRunResponse = GetCurrentLabRunResponses[keyof GetCurrentLabRunResponses];
+
+export type GetLabRunData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/labs/runs/{run_id}';
+};
+
+export type GetLabRunErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLabRunError = GetLabRunErrors[keyof GetLabRunErrors];
+
+export type GetLabRunResponses = {
+    /**
+     * Successful Response
+     */
+    200: BenchmarkLabRunSummary;
+};
+
+export type GetLabRunResponse = GetLabRunResponses[keyof GetLabRunResponses];
+
+export type GetLabRunActivityData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * After
+         */
+        after?: number;
+    };
+    url: '/labs/runs/{run_id}/activity';
+};
+
+export type GetLabRunActivityErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLabRunActivityError = GetLabRunActivityErrors[keyof GetLabRunActivityErrors];
+
+export type GetLabRunActivityResponses = {
+    /**
+     * Successful Response
+     */
+    200: BenchmarkLabEventPage;
+};
+
+export type GetLabRunActivityResponse = GetLabRunActivityResponses[keyof GetLabRunActivityResponses];
+
+export type GetLabRunBrowserFrameData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/labs/runs/{run_id}/browser-frame';
+};
+
+export type GetLabRunBrowserFrameErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLabRunBrowserFrameError = GetLabRunBrowserFrameErrors[keyof GetLabRunBrowserFrameErrors];
+
+export type GetLabRunBrowserFrameResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetLabRunEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * After
+         */
+        after?: number;
+    };
+    url: '/labs/runs/{run_id}/events';
+};
+
+export type GetLabRunEventsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLabRunEventsError = GetLabRunEventsErrors[keyof GetLabRunEventsErrors];
+
+export type GetLabRunEventsResponses = {
+    /**
+     * Successful Response
+     */
+    200: BenchmarkLabEventPage;
+};
+
+export type GetLabRunEventsResponse = GetLabRunEventsResponses[keyof GetLabRunEventsResponses];
+
+export type StopLabRunData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/labs/runs/{run_id}/stop';
+};
+
+export type StopLabRunErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StopLabRunError = StopLabRunErrors[keyof StopLabRunErrors];
+
+export type StopLabRunResponses = {
+    /**
+     * Successful Response
+     */
+    200: BenchmarkLabRunSummary;
+};
+
+export type StopLabRunResponse = StopLabRunResponses[keyof StopLabRunResponses];
 
 export type GetShellEventSchemaData = {
     body?: never;

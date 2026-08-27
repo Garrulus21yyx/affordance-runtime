@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from affordance_runtime.benchmarks.console.server import (
-    ConsoleRun,
-    ConsoleRunManager,
-    ConsoleRunSpec,
-)
 from affordance_runtime.benchmarks.external_breadth.contracts import (
     MiniWobBreadthCase,
     MiniWobBreadthManifest,
+)
+from affordance_runtime.benchmarks.lab import (
+    BenchmarkLabManager,
+    BenchmarkLabRun,
+    BenchmarkLabRunSpec,
 )
 
 
@@ -59,8 +59,8 @@ def manifest() -> MiniWobBreadthManifest:
     )
 
 
-def _manager(tmp_path: Path, manifest: MiniWobBreadthManifest) -> ConsoleRunManager:
-    return ConsoleRunManager(
+def _manager(tmp_path: Path, manifest: MiniWobBreadthManifest) -> BenchmarkLabManager:
+    return BenchmarkLabManager(
         tmp_path,
         python_executable="/fixed/python",
         environment={
@@ -75,16 +75,16 @@ def _manager(tmp_path: Path, manifest: MiniWobBreadthManifest) -> ConsoleRunMana
 
 def test_run_spec_rejects_unbounded_or_conflicting_inputs() -> None:
     with pytest.raises(ValueError, match="action_model"):
-        ConsoleRunSpec("case", "model id with spaces", "disabled")
+        BenchmarkLabRunSpec(case_id="case", action_model="model id with spaces", goal_compiler_mode="disabled")
     with pytest.raises(ValueError, match="cannot select"):
-        ConsoleRunSpec("case", "glm-4.6", "disabled", "glm-4.7-flash")
+        BenchmarkLabRunSpec(case_id="case", action_model="glm-4.6", goal_compiler_mode="disabled", goal_compiler_model="glm-4.7-flash")
     with pytest.raises(ValueError, match="uppercase"):
-        ConsoleRunSpec("case", "glm-4.6", "model", "glm-4.7-flash", profile="shell;run")
+        BenchmarkLabRunSpec(case_id="case", action_model="glm-4.6", goal_compiler_mode="model", goal_compiler_model="glm-4.7-flash", profile="shell;run")
     with pytest.raises(ValueError, match="not a valid ActionPolicyWireCapability"):
-        ConsoleRunSpec(
-            "case",
-            "glm-4.6",
-            "disabled",
+        BenchmarkLabRunSpec(
+            case_id="case",
+            action_model="glm-4.6",
+            goal_compiler_mode="disabled",
             action_wire_capability="parallel_tools",
         )
 
@@ -95,20 +95,18 @@ def test_configuration_exposes_manifest_choices_without_secrets(
 ) -> None:
     payload = _manager(tmp_path, manifest).configuration()
 
-    assert payload["provider_ready"] is True
-    assert payload["cases"] == [{
+    assert payload.provider_ready is True
+    assert [item.model_dump() for item in payload.cases] == [{
         "case_id": "miniwob-60-17",
         "task_id": "social-media-all",
         "seed": 7,
         "max_turns": 10,
         "timeout_s": 180.0,
     }]
-    assert "configured-action" in {item["id"] for item in payload["action_models"]}
-    assert payload["action_wire_capabilities"] == [
-        "native_single_tool",
-    ]
-    assert "configured-goal" in payload["goal_models"]
-    assert "top-secret" not in json.dumps(payload)
+    assert "configured-action" in {item.id for item in payload.action_models}
+    assert payload.action_wire_capabilities == ("native_single_tool",)
+    assert "configured-goal" in payload.goal_models
+    assert "top-secret" not in payload.model_dump_json()
 
 
 def test_role_selection_only_changes_owned_environment(
@@ -116,16 +114,16 @@ def test_role_selection_only_changes_owned_environment(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    enabled = manager._run_environment(ConsoleRunSpec(
-        "miniwob-60-17",
-        "glm-4.6",
-        "model",
-        "glm-4.7-flash",
+    enabled = manager._run_environment(BenchmarkLabRunSpec(
+        case_id="miniwob-60-17",
+        action_model="glm-4.6",
+        goal_compiler_mode="model",
+        goal_compiler_model="glm-4.7-flash",
     ))
-    disabled = manager._run_environment(ConsoleRunSpec(
-        "miniwob-60-17",
-        "glm-4.1v-thinking-flashx",
-        "disabled",
+    disabled = manager._run_environment(BenchmarkLabRunSpec(
+        case_id="miniwob-60-17",
+        action_model="glm-4.1v-thinking-flashx",
+        goal_compiler_mode="disabled",
         action_wire_capability="native_single_tool",
     ))
 
@@ -148,12 +146,12 @@ def test_start_invokes_formal_case_runner_with_argv(
         captured.update(command=command, kwargs=kwargs)
         return _Process()
 
-    monkeypatch.setattr("affordance_runtime.benchmarks.console.server.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("affordance_runtime.benchmarks.lab.subprocess.Popen", fake_popen)
     manager = _manager(tmp_path, manifest)
-    run = manager.start(ConsoleRunSpec(
-        "miniwob-60-17",
-        "glm-4.6",
-        "disabled",
+    run = manager.start(BenchmarkLabRunSpec(
+        case_id="miniwob-60-17",
+        action_model="glm-4.6",
+        goal_compiler_mode="disabled",
         profile="CONSOLE_TEST",
     ))
 
@@ -168,7 +166,7 @@ def test_start_invokes_formal_case_runner_with_argv(
     assert str(run.evidence_dir) in command
     assert "shell" not in captured["kwargs"]
     with pytest.raises(RuntimeError, match="active"):
-        manager.start(ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled"))
+        manager.start(BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled"))
 
 
 def test_events_are_read_incrementally_from_append_only_trace(
@@ -176,7 +174,7 @@ def test_events_are_read_incrementally_from_append_only_trace(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    spec = ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled")
+    spec = BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled")
     evidence_dir = tmp_path / "evidence"
     trace_dir = evidence_dir / "traces" / spec.case_id
     trace_dir.mkdir(parents=True)
@@ -186,13 +184,13 @@ def test_events_are_read_incrementally_from_append_only_trace(
         '{"event":',
         encoding="utf-8",
     )
-    run = ConsoleRun("run-1", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
+    run = BenchmarkLabRun("run-1", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
     manager._runs[run.run_id] = run
 
     payload = manager.events(run.run_id, after=1)
 
-    assert payload["events"] == [{"event": "model_turn", "sequence": 2}]
-    assert payload["next_cursor"] == 2
+    assert payload.events == ({"event": "model_turn", "sequence": 2},)
+    assert payload.next_cursor == 2
 
 
 def test_public_activity_projects_owner_facts_without_private_trace_payloads(
@@ -200,7 +198,7 @@ def test_public_activity_projects_owner_facts_without_private_trace_payloads(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    spec = ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled")
+    spec = BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled")
     evidence_dir = tmp_path / "evidence"
     trace_dir = evidence_dir / "traces" / spec.case_id
     trace_dir.mkdir(parents=True)
@@ -243,12 +241,12 @@ def test_public_activity_projects_owner_facts_without_private_trace_payloads(
         "".join(json.dumps(item) + "\n" for item in events),
         encoding="utf-8",
     )
-    run = ConsoleRun("run-public", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
+    run = BenchmarkLabRun("run-public", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
     manager._runs[run.run_id] = run
 
     payload = manager.activity(run.run_id)
 
-    assert payload["events"] == [
+    assert payload.events == (
         {
             "event": "run_started",
             "sequence": 1,
@@ -272,8 +270,8 @@ def test_public_activity_projects_owner_facts_without_private_trace_payloads(
             "sequence": 3,
             "exception_class": "ProviderError",
         },
-    ]
-    encoded = json.dumps(payload["events"])
+    )
+    encoded = json.dumps(payload.events)
     assert "selector" not in encoded
     assert "binding_id" not in encoded
     assert "private-target" not in encoded
@@ -285,7 +283,7 @@ def test_browser_frame_uses_latest_digest_verified_trace_artifact(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    spec = ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled")
+    spec = BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled")
     evidence_dir = tmp_path / "evidence"
     trace_dir = evidence_dir / "traces" / spec.case_id
     artifact_dir = trace_dir / "artifacts"
@@ -319,7 +317,7 @@ def test_browser_frame_uses_latest_digest_verified_trace_artifact(
         )) + "\n",
         encoding="utf-8",
     )
-    run = ConsoleRun("run-frame", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
+    run = BenchmarkLabRun("run-frame", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
     manager._runs[run.run_id] = run
 
     frame = manager.browser_frame(run.run_id)
@@ -336,7 +334,7 @@ def test_browser_frame_rejects_artifacts_outside_trace_directory(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    spec = ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled")
+    spec = BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled")
     evidence_dir = tmp_path / "evidence"
     trace_dir = evidence_dir / "traces" / spec.case_id
     trace_dir.mkdir(parents=True)
@@ -355,7 +353,7 @@ def test_browser_frame_rejects_artifacts_outside_trace_directory(
         }) + "\n",
         encoding="utf-8",
     )
-    run = ConsoleRun("run-private", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
+    run = BenchmarkLabRun("run-private", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
     manager._runs[run.run_id] = run
 
     assert manager.browser_frame(run.run_id) is None
@@ -366,9 +364,9 @@ def test_list_runs_is_newest_first_and_bounded(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    spec = ConsoleRunSpec("miniwob-60-17", "glm-4.6", "disabled")
-    older = ConsoleRun("older", spec, tmp_path / "older", ("formal",), "2026-08-16T00:00:00+00:00", _Process(0))
-    newer = ConsoleRun("newer", spec, tmp_path / "newer", ("formal",), "2026-08-17T00:00:00+00:00", _Process(1))
+    spec = BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled")
+    older = BenchmarkLabRun("older", spec, tmp_path / "older", ("formal",), "2026-08-16T00:00:00+00:00", _Process(0))
+    newer = BenchmarkLabRun("newer", spec, tmp_path / "newer", ("formal",), "2026-08-17T00:00:00+00:00", _Process(1))
     manager._runs = {older.run_id: older, newer.run_id: newer}
 
-    assert [item["run_id"] for item in manager.list_runs()] == ["newer", "older"]
+    assert [item.run_id for item in manager.list_runs().runs] == ["newer", "older"]

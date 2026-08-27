@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "valibot";
 import { vRuntimeSessionSnapshot } from "@/generated/valibot.gen";
 import { projectShellView } from "@/session/view-model";
@@ -22,6 +22,8 @@ const base = () => parse(vRuntimeSessionSnapshot, {
   surface: { status: "unavailable", reason_code: "surface_not_configured" },
 });
 
+afterEach(cleanup);
+
 describe("public fact renderers", () => {
   it("renders typed unavailable without provider or lease inference", () => {
     render(<LiveView view={projectShellView(base())} />);
@@ -34,11 +36,12 @@ describe("public fact renderers", () => {
       ...base(),
       surface: { status: "read_only", surface_kind: "web", presentation: "live_media", protected_path: "/viewer/session-1" },
     });
-    render(<LiveView view={projectShellView(snapshot)} />);
-    const frame = screen.getByTitle("Read-only live surface");
+    const rendered = render(<LiveView view={projectShellView(snapshot)} />);
+    const scope = within(rendered.container);
+    const frame = scope.getByTitle("Read-only live surface");
     expect(frame).toHaveAttribute("src", "/viewer/session-1");
     expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
-    expect(screen.getByTestId("surface-control-state")).toHaveTextContent("agent control");
+    expect(scope.getByTestId("surface-control-state")).toHaveTextContent("Agent 控制");
   });
 
   it("reloads an interactive surface when the opaque lease changes", () => {

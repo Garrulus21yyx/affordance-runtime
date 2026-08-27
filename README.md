@@ -117,25 +117,17 @@ active provider and transport implementation; when omitted, ActionPolicy and Goa
 Set `LLM_GOAL_COMPILER_MODE=disabled` only for an explicit no-guidance diagnostic; it injects the existing unavailable
 compiler and makes zero compiler provider calls. The default remains `model`.
 
-### Local experiment console
+### Unified interaction Console
 
-The loopback-only flight recorder lets one operator choose a frozen MiniWoB case, the ActionPolicy model, the
-GoalCompiler model (or explicitly disable that role), and the perception/profile labels before launching the existing
-formal `run-case` entrypoint:
+The Next.js Interaction Shell is the only Console. Its ordinary task composer uses the versioned Runtime session API,
+SSE snapshots, command offers, and protected live viewer. Its Labs drawer uses the benchmark-owned formal `run-case`
+launcher and persisted evidence reader; no second static Console or `http.server` entrypoint exists.
 
-```bash
-set -a
-source .env
-set +a
-export PYTHONPATH=src:tests
-/home/yang/.venvs/affordance-browsergym-py312/bin/python -m affordance_runtime.benchmarks.console.server
-```
-
-Open `http://127.0.0.1:8765`. The middle rail follows the append-only `trace.jsonl` while the right inspector exposes
-the exact event JSON and runner output. Evidence remains under `evidence/live`; the page neither reconstructs Runtime
-facts nor creates a second benchmark path. It accepts only cases from the frozen manifest, validates bounded model and
-profile identifiers, launches with an argv list rather than a shell, permits one active run, and never returns provider
-keys or environment values. Remote binding is disabled unless explicitly requested with `--allow-remote`.
+Start `interaction_shell.deployment_app:app` and the frontend as described in
+[`external/interaction-shell/README.md`](external/interaction-shell/README.md). Open `http://127.0.0.1:3100` to submit
+ordinary tasks, answer/confirm/revise/pause them, inspect the live surface, or open Labs for frozen benchmark cases,
+Bad Cases, raw local evidence, and runner output. Labs still accepts only bounded manifest/model/profile inputs,
+launches the existing runner with an argv list, permits one active formal run, and never returns provider secrets.
 
 For complete local tracing set `AFFORDANCE_TRACE_DIR`. To add the read-only Langfuse/OTel viewer, install the
 `observability` extra and set `AFFORDANCE_LANGFUSE_ENABLED=true`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and

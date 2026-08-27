@@ -8,6 +8,7 @@ import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
 from ag_ui.core import CustomEvent
@@ -15,6 +16,15 @@ from ag_ui.encoder import EventEncoder
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
+
+from affordance_runtime.benchmarks.lab import (
+    BenchmarkLabConfiguration,
+    BenchmarkLabEventPage,
+    BenchmarkLabManager,
+    BenchmarkLabRunList,
+    BenchmarkLabRunSpec,
+    BenchmarkLabRunSummary,
+)
 
 from .completed_runs import CompletedRunSummary, CompletedRunSummaryResolver
 from .contracts import (
@@ -67,6 +77,7 @@ def create_app(
     viewer_gateway: ViewerGateway | None = None,
     completed_run_resolver: CompletedRunSummaryResolver | None = None,
     evidence_access_key: str = "",
+    lab_manager: BenchmarkLabManager | None = None,
 ) -> FastAPI:
     shell = manager or RunSessionManager(UnavailableRuntimeSessionPort())
 
@@ -96,6 +107,118 @@ def create_app(
         if inspect.isawaitable(value):
             value = await value
         return dict(value)
+
+    def labs() -> BenchmarkLabManager:
+        if lab_manager is None:
+            raise HTTPException(503, "benchmark Labs unavailable")
+        return lab_manager
+
+    @app.get(
+        "/labs/config",
+        response_model=BenchmarkLabConfiguration,
+        operation_id="getLabConfiguration",
+    )
+    async def lab_configuration() -> BenchmarkLabConfiguration:
+        return labs().configuration()
+
+    @app.get(
+        "/labs/runs",
+        response_model=BenchmarkLabRunList,
+        operation_id="listLabRuns",
+    )
+    async def list_lab_runs() -> BenchmarkLabRunList:
+        return labs().list_runs()
+
+    @app.get(
+        "/labs/runs/current",
+        response_model=BenchmarkLabRunSummary | None,
+        operation_id="getCurrentLabRun",
+    )
+    async def current_lab_run() -> BenchmarkLabRunSummary | None:
+        return labs().current()
+
+    @app.post(
+        "/labs/runs",
+        response_model=BenchmarkLabRunSummary,
+        status_code=201,
+        operation_id="startLabRun",
+    )
+    async def start_lab_run(body: BenchmarkLabRunSpec) -> BenchmarkLabRunSummary:
+        try:
+            return labs().start(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get(
+        "/labs/runs/{run_id}",
+        response_model=BenchmarkLabRunSummary,
+        operation_id="getLabRun",
+    )
+    async def get_lab_run(run_id: str) -> BenchmarkLabRunSummary:
+        try:
+            return labs().get(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get(
+        "/labs/runs/{run_id}/events",
+        response_model=BenchmarkLabEventPage,
+        operation_id="getLabRunEvents",
+    )
+    async def get_lab_run_events(run_id: str, after: int = 0) -> BenchmarkLabEventPage:
+        try:
+            return labs().events(run_id, after)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get(
+        "/labs/runs/{run_id}/activity",
+        response_model=BenchmarkLabEventPage,
+        operation_id="getLabRunActivity",
+    )
+    async def get_lab_run_activity(run_id: str, after: int = 0) -> BenchmarkLabEventPage:
+        try:
+            return labs().activity(run_id, after)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get(
+        "/labs/runs/{run_id}/browser-frame",
+        operation_id="getLabRunBrowserFrame",
+    )
+    async def get_lab_run_browser_frame(run_id: str) -> Response:
+        try:
+            frame = labs().browser_frame(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if frame is None:
+            raise HTTPException(404, "browser frame is not available yet")
+        return Response(
+            content=frame.data,
+            media_type=frame.media_type,
+            headers={
+                "Cache-Control": "no-store",
+                "ETag": f'"{frame.sha256}"',
+                "X-Observation-Id": frame.observation_id,
+            },
+        )
+
+    @app.post(
+        "/labs/runs/{run_id}/stop",
+        response_model=BenchmarkLabRunSummary,
+        operation_id="stopLabRun",
+    )
+    async def stop_lab_run(run_id: str) -> BenchmarkLabRunSummary:
+        try:
+            return labs().stop(run_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     async def authorize_viewer(request: Request | WebSocket, session_id: str) -> RuntimeSessionSnapshot:
         session_key = request.cookies.get(_viewer_cookie_name(session_id))
@@ -305,7 +428,7 @@ def create_app(
         )
 
     @app.get(
-        "/diagnostics",
+        "/labs/completed-runs",
         response_model=list[CompletedRunSummary],
         operation_id="listCompletedRuns",
     )
@@ -313,7 +436,7 @@ def create_app(
         return list(completed_runs.list())
 
     @app.get(
-        "/diagnostics/evidence/{locator_id}/result",
+        "/labs/completed-runs/evidence/{locator_id}/result",
         operation_id="getCompletedRunResult",
     )
     async def completed_result(
@@ -532,6 +655,7 @@ if os.getenv("INTERACTION_SHELL_DEMO", "").lower() == "true":
         RunSessionManager(ContractDemoPort()),
         completed_run_resolver=CompletedRunSummaryResolver.from_environment(),
         evidence_access_key=os.getenv("INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""),
+        lab_manager=BenchmarkLabManager(Path("evidence/live")),
     )
 else:
     app = create_app(

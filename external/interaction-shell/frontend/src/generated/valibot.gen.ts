@@ -12,6 +12,86 @@ export const vAnswerQuestionOffer = v.strictObject({
 });
 
 /**
+ * BenchmarkLabCase
+ */
+export const vBenchmarkLabCase = v.strictObject({
+    case_id: v.string(),
+    max_turns: v.pipe(v.number(), v.integer()),
+    seed: v.pipe(v.number(), v.integer()),
+    task_id: v.string(),
+    timeout_s: v.number()
+});
+
+/**
+ * BenchmarkLabModel
+ */
+export const vBenchmarkLabModel = v.strictObject({
+    id: v.string(),
+    multimodal: v.optional(v.boolean(), false)
+});
+
+/**
+ * BenchmarkLabConfiguration
+ */
+export const vBenchmarkLabConfiguration = v.strictObject({
+    action_models: v.array(vBenchmarkLabModel),
+    action_wire_capabilities: v.array(v.string()),
+    cases: v.array(vBenchmarkLabCase),
+    goal_models: v.array(v.string()),
+    manifest: v.string(),
+    perception_profiles: v.array(v.string()),
+    provider: v.string(),
+    provider_ready: v.boolean()
+});
+
+/**
+ * BenchmarkLabRunSpec
+ */
+export const vBenchmarkLabRunSpec = v.strictObject({
+    action_model: v.pipe(v.string(), v.minLength(1), v.maxLength(120)),
+    action_wire_capability: v.optional(v.string(), 'native_single_tool'),
+    case_id: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
+    goal_compiler_mode: v.picklist(['model', 'disabled']),
+    goal_compiler_model: v.optional(v.pipe(v.string(), v.maxLength(120)), ''),
+    perception_profile: v.optional(v.string(), 'structure-first.v1'),
+    profile: v.optional(v.string(), 'CONSOLE_RUN')
+});
+
+/**
+ * BenchmarkLabRunSummary
+ */
+export const vBenchmarkLabRunSummary = v.strictObject({
+    evidence_dir: v.string(),
+    report: v.nullish(v.record(v.string(), v.unknown())),
+    return_code: v.nullable(v.pipe(v.number(), v.integer())),
+    run_id: v.string(),
+    spec: vBenchmarkLabRunSpec,
+    started_at: v.string(),
+    status: v.picklist([
+        'running',
+        'completed',
+        'failed'
+    ]),
+    stdout_tail: v.optional(v.array(v.string()), [])
+});
+
+/**
+ * BenchmarkLabEventPage
+ */
+export const vBenchmarkLabEventPage = v.strictObject({
+    events: v.array(v.record(v.string(), v.unknown())),
+    next_cursor: v.pipe(v.number(), v.integer(), v.minValue(0)),
+    run: vBenchmarkLabRunSummary
+});
+
+/**
+ * BenchmarkLabRunList
+ */
+export const vBenchmarkLabRunList = v.strictObject({
+    runs: v.array(vBenchmarkLabRunSummary)
+});
+
+/**
  * CancelTaskOffer
  */
 export const vCancelTaskOffer = v.strictObject({
@@ -633,6 +713,13 @@ export const vHttpValidationError = v.object({
 });
 
 /**
+ * Response Gethealth
+ *
+ * Successful Response
+ */
+export const vGetHealthResponse = v.record(v.string(), v.unknown());
+
+/**
  * Response Listcompletedruns
  *
  * Successful Response
@@ -648,11 +735,76 @@ export const vGetCompletedRunResultPath = v.object({
 });
 
 /**
- * Response Gethealth
+ * Successful Response
+ */
+export const vGetLabConfigurationResponse = vBenchmarkLabConfiguration;
+
+/**
+ * Successful Response
+ */
+export const vListLabRunsResponse = vBenchmarkLabRunList;
+
+export const vStartLabRunBody = vBenchmarkLabRunSpec;
+
+/**
+ * Successful Response
+ */
+export const vStartLabRunResponse = vBenchmarkLabRunSummary;
+
+/**
+ * Response Getcurrentlabrun
  *
  * Successful Response
  */
-export const vGetHealthResponse = v.record(v.string(), v.unknown());
+export const vGetCurrentLabRunResponse = v.nullable(vBenchmarkLabRunSummary);
+
+export const vGetLabRunPath = v.object({
+    run_id: v.string()
+});
+
+/**
+ * Successful Response
+ */
+export const vGetLabRunResponse = vBenchmarkLabRunSummary;
+
+export const vGetLabRunActivityPath = v.object({
+    run_id: v.string()
+});
+
+export const vGetLabRunActivityQuery = v.object({
+    after: v.optional(v.pipe(v.number(), v.integer()), 0)
+});
+
+/**
+ * Successful Response
+ */
+export const vGetLabRunActivityResponse = vBenchmarkLabEventPage;
+
+export const vGetLabRunBrowserFramePath = v.object({
+    run_id: v.string()
+});
+
+export const vGetLabRunEventsPath = v.object({
+    run_id: v.string()
+});
+
+export const vGetLabRunEventsQuery = v.object({
+    after: v.optional(v.pipe(v.number(), v.integer()), 0)
+});
+
+/**
+ * Successful Response
+ */
+export const vGetLabRunEventsResponse = vBenchmarkLabEventPage;
+
+export const vStopLabRunPath = v.object({
+    run_id: v.string()
+});
+
+/**
+ * Successful Response
+ */
+export const vStopLabRunResponse = vBenchmarkLabRunSummary;
 
 /**
  * Successful Response

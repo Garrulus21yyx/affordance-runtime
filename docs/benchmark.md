@@ -2,6 +2,17 @@
 
 ## Current status
 
+### 2026-08-27 unified Console integration
+
+The standalone benchmark Console has been retired. Its formal `run-case` launcher and bounded trace/frame reader now
+belong to `affordance_runtime.benchmarks.lab` and are exposed through the existing Interaction Shell FastAPI/OpenAPI
+boundary. The sole Next.js Console contains ordinary Runtime interaction plus a lazy-loaded Labs drawer for frozen
+cases, Bad Cases, evidence, and runner output. Ordinary product rendering does not query Labs until the drawer opens.
+
+This is a presentation and control-surface consolidation, not benchmark-result evidence. It changes no CoreLoop,
+ActionPolicy, World, ToolReturn, evaluator, or formal runner semantics, and no live benchmark was launched for it.
+Provider-free manager/API/schema/frontend/browser tests are its acceptance evidence.
+
 Task426
 [`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
 is the current failed pre-repair witness for generation-local grounding. The run made 31 policy calls, 18 executions,

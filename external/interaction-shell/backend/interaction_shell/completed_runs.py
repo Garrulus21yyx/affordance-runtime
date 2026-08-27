@@ -128,7 +128,7 @@ class CompletedRunSummaryResolver:
                             else None
                         ),
                         local_evidence_url=(
-                            f"/diagnostics/evidence/{locator_id}/result"
+                            f"/labs/completed-runs/evidence/{locator_id}/result"
                             if self._local_evidence_enabled
                             else None
                         ),

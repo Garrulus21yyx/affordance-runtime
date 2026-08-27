@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Full Web control profile implemented and verified through Phase 9; Interaction Shell frontend governance Phase 0–3 implemented and provider-free verified as the sole v3 contract; the Shell control/recovery path is adapted onto and provider-free verified against the local simplify Runtime/provider pipeline; Phase 10 analysis-surface consolidation is implemented provider-free, with a fresh remote Langfuse API witness pending separate evidence**
+Status: **Full Web control profile implemented and verified through Phase 9; the v3 session contract and benchmark Labs now share one mint/apricot Next.js Console; the former Flight Deck and standalone static benchmark Console are retired; fresh provider-free/browser verification for this presentation consolidation is recorded in the main architecture and benchmark documents**
 
 Date: 2026-08-27
 
@@ -12,9 +12,9 @@ architecture and benchmark closure remain governed by the main Runtime architect
 ## 1. Decision
 
 Build one external Web shell. It is neither a second GUI Agent nor an internal Core module. It owns user-facing session
-lifecycle, command serialization, bounded conversational revision input, event delivery, bounded evaluation summary
-links, and browser viewing. It consumes only versioned typed Runtime commands, events, snapshots, trace exports, and benchmark
-artifacts. It does not import, mutate, or drive `CoreAgentLoop` internals.
+lifecycle, command serialization, bounded conversational revision input, event delivery, browser viewing, and the
+single Labs presentation. It consumes versioned typed Runtime commands/events/snapshots plus benchmark-owner Labs
+contracts and artifacts. It does not import, mutate, or drive `CoreAgentLoop` internals.
 
 The shell contract, synthetic demo, frontend, diagnosis projection, provider-free tests, and local real-execution
 profile are implemented. The production-safe default deliberately uses an unavailable Runtime port, while

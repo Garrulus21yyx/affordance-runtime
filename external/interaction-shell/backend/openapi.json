@@ -139,6 +139,291 @@
         "title": "ApproveAction",
         "type": "object"
       },
+      "BenchmarkLabCase": {
+        "additionalProperties": false,
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "max_turns": {
+            "title": "Max Turns",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "timeout_s": {
+            "title": "Timeout S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "case_id",
+          "task_id",
+          "seed",
+          "max_turns",
+          "timeout_s"
+        ],
+        "title": "BenchmarkLabCase",
+        "type": "object"
+      },
+      "BenchmarkLabConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "action_models": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkLabModel"
+            },
+            "title": "Action Models",
+            "type": "array"
+          },
+          "action_wire_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Action Wire Capabilities",
+            "type": "array"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkLabCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "goal_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Goal Models",
+            "type": "array"
+          },
+          "manifest": {
+            "title": "Manifest",
+            "type": "string"
+          },
+          "perception_profiles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Perception Profiles",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_ready": {
+            "title": "Provider Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manifest",
+          "provider",
+          "provider_ready",
+          "action_models",
+          "action_wire_capabilities",
+          "goal_models",
+          "perception_profiles",
+          "cases"
+        ],
+        "title": "BenchmarkLabConfiguration",
+        "type": "object"
+      },
+      "BenchmarkLabEventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_cursor": {
+            "minimum": 0.0,
+            "title": "Next Cursor",
+            "type": "integer"
+          },
+          "run": {
+            "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor",
+          "run"
+        ],
+        "title": "BenchmarkLabEventPage",
+        "type": "object"
+      },
+      "BenchmarkLabModel": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "multimodal": {
+            "default": false,
+            "title": "Multimodal",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "BenchmarkLabModel",
+        "type": "object"
+      },
+      "BenchmarkLabRunList": {
+        "additionalProperties": false,
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "BenchmarkLabRunList",
+        "type": "object"
+      },
+      "BenchmarkLabRunSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "action_model": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Action Model",
+            "type": "string"
+          },
+          "action_wire_capability": {
+            "default": "native_single_tool",
+            "title": "Action Wire Capability",
+            "type": "string"
+          },
+          "case_id": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Case Id",
+            "type": "string"
+          },
+          "goal_compiler_mode": {
+            "enum": [
+              "model",
+              "disabled"
+            ],
+            "title": "Goal Compiler Mode",
+            "type": "string"
+          },
+          "goal_compiler_model": {
+            "default": "",
+            "maxLength": 120,
+            "title": "Goal Compiler Model",
+            "type": "string"
+          },
+          "perception_profile": {
+            "default": "structure-first.v1",
+            "title": "Perception Profile",
+            "type": "string"
+          },
+          "profile": {
+            "default": "CONSOLE_RUN",
+            "title": "Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "action_model",
+          "goal_compiler_mode"
+        ],
+        "title": "BenchmarkLabRunSpec",
+        "type": "object"
+      },
+      "BenchmarkLabRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_dir": {
+            "title": "Evidence Dir",
+            "type": "string"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          },
+          "return_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Code"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/BenchmarkLabRunSpec"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stdout_tail": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Stdout Tail",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "return_code",
+          "started_at",
+          "spec",
+          "evidence_dir"
+        ],
+        "title": "BenchmarkLabRunSummary",
+        "type": "object"
+      },
       "CancelTask": {
         "additionalProperties": false,
         "properties": {
@@ -1979,7 +2264,27 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/diagnostics": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gethealth",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/labs/completed-runs": {
       "get": {
         "operationId": "listCompletedRuns",
         "responses": {
@@ -2001,7 +2306,7 @@
         "summary": "List Diagnostics"
       }
     },
-    "/diagnostics/evidence/{locator_id}/result": {
+    "/labs/completed-runs/evidence/{locator_id}/result": {
       "get": {
         "operationId": "getCompletedRunResult",
         "parameters": [
@@ -2054,24 +2359,315 @@
         "summary": "Completed Result"
       }
     },
-    "/health": {
+    "/labs/config": {
       "get": {
-        "operationId": "getHealth",
+        "operationId": "getLabConfiguration",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Gethealth",
-                  "type": "object"
+                  "$ref": "#/components/schemas/BenchmarkLabConfiguration"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Health"
+        "summary": "Lab Configuration"
+      }
+    },
+    "/labs/runs": {
+      "get": {
+        "operationId": "listLabRuns",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabRunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Lab Runs"
+      },
+      "post": {
+        "operationId": "startLabRun",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchmarkLabRunSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Lab Run"
+      }
+    },
+    "/labs/runs/current": {
+      "get": {
+        "operationId": "getCurrentLabRun",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Getcurrentlabrun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Lab Run"
+      }
+    },
+    "/labs/runs/{run_id}": {
+      "get": {
+        "operationId": "getLabRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lab Run"
+      }
+    },
+    "/labs/runs/{run_id}/activity": {
+      "get": {
+        "operationId": "getLabRunActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lab Run Activity"
+      }
+    },
+    "/labs/runs/{run_id}/browser-frame": {
+      "get": {
+        "operationId": "getLabRunBrowserFrame",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lab Run Browser Frame"
+      }
+    },
+    "/labs/runs/{run_id}/events": {
+      "get": {
+        "operationId": "getLabRunEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Lab Run Events"
+      }
+    },
+    "/labs/runs/{run_id}/stop": {
+      "post": {
+        "operationId": "stopLabRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkLabRunSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Lab Run"
       }
     },
     "/schemas/shell-event": {

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateSessionData, CreateSessionErrors, CreateSessionResponses, GetCompletedRunResultData, GetCompletedRunResultErrors, GetCompletedRunResultResponses, GetHealthData, GetHealthResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetShellEventSchemaData, GetShellEventSchemaResponses, ListCompletedRunsData, ListCompletedRunsResponses, RecoverSessionData, RecoverSessionErrors, RecoverSessionResponses, SubmitCommandData, SubmitCommandErrors, SubmitCommandResponses, SubscribeSessionEventsData, SubscribeSessionEventsErrors, SubscribeSessionEventsResponse, SubscribeSessionEventsResponses } from './types.gen';
+import type { CreateSessionData, CreateSessionErrors, CreateSessionResponses, GetCompletedRunResultData, GetCompletedRunResultErrors, GetCompletedRunResultResponses, GetCurrentLabRunData, GetCurrentLabRunResponses, GetHealthData, GetHealthResponses, GetLabConfigurationData, GetLabConfigurationResponses, GetLabRunActivityData, GetLabRunActivityErrors, GetLabRunActivityResponses, GetLabRunBrowserFrameData, GetLabRunBrowserFrameErrors, GetLabRunBrowserFrameResponses, GetLabRunData, GetLabRunErrors, GetLabRunEventsData, GetLabRunEventsErrors, GetLabRunEventsResponses, GetLabRunResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetShellEventSchemaData, GetShellEventSchemaResponses, ListCompletedRunsData, ListCompletedRunsResponses, ListLabRunsData, ListLabRunsResponses, RecoverSessionData, RecoverSessionErrors, RecoverSessionResponses, StartLabRunData, StartLabRunErrors, StartLabRunResponses, StopLabRunData, StopLabRunErrors, StopLabRunResponses, SubmitCommandData, SubmitCommandErrors, SubmitCommandResponses, SubscribeSessionEventsData, SubscribeSessionEventsErrors, SubscribeSessionEventsResponse, SubscribeSessionEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,19 +19,71 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
+ * Health
+ */
+export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({ url: '/health', ...options });
+
+/**
  * List Diagnostics
  */
-export const listCompletedRuns = <ThrowOnError extends boolean = false>(options?: Options<ListCompletedRunsData, ThrowOnError>): RequestResult<ListCompletedRunsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListCompletedRunsResponses, unknown, ThrowOnError>({ url: '/diagnostics', ...options });
+export const listCompletedRuns = <ThrowOnError extends boolean = false>(options?: Options<ListCompletedRunsData, ThrowOnError>): RequestResult<ListCompletedRunsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListCompletedRunsResponses, unknown, ThrowOnError>({ url: '/labs/completed-runs', ...options });
 
 /**
  * Completed Result
  */
-export const getCompletedRunResult = <ThrowOnError extends boolean = false>(options: Options<GetCompletedRunResultData, ThrowOnError>): RequestResult<GetCompletedRunResultResponses, GetCompletedRunResultErrors, ThrowOnError> => (options.client ?? client).get<GetCompletedRunResultResponses, GetCompletedRunResultErrors, ThrowOnError>({ url: '/diagnostics/evidence/{locator_id}/result', ...options });
+export const getCompletedRunResult = <ThrowOnError extends boolean = false>(options: Options<GetCompletedRunResultData, ThrowOnError>): RequestResult<GetCompletedRunResultResponses, GetCompletedRunResultErrors, ThrowOnError> => (options.client ?? client).get<GetCompletedRunResultResponses, GetCompletedRunResultErrors, ThrowOnError>({ url: '/labs/completed-runs/evidence/{locator_id}/result', ...options });
 
 /**
- * Health
+ * Lab Configuration
  */
-export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({ url: '/health', ...options });
+export const getLabConfiguration = <ThrowOnError extends boolean = false>(options?: Options<GetLabConfigurationData, ThrowOnError>): RequestResult<GetLabConfigurationResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetLabConfigurationResponses, unknown, ThrowOnError>({ url: '/labs/config', ...options });
+
+/**
+ * List Lab Runs
+ */
+export const listLabRuns = <ThrowOnError extends boolean = false>(options?: Options<ListLabRunsData, ThrowOnError>): RequestResult<ListLabRunsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListLabRunsResponses, unknown, ThrowOnError>({ url: '/labs/runs', ...options });
+
+/**
+ * Start Lab Run
+ */
+export const startLabRun = <ThrowOnError extends boolean = false>(options: Options<StartLabRunData, ThrowOnError>): RequestResult<StartLabRunResponses, StartLabRunErrors, ThrowOnError> => (options.client ?? client).post<StartLabRunResponses, StartLabRunErrors, ThrowOnError>({
+    url: '/labs/runs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Current Lab Run
+ */
+export const getCurrentLabRun = <ThrowOnError extends boolean = false>(options?: Options<GetCurrentLabRunData, ThrowOnError>): RequestResult<GetCurrentLabRunResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetCurrentLabRunResponses, unknown, ThrowOnError>({ url: '/labs/runs/current', ...options });
+
+/**
+ * Get Lab Run
+ */
+export const getLabRun = <ThrowOnError extends boolean = false>(options: Options<GetLabRunData, ThrowOnError>): RequestResult<GetLabRunResponses, GetLabRunErrors, ThrowOnError> => (options.client ?? client).get<GetLabRunResponses, GetLabRunErrors, ThrowOnError>({ url: '/labs/runs/{run_id}', ...options });
+
+/**
+ * Get Lab Run Activity
+ */
+export const getLabRunActivity = <ThrowOnError extends boolean = false>(options: Options<GetLabRunActivityData, ThrowOnError>): RequestResult<GetLabRunActivityResponses, GetLabRunActivityErrors, ThrowOnError> => (options.client ?? client).get<GetLabRunActivityResponses, GetLabRunActivityErrors, ThrowOnError>({ url: '/labs/runs/{run_id}/activity', ...options });
+
+/**
+ * Get Lab Run Browser Frame
+ */
+export const getLabRunBrowserFrame = <ThrowOnError extends boolean = false>(options: Options<GetLabRunBrowserFrameData, ThrowOnError>): RequestResult<GetLabRunBrowserFrameResponses, GetLabRunBrowserFrameErrors, ThrowOnError> => (options.client ?? client).get<GetLabRunBrowserFrameResponses, GetLabRunBrowserFrameErrors, ThrowOnError>({ url: '/labs/runs/{run_id}/browser-frame', ...options });
+
+/**
+ * Get Lab Run Events
+ */
+export const getLabRunEvents = <ThrowOnError extends boolean = false>(options: Options<GetLabRunEventsData, ThrowOnError>): RequestResult<GetLabRunEventsResponses, GetLabRunEventsErrors, ThrowOnError> => (options.client ?? client).get<GetLabRunEventsResponses, GetLabRunEventsErrors, ThrowOnError>({ url: '/labs/runs/{run_id}/events', ...options });
+
+/**
+ * Stop Lab Run
+ */
+export const stopLabRun = <ThrowOnError extends boolean = false>(options: Options<StopLabRunData, ThrowOnError>): RequestResult<StopLabRunResponses, StopLabRunErrors, ThrowOnError> => (options.client ?? client).post<StopLabRunResponses, StopLabRunErrors, ThrowOnError>({ url: '/labs/runs/{run_id}/stop', ...options });
 
 /**
  * Shell Event Schema

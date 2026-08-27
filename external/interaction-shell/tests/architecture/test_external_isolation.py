@@ -27,7 +27,7 @@ def test_external_production_has_no_forbidden_runtime_imports():
         assert not any(name == item or name.startswith(item + ".") for name in imports for item in forbidden), path
 
 
-def test_external_runtime_imports_are_limited_to_the_versioned_public_session_port():
+def test_external_core_imports_are_limited_to_public_session_and_benchmark_lab_owners():
     runtime_imports: set[str] = set()
     for path in production_python_files():
         if path.name == "deployment_app.py":
@@ -45,7 +45,10 @@ def test_external_runtime_imports_are_limited_to_the_versioned_public_session_po
             for alias in node.names
             if alias.name.startswith("affordance_runtime")
         )
-    assert runtime_imports == {"affordance_runtime.app.public_session"}
+    assert runtime_imports == {
+        "affordance_runtime.app.public_session",
+        "affordance_runtime.benchmarks.lab",
+    }
 
 
 def test_deployment_composition_imports_only_named_core_owners():
@@ -62,13 +65,16 @@ def test_deployment_composition_imports_only_named_core_owners():
         "affordance_runtime.app.checkpoint",
         "affordance_runtime.app.composition",
         "affordance_runtime.app.public_session",
+        "affordance_runtime.benchmarks.lab",
         "affordance_runtime.evaluation",
         "affordance_runtime.model.policy",
         "affordance_runtime.surfaces.browsergym",
         "affordance_runtime.task",
         "affordance_runtime.world.orchestrator",
     }
-    assert not any("benchmarks" in name for name in imports)
+    assert {name for name in imports if "benchmarks" in name} == {
+        "affordance_runtime.benchmarks.lab"
+    }
 
 
 def test_external_scope_contains_no_platform_or_custom_media_implementation():
@@ -86,6 +92,19 @@ def test_core_paths_are_outside_external_product_scope():
     assert not (EXTERNAL / "src" / "affordance_runtime").exists()
     assert not (EXTERNAL / "docs" / "architecture.md").exists()
     assert not (EXTERNAL / "docs" / "benchmark.md").exists()
+
+
+def test_one_console_owns_session_labs_and_live_surface_presentation():
+    legacy_console = ROOT / "src" / "affordance_runtime" / "benchmarks" / "console"
+    frontend = EXTERNAL / "frontend" / "src"
+    shell = (frontend / "components" / "shell-app.tsx").read_text()
+    assert not (legacy_console / "server.py").exists()
+    assert not (legacy_console / "static" / "index.html").exists()
+    assert not (frontend / "app" / "diagnostics" / "page.tsx").exists()
+    assert "useShellSession" in shell
+    assert "useBenchmarkLabs" in shell
+    assert "LiveView" in shell
+    assert "INTERACTION FLIGHT DECK" not in shell
 
 
 def test_authored_frontend_has_no_transport_or_domain_contract_mirror():
