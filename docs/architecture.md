@@ -109,7 +109,25 @@ a non-empty bounded token; public typed validation enforces the complete support
 repair may delete an undeclared field or a schema-invalid optional field, but never a required field or a valid
 optional operand. The repair still cannot change operation, effect-bearing values, or call multiplicity. Focused
 schema/Catalog/PydanticAI coverage reports 200 passed. The fixed BrowserGym full suite reports 1,841 passed and 19
-skipped, with only the same pre-existing documentation-governance failure. Task426 remains live-open for a clean rerun.
+skipped, with only the same pre-existing documentation-governance failure.
+
+The subsequent
+[`logical-turn-run8`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run8/run.json)
+crossed both repaired boundaries: its optional-cursor representation repair was accepted, its two thinking-length
+responses each used the bounded final-action retry, and it produced nine BrowserGym executions with zero invalid tool
+arguments or grounding gaps. It then exposed a separate recovery-scheduling authority split. Monitor emitted a new
+typed `control_stall` event with its own stable signature after rejecting an exact tab replay, but
+`ActionPolicyReasoningPolicy` downgraded the invocation to ordinary solely because the episode-wide
+`recovery_attempt` was 2. That counter was never the identity or consumption authority for a recovery event.
+
+The recovery-call contract now uses the existing stable event identity only: each previously unseen supported typed
+recovery signature purchases exactly one deliberate ActionPolicy invocation; a consumed signature purchases none.
+The episode attempt remains bounded Monitor feedback and does not suppress a different event. This changes no
+Monitor producer, feedback projection, prompt, progress path, Runtime loop, World, ToolReturn, history, or provider
+retry. Unit and native PydanticAI integration coverage proves distinct route-regression and control-stall signatures
+both receive one deliberate call even when the latter is recovery attempt 2, while replaying either signature remains
+ordinary. The focused recovery/Monitor/CoreLoop/PydanticAI set reports 213 passed and 3 skipped. Task426 remains
+live-open for a post-repair rerun and a held-out long case.
 
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet

@@ -10,13 +10,13 @@ from affordance_runtime.model.policy.reasoning_policy import (
 from tests.support.legacy_compact_json_decision_port import _semantic_choice
 
 
-def _context(kind: str = "", signature: str = ""):
+def _context(kind: str = "", signature: str = "", *, recovery_attempt: int = 1):
     return SimpleNamespace(
         control_feedback=(
             {
                 "kind": kind,
                 "stable_signature": signature,
-                "recovery_attempt": 1,
+                "recovery_attempt": recovery_attempt,
             }
             if kind
             else {}
@@ -56,6 +56,24 @@ def test_one_recovery_event_purchases_at_most_one_deliberate_call() -> None:
     second = policy.select(context, frozenset({"event:stable"}))
     assert first.phase is ActionPolicyInvocationPhase.DELIBERATE
     assert second.phase is ActionPolicyInvocationPhase.ORDINARY
+
+
+def test_each_new_typed_recovery_event_gets_one_deliberate_call_regardless_of_episode_attempt() -> None:
+    policy = ActionPolicyReasoningPolicy()
+    consumed = frozenset({"route:earlier"})
+    later_event = _context(
+        "control_stall",
+        "control:new",
+        recovery_attempt=2,
+    )
+
+    first = policy.select(later_event, consumed)
+    repeated = policy.select(later_event, consumed | {"control:new"})
+
+    assert first.phase is ActionPolicyInvocationPhase.DELIBERATE
+    assert first.trigger is ActionPolicyInvocationTrigger.CONTROL_STALL
+    assert first.recovery_event_signature == "control:new"
+    assert repeated.phase is ActionPolicyInvocationPhase.ORDINARY
 
 
 def test_route_regression_uses_the_existing_operational_deliberate_profile() -> None:

@@ -92,8 +92,24 @@ The owner repair makes cursor uniformly absent-or-nonempty, brings the typed pub
 finite-schema validation, and permits repair to prune only schema-invalid optional fields. Valid optional values,
 required fields, operation, semantic leaf values, call identity, and one-call selection remain protected. Focused
 coverage reports 200 passed; full fixed-BrowserGym verification reports 1,841 passed and 19 skipped plus only the known
-documentation-governance failure. This is provider-free implementation evidence; the same live witness still must be
-rerun.
+documentation-governance failure.
+
+The authorized
+[`logical-turn-run8`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run8/run.json)
+verified both that repair and the logical-turn fallback in a 100.7-second run: 13 policy calls, 9 executions, 10
+observations, one successful representation repair, two successful thinking-length fallbacks, and zero invalid
+arguments or grounding gaps. The run remained blocked before native evaluation. After one closed OSM excursion and a
+tab return, Monitor correctly produced route-regression feedback. An exact prohibited tab replay was then rejected
+without BrowserGym dispatch and produced a new `control_stall:...` stable signature at `recovery_attempt=2`. Although
+the prompt contained the new typed feedback and prohibited attempt, `ActionPolicyReasoningPolicy` selected an ordinary
+call because it incorrectly required every deliberate event to have episode attempt 1; the model repeated that tab
+and exhausted the existing bounded recovery.
+
+The owner repair removes episode attempt number from reasoning admission. Stable recovery identity and the existing
+consumed-signature set now provide the complete bound: every distinct supported typed event receives one deliberate
+call and the same event never receives two. No Replanner, second Monitor, new prompt projection, or task-specific rule
+was introduced. Focused policy/Monitor/CoreLoop/PydanticAI tests report 213 passed and 3 skipped. Run8 remains the
+failed pre-repair witness; a post-repair Task426 rerun and one held-out long case are still required.
 
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:

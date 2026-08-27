@@ -53,12 +53,10 @@ class ActionPolicyReasoningPolicy:
     ) -> ActionPolicyCallProfile:
         feedback = context.control_feedback
         signature = str(feedback.get("stable_signature", ""))
-        attempt = feedback.get("recovery_attempt", 0)
         trigger = _deliberate_trigger(str(feedback.get("kind", "")))
         if (
             signature
             and signature not in consumed_recovery_events
-            and attempt == 1
             and trigger is not None
         ):
             return ActionPolicyCallProfile(

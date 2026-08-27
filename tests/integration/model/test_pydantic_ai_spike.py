@@ -3687,6 +3687,62 @@ def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> N
     asyncio.run(scenario())
 
 
+def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("later-recovery", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        base_context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        first_context = replace(
+            base_context,
+            control_feedback={
+                "kind": "route_regression",
+                "stable_signature": "route:first",
+                "recovery_attempt": 1,
+            },
+        )
+        second_context = replace(
+            base_context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "control:second",
+                "recovery_attempt": 2,
+            },
+        )
+
+        first = await policy.port.generate(ModelDecisionRequest("request:recovery:first", first_context))
+        assert first.output is not None
+        committed = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="provider_free_committed_action",
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:recovery:second",
+                replace(second_context, last_step=committed),
+                last_step=committed,
+            )
+        )
+
+        assert first.attempts[0].phase == "deliberate"
+        assert first.attempts[0].trigger == "operational_stall"
+        assert second.attempts[0].phase == "deliberate"
+        assert second.attempts[0].trigger == "control_stall"
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 2048]
+
+    asyncio.run(scenario())
+
+
 def test_deepseek_deliberate_attempt_records_returned_reasoning() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
