@@ -96,6 +96,21 @@ BrowserGym full suite reports 1,837 passed and 19 skipped; its sole failure rema
 pre-existing `docs/interaction-shell.md` governance count. The provider-output repair remains live-open pending the
 same witness and one fresh held-out long task.
 
+The first post-upgrade Task426 witness,
+[`logical-turn-run7`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run7/run.json),
+failed before execution on a separate representation contract. The initial call supplied one unknown field plus
+`cursor=""`; the bounded representation repair correctly retained the operation and query and removed both fields,
+but the bridge rejected it because the schema declared cursor optional while the binding canonicalized an empty
+cursor as absent. The shared public issue validator also omitted the string `pattern/minLength/maxLength` checks
+already enforced by the exact value validator, so adding a non-empty cursor schema alone could not close the gap.
+
+The positive contract is now uniform across schema, reconciliation, repair, and binding: an opaque cursor is absent or
+a non-empty bounded token; public typed validation enforces the complete supported string algebra; representation
+repair may delete an undeclared field or a schema-invalid optional field, but never a required field or a valid
+optional operand. The repair still cannot change operation, effect-bearing values, or call multiplicity. Focused
+schema/Catalog/PydanticAI coverage reports 200 passed. The fixed BrowserGym full suite reports 1,841 passed and 19
+skipped, with only the same pre-existing documentation-governance failure. Task426 remains live-open for a clean rerun.
+
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
 could not reach the current `Submit` link; Task556 read the exact `Christopher Nolan filmography` link text, then

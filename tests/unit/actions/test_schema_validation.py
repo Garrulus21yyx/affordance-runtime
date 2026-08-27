@@ -130,3 +130,21 @@ def test_array_item_validation_projects_to_a_bounded_public_field_path() -> None
 
     assert issue is not None
     assert issue.public_field_paths == ("parameters.values",)
+
+
+@pytest.mark.parametrize(
+    ("value", "schema"),
+    (
+        ("", {"type": "string", "minLength": 1}),
+        ("too-long", {"type": "string", "maxLength": 3}),
+        ("N1", {"type": "string", "pattern": "^E[1-9][0-9]*$"}),
+    ),
+)
+def test_public_value_issue_matches_string_schema_validation(value, schema) -> None:
+    with pytest.raises(ValueError):
+        validate_value(value, schema)
+
+    issue = validate_value_issue(value, schema)
+
+    assert issue is not None
+    assert issue.public_field_paths == ("parameters",)

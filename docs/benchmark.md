@@ -79,6 +79,22 @@ passed and 19 skipped, with only the pre-existing
 `docs/interaction-shell.md` governance count failing. Live closure remains open for a Task426 rerun and one untouched
 long task.
 
+The first aligned-environment rerun,
+[`logical-turn-run7`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run7/run.json),
+returned a formal failed report after one policy call, zero executions, and one representation repair. The model's
+initial `search_page_content` added an unknown `region_ref` and an empty optional cursor; repair returned the valid
+same-operation/same-query call with both fields removed. Runtime nevertheless reported `invalid_tool_arguments`.
+The cause was one schema-authority split: the tool binding treated empty cursor as absent, its public schema admitted
+the empty string, the repair guard treated every declared optional value as semantic, and the typed public validator
+did not enforce string length/pattern constraints.
+
+The owner repair makes cursor uniformly absent-or-nonempty, brings the typed public validator to parity with exact
+finite-schema validation, and permits repair to prune only schema-invalid optional fields. Valid optional values,
+required fields, operation, semantic leaf values, call identity, and one-call selection remain protected. Focused
+coverage reports 200 passed; full fixed-BrowserGym verification reports 1,841 passed and 19 skipped plus only the known
+documentation-governance failure. This is provider-free implementation evidence; the same live witness still must be
+rerun.
+
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:
 

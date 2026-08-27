@@ -394,6 +394,13 @@ def _value_violation(
         return path, {"const": schema["const"]}, {"constant_match": False}
     if "enum" in schema and value not in schema["enum"]:
         return path, {"enum": tuple(schema["enum"])}, {"type": actual_type, "enum_member": False}
+    if isinstance(value, str):
+        if "pattern" in schema and re.fullmatch(str(schema["pattern"]), value) is None:
+            return path, {"pattern_match": True}, {"pattern_match": False}
+        if "minLength" in schema and len(value) < int(schema["minLength"]):
+            return path, {"minLength": schema["minLength"]}, {"too_short": True}
+        if "maxLength" in schema and len(value) > int(schema["maxLength"]):
+            return path, {"maxLength": schema["maxLength"]}, {"too_long": True}
     if isinstance(value, int | float) and not isinstance(value, bool):
         if not _finite_number(value):
             return path, {"finite": True}, {"finite": False}

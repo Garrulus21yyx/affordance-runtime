@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent.attempt_signature import (
     PublicAttemptSignature,
     public_attempt_signature,
@@ -2895,8 +2896,22 @@ def _is_representation_pruning(
         schema_mapping = schema if isinstance(schema, Mapping) else {}
         properties_value = schema_mapping.get("properties", {})
         properties = properties_value if isinstance(properties_value, Mapping) else {}
-        if any(key in properties and key not in repaired for key in rejected):
-            return False
+        required_value = schema_mapping.get("required", ())
+        required = frozenset(required_value) if isinstance(required_value, (list, tuple)) else frozenset()
+        for key, rejected_value in rejected.items():
+            if key not in properties or key in repaired:
+                continue
+            property_schema = properties[key]
+            # A schema-declared operand carries semantics when valid, even if
+            # optional.  A malformed optional representation may be omitted;
+            # the already-resolved repaired call still has to satisfy the full
+            # current catalog schema before reaching this conservation check.
+            if (
+                key in required
+                or not isinstance(property_schema, Mapping)
+                or validate_value_issue(rejected_value, property_schema) is None
+            ):
+                return False
         return all(
             key in rejected and _is_representation_pruning(rejected[key], value, properties.get(key, {}))
             for key, value in repaired.items()

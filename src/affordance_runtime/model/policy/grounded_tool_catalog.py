@@ -340,6 +340,7 @@ def compile_grounded_tool_catalog(
                             "cursor": {
                                 "type": "string",
                                 "description": "optional next_cursor returned by this same tool",
+                                "minLength": 1,
                                 "maxLength": 512,
                             },
                         },
@@ -366,6 +367,7 @@ def compile_grounded_tool_catalog(
                             "cursor": {
                                 "type": "string",
                                 "description": "optional next_cursor returned by this same tool",
+                                "minLength": 1,
                                 "maxLength": 512,
                             },
                         },
@@ -383,6 +385,7 @@ def compile_grounded_tool_catalog(
                             "cursor": {
                                 "type": "string",
                                 "description": "optional next_cursor returned by this same tool",
+                                "minLength": 1,
                                 "maxLength": 512,
                             }
                         }

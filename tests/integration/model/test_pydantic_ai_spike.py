@@ -4342,7 +4342,7 @@ def test_representation_repair_accepts_new_provider_call_id_and_pairs_that_ident
                     parts=[
                         ToolCallPart(
                             "search_page_content",
-                            {"query": "Vinalhaven", "cursor": ""},
+                            {"query": "Vinalhaven"},
                             repaired_call_id,
                         )
                     ]
@@ -4377,7 +4377,7 @@ def test_representation_repair_accepts_new_provider_call_id_and_pairs_that_ident
         pending = pydantic_bridge._pending_call_from_history(policy.port.message_history)
         assert pending == ToolCall(
             "search_page_content",
-            {"query": "Vinalhaven", "cursor": ""},
+            {"query": "Vinalhaven"},
             repaired_call_id,
         )
 
@@ -4410,6 +4410,53 @@ def test_representation_repair_accepts_new_provider_call_id_and_pairs_that_ident
         }
         assert repaired_call_id in returned_ids
         assert initial_call_id not in returned_ids
+
+    asyncio.run(scenario())
+
+
+def test_representation_repair_prunes_invalid_empty_optional_cursor() -> None:
+    async def scenario() -> None:
+        repaired_call_id = "provider-call:empty-cursor-repair"
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "Shanksville", "cursor": "", "region_ref": "R14"},
+                            "provider-call:empty-cursor-invalid",
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "Shanksville"},
+                            repaired_call_id,
+                        )
+                    ]
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("repair-invalid-empty-cursor", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:repair-invalid-empty-cursor", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, SearchPageContentResult)
+        assert result.output.decision.tool_call_id == repaired_call_id
+        assert result.output.decision.arguments == {"query": "Shanksville"}
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary", "representation_repair"]
 
     asyncio.run(scenario())
 
