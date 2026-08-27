@@ -372,6 +372,70 @@ def _search_fixture_observation(observation_id: str, value: str) -> WorldObserva
     return fused.observation
 
 
+def _autocomplete_fixture_observation(
+    observation_id: str,
+    value: str,
+    selected_index: int,
+) -> WorldObservation:
+    search = SemanticTarget(
+        "autocomplete-search",
+        "searchbox",
+        "Search",
+        {"focused": True, "value": value},
+    )
+    selection = SemanticTarget(
+        "autocomplete-selection",
+        "status",
+        "Autocomplete selection",
+        {"selected_index": selected_index},
+    )
+    binding = ActionBinding(
+        binding_id=f"binding:{observation_id}:arrow-down",
+        world_observation_id=observation_id,
+        source_observation_id=observation_id,
+        source_revision=f"revision:{observation_id}",
+        target_fingerprint="fingerprint:autocomplete-search",
+        target_id=search.target_id,
+        source_target_id=search.target_id,
+        surface="dom",
+        executor_id="dom",
+        semantic_action="press_key",
+        primitive_action="press",
+        effect_category="local_reversible",
+        semantic_effects=("external_ui_interaction",),
+        parameter_schema={
+            "type": "object",
+            "properties": {"key": {"type": "string", "enum": ["ArrowDown"]}},
+            "required": ["key"],
+            "additionalProperties": False,
+        },
+        payload={"selector": "#search"},
+        risk=ActionRisk.LOW,
+    )
+    facts = (
+        StateFact(f"fact:{observation_id}:value", search.target_id, "value", value, observation_id),
+        StateFact(
+            f"fact:{observation_id}:selected",
+            selection.target_id,
+            "selected_index",
+            selected_index,
+            observation_id,
+        ),
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (search, selection),
+        facts,
+        (binding,),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
 class TextTaskEvaluator:
     async def evaluate(self, task, observation):
         value = observation.targets[0].state.get("value")
@@ -1081,6 +1145,88 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert snapshot.no_progress_count == 4
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
         assert snapshot.latest_control_reason_code == "control_stalled"
+
+    asyncio.run(scenario())
+
+
+def test_repeated_keyboard_navigation_is_dispatched_while_each_fresh_world_advances() -> None:
+    @dataclass
+    class AutocompletePolicy:
+        turns: int = 0
+        feedback_kinds: tuple[str, ...] = ()
+
+        async def decide(self, context):
+            self.turns += 1
+            self.feedback_kinds += (str(context.control_feedback.get("kind", "")),)
+            option = next(item for item in context.complete_actions if item.operation == "press_key")
+            return SelectAction(context.context_id, option.action_id, {"key": "ArrowDown"})
+
+    class AutocompleteEvaluator:
+        async def evaluate(self, task, observation):
+            value = next(item for item in observation.targets if item.target_id == "autocomplete-search").state[
+                "value"
+            ]
+            status = (
+                TaskEvaluationStatus.COMPLETE
+                if value == "Shanksville, Pennsylvania"
+                else TaskEvaluationStatus.INCOMPLETE
+            )
+            evidence = next(
+                item.fact_id
+                for item in observation.facts
+                if item.subject_id == "autocomplete-search" and item.predicate == "value"
+            )
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                status,
+                "autocomplete value check",
+                completion_evidence_refs=(evidence,) if status is TaskEvaluationStatus.COMPLETE else (),
+            )
+
+    async def scenario() -> None:
+        task = TaskGoal(
+            "autocomplete-navigation",
+            "Choose Shanksville, Pennsylvania from the autocomplete suggestions.",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        policy = AutocompletePolicy()
+        monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            ProductionActionOutcomeProjector(),
+            AutocompleteEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("autocomplete_navigation_regression"),
+            episode_monitor=monitor,
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=_autocomplete_fixture_observation("autocomplete-0", "Shanksville", 0),
+            post_observations=(
+                _autocomplete_fixture_observation("autocomplete-1", "Shanksville", 1),
+                _autocomplete_fixture_observation("autocomplete-2", "Shanksville, PA", 2),
+                _autocomplete_fixture_observation(
+                    "autocomplete-3",
+                    "Shanksville, Pennsylvania",
+                    3,
+                ),
+            ),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(3)),
+        )
+
+        state = await runtime.run_task(environment, task)
+
+        assert state.status is RunStatus.DONE
+        assert policy.turns == 3
+        assert policy.feedback_kinds == ("", "", "")
+        assert environment.execute_calls == 3
+        assert [item.intent.semantic_action for item in environment.dispatched_requests] == [
+            "press_key",
+            "press_key",
+            "press_key",
+        ]
+        assert monitor.recovery_count == 0
+        assert monitor.same_attempt_streak == 1
 
     asyncio.run(scenario())
 

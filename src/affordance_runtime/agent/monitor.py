@@ -245,11 +245,14 @@ class EpisodeMonitor:
                 self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
-        # A causally dispatched GUI attempt that reached a different fresh
-        # public World starts a new same-world recovery episode even when its
-        # semantic postcondition is not mechanically decidable.  It must not
-        # consume the remaining budget of an earlier read/discovery stall.
-        if gui_dispatched and state_changed and self.recovery_count:
+        # A causally dispatched GUI attempt that reached a semantically
+        # different fresh public World starts a new same-world attempt window,
+        # even when its local postcondition is not mechanically decidable.
+        # Sequential keyboard navigation and repeated scrolling may lawfully
+        # use the same operation while each dispatch advances transient UI
+        # state. Route/cycle detection above still observes the bounded GUI
+        # sequence and therefore remains the strategy-regression authority.
+        if gui_dispatched and state_changed:
             self.observation_only_streak = 0
             self.recovery_count = 0
             self.latest_attempt_signature = gui_signature

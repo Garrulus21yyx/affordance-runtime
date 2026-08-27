@@ -111,6 +111,25 @@ call and the same event never receives two. No Replanner, second Monitor, new pr
 was introduced. Focused policy/Monitor/CoreLoop/PydanticAI tests report 213 passed and 3 skipped. Run8 remains the
 failed pre-repair witness; a post-repair Task426 rerun and one held-out long case are still required.
 
+The post-repair
+[`logical-turn-run9`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run9/run.json)
+ended blocked after 52.1 seconds, nine policy calls, three effectful executions, four observations, and 85,677 total
+tokens. It had zero invalid arguments, grounding gaps, duplicate unknowns, or stale calls. The repaired scheduling
+contract was exercised: the first typed control-stall event received a deliberate call. The signal itself was false,
+however. BrowserGym reported both consecutive `ArrowDown` actions as sent and stable; their fresh World deltas were
+both semantically changed, and the textbox advanced from `Shanksville` to `Shanksville, PA`. Monitor still accumulated
+the identical pre-action signature and called it an unchanged attempt, causing Runtime to reject the next legal
+keyboard step before dispatch.
+
+The Monitor owner repair resets only the same-World attempt window after a causally dispatched semantic World change.
+Route regression and short-cycle detection retain priority and their bounded action sequence; no task relevance or
+keyboard semantics are inferred. Generated owner coverage holds the same public action signature across successive
+changed Worlds and proves it never emits control-stall. A CoreLoop autocomplete regression sends the same ArrowDown
+primitive three times through fresh Worlds and reaches native completion with no recovery feedback. Existing tests
+still prove repeated no-effect Enter dispatches recover and block, identity-only rekeys do not hide a stall, and
+closed routes/cycles remain detected. The focused cross-owner set reports 215 passed and 3 skipped. Run9 is failed
+pre-repair evidence; another Task426 rerun and one held-out long case remain required.
+
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:
 

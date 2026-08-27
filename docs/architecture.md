@@ -129,6 +129,26 @@ both receive one deliberate call even when the latter is recovery attempt 2, whi
 ordinary. The focused recovery/Monitor/CoreLoop/PydanticAI set reports 213 passed and 3 skipped. Task426 remains
 live-open for a post-repair rerun and a held-out long case.
 
+The post-repair
+[`logical-turn-run9`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run9/run.json)
+verified that a new recovery signature at any episode attempt reaches the deliberate profile, but falsified the
+Monitor producer that requested that recovery. Two consecutive `ArrowDown` dispatches were both sent and reached
+stable fresh Worlds; the first changed the autocomplete selection and the second changed the textbox value to
+`Shanksville, PA`. Both owner-produced deltas were `changed=true, semantic_changed=true`. Monitor nevertheless treated
+the repeated operation/target/parameter signature as an unchanged same-World attempt and prohibited the next
+`ArrowDown`. The deliberate policy correctly described the changed value and the remaining keyboard navigation, so
+the rejection—not missing policy context—terminated this run.
+
+Same-World control repetition now has one explicit temporal boundary. After route-regression and short-cycle checks,
+any causally dispatched GUI action that reaches a semantically different fresh World starts a new local attempt
+window, whether or not a recovery was already active. Repeating an operation while scrolling, selecting an
+autocomplete item, or moving keyboard focus is therefore legal while fresh public semantics advance. An unchanged
+World still accumulates exact-replay recovery, and the existing bounded recent GUI sequence still detects A→B→A
+routes and multi-action cycles before this reset. No operation allowlist, page heuristic, extra effect projector, or
+new Monitor state was added. Unit and CoreLoop autocomplete regressions prove identical action signatures across
+changing Worlds remain dispatchable while unchanged Enter replay and route/cycle protections remain closed. The
+focused Monitor/CoreLoop/reasoning/PydanticAI set reports 215 passed and 3 skipped. Live acceptance remains open.
+
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
 could not reach the current `Submit` link; Task556 read the exact `Christopher Nolan filmography` link text, then

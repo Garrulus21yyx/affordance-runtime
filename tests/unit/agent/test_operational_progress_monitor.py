@@ -707,6 +707,29 @@ def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None
     assert recovery.recovery_signal.prohibited_attempt_signature is not None
 
 
+def test_repeated_gui_operation_across_semantically_changed_worlds_is_not_a_same_world_stall() -> None:
+    first_world = _world("observation:keyboard-before", result_text="suggestion 0")
+    second_world = _world("observation:keyboard-step-1", result_text="suggestion 1")
+    third_world = _world("observation:keyboard-step-2", result_text="suggestion 2")
+    first_step = _dispatched_step(first_world, second_world)
+    second_step = _dispatched_step(second_world, third_world)
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    first = _evaluate(monitor, first_step)
+    second = _evaluate(monitor, second_step)
+
+    assert first_step.public_world_delta.semantic_changed
+    assert second_step.public_world_delta.semantic_changed
+    assert monitor_module._gui_attempt_signature(first_step) == monitor_module._gui_attempt_signature(second_step)
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.STATE_CHANGED in second.events
+    assert second.recovery_signal is None
+    assert monitor.recovery_count == 0
+    assert monitor.same_attempt_streak == 1
+
+
 def test_first_closed_gui_route_requests_deliberate_review() -> None:
     portland = _world("observation:portland", route="/wiki/Portland_Maine")
     acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
