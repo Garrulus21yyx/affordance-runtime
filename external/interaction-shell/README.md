@@ -87,11 +87,29 @@ export INTERACTION_SHELL_CHECKPOINT_DB="$PWD/.runtime/interaction-shell-checkpoi
 ```
 
 `/health` reports `runtime_execution`, `viewer`, `durable_pause`, and
-`durable_resume` independently. The first real profile uses local
-BrowserGym/Playwright. Runtime-private SQLite WAL checkpoints make cooperative
-pause durable and provide the reconnectable-lease restart/resume contract.
-Viewer and the local BrowserGym profile's process-restart resume intentionally
-remain typed unavailable until an environment reconnect contract exists.
+`durable_resume` independently. The safe default real profile uses local
+BrowserGym/Playwright and keeps Viewer typed unavailable. Runtime-private SQLite
+WAL checkpoints make cooperative pause durable and provide the reconnectable-
+lease restart/resume contract; the local profile still cannot reconnect its
+Playwright context after process restart.
+
+For the protected read-only Steel profile, keep the provider key in the server
+environment and point BrowserGym at a task host reachable from the cloud browser
+(a loopback/private URL is rejected):
+
+```bash
+export INTERACTION_SHELL_BROWSER_PROVIDER=steel
+export Viewer_API_KEY='<server-only Steel key>'  # STEEL_API_KEY is also accepted
+export MINIWOB_URL=https://tasks.example.test/miniwob/
+export INTERACTION_SHELL_SECURE_COOKIES=true      # when served over HTTPS
+```
+
+BrowserGym executes through Playwright CDP in the exact Steel session whose Live
+View is exposed at the secret-free `/viewer/{session_id}` path. The backend uses
+HttpOnly same-session auth, removes provider locators and reusable credentials
+from Steel's document, and proxies only its read-only WebRTC ICE/WHEP calls.
+Viewer loss remains fail-open for Runtime truth; no screenshot polling, custom
+video path, input WebSocket, second browser, or takeover is added.
 Model-call OpenTelemetry instrumentation is present, but this deployment does
 not yet configure a recording `TracerProvider` or exporter; existing Runtime
 JSONL/Langfuse projection remains the deployed diagnostic path.
@@ -115,12 +133,11 @@ evidence references live only on that surface.
 
 ## Viewer and optional services
 
-The current production default is typed `viewer_not_configured`. A deployment
-adapter may supply a protected same-origin Steel or Browserbase
-path through `ViewerStateProjector`; the contract rejects provider URLs,
-query secrets, writable views, and non-`/viewer/` routes. This shell never
-creates screenshot polling, video encoding, or remote
-mouse/keyboard transport. Langfuse is an optional fail-open diagnosis sink.
+The local/default production profile remains typed Viewer unavailable. The
+explicit Steel profile supplies a protected same-origin path through
+`ViewerStateProjector`; the contract rejects provider URLs, query secrets,
+writable views, and non-`/viewer/` routes. Browserbase remains an unimplemented
+alternative. Langfuse is an optional fail-open diagnosis sink.
 
 ## Verification
 

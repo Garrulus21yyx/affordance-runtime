@@ -8,7 +8,7 @@ from interaction_shell.steel_viewer import (
     SteelBrowserLease,
     SteelViewerGateway,
 )
-from interaction_shell.viewer import ViewerHTTPResponse
+from interaction_shell.viewer import ViewerHTTPResponse, ViewerUnavailable
 
 
 class FakeSteelTransport:
@@ -148,6 +148,27 @@ async def test_provider_viewer_loss_does_not_release_the_runtime_browser_lease()
     assert response.status_code == 410
     assert gateway.project(handle).reason_code == "viewer_session_lost"
     assert transport.released == []
+    await gateway.release(lease)
+
+
+@pytest.mark.asyncio
+async def test_expired_viewer_lease_fails_typed_without_provider_lookup() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    lease = SteelBrowserLease(
+        "shell-session",
+        "provider-session",
+        "wss://connect.steel.dev?sessionId=provider-session",
+        "https://api.steel.dev/v1/sessions/provider-session/debug",
+        datetime.now(UTC) - timedelta(seconds=1),
+    )
+    handle = SimpleNamespace()
+    gateway.attach(handle, lease)
+
+    assert gateway.project(handle).reason_code == "viewer_session_expired"
+    with pytest.raises(ViewerUnavailable) as raised:
+        await gateway.document("shell-session")
+    assert raised.value.status_code == 410
     await gateway.release(lease)
 
 

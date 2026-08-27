@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Local real execution, durable control, bounded task revision, and single-effect compensation implemented; Viewer unavailable**
+Status: **Local/Steel real execution, durable control, bounded task revision, single-effect compensation, and protected read-only Steel Viewer implemented**
 
 Date: 2026-08-27
 
@@ -23,9 +23,10 @@ context, trace sink, and idempotent resource cleanup owner per Web session. The 
 execution and two-session isolation witnesses. Cooperative `CancelRun` is now a distinct public terminal capability;
 durable `PauseRun`/`ResumeRun` and bounded `ReviseTask` are also public Runtime capabilities. A single retained known
 effect can be kept when fresh evaluation proves the revised goal complete or compensated through the same
-ActionPolicy/Binder/Risk/Executor chain. Viewer, local BrowserGym process-restart reconnection, multi-effect
-reconciliation, and takeover remain visible as typed unavailable/unsupported states rather than being hidden by the
-UI or simulated by the shell.
+ActionPolicy/Binder/Risk/Executor chain. An explicit Steel profile now drives the same provider browser session through
+BrowserGym/Playwright CDP and projects a protected read-only same-origin Viewer. The local BrowserGym profile keeps
+Viewer typed unavailable. Process-restart browser reconnection, multi-effect reconciliation, and takeover remain
+visible as typed unavailable/unsupported states rather than being hidden by the UI or simulated by the shell.
 
 The initial implementation uses:
 
@@ -101,7 +102,7 @@ The following states must not be collapsed into one label such as "implemented":
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
 | Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, bounded task revision/effect reconciliation, snapshot/event, and close; SQLite remains private to Runtime. |
 | Local real Runtime/environment composition | Implemented and verified | `interaction_shell.deployment_app:app` creates one isolated Runtime, policy/history, trace sink, BrowserGym environment, browser context, and unified cleanup owner per session. |
-| Live View deployment | Unavailable | The default viewer is typed unavailable; no protected same-origin provider route is configured. |
+| Live View deployment | Implemented for the explicit Steel profile | `INTERACTION_SHELL_BROWSER_PROVIDER=steel` creates one Steel session used by both BrowserGym CDP execution and the read-only Live View. The public snapshot contains only `/viewer/{session}`; HttpOnly same-session auth protects the route, and the server rewrites/proxies the provider document plus its bounded `ice-servers`/`whep` media calls. The local profile remains typed unavailable. |
 | Cooperative running cancel | Implemented and verified | `CancelRun` is admitted while active, closes dispatch truth, projects terminal `CANCELLED`, and remains distinct from CloseSession teardown. |
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
@@ -109,7 +110,7 @@ The following states must not be collapsed into one label such as "implemented":
 | Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
 | Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Phase 7 provider-free implementation verified | Phase 0–6.5 plus typed effect conservation, single-effect reconciliation, checkpoint v2/v3 compatibility, Runtime-owned result codes, Shell v2 projection, and provider-free tests agree. No live compensation/browser witness or benchmark was run for this change. |
+| Delivery hygiene | Phase 7 compensation and read-only Viewer verified | Phase 0–6.5 plus typed effect conservation, single-effect reconciliation, checkpoint v2/v3 compatibility, Runtime-owned result codes, Shell v2 projection, and provider-free tests agree. The Viewer change additionally passed a no-model/no-action Steel CDP BrowserGym reset and a live protected-document/ICE proxy probe. No live compensation action or benchmark was run. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1027,6 +1028,28 @@ Live View and session inspector and is the alternative when operational speed is
 authenticates the shell session, resolves the opaque provider viewer reference, enforces read-only mode unless a valid
 control lease exists, and applies expiry/cleanup. The shell does not implement screenshot polling, video encoding, or
 mouse/keyboard forwarding.
+
+The implemented Steel profile is explicit rather than inferred from the mere presence of a key:
+
+```text
+INTERACTION_SHELL_BROWSER_PROVIDER=steel
+Viewer_API_KEY=<server-only Steel key>  # STEEL_API_KEY is also accepted
+MINIWOB_URL=https://<remotely reachable task host>/miniwob/
+```
+
+A Steel cloud browser cannot reach the local profile's loopback MiniWoB server, so loopback/private task sources fail
+typed as `environment_source_not_remote`; the deployment never opens a second remote browser merely to supply a
+picture. BrowserGym's surface owner replaces only its environment Chromium launch with `connect_over_cdp` and claims
+Steel's existing default context/page, while BrowserGym chat stays on its private local headless browser. Cleanup first
+closes the surface connection, then releases that exact provider session, and remains idempotent across normal close,
+failed composition, cancellation, TTL/terminal cleanup, and shutdown.
+
+The same-origin route authenticates an HttpOnly, SameSite session cookie scoped to `/viewer/{session}`. It fetches and
+validates Steel's debug document server-side, replaces the provider session ID, RTC bearer, input WebSocket, API/CDP
+origins, and external script with the Shell route, then proxies only read-only WebRTC `ice-servers` and `whep` calls.
+Steel-native short-lived ICE credentials remain the provider media transport. The reusable API key, debug/CDP URL,
+provider session ID, and RTC bearer do not enter snapshots, events, HTML, browser storage, or logs. Production HTTPS
+deployments set `INTERACTION_SHELL_SECURE_COOKIES=true`.
 
 ### 13.2 Concrete deployment entry
 

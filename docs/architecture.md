@@ -116,9 +116,20 @@ bounded pair and still reads v2; the unchanged revision command payload keeps it
 old durable digest version while the additive Runtime/Shell snapshot advances to
 v2. The Shell projects only semantic reconciliation facts and exact codes. It is
 not an effect ledger, rollback mechanism, multi-effect Saga, second policy, or
-second loop. Viewer and takeover remain unavailable. These provider-free
-deployment/control tests are not benchmark witnesses and do not alter the
-reopened overall project status; no live compensation/browser run was performed.
+second loop. Takeover remains unavailable. A subsequent deployment-only Viewer
+milestone adds one explicit Steel profile: BrowserGym's surface-owned Chromium
+launch connects over CDP to one Steel session, and the snapshot projects only a
+read-only same-origin `/viewer/{session}` path for that same lease. HttpOnly
+Shell-session auth guards the route; a bounded proxy removes the reusable key,
+provider debug/CDP URL, provider session ID, RTC bearer, and input WebSocket from
+the delivered document, then forwards only Steel's native WebRTC ICE/WHEP
+exchange. Viewer failure never changes Runtime status, receipt, evaluation, or
+cleanup truth. The local BrowserGym profile remains Viewer unavailable, and a
+cloud profile rejects loopback/private task sources instead of opening a second
+browser. Provider-free tests plus a no-model/no-action live Steel CDP reset and
+document/ICE probe verify this deployment boundary; they are not benchmark
+witnesses and do not alter the reopened overall project status. No live
+compensation action or benchmark was performed.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded provider-free implementation complete; read-only Viewer deployment in progress
+Status: Phase 7 bounded compensation and protected read-only Steel Viewer complete; takeover unavailable
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -587,7 +587,7 @@ Constraints:
       module's established startup behavior, but Phase 7 did not inspect,
       print, or use the Viewer credential and did not start Viewer, a live
       model/provider, a browser compensation profile, or a benchmark.
-22. **in progress — protected read-only Viewer deployment.**
+22. **done — protected read-only Viewer deployment.**
     - Owner model: the deployment browser/environment lease owns the provider
       session locator and cleanup; a deployment-private viewer registry/proxy
       owns authenticated short-lived resolution; the Runtime public session
@@ -640,6 +640,25 @@ Constraints:
       projection, Viewer-failure independence, frontend rendering, OpenAPI, and
       existing Runtime/Phase 7 regression gates. Commit and push each coherent
       milestone; no live benchmark without separate authorization.
+    - Implemented result: one explicit `steel_browsergym` profile creates a
+      provider session, replaces only BrowserGym's environment Chromium launch
+      with the provider CDP connection, claims its single existing context/page,
+      and registers one opaque handle-to-viewer projection. The local profile is
+      unchanged and Viewer-unavailable. HttpOnly same-session auth plus the
+      Next.js same-origin rewrite protect the iframe; the provider document is
+      validated and stripped of reusable locators/credentials, and only native
+      read-only ICE/WHEP calls are proxied. Cleanup releases surface, provider,
+      and trace owners independently and idempotently.
+    - Verification: 72 external backend/architecture tests passed, including
+      session auth, wrong nested identity, provider disconnect, two-session
+      isolation, partial/composition cleanup, no-secret document projection,
+      exact provider lease reuse, and Viewer/Runtime failure independence. Seven
+      focused BrowserGym owner tests, Ruff, Pyright, diff/OpenAPI checks, and 10
+      frontend tests plus lint/typecheck/build passed. A no-model/no-action live
+      Steel BrowserGym reset observed a connected open page and released the
+      session; a separate real document/ICE probe returned 200 after confirming
+      provider locator removal. No benchmark, model call, GUI task action,
+      compensation action, input WebSocket, or takeover ran.
 
 ## Current-work produced files
 
