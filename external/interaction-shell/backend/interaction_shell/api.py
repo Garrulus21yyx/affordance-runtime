@@ -13,35 +13,27 @@ from typing import Annotated
 from ag_ui.core import CustomEvent
 from ag_ui.encoder import EventEncoder
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.security import APIKeyHeader
 
+from .completed_runs import CompletedRunSummary, CompletedRunSummaryResolver
 from .contracts import (
-    AnswerQuestion,
-    ApproveAction,
-    CloseSession,
+    AuthenticatedSessionLookup,
     CommandAdmission,
     CreateSessionRequest,
     CreateSessionResponse,
-    OptionalCommand,
+    Recovered,
+    RecoveryAttempt,
     RecoverSessionRequest,
-    RecoverSessionResponse,
-    RejectAction,
-    ResumeTask,
-    ReturnControl,
-    ReviseTask,
     RuntimeSessionSnapshot,
-    ShellEvent,
-    StartTask,
-    TakeOver,
-)
-from .diagnosis import (
-    BenchmarkResultExport,
-    CaseDiagnosis,
-    CaseDiagnosisProjector,
-    PublicTraceExport,
+    ShellCommand,
+    ShellEventEnvelope,
+    SCHEMA_VERSION,
+    SnapshotUpdated,
 )
 from .manager import (
     RunSessionManager,
+    SessionExpired,
     SessionNotFound,
     SessionUnauthorized,
     ViewerInputRejected,
@@ -49,10 +41,6 @@ from .manager import (
 from .port import RuntimeSessionUnavailable
 from .unavailable_port import UnavailableRuntimeSessionPort
 from .viewer import ViewerGateway, ViewerUnavailable
-
-
-class DiagnosisRequest(BenchmarkResultExport):
-    trace: PublicTraceExport
 
 
 def _event_position(value: str) -> tuple[str | None, int]:
@@ -65,6 +53,11 @@ def _event_position(value: str) -> tuple[str | None, int]:
 
 
 HealthProvider = Callable[[], Mapping[str, object] | Awaitable[Mapping[str, object]]]
+_SESSION_KEY_HEADER = APIKeyHeader(name="X-Session-Key", auto_error=False)
+
+
+class EventStreamResponse(StreamingResponse):
+    media_type = "text/event-stream"
 
 
 def create_app(
@@ -72,6 +65,8 @@ def create_app(
     *,
     health_provider: HealthProvider | None = None,
     viewer_gateway: ViewerGateway | None = None,
+    completed_run_resolver: CompletedRunSummaryResolver | None = None,
+    evidence_access_key: str = "",
 ) -> FastAPI:
     shell = manager or RunSessionManager(UnavailableRuntimeSessionPort())
 
@@ -82,17 +77,18 @@ def create_app(
 
     app = FastAPI(title="Affordance Interaction Shell", version="0.1.0", lifespan=lifespan)
     app.state.manager = shell
-    app.state.diagnoses = {}
+    completed_runs = completed_run_resolver or CompletedRunSummaryResolver()
 
-    def key(value: Annotated[str | None, Header(alias="X-Session-Key")] = None) -> str:
+    def key(value: str | None = Depends(_SESSION_KEY_HEADER)) -> str:
         if not value:
             raise HTTPException(401, "missing session key")
         return value
 
     def map_auth(exc: Exception) -> HTTPException:
-        return HTTPException(404 if isinstance(exc, SessionNotFound) else 403, "session unavailable")
+        status = 410 if isinstance(exc, SessionExpired) else 404 if isinstance(exc, SessionNotFound) else 401
+        return HTTPException(status, "session unavailable")
 
-    @app.get("/health")
+    @app.get("/health", operation_id="getHealth")
     async def health() -> dict[str, object]:
         if health_provider is None:
             return {"status": "ok"}
@@ -107,12 +103,16 @@ def create_app(
             raise HTTPException(401, "missing viewer session")
         try:
             return await shell.snapshot(session_id, session_key)
-        except (SessionNotFound, SessionUnauthorized) as exc:
+        except (SessionNotFound, SessionUnauthorized, SessionExpired) as exc:
             raise map_auth(exc) from exc
 
     if viewer_gateway is not None:
 
-        @app.get("/viewer/{session_id}", response_class=HTMLResponse)
+        @app.get(
+            "/viewer/{session_id}",
+            response_class=HTMLResponse,
+            operation_id="getViewerDocument",
+        )
         async def viewer_document(request: Request, session_id: str) -> Response:
             snapshot = await authorize_viewer(request, session_id)
             try:
@@ -120,8 +120,7 @@ def create_app(
                     session_id,
                     interactive=(
                         snapshot.control_owner.value == "user"
-                        and snapshot.viewer.status == "available"
-                        and not snapshot.viewer.read_only
+                        and snapshot.surface.status == "interactive"
                     ),
                 )
             except ViewerUnavailable as exc:
@@ -133,7 +132,7 @@ def create_app(
                 headers=_viewer_security_headers(),
             )
 
-        @app.websocket("/viewer/{session_id}/input")
+        @app.websocket("/viewer/{session_id}/input", name="viewerInput")
         async def viewer_input(websocket: WebSocket, session_id: str) -> None:
             session_key = websocket.cookies.get(_viewer_cookie_name(session_id))
             try:
@@ -143,8 +142,7 @@ def create_app(
                 return
             if (
                 snapshot.control_owner.value != "user"
-                or snapshot.viewer.status != "available"
-                or snapshot.viewer.read_only
+                or snapshot.surface.status != "interactive"
                 or snapshot.control_lease_id is None
                 or session_key is None
             ):
@@ -221,7 +219,10 @@ def create_app(
                 except RuntimeError:
                     pass
 
-        @app.get("/viewer/{session_id}/steel/v1/rtc/ice-servers/{rtc_session_id}")
+        @app.get(
+            "/viewer/{session_id}/steel/v1/rtc/ice-servers/{rtc_session_id}",
+            operation_id="getViewerIceServers",
+        )
         async def viewer_ice_servers(
             request: Request,
             session_id: str,
@@ -241,7 +242,10 @@ def create_app(
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
 
-        @app.post("/viewer/{session_id}/steel/v1/rtc/whep/{rtc_session_id}")
+        @app.post(
+            "/viewer/{session_id}/steel/v1/rtc/whep/{rtc_session_id}",
+            operation_id="postViewerWhep",
+        )
         async def viewer_whep(
             request: Request,
             session_id: str,
@@ -274,34 +278,66 @@ def create_app(
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
 
-    @app.get("/schemas/shell-event", response_model=ShellEvent)
-    async def shell_event_schema() -> ShellEvent:
+    @app.get(
+        "/schemas/shell-event",
+        response_model=ShellEventEnvelope,
+        operation_id="getShellEventSchema",
+    )
+    async def shell_event_schema() -> ShellEventEnvelope:
         """Concrete versioned schema anchor used by OpenAPI TypeScript generation."""
-        return ShellEvent(
+        snapshot = RuntimeSessionSnapshot(
+            schema_version=SCHEMA_VERSION,
             session_id="schema",
             event_epoch="schema-event-epoch",
-            cursor=1,
-            type="schema.example",
+            expires_at=datetime.now().astimezone(),
+        )
+        return ShellEventEnvelope(
+            type="CUSTOM",
+            name="snapshot.updated",
+            value=SnapshotUpdated(
+                schema_version=SCHEMA_VERSION,
+                type="snapshot.updated",
+                session_id="schema",
+                event_epoch="schema-event-epoch",
+                cursor=1,
+                snapshot=snapshot.model_copy(update={"event_cursor": 1}),
+            )
         )
 
-    @app.get("/diagnostics", response_model=list[CaseDiagnosis])
+    @app.get(
+        "/diagnostics",
+        response_model=list[CompletedRunSummary],
+        operation_id="listCompletedRuns",
+    )
     async def list_diagnostics():
-        return list(app.state.diagnoses.values())
+        return list(completed_runs.list())
 
-    @app.get("/diagnostics/{case_id}", response_model=CaseDiagnosis)
-    async def get_diagnostic(case_id: str):
-        if case_id not in app.state.diagnoses:
-            raise HTTPException(404, "diagnosis not found")
-        return app.state.diagnoses[case_id]
+    @app.get(
+        "/diagnostics/evidence/{locator_id}/result",
+        operation_id="getCompletedRunResult",
+    )
+    async def completed_result(
+        locator_id: str,
+        engineering_key: Annotated[
+            str | None, Header(alias="X-Engineering-Key")
+        ] = None,
+    ):
+        if not evidence_access_key or not engineering_key or not secrets.compare_digest(
+            evidence_access_key, engineering_key
+        ):
+            raise HTTPException(404, "completed run evidence unavailable")
+        try:
+            path = completed_runs.result_path(locator_id)
+        except (FileNotFoundError, PermissionError) as exc:
+            raise HTTPException(404, "completed run evidence unavailable") from exc
+        return FileResponse(path, media_type="application/json", filename="case-result.json")
 
-    @app.post("/diagnostics", response_model=CaseDiagnosis, status_code=201)
-    async def project_diagnostic(body: DiagnosisRequest):
-        result = BenchmarkResultExport.model_validate(body.model_dump(exclude={"trace"}))
-        diagnosis = CaseDiagnosisProjector().project(result, body.trace)
-        app.state.diagnoses[diagnosis.case_id] = diagnosis
-        return diagnosis
-
-    @app.post("/sessions", response_model=CreateSessionResponse, status_code=201)
+    @app.post(
+        "/sessions",
+        response_model=CreateSessionResponse,
+        status_code=201,
+        operation_id="createSession",
+    )
     async def create_session(body: CreateSessionRequest, response: Response) -> CreateSessionResponse:
         try:
             created = await shell.create(body.ttl_seconds)
@@ -313,29 +349,24 @@ def create_app(
 
     @app.post(
         "/sessions/{session_id}/recover",
-        response_model=RecoverSessionResponse,
+        response_model=RecoveryAttempt,
+        operation_id="recoverSession",
     )
     async def recover_session(
         session_id: str,
         body: RecoverSessionRequest,
         response: Response,
         session_key: str = Depends(key),
-    ) -> RecoverSessionResponse:
+    ) -> RecoveryAttempt:
         try:
             recovered = await shell.recover(
                 session_id,
                 session_key,
                 body.checkpoint_id,
             )
-        except (SessionNotFound, SessionUnauthorized) as exc:
+        except (SessionNotFound, SessionUnauthorized, SessionExpired) as exc:
             raise map_auth(exc) from exc
-        except RuntimeSessionUnavailable as exc:
-            status = 409 if exc.code in {
-                "checkpoint_already_resumed",
-                "checkpoint_mismatch",
-            } else 503
-            raise HTTPException(status, exc.code) from exc
-        if viewer_gateway is not None:
+        if viewer_gateway is not None and isinstance(recovered, Recovered):
             _set_viewer_cookie_from_values(
                 response,
                 session_id,
@@ -344,14 +375,27 @@ def create_app(
             )
         return recovered
 
-    @app.get("/sessions/{session_id}", response_model=RuntimeSessionSnapshot)
+    @app.get(
+        "/sessions/{session_id}",
+        response_model=AuthenticatedSessionLookup,
+        operation_id="getSession",
+    )
     async def get_snapshot(session_id: str, session_key: str = Depends(key)):
         try:
-            return await shell.snapshot(session_id, session_key)
-        except (SessionNotFound, SessionUnauthorized) as exc:
+            return await shell.lookup(session_id, session_key)
+        except (SessionNotFound, SessionUnauthorized, SessionExpired) as exc:
             raise map_auth(exc) from exc
+        except RuntimeSessionUnavailable:
+            from .contracts import RecoveryUnsupported
 
-    @app.get("/sessions/{session_id}/events")
+            return RecoveryUnsupported(kind="recovery_unsupported", reason_code="recovery_registry_unavailable")
+
+    @app.get(
+        "/sessions/{session_id}/events",
+        operation_id="subscribeSessionEvents",
+        response_class=EventStreamResponse,
+        response_model=ShellEventEnvelope,
+    )
     async def subscribe_events(
         request: Request,
         session_id: str,
@@ -363,7 +407,7 @@ def create_app(
         try:
             requested_epoch, after = _event_position(last_event_id) if last_event_id else (event_epoch, cursor)
             snapshot = await shell.snapshot(session_id, session_key)
-        except (SessionNotFound, SessionUnauthorized) as exc:
+        except (SessionNotFound, SessionUnauthorized, SessionExpired) as exc:
             raise map_auth(exc) from exc
         except ValueError as exc:
             raise HTTPException(400, "invalid event position") from exc
@@ -381,7 +425,7 @@ def create_app(
                     for event in events:
                         current = event.cursor
                         agui = CustomEvent(
-                            name=event.type,
+                            name="snapshot.updated",
                             value=event.model_dump(mode="json"),
                         )
                         yield (
@@ -395,7 +439,7 @@ def create_app(
                         idle = 0
                 await asyncio.sleep(0.1)
 
-        return StreamingResponse(
+        return EventStreamResponse(
             stream(),
             media_type="text/event-stream",
             headers={
@@ -405,56 +449,24 @@ def create_app(
             },
         )
 
-    async def command(session_id: str, session_key: str, body):
+    async def command(session_id: str, session_key: str, body: ShellCommand):
         try:
             return await shell.admit(session_id, session_key, body)
-        except (SessionNotFound, SessionUnauthorized) as exc:
+        except (SessionNotFound, SessionUnauthorized, SessionExpired) as exc:
             raise map_auth(exc) from exc
         except RuntimeSessionUnavailable as exc:
             raise HTTPException(503, exc.code) from exc
 
-    @app.post("/sessions/{session_id}/tasks", response_model=CommandAdmission)
-    async def start(session_id: str, body: StartTask, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/answer", response_model=CommandAdmission)
-    async def answer(session_id: str, body: AnswerQuestion, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/approve", response_model=CommandAdmission)
-    async def approve(session_id: str, body: ApproveAction, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/reject", response_model=CommandAdmission)
-    async def reject(session_id: str, body: RejectAction, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/resume", response_model=CommandAdmission)
-    async def resume(session_id: str, body: ResumeTask, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/revise", response_model=CommandAdmission)
-    async def revise(session_id: str, body: ReviseTask, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/takeover", response_model=CommandAdmission)
-    async def take_over(session_id: str, body: TakeOver, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/return-control", response_model=CommandAdmission)
-    async def return_control(
+    @app.post(
+        "/sessions/{session_id}/commands",
+        response_model=CommandAdmission,
+        operation_id="submitCommand",
+    )
+    async def submit_command(
         session_id: str,
-        body: ReturnControl,
+        body: ShellCommand,
         session_key: str = Depends(key),
     ):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/close", response_model=CommandAdmission)
-    async def close(session_id: str, body: CloseSession, session_key: str = Depends(key)):
-        return await command(session_id, session_key, body)
-
-    @app.post("/sessions/{session_id}/commands/optional", response_model=CommandAdmission)
-    async def optional(session_id: str, body: OptionalCommand, session_key: str = Depends(key)):
         return await command(session_id, session_key, body)
 
     return app
@@ -516,6 +528,13 @@ def _viewer_security_headers() -> dict[str, str]:
 if os.getenv("INTERACTION_SHELL_DEMO", "").lower() == "true":
     from .demo_port import ContractDemoPort
 
-    app = create_app(RunSessionManager(ContractDemoPort()))
+    app = create_app(
+        RunSessionManager(ContractDemoPort()),
+        completed_run_resolver=CompletedRunSummaryResolver.from_environment(),
+        evidence_access_key=os.getenv("INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""),
+    )
 else:
-    app = create_app()
+    app = create_app(
+        completed_run_resolver=CompletedRunSummaryResolver.from_environment(),
+        evidence_access_key=os.getenv("INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""),
+    )

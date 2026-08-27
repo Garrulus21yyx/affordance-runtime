@@ -8,7 +8,11 @@ import pytest
 
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.app.public_session import (
+    PublicCommandAccepted,
+    PublicCommandConflict,
     PublicSessionCapability,
+    PublicSessionCommand,
+    PublicSessionCommandKind,
     PublicSessionConflict,
     PublicSessionOpenError,
     PublicSessionOpenStage,
@@ -143,7 +147,7 @@ async def test_public_session_cleanup_waits_for_active_run_and_executes_once() -
 
 
 @pytest.mark.asyncio
-async def test_cancel_run_is_cooperative_terminal_and_close_remains_teardown() -> None:
+async def test_cancel_run_is_cooperative_terminal_and_close_remains_idempotent() -> None:
     release = asyncio.Event()
     cleanup_count = 0
 
@@ -158,9 +162,7 @@ async def test_cancel_run_is_cooperative_terminal_and_close_remains_teardown() -
 
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(),
-        lambda _session_id: RuntimeEnvironmentLease(
-            BlockingEnvironment(initial_observation=_world()), cleanup
-        ),
+        lambda _session_id: RuntimeEnvironmentLease(BlockingEnvironment(initial_observation=_world()), cleanup),
     )
     handle = await factory.open("session:cancel", datetime.now(UTC) + timedelta(minutes=5))
     initial = await handle.snapshot()
@@ -181,7 +183,7 @@ async def test_cancel_run_is_cooperative_terminal_and_close_remains_teardown() -
         "CONTROL_REQUESTED",
         "RUN_FINISHED",
     )
-    assert cleanup_count == 0
+    assert cleanup_count == 1
 
     await handle.close()
     await handle.close()
@@ -192,13 +194,9 @@ async def test_cancel_run_is_cooperative_terminal_and_close_remains_teardown() -
 async def test_cancel_at_waiting_boundary_does_not_resume_policy_or_dispatch() -> None:
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(),
-        lambda _session_id: RuntimeEnvironmentLease(
-            ScriptedEnvironment(initial_observation=_world())
-        ),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
     )
-    handle = await factory.open(
-        "session:cancel-waiting", datetime.now(UTC) + timedelta(minutes=5)
-    )
+    handle = await factory.open("session:cancel-waiting", datetime.now(UTC) + timedelta(minutes=5))
     await handle.start("Inspect the selected account")
     await _wait_for_status(handle, PublicSessionStatus.WAITING_USER)
 
@@ -324,6 +322,86 @@ async def test_session_factory_reports_typed_stage_and_cleans_invalid_environmen
         )
     assert session_error.value.stage is PublicSessionOpenStage.SESSION
     assert cleanup_count == 1
+
+
+@pytest.mark.asyncio
+async def test_v3_runtime_command_capabilities_are_state_correct_unique_and_ref_owned() -> None:
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
+    )
+    handle = await factory.open("session:v3-capabilities", datetime.now(UTC) + timedelta(minutes=5))
+    initial = await handle.snapshot()
+    initial_kinds = tuple(capability.kind for capability in initial.command_capabilities)
+    assert initial_kinds == (
+        PublicSessionCommandKind.START_TASK,
+        PublicSessionCommandKind.CLOSE_SESSION,
+    )
+    assert len(initial_kinds) == len(set(initial_kinds))
+
+    admitted = await handle.admit(
+        PublicSessionCommand(
+            command_id="start:v3",
+            kind=PublicSessionCommandKind.START_TASK,
+            expected_task_revision=0,
+            expected_run_status=PublicSessionStatus.IDLE,
+            task="Inspect the selected account",
+        )
+    )
+    assert isinstance(admitted, PublicCommandAccepted)
+    waiting = await _wait_for_status(handle, PublicSessionStatus.WAITING_USER)
+    answer = next(
+        capability
+        for capability in waiting.command_capabilities
+        if capability.kind is PublicSessionCommandKind.ANSWER_QUESTION
+    )
+    assert waiting.pending_question is not None
+    assert answer.interaction_ref == waiting.pending_question.interrupt_id
+    assert answer.prompt == waiting.pending_question.prompt
+    assert len({capability.kind for capability in waiting.command_capabilities}) == len(waiting.command_capabilities)
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_v3_runtime_admission_owns_currentness_and_command_identity() -> None:
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
+    )
+    handle = await factory.open("session:v3-admission", datetime.now(UTC) + timedelta(minutes=5))
+    command = PublicSessionCommand(
+        command_id="start:stable",
+        kind=PublicSessionCommandKind.START_TASK,
+        expected_task_revision=0,
+        expected_run_status=PublicSessionStatus.IDLE,
+        task="Inspect the selected account",
+    )
+    first = await handle.admit(command)
+    replay = await handle.admit(command)
+    reused = await handle.admit(
+        PublicSessionCommand(
+            command_id="start:stable",
+            kind=PublicSessionCommandKind.START_TASK,
+            expected_task_revision=0,
+            expected_run_status=PublicSessionStatus.IDLE,
+            task="A different task",
+        )
+    )
+    stale = await handle.admit(
+        PublicSessionCommand(
+            command_id="start:stale",
+            kind=PublicSessionCommandKind.START_TASK,
+            expected_task_revision=99,
+            expected_run_status=PublicSessionStatus.IDLE,
+            task="Inspect",
+        )
+    )
+    assert first is replay
+    assert isinstance(reused, PublicCommandConflict)
+    assert reused.code == "command_identity_reused"
+    assert isinstance(stale, PublicCommandConflict)
+    assert stale.code == "stale_command"
+    await handle.close()
 
 
 @dataclass

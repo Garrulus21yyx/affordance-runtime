@@ -237,9 +237,7 @@ class EffectRevisionCompiler:
                 "Enable shared state" if desired else "Disable shared state",
                 TaskBoundary(
                     allowed_effects=("shared_state_enabled",),
-                    success_criteria=(
-                        {"target_id": "shared-toggle", "state": {"enabled": desired}},
-                    ),
+                    success_criteria=({"target_id": "shared-toggle", "state": {"enabled": desired}},),
                     risk_profile=self.risk_profile,
                 ),
             ),
@@ -253,26 +251,16 @@ class DesiredEnabledEvaluator:
         target = next(item for item in observation.targets if item.target_id == target_id)
         enabled = bool(target.state.get("enabled"))
         satisfied = enabled is desired
-        evidence_ref = next(
-            item.fact_id for item in observation.facts if item.subject_id == target_id
-        )
+        evidence_ref = next(item.fact_id for item in observation.facts if item.subject_id == target_id)
         return TaskEvaluation(
             task.task_id,
             observation.observation_id,
-            (
-                TaskEvaluationStatus.COMPLETE
-                if satisfied
-                else TaskEvaluationStatus.INCOMPLETE
-            ),
+            (TaskEvaluationStatus.COMPLETE if satisfied else TaskEvaluationStatus.INCOMPLETE),
             "desired shared state observed" if satisfied else "shared state needs change",
             tuple(
                 CriterionEvaluation(
                     criterion_id(item),
-                    (
-                        CriterionEvaluationStatus.SATISFIED
-                        if satisfied
-                        else CriterionEvaluationStatus.UNSATISFIED
-                    ),
+                    (CriterionEvaluationStatus.SATISFIED if satisfied else CriterionEvaluationStatus.UNSATISFIED),
                     (evidence_ref,),
                     "criterion evaluated from current shared state",
                 )
@@ -417,11 +405,7 @@ async def _effect_revision_session(
                 first_dispatch_status,
                 "dom",
                 first_dispatch_status is DispatchStatus.SENT,
-                (
-                    None
-                    if first_dispatch_status is DispatchStatus.SENT
-                    else ActionError.EXECUTION_FAILED
-                ),
+                (None if first_dispatch_status is DispatchStatus.SENT else ActionError.EXECUTION_FAILED),
             ),
             ActionResult("*", DispatchStatus.SENT, "dom", True),
         ),
@@ -573,9 +557,7 @@ class ResourceRecordingSelectPolicy(RecoverableSelectPolicy):
         self.seen_resources: list[tuple[str, ...]] = []
 
     async def decide(self, context):
-        self.seen_resources.append(
-            tuple(option.resource_ref for option in context.actions.options)
-        )
+        self.seen_resources.append(tuple(option.resource_ref for option in context.actions.options))
         return await super().decide(context)
 
 
@@ -705,15 +687,15 @@ async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(
 
 @pytest.mark.asyncio
 async def test_takeover_consumes_checkpoint_and_return_refreshes_before_policy(tmp_path) -> None:
-    handle, store, policy, environment, checkpoint_id = await _takeover_checkpoint_session(
-        tmp_path
-    )
+    handle, store, policy, environment, checkpoint_id = await _takeover_checkpoint_session(tmp_path)
 
     controlled = await handle.take_over("takeover:one", checkpoint_id)
 
     assert controlled.status is PublicSessionStatus.PAUSED
     assert controlled.control_owner is PublicSessionControlOwner.USER
     assert controlled.control_lease_id is not None
+    assert await handle.admits_surface_input(controlled.control_lease_id)
+    assert not await handle.admits_surface_input("wrong-lease")
     assert controlled.pending_question is None
     assert controlled.resume_eligible is False
     assert controlled.capabilities == frozenset(
@@ -753,14 +735,8 @@ async def test_takeover_consumes_checkpoint_and_return_refreshes_before_policy(t
     else:
         raise AssertionError("Agent policy did not continue after fresh user-control World")
     assert policy.calls == 2
-    assert any(
-        event.type == "USER_CONTROL_GRANTED"
-        for event in await handle.events(0)
-    )
-    assert any(
-        event.type == "USER_CONTROL_RETURNED"
-        for event in await handle.events(0)
-    )
+    assert any(event.type == "USER_CONTROL_GRANTED" for event in await handle.events(0))
+    assert any(event.type == "USER_CONTROL_RETURNED" for event in await handle.events(0))
     await handle.close()
 
 
@@ -780,26 +756,22 @@ async def test_return_revokes_input_lease_before_blocking_fresh_world_capture(tm
         initial_observation=_world(),
         independent_observations=(_world(),),
     )
-    handle, _store, _policy, _environment, checkpoint_id = (
-        await _takeover_checkpoint_session(tmp_path, environment=environment)
+    handle, _store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
+        tmp_path, environment=environment
     )
     controlled = await handle.take_over("takeover:blocking", checkpoint_id)
     assert controlled.control_lease_id is not None
 
-    returning = asyncio.create_task(
-        handle.return_control("return:blocking", controlled.control_lease_id)
-    )
+    returning = asyncio.create_task(handle.return_control("return:blocking", controlled.control_lease_id))
     await asyncio.wait_for(environment.capture_started.wait(), timeout=1)
 
     fenced = await handle.snapshot()
     assert fenced.status is PublicSessionStatus.PAUSED
     assert fenced.control_owner is PublicSessionControlOwner.AGENT
     assert fenced.control_lease_id is None
+    assert not await handle.admits_surface_input(controlled.control_lease_id)
     assert fenced.capabilities == frozenset({PublicSessionCapability.CLOSE_SESSION})
-    assert any(
-        event.type == "USER_CONTROL_REVOKED"
-        for event in await handle.events(0)
-    )
+    assert any(event.type == "USER_CONTROL_REVOKED" for event in await handle.events(0))
 
     environment.capture_allowed.set()
     returned = await asyncio.wait_for(returning, timeout=1)
@@ -810,9 +782,7 @@ async def test_return_revokes_input_lease_before_blocking_fresh_world_capture(tm
 
 @pytest.mark.asyncio
 async def test_takeover_consumption_blocks_checkpoint_recovery(tmp_path) -> None:
-    handle, store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
-        tmp_path
-    )
+    handle, store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(tmp_path)
     await handle.take_over("takeover:crash", checkpoint_id)
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(RecoverableAskPolicy()),
@@ -1539,11 +1509,7 @@ async def test_checkpoint_v2_remains_readable_without_effect_projection(tmp_path
         receipt.pop("resource_ref", None)
         receipt.pop("semantic_effects", None)
         receipt.pop("reversibility", None)
-    unsigned = {
-        key: value
-        for key, value in raw.items()
-        if key not in {"checkpoint_id", "digest"}
-    }
+    unsigned = {key: value for key, value in raw.items() if key not in {"checkpoint_id", "digest"}}
     digest = hashlib.sha256(
         json.dumps(
             unsigned,
@@ -1555,9 +1521,7 @@ async def test_checkpoint_v2_remains_readable_without_effect_projection(tmp_path
     raw["digest"] = digest
     raw["checkpoint_id"] = f"runtime-checkpoint:{digest}"
 
-    restored = RuntimeCheckpoint.from_json(
-        json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    )
+    restored = RuntimeCheckpoint.from_json(json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
 
     assert restored.schema_version == "affordance-runtime.checkpoint.v2"
     facts = restored.restore_run_facts()
@@ -2176,10 +2140,7 @@ async def test_reversible_effect_uses_same_pipeline_and_pauses_after_verified_co
     assert checkpoint is not None
     facts = checkpoint.restore_run_facts()
     assert facts.effect_reconciliation is not None
-    assert (
-        facts.effect_reconciliation.status
-        is EffectReconciliationStatus.COMPENSATED
-    )
+    assert facts.effect_reconciliation.status is EffectReconciliationStatus.COMPENSATED
     assert facts.effect_reconciliation.compensation_effect == facts.latest_effect
 
     await handle.resume("resume:after-compensation", compensated.checkpoint_id)
@@ -2325,9 +2286,7 @@ async def test_restart_preserves_pending_reconciliation_without_replaying_origin
     )
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: recovered_runtime,
-        lambda _session_id: (_ for _ in ()).throw(
-            AssertionError("normal environment open is forbidden")
-        ),
+        lambda _session_id: (_ for _ in ()).throw(AssertionError("normal environment open is forbidden")),
         request_factory=_action_request,
         checkpoint_store=store,
         environment_reconnector=lambda _session_id, reference: RuntimeEnvironmentLease(
@@ -2453,10 +2412,7 @@ async def test_compensation_policy_and_executor_are_scoped_to_original_resource(
 
     assert policy.seen_resources == [("shared-state",), ("shared-state",)]
     assert environment.executed_requests[-1].selection.resource_ref == "shared-state"
-    assert all(
-        request.selection.resource_ref != "unrelated-state"
-        for request in environment.executed_requests
-    )
+    assert all(request.selection.resource_ref != "unrelated-state" for request in environment.executed_requests)
     await handle.close()
 
 

@@ -15,8 +15,13 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import httpx
 from affordance_runtime.app.public_session import PublicRuntimeSessionHandle
 
-from .contracts import ViewerState
-from .viewer import ViewerHTTPResponse, ViewerUnavailable
+from .viewer import (
+    SurfaceAvailability,
+    SurfaceChannelAvailable,
+    SurfaceChannelUnavailable,
+    ViewerHTTPResponse,
+    ViewerUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,21 +271,20 @@ class SteelViewerGateway:
         except Exception:
             logger.exception("Steel viewer lease cleanup failed for shell session")
 
-    def project(self, handle: PublicRuntimeSessionHandle) -> ViewerState:
+    def project(self, handle: PublicRuntimeSessionHandle) -> SurfaceAvailability:
         session_id = self._handle_sessions.get(id(handle))
         lease = self._leases.get(session_id) if session_id is not None else None
         if lease is None or lease.released:
-            return ViewerState(reason_code="viewer_session_unavailable")
+            return SurfaceChannelUnavailable(reason_code="viewer_session_unavailable")
         if datetime.now(UTC) >= lease.expires_at:
-            return ViewerState(reason_code="viewer_session_expired")
+            return SurfaceChannelUnavailable(reason_code="viewer_session_expired")
         if lease.unavailable_reason:
-            return ViewerState(reason_code=lease.unavailable_reason)
-        return ViewerState(
-            status="available",
-            provider="steel",
+            return SurfaceChannelUnavailable(reason_code=lease.unavailable_reason)
+        return SurfaceChannelAvailable(
+            surface_kind="web",
+            presentation="live_media",
             protected_path=f"/viewer/{lease.shell_session_id}",
-            reason_code="",
-            read_only=True,
+            input_mode="native",
         )
 
     def environment_playwright_factory(self, lease: SteelBrowserLease):

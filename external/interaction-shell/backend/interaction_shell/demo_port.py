@@ -1,4 +1,4 @@
-"""Synthetic contract demo for local UI/E2E only; not a GUI agent or Runtime adapter."""
+"""Synthetic v3 contract demo for local UI/E2E only; never a Runtime implementation."""
 
 from __future__ import annotations
 
@@ -9,22 +9,28 @@ from datetime import datetime
 from .contracts import (
     Accepted,
     AnswerQuestion,
+    AnswerQuestionOffer,
     ApproveAction,
-    Capability,
+    CloseSession,
+    CloseSessionOffer,
     Completion,
-    PendingConfirmation,
-    PendingQuestion,
-    PublicStep,
+    ConfirmActionOffer,
+    RecoveryAttempt,
+    RecoveryAttemptUnavailable,
     RejectAction,
-    ReviseTask,
+    RevisionConversationContext,
     RunStatus,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
+    SnapshotUpdated,
     StartTask,
+    StartTaskOffer,
     Unsupported,
-    UsageSummary,
+    PublicStep,
+    SCHEMA_VERSION,
 )
+from .port import PortRecoveryInspectionUnsupported
 
 
 @dataclass
@@ -39,16 +45,6 @@ class DemoHandle:
 
 
 class ContractDemoPort:
-    capabilities = frozenset(
-        {
-            Capability.START_TASK,
-            Capability.ANSWER_QUESTION,
-            Capability.APPROVE_ACTION,
-            Capability.REJECT_ACTION,
-            Capability.CLOSE_SESSION,
-        }
-    )
-
     async def open(self, session_id: str, expires_at: datetime) -> DemoHandle:
         event_epoch = secrets.token_urlsafe(18)
         return DemoHandle(
@@ -56,20 +52,37 @@ class ContractDemoPort:
             expires_at,
             event_epoch,
             RuntimeSessionSnapshot(
+                schema_version=SCHEMA_VERSION,
                 session_id=session_id,
                 expires_at=expires_at,
                 event_epoch=event_epoch,
-                capabilities=self.capabilities,
+                command_offers=(
+                    StartTaskOffer(kind="start_task"),
+                    CloseSessionOffer(kind="close_session"),
+                ),
             ),
         )
 
-    async def recover(
-        self, session_id: str, checkpoint_id: str, expires_at: datetime
-    ) -> DemoHandle:
-        del session_id, checkpoint_id, expires_at
-        from .port import RuntimeSessionUnavailable
+    async def inspect(self, session_id: str):
+        del session_id
+        return PortRecoveryInspectionUnsupported(
+            "recovery_inspection_unsupported",
+            "checkpoint_store_unavailable",
+        )
 
-        raise RuntimeSessionUnavailable("synthetic_demo_recovery_unavailable")
+    async def recover_absent(
+        self, session_id: str, checkpoint_id: str, expires_at: datetime
+    ) -> RecoveryAttempt:
+        del session_id, checkpoint_id, expires_at
+        return RecoveryAttemptUnavailable(
+            kind="recovery_unavailable", reason_code="recovery_unsupported"
+        )
+
+    async def recover_live(self, handle: DemoHandle, checkpoint_id: str) -> RecoveryAttempt:
+        del handle, checkpoint_id
+        return RecoveryAttemptUnavailable(
+            kind="recovery_unavailable", reason_code="checkpoint_unavailable"
+        )
 
     async def snapshot(self, handle: DemoHandle) -> RuntimeSessionSnapshot:
         return handle.snapshot
@@ -77,10 +90,20 @@ class ContractDemoPort:
     async def events(self, handle: DemoHandle, after: int) -> tuple[ShellEvent, ...]:
         return tuple(event for event in handle.events if event.cursor > after)
 
-    async def command(self, handle: DemoHandle, command: ShellCommand):
+    async def forward_viewer_input(self, handle, control_lease_id, forward) -> bool:
+        del handle, control_lease_id, forward
+        return False
+
+    async def command(
+        self,
+        handle: DemoHandle,
+        command: ShellCommand,
+        *,
+        revision_conversation: RevisionConversationContext | None = None,
+    ):
+        del revision_conversation
         old = handle.snapshot
         cursor = old.event_cursor
-        events: list[ShellEvent] = []
         if isinstance(command, StartTask):
             snapshot = old.model_copy(
                 update={
@@ -88,35 +111,50 @@ class ContractDemoPort:
                     "task_revision": 1,
                     "task_text": command.task,
                     "run_status": RunStatus.WAITING_USER,
-                    "pending_question": PendingQuestion(
-                        request_id="demo-question", prompt="Which option should the task use?"
+                    "command_offers": (
+                        AnswerQuestionOffer(
+                            kind="answer_question",
+                            request_id="demo-question",
+                            prompt="Which option should the task use?",
+                        ),
+                        CloseSessionOffer(kind="close_session"),
                     ),
-                    "public_steps": (PublicStep(step=1, stage="intake", status="finished", label="Task admitted"),),
-                    "usage": UsageSummary(prompt_tokens=328, runtime_latency_ms=42),
+                    "public_steps": (
+                        PublicStep(
+                            step=1, stage="intake", status="finished", label="Task admitted"
+                        ),
+                    ),
                 }
             )
-            event_types = ("RUN_STARTED", "STEP_FINISHED", "user_input.required")
+            event_count = 3
         elif isinstance(command, AnswerQuestion):
             snapshot = old.model_copy(
                 update={
                     "task_revision": old.task_revision + 1,
                     "run_status": RunStatus.WAITING_CONFIRMATION,
-                    "pending_question": None,
-                    "pending_confirmation": PendingConfirmation(
-                        request_id="demo-confirmation",
-                        summary="Submit the selected option",
-                        risk="external_effect",
+                    "command_offers": (
+                        ConfirmActionOffer(
+                            kind="confirm_action",
+                            request_id="demo-confirmation",
+                            summary="Submit the selected option",
+                            risk="external_effect",
+                        ),
+                        CloseSessionOffer(kind="close_session"),
                     ),
                     "public_steps": old.public_steps
-                    + (PublicStep(step=2, stage="policy", status="finished", label="Option selected"),),
+                    + (
+                        PublicStep(
+                            step=2, stage="policy", status="finished", label="Option selected"
+                        ),
+                    ),
                 }
             )
-            event_types = ("task.revised", "confirmation.required")
+            event_count = 2
         elif isinstance(command, ApproveAction):
             snapshot = old.model_copy(
                 update={
                     "run_status": RunStatus.DONE,
-                    "pending_confirmation": None,
+                    "command_offers": (CloseSessionOffer(kind="close_session"),),
                     "completion": Completion(
                         outcome="success",
                         code="demo_owner_completion",
@@ -124,48 +162,51 @@ class ContractDemoPort:
                         evidence_refs=("demo:completion",),
                     ),
                     "public_steps": old.public_steps
-                    + (PublicStep(step=3, stage="evaluation", status="finished", label="Owner completion"),),
+                    + (
+                        PublicStep(
+                            step=3, stage="evaluation", status="finished", label="Owner completion"
+                        ),
+                    ),
                 }
             )
-            event_types = ("STEP_FINISHED", "RUN_FINISHED")
+            event_count = 2
         elif isinstance(command, RejectAction):
             snapshot = old.model_copy(
                 update={
                     "run_status": RunStatus.BLOCKED,
-                    "pending_confirmation": None,
+                    "command_offers": (CloseSessionOffer(kind="close_session"),),
                     "completion": Completion(
-                        outcome="blocked", code="user_rejected", message="Action rejected by user."
+                        outcome="blocked",
+                        code="user_rejected",
+                        message="Action rejected by user.",
                     ),
                 }
             )
-            event_types = ("RUN_FINISHED",)
+            event_count = 1
+        elif isinstance(command, CloseSession):
+            await self.close(handle)
+            return Accepted(kind="accepted", command_id=command.command_id, snapshot=old)
         else:
-            raise TypeError("demo port received unsupported command")
-        for event_type in event_types:
+            return Unsupported(
+                kind="unsupported",
+                command_id=command.command_id,
+                code="command_not_supported",
+                snapshot=old,
+            )
+        for _ in range(event_count):
             cursor += 1
             event_snapshot = snapshot.model_copy(update={"event_cursor": cursor})
-            event = ShellEvent(
+            event = SnapshotUpdated(
+                schema_version=SCHEMA_VERSION,
+                type="snapshot.updated",
                 session_id=handle.session_id,
                 event_epoch=handle.event_epoch,
                 cursor=cursor,
-                type=event_type,
-                data={"snapshot": event_snapshot.model_dump(mode="json")},
+                snapshot=event_snapshot,
             )
-            events.append(event)
             handle.events.append(event)
         handle.snapshot = snapshot.model_copy(update={"event_cursor": cursor})
-        return Accepted(command_id=command.command_id, snapshot=handle.snapshot), tuple(events)
-
-    async def revise(self, handle: DemoHandle, command: ReviseTask):
-        return (
-            Unsupported(
-                command_id=command.command_id,
-                capability=Capability.REVISE_TASK,
-                reason="Synthetic demo does not implement Runtime task revision",
-                snapshot=await self.snapshot(handle),
-            ),
-            (),
-        )
+        return Accepted(kind="accepted", command_id=command.command_id, snapshot=handle.snapshot)
 
     async def close(self, handle: DemoHandle) -> None:
         if handle.closed:

@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol, TypeAlias, cast
 
 from affordance_runtime.actions.reconciliation import (
     EffectReconciliation,
@@ -63,6 +63,7 @@ from .checkpoint import (
 from .runtime import TargetRuntime, TargetRuntimeRunOutcome
 
 PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v2"
+PUBLIC_SESSION_V3_SCHEMA_VERSION = "affordance-runtime.session.v3"
 # Revision command identity is an independently versioned, durable wire fact.  The
 # Phase 7 snapshot projection is additive and must not change digests already
 # stored for the unchanged Phase 6 revision command payload.
@@ -159,6 +160,171 @@ class PublicSessionCapability(StrEnum):
     CLOSE_SESSION = "close_session"
 
 
+class PublicSessionCommandKind(StrEnum):
+    START_TASK = "start_task"
+    ANSWER_QUESTION = "answer_question"
+    APPROVE_ACTION = "approve_action"
+    REJECT_ACTION = "reject_action"
+    CANCEL_TASK = "cancel_task"
+    PAUSE_TASK = "pause_task"
+    RESUME_TASK = "resume_task"
+    REVISE_TASK = "revise_task"
+    TAKE_OVER = "take_over"
+    RETURN_CONTROL = "return_control"
+    CLOSE_SESSION = "close_session"
+
+
+@dataclass(frozen=True)
+class PublicSessionCommandCapability:
+    """State-correct unpublished v3 command capability and Runtime-owned refs."""
+
+    kind: PublicSessionCommandKind
+    interaction_ref: str | None = None
+    prompt: str = ""
+    summary: str = ""
+    risk: str = ""
+
+    def __post_init__(self) -> None:
+        interaction_kind = self.kind in {
+            PublicSessionCommandKind.ANSWER_QUESTION,
+            PublicSessionCommandKind.APPROVE_ACTION,
+            PublicSessionCommandKind.REJECT_ACTION,
+        }
+        if interaction_kind != (self.interaction_ref is not None):
+            raise ValueError("interaction capability ref placement is invalid")
+        if self.kind is PublicSessionCommandKind.ANSWER_QUESTION:
+            if not self.prompt or self.summary or self.risk:
+                raise ValueError("answer capability presentation is invalid")
+        elif self.kind in {
+            PublicSessionCommandKind.APPROVE_ACTION,
+            PublicSessionCommandKind.REJECT_ACTION,
+        }:
+            if not self.summary or not self.risk or self.prompt:
+                raise ValueError("confirmation capability presentation is invalid")
+        elif self.prompt or self.summary or self.risk:
+            raise ValueError("non-interaction capability cannot carry presentation")
+
+
+@dataclass(frozen=True)
+class PublicSessionCommand:
+    """Closed Runtime-owned semantic command used by the v3 public boundary."""
+
+    command_id: str
+    kind: PublicSessionCommandKind
+    expected_task_revision: int
+    expected_run_status: PublicSessionStatus
+    task: str = ""
+    interaction_ref: str = ""
+    answer: str = ""
+    checkpoint_id: str = ""
+    control_lease_id: str = ""
+    revision: PublicTaskRevisionCommand | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not self.command_id.strip()
+            or len(self.command_id) > 128
+            or type(self.expected_task_revision) is not int
+            or self.expected_task_revision < 0
+            or not isinstance(self.expected_run_status, PublicSessionStatus)
+        ):
+            raise ValueError("public session command identity/currentness is invalid")
+        required: dict[PublicSessionCommandKind, tuple[bool, ...]] = {
+            PublicSessionCommandKind.START_TASK: (bool(self.task.strip()),),
+            PublicSessionCommandKind.ANSWER_QUESTION: (
+                bool(self.interaction_ref.strip()),
+                bool(self.answer.strip()),
+            ),
+            PublicSessionCommandKind.APPROVE_ACTION: (bool(self.interaction_ref.strip()),),
+            PublicSessionCommandKind.REJECT_ACTION: (bool(self.interaction_ref.strip()),),
+            PublicSessionCommandKind.RESUME_TASK: (bool(self.checkpoint_id.strip()),),
+            PublicSessionCommandKind.TAKE_OVER: (bool(self.checkpoint_id.strip()),),
+            PublicSessionCommandKind.RETURN_CONTROL: (bool(self.control_lease_id.strip()),),
+            PublicSessionCommandKind.REVISE_TASK: (self.revision is not None,),
+        }
+        if not all(required.get(self.kind, (True,))):
+            raise ValueError("public session command payload is incomplete")
+        if self.kind is PublicSessionCommandKind.REVISE_TASK:
+            if self.revision is None or self.revision.command_id != self.command_id:
+                raise ValueError("public revision command identity is invalid")
+        elif self.revision is not None:
+            raise ValueError("only revise_task can carry a revision command")
+
+    @property
+    def payload_digest(self) -> str:
+        payload: dict[str, object] = {
+            "answer": self.answer,
+            "checkpoint_id": self.checkpoint_id,
+            "control_lease_id": self.control_lease_id,
+            "expected_run_status": self.expected_run_status.value,
+            "expected_task_revision": self.expected_task_revision,
+            "interaction_ref": self.interaction_ref,
+            "kind": self.kind.value,
+            "schema_version": PUBLIC_SESSION_V3_SCHEMA_VERSION,
+            "task": self.task,
+        }
+        if self.revision is not None:
+            payload["revision_digest"] = self.revision.payload_digest
+        canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+PublicConflictCode: TypeAlias = Literal[
+    "stale_command",
+    "command_identity_reused",
+    "interaction_ref_mismatch",
+    "checkpoint_mismatch",
+    "checkpoint_already_consumed",
+    "session_closed",
+    "session_state_conflict",
+    "control_owner_conflict",
+    "control_lease_mismatch",
+]
+PublicUnsupportedCode: TypeAlias = Literal["command_not_supported"]
+PublicRejectedCode: TypeAlias = Literal[
+    "command_processing_failed",
+    "command_persistence_failed",
+    "command_projection_failed",
+    "internal_contract_failure",
+]
+
+
+@dataclass(frozen=True)
+class PublicCommandAccepted:
+    kind: Literal["accepted"]
+    command_id: str
+    snapshot: PublicRuntimeSessionSnapshot
+
+
+@dataclass(frozen=True)
+class PublicCommandConflict:
+    kind: Literal["conflict"]
+    command_id: str
+    code: PublicConflictCode
+    snapshot: PublicRuntimeSessionSnapshot
+
+
+@dataclass(frozen=True)
+class PublicCommandUnsupported:
+    kind: Literal["unsupported"]
+    command_id: str
+    code: PublicUnsupportedCode
+    snapshot: PublicRuntimeSessionSnapshot
+
+
+@dataclass(frozen=True)
+class PublicCommandRejected:
+    kind: Literal["rejected"]
+    command_id: str
+    code: PublicRejectedCode
+    snapshot: PublicRuntimeSessionSnapshot
+
+
+PublicCommandAdmission: TypeAlias = (
+    PublicCommandAccepted | PublicCommandConflict | PublicCommandUnsupported | PublicCommandRejected
+)
+
+
 PUBLIC_SESSION_CAPABILITIES = frozenset(PublicSessionCapability)
 BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
     PublicSessionCapability.PAUSE_TASK,
@@ -243,6 +409,7 @@ class PublicRuntimeSessionSnapshot:
     event_epoch: str
     event_cursor: int
     capabilities: frozenset[PublicSessionCapability] = BASE_PUBLIC_SESSION_CAPABILITIES
+    command_capabilities: tuple[PublicSessionCommandCapability, ...] = ()
     task_id: str | None = None
     task_revision: int = 0
     task_text: str | None = None
@@ -324,6 +491,8 @@ def default_public_task_request(session_id: str, instruction: str) -> NaturalLan
 class PublicRuntimeSessionHandle(Protocol):
     async def snapshot(self) -> PublicRuntimeSessionSnapshot: ...
     async def events(self, after: int) -> tuple[PublicRuntimeSessionEvent, ...]: ...
+    async def admits_surface_input(self, control_lease_id: str) -> bool: ...
+    async def inspect_live_checkpoint(self, checkpoint_id: str) -> LiveCheckpointAdmission: ...
     async def start(self, instruction: str) -> PublicRuntimeSessionSnapshot: ...
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot: ...
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
@@ -333,14 +502,118 @@ class PublicRuntimeSessionHandle(Protocol):
     async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot: ...
     async def take_over(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def return_control(self, command_id: str, control_lease_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def admit(self, command: PublicSessionCommand) -> PublicCommandAdmission: ...
     async def close(self) -> None: ...
 
 
 class PublicRuntimeSessionFactory(Protocol):
     async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle: ...
+    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection: ...
+    async def recover_typed(
+        self, session_id: str, checkpoint_id: str, expires_at: datetime
+    ) -> RuntimeRecoveryAttempt: ...
     async def recover(
         self, session_id: str, checkpoint_id: str, expires_at: datetime
     ) -> PublicRuntimeSessionHandle: ...
+
+
+@dataclass(frozen=True)
+class RecoverableCheckpoint:
+    kind: Literal["recoverable_checkpoint"]
+    checkpoint_id: str
+
+
+@dataclass(frozen=True)
+class RecoveryInspectionUnavailable:
+    kind: Literal["recovery_inspection_unavailable"]
+    reason_code: Literal["checkpoint_not_found", "checkpoint_consumed", "checkpoint_unavailable"]
+
+
+@dataclass(frozen=True)
+class RecoveryInspectionUnsupported:
+    kind: Literal["recovery_inspection_unsupported"]
+    reason_code: Literal["checkpoint_store_unavailable", "recovery_reconnector_unavailable"]
+
+
+@dataclass(frozen=True)
+class RecoveryInspectionFailed:
+    kind: Literal["recovery_inspection_failed"]
+    reason_code: Literal["checkpoint_inspection_failed"]
+    retryable: bool = False
+
+
+RuntimeRecoveryInspection: TypeAlias = (
+    RecoverableCheckpoint | RecoveryInspectionUnavailable | RecoveryInspectionUnsupported | RecoveryInspectionFailed
+)
+
+
+class PublicRuntimeRecoveryInspector(Protocol):
+    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection: ...
+
+
+@dataclass(frozen=True)
+class RuntimeRecovered:
+    kind: Literal["recovered"]
+    handle: PublicRuntimeSessionHandle
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryConflict:
+    kind: Literal["recovery_conflict"]
+    reason_code: Literal[
+        "checkpoint_already_resumed",
+        "checkpoint_already_revised",
+        "checkpoint_mismatch",
+    ]
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryUnavailable:
+    kind: Literal["recovery_unavailable"]
+    reason_code: Literal[
+        "checkpoint_not_found",
+        "checkpoint_unavailable",
+        "recovery_unsupported",
+        "environment_not_reconnectable",
+    ]
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryFailed:
+    kind: Literal["recovery_failed"]
+    reason_code: Literal[
+        "checkpoint_store_failed",
+        "runtime_factory_failed",
+        "environment_reconnect_failed",
+        "session_restore_failed",
+    ]
+    retryable: bool = False
+
+
+RuntimeRecoveryAttempt: TypeAlias = (
+    RuntimeRecovered | RuntimeRecoveryConflict | RuntimeRecoveryUnavailable | RuntimeRecoveryFailed
+)
+
+
+@dataclass(frozen=True)
+class LiveCheckpointCurrent:
+    kind: Literal["live_checkpoint_current"]
+    snapshot: PublicRuntimeSessionSnapshot
+
+
+@dataclass(frozen=True)
+class LiveCheckpointConflict:
+    kind: Literal["live_checkpoint_conflict"]
+    reason_code: Literal["checkpoint_mismatch"]
+
+
+@dataclass(frozen=True)
+class LiveCheckpointUnavailable:
+    kind: Literal["live_checkpoint_unavailable"]
+    reason_code: Literal["checkpoint_unavailable"]
+
+
+LiveCheckpointAdmission: TypeAlias = LiveCheckpointCurrent | LiveCheckpointConflict | LiveCheckpointUnavailable
 
 
 @dataclass
@@ -376,6 +649,11 @@ class TargetRuntimeSession:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
     _cleanup_started: bool = field(default=False, init=False, repr=False)
+    _command_admissions: dict[str, tuple[str, PublicCommandAdmission]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.runtime, TargetRuntime):
@@ -391,8 +669,120 @@ class TargetRuntimeSession:
     async def snapshot(self) -> PublicRuntimeSessionSnapshot:
         return self._project()
 
+    async def admits_surface_input(self, control_lease_id: str) -> bool:
+        """Own exact live lease admission without exposing control semantics to Shell."""
+
+        return (
+            not self._closed
+            and self._control_owner is PublicSessionControlOwner.USER
+            and self._control_lease_id is not None
+            and secrets.compare_digest(self._control_lease_id, control_lease_id)
+        )
+
+    async def admit(self, command: PublicSessionCommand) -> PublicCommandAdmission:
+        """Own v3 command identity, semantic admission, and closed outcome conversion."""
+
+        existing = self._command_admissions.get(command.command_id)
+        if existing is not None:
+            digest, admission = existing
+            if secrets.compare_digest(digest, command.payload_digest):
+                return admission
+            return PublicCommandConflict(
+                "conflict",
+                command.command_id,
+                "command_identity_reused",
+                self._project(),
+            )
+        current = self._project()
+        if current.task_revision != command.expected_task_revision or current.status is not command.expected_run_status:
+            return PublicCommandConflict(
+                "conflict",
+                command.command_id,
+                "stale_command",
+                current,
+            )
+        supported = {capability.kind for capability in current.command_capabilities}
+        if command.kind not in supported:
+            code: PublicConflictCode = (
+                "control_owner_conflict"
+                if self._control_owner is PublicSessionControlOwner.USER
+                else "session_state_conflict"
+            )
+            return PublicCommandConflict("conflict", command.command_id, code, current)
+        try:
+            admission = await self._execute_admitted_command(command)
+        except PublicSessionConflict as exc:
+            admission = _convert_public_session_conflict(command.command_id, exc)
+        except Exception:
+            admission = PublicCommandRejected(
+                "rejected",
+                command.command_id,
+                "command_processing_failed",
+                self._project(),
+            )
+        if isinstance(admission, PublicCommandAccepted):
+            self._command_admissions[command.command_id] = (command.payload_digest, admission)
+        return admission
+
+    async def _execute_admitted_command(
+        self,
+        command: PublicSessionCommand,
+    ) -> PublicCommandAdmission:
+        if command.kind is PublicSessionCommandKind.START_TASK:
+            snapshot = await self.start(command.task)
+        elif command.kind is PublicSessionCommandKind.ANSWER_QUESTION:
+            snapshot = await self.answer(command.interaction_ref, command.answer)
+        elif command.kind is PublicSessionCommandKind.APPROVE_ACTION:
+            snapshot = await self.confirm(command.interaction_ref, approved=True)
+        elif command.kind is PublicSessionCommandKind.REJECT_ACTION:
+            snapshot = await self.confirm(command.interaction_ref, approved=False)
+        elif command.kind is PublicSessionCommandKind.CANCEL_TASK:
+            snapshot = await self.cancel(command.command_id)
+        elif command.kind is PublicSessionCommandKind.PAUSE_TASK:
+            snapshot = await self.pause(command.command_id)
+        elif command.kind is PublicSessionCommandKind.RESUME_TASK:
+            snapshot = await self.resume(command.command_id, command.checkpoint_id)
+        elif command.kind is PublicSessionCommandKind.REVISE_TASK:
+            assert command.revision is not None
+            snapshot = await self.revise(command.revision)
+        elif command.kind is PublicSessionCommandKind.TAKE_OVER:
+            snapshot = await self.take_over(command.command_id, command.checkpoint_id)
+        elif command.kind is PublicSessionCommandKind.RETURN_CONTROL:
+            snapshot = await self.return_control(command.command_id, command.control_lease_id)
+        elif command.kind is PublicSessionCommandKind.CLOSE_SESSION:
+            snapshot = self._project()
+            await self.close()
+        else:  # pragma: no cover - StrEnum closes the supported algebra
+            return PublicCommandUnsupported(
+                "unsupported",
+                command.command_id,
+                "command_not_supported",
+                self._project(),
+            )
+        return PublicCommandAccepted("accepted", command.command_id, snapshot)
+
     async def events(self, after: int) -> tuple[PublicRuntimeSessionEvent, ...]:
         return tuple(event for event in self._events if event.cursor > after)
+
+    async def inspect_live_checkpoint(self, checkpoint_id: str) -> LiveCheckpointAdmission:
+        """Admit an exact live recovery ref without consulting durable projection state."""
+
+        async with self._lock:
+            snapshot = self._project()
+            if self._checkpoint_id != checkpoint_id:
+                return LiveCheckpointConflict("live_checkpoint_conflict", "checkpoint_mismatch")
+            state = self._state
+            if (
+                state is None
+                or state.status is not RunStatus.PAUSED
+                or not self._resume_eligible
+                or state.durable_checkpoint_id != checkpoint_id
+            ):
+                return LiveCheckpointUnavailable(
+                    "live_checkpoint_unavailable",
+                    "checkpoint_unavailable",
+                )
+            return LiveCheckpointCurrent("live_checkpoint_current", snapshot)
 
     async def start(self, instruction: str) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
@@ -533,8 +923,7 @@ class TargetRuntimeSession:
             if (
                 state is not None
                 and state.effect_reconciliation is not None
-                and state.effect_reconciliation.status
-                is EffectReconciliationStatus.NEEDS_INPUT
+                and state.effect_reconciliation.status is EffectReconciliationStatus.NEEDS_INPUT
             ):
                 raise PublicSessionConflict(
                     state.effect_reconciliation.reason.value,
@@ -635,10 +1024,7 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("session_closed", self._project())
             if self._control_owner is not PublicSessionControlOwner.USER:
                 raise PublicSessionConflict("user_control_not_active", self._project())
-            if (
-                self._control_lease_id is None
-                or not secrets.compare_digest(self._control_lease_id, control_lease_id)
-            ):
+            if self._control_lease_id is None or not secrets.compare_digest(self._control_lease_id, control_lease_id):
                 raise PublicSessionConflict("control_lease_mismatch", self._project())
             if self._active is not None or self._admitted is None or self._state is None:
                 raise PublicSessionConflict("user_control_return_unavailable", self._project())
@@ -775,8 +1161,7 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("checkpoint_not_found", self._project())
             if (
                 state.effect_reconciliation is not None
-                and state.effect_reconciliation.status
-                is not EffectReconciliationStatus.COMPENSATED
+                and state.effect_reconciliation.status is not EffectReconciliationStatus.COMPENSATED
             ):
                 await self._reject_revision(
                     command,
@@ -793,9 +1178,7 @@ class TargetRuntimeSession:
             if early_effect.disposition in {
                 EffectRevisionDisposition.UNKNOWN,
                 EffectRevisionDisposition.UNSUPPORTED,
-            } and (
-                state.execution_count != 1 or state.latest_effect is None
-            ):
+            } and (state.execution_count != 1 or state.latest_effect is None):
                 code = (
                     "effect_reconciliation_unsupported"
                     if early_effect.disposition is EffectRevisionDisposition.UNSUPPORTED
@@ -840,8 +1223,7 @@ class TargetRuntimeSession:
                     execution_count=state.execution_count,
                     latest_effect=state.latest_effect,
                     revised_goal_satisfied=(
-                        evaluation is not None
-                        and evaluation.status is TaskEvaluationStatus.COMPLETE
+                        evaluation is not None and evaluation.status is TaskEvaluationStatus.COMPLETE
                     ),
                 )
                 if effect_assessment.disposition is EffectRevisionDisposition.COMPENSATION_REQUIRED:
@@ -1098,8 +1480,7 @@ class TargetRuntimeSession:
             self._fail("runtime_session_start_failed", type(exc).__name__)
         finally:
             self._active = None
-            if self._closed:
-                await self._cleanup_once()
+            await self._cleanup_if_closed_or_terminal()
 
     async def _run_answer(self) -> None:
         assert self._request is not None and self._state is not None
@@ -1117,8 +1498,7 @@ class TargetRuntimeSession:
             self._fail("runtime_session_resume_failed", type(exc).__name__)
         finally:
             self._active = None
-            if self._closed:
-                await self._cleanup_once()
+            await self._cleanup_if_closed_or_terminal()
 
     async def _run_confirmation(self, approved: bool) -> None:
         assert self._admitted is not None and self._state is not None
@@ -1134,8 +1514,7 @@ class TargetRuntimeSession:
             self._fail("runtime_session_confirmation_failed", type(exc).__name__)
         finally:
             self._active = None
-            if self._closed:
-                await self._cleanup_once()
+            await self._cleanup_if_closed_or_terminal()
 
     async def _run_continue(self) -> None:
         assert self._admitted is not None and self._state is not None
@@ -1155,8 +1534,7 @@ class TargetRuntimeSession:
             self._fail("runtime_session_resume_failed", type(exc).__name__)
         finally:
             self._active = None
-            if self._closed:
-                await self._cleanup_once()
+            await self._cleanup_if_closed_or_terminal()
 
     def _runtime_with_projection(self) -> TargetRuntime:
         projection = _SessionProjectionSink(self)
@@ -1295,10 +1673,7 @@ class TargetRuntimeSession:
     def _project(self, *, event_cursor: int | None = None) -> PublicRuntimeSessionSnapshot:
         state = self._state
         status = self._status if self._active is not None or state is None else _public_status(state.status)
-        if (
-            self._control_owner is PublicSessionControlOwner.USER
-            or self._control_return_in_progress
-        ):
+        if self._control_owner is PublicSessionControlOwner.USER or self._control_return_in_progress:
             status = PublicSessionStatus.PAUSED
         pending_question = self._intake_question
         pending_confirmation = None
@@ -1325,14 +1700,8 @@ class TargetRuntimeSession:
         request = self._request
         task = self._admitted.task if self._admitted is not None else None
         completion = self._failure or _completion(state, status)
-        reconciliation = (
-            _public_effect_reconciliation(state.effect_reconciliation)
-            if state is not None
-            else None
-        )
-        reconciliation_blocks_control = (
-            reconciliation is not None
-        )
+        reconciliation = _public_effect_reconciliation(state.effect_reconciliation) if state is not None else None
+        reconciliation_blocks_control = reconciliation is not None
         public_resume_eligible = self._resume_eligible and (
             reconciliation is None or reconciliation.status != "needs_input"
         )
@@ -1385,6 +1754,18 @@ class TargetRuntimeSession:
             self._event_epoch,
             len(self._events) if event_cursor is None else event_cursor,
             capabilities=capabilities,
+            command_capabilities=_v3_command_capabilities(
+                status=status,
+                checkpoint_store_available=self.checkpoint_store is not None,
+                checkpoint_id=self._checkpoint_id,
+                resume_eligible=public_resume_eligible,
+                pending_question=pending_question,
+                pending_confirmation=pending_confirmation,
+                control_owner=self._control_owner,
+                control_return_in_progress=self._control_return_in_progress,
+                reconciliation_blocks_control=reconciliation_blocks_control,
+                closed=self._closed,
+            ),
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
             task_text=task.instruction if task is not None else (request.instruction if request else None),
@@ -1419,6 +1800,15 @@ class TargetRuntimeSession:
         result = self.lease.cleanup()
         if inspect.isawaitable(result):
             await result
+
+    async def _cleanup_if_closed_or_terminal(self) -> None:
+        if self._closed or self._status in {
+            PublicSessionStatus.DONE,
+            PublicSessionStatus.CANCELLED,
+            PublicSessionStatus.FAILED,
+            PublicSessionStatus.BLOCKED,
+        }:
+            await self._cleanup_once()
 
 
 @dataclass(frozen=True)
@@ -1458,13 +1848,34 @@ class TargetRuntimeSessionFactory:
                 "environment_factory_failed",
             ) from exc
 
+        return await self.open_prepared(session_id, expires_at, runtime, lease)
+
+    async def open_prepared(
+        self,
+        session_id: str,
+        expires_at: datetime,
+        runtime: TargetRuntime,
+        lease: RuntimeEnvironmentLease,
+        *,
+        request_factory: PublicTaskRequestFactory | None = None,
+    ) -> TargetRuntimeSession:
+        """Construct one session from deployment-owned resources without moving session authority."""
+
+        selected_request_factory = request_factory or self.request_factory
+        if not isinstance(runtime, TargetRuntime):
+            raise PublicSessionOpenError(PublicSessionOpenStage.RUNTIME, "runtime_factory_failed")
+        if not isinstance(lease, RuntimeEnvironmentLease):
+            raise PublicSessionOpenError(PublicSessionOpenStage.ENVIRONMENT, "environment_factory_failed")
+        if not callable(selected_request_factory):
+            await _cleanup_environment_lease(lease)
+            raise PublicSessionOpenError(PublicSessionOpenStage.SESSION, "request_factory_invalid")
         try:
             return TargetRuntimeSession(
                 runtime,
                 lease,
                 session_id,
                 expires_at,
-                self.request_factory,
+                selected_request_factory,
                 self.checkpoint_store,
             )
         except Exception as exc:
@@ -1474,46 +1885,92 @@ class TargetRuntimeSessionFactory:
                 "session_initialization_failed",
             ) from exc
 
-    async def recover(
+    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection:
+        """Convert checkpoint truth and injected reconnectability exactly once."""
+
+        store = self.checkpoint_store
+        if store is None:
+            return RecoveryInspectionUnsupported(
+                "recovery_inspection_unsupported",
+                "checkpoint_store_unavailable",
+            )
+        if self.environment_reconnector is None:
+            return RecoveryInspectionUnsupported(
+                "recovery_inspection_unsupported",
+                "recovery_reconnector_unavailable",
+            )
+        try:
+            checkpoint = await store.load_latest(session_id)
+            if checkpoint is None:
+                return RecoveryInspectionUnavailable(
+                    "recovery_inspection_unavailable",
+                    "checkpoint_not_found",
+                )
+            resume_outcome = await store.checkpoint_resume_outcome(
+                session_id,
+                checkpoint.checkpoint_id,
+            )
+            revision_outcome = await store.checkpoint_revision_outcome(
+                session_id,
+                checkpoint.checkpoint_id,
+            )
+        except Exception:
+            return RecoveryInspectionFailed(
+                "recovery_inspection_failed",
+                "checkpoint_inspection_failed",
+            )
+        if resume_outcome is not None or revision_outcome is not None:
+            return RecoveryInspectionUnavailable(
+                "recovery_inspection_unavailable",
+                "checkpoint_consumed",
+            )
+        if not checkpoint.resume_eligible or not checkpoint.environment_reference:
+            return RecoveryInspectionUnavailable(
+                "recovery_inspection_unavailable",
+                "checkpoint_unavailable",
+            )
+        return RecoverableCheckpoint("recoverable_checkpoint", checkpoint.checkpoint_id)
+
+    async def recover_typed(
         self,
         session_id: str,
         checkpoint_id: str,
         expires_at: datetime,
-    ) -> TargetRuntimeSession:
+    ) -> RuntimeRecoveryAttempt:
         store = self.checkpoint_store
         if store is None:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
-                "checkpoint_store_unavailable",
+            return RuntimeRecoveryUnavailable(
+                "recovery_unavailable",
+                ("environment_not_reconnectable" if self.environment_reconnector is None else "recovery_unsupported"),
             )
         try:
             checkpoint = await store.load(session_id, checkpoint_id)
             resume_outcome = await store.checkpoint_resume_outcome(session_id, checkpoint_id)
             revision_outcome = await store.checkpoint_revision_outcome(session_id, checkpoint_id)
-        except Exception as exc:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
-                "checkpoint_invalid",
-            ) from exc
+        except Exception:
+            return RuntimeRecoveryFailed(
+                "recovery_failed",
+                "checkpoint_store_failed",
+            )
         if checkpoint is None:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
+            return RuntimeRecoveryUnavailable(
+                "recovery_unavailable",
                 "checkpoint_not_found",
             )
         if resume_outcome is not None:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
+            return RuntimeRecoveryConflict(
+                "recovery_conflict",
                 "checkpoint_already_resumed",
             )
         if revision_outcome is not None:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
+            return RuntimeRecoveryConflict(
+                "recovery_conflict",
                 "checkpoint_already_revised",
             )
         reconnector = self.environment_reconnector
         if not checkpoint.resume_eligible or not checkpoint.environment_reference or reconnector is None:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.ENVIRONMENT,
+            return RuntimeRecoveryUnavailable(
+                "recovery_unavailable",
                 "environment_not_reconnectable",
             )
         try:
@@ -1522,11 +1979,11 @@ class TargetRuntimeSessionFactory:
                 runtime = await runtime
             if not isinstance(runtime, TargetRuntime):
                 raise TypeError("Runtime factory must return TargetRuntime")
-        except Exception as exc:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.RUNTIME,
+        except Exception:
+            return RuntimeRecoveryFailed(
+                "recovery_failed",
                 "runtime_factory_failed",
-            ) from exc
+            )
         lease: RuntimeEnvironmentLease | None = None
         try:
             candidate = reconnector(session_id, checkpoint.environment_reference)
@@ -1537,11 +1994,11 @@ class TargetRuntimeSessionFactory:
             if candidate.reconnect_reference != checkpoint.environment_reference:
                 raise ValueError("reconnected environment reference changed")
             lease = candidate
-        except Exception as exc:
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.ENVIRONMENT,
-                "environment_not_reconnectable",
-            ) from exc
+        except Exception:
+            return RuntimeRecoveryFailed(
+                "recovery_failed",
+                "environment_reconnect_failed",
+            )
         try:
             task = checkpoint.restore_task()
             facts = checkpoint.restore_run_facts()
@@ -1578,13 +2035,45 @@ class TargetRuntimeSessionFactory:
                 checkpoint.checkpoint_id,
             )
             session._emit("SESSION_RECOVERED")
-            return session
-        except Exception as exc:
+            return RuntimeRecovered("recovered", session)
+        except Exception:
             await _cleanup_environment_lease(lease)
-            raise PublicSessionOpenError(
-                PublicSessionOpenStage.SESSION,
-                "checkpoint_restore_failed",
-            ) from exc
+            return RuntimeRecoveryFailed(
+                "recovery_failed",
+                "session_restore_failed",
+            )
+
+    async def recover(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> TargetRuntimeSession:
+        attempt = await self.recover_typed(session_id, checkpoint_id, expires_at)
+        if isinstance(attempt, RuntimeRecovered):
+            return cast(TargetRuntimeSession, attempt.handle)
+        if isinstance(attempt, RuntimeRecoveryConflict):
+            raise PublicSessionOpenError(PublicSessionOpenStage.SESSION, attempt.reason_code)
+        if isinstance(attempt, RuntimeRecoveryUnavailable):
+            stage = (
+                PublicSessionOpenStage.ENVIRONMENT
+                if attempt.reason_code == "environment_not_reconnectable"
+                else PublicSessionOpenStage.SESSION
+            )
+            legacy_code = (
+                "checkpoint_store_unavailable" if attempt.reason_code == "recovery_unsupported" else attempt.reason_code
+            )
+            raise PublicSessionOpenError(stage, legacy_code)
+        legacy_failure = {
+            "checkpoint_store_failed": (PublicSessionOpenStage.SESSION, "checkpoint_invalid"),
+            "runtime_factory_failed": (PublicSessionOpenStage.RUNTIME, "runtime_factory_failed"),
+            "environment_reconnect_failed": (
+                PublicSessionOpenStage.ENVIRONMENT,
+                "environment_not_reconnectable",
+            ),
+            "session_restore_failed": (PublicSessionOpenStage.SESSION, "checkpoint_restore_failed"),
+        }[attempt.reason_code]
+        raise PublicSessionOpenError(*legacy_failure)
 
 
 def _request_from_task(task: TaskGoal) -> NaturalLanguageTaskRequest:
@@ -1616,6 +2105,182 @@ async def _cleanup_environment_lease(lease: RuntimeEnvironmentLease) -> None:
         await result
 
 
+def _convert_public_session_conflict(
+    command_id: str,
+    conflict: PublicSessionConflict,
+) -> PublicCommandAdmission:
+    """Exhaustively normalize legacy internal codes at the Runtime owner boundary."""
+
+    code = conflict.code
+    if code in {
+        "revision_needs_input",
+        "revision_no_change",
+        "revision_new_task_suggested",
+        "revision_unsupported",
+        "revision_failed",
+        "effect_reconciliation_required",
+        "effect_non_compensable",
+        "effect_reconciliation_unknown",
+        "effect_reconciliation_unsupported",
+    }:
+        return PublicCommandAccepted("accepted", command_id, conflict.snapshot)
+    conflict_codes: dict[str, PublicConflictCode] = {
+        "stale_command": "stale_command",
+        "command_identity_reused": "command_identity_reused",
+        "revision_command_conflict": "command_identity_reused",
+        "resume_command_conflict": "command_identity_reused",
+        "takeover_command_conflict": "command_identity_reused",
+        "interrupt_mismatch": "interaction_ref_mismatch",
+        "checkpoint_mismatch": "checkpoint_mismatch",
+        "checkpoint_already_resumed": "checkpoint_already_consumed",
+        "checkpoint_already_revised": "checkpoint_already_consumed",
+        "takeover_command_consumed": "checkpoint_already_consumed",
+        "session_closed": "session_closed",
+        "session_not_idle": "session_state_conflict",
+        "run_active": "session_state_conflict",
+        "run_not_active": "session_state_conflict",
+        "run_not_resumable": "session_state_conflict",
+        "run_not_revisable": "session_state_conflict",
+        "control_request_conflict": "session_state_conflict",
+        "user_control_return_unavailable": "session_state_conflict",
+        "user_control_active": "control_owner_conflict",
+        "user_control_not_active": "control_owner_conflict",
+        "control_lease_mismatch": "control_lease_mismatch",
+    }
+    if code in conflict_codes:
+        return PublicCommandConflict(
+            "conflict",
+            command_id,
+            conflict_codes[code],
+            conflict.snapshot,
+        )
+    if code in {
+        "pause_unavailable",
+        "resume_unavailable",
+        "revision_unavailable",
+        "takeover_unavailable",
+    }:
+        return PublicCommandUnsupported(
+            "unsupported",
+            command_id,
+            "command_not_supported",
+            conflict.snapshot,
+        )
+    if code in {
+        "pause_persistence_failed",
+        "resume_persistence_failed",
+        "revision_persistence_failed",
+        "takeover_persistence_failed",
+        "checkpoint_not_found",
+    }:
+        return PublicCommandRejected(
+            "rejected",
+            command_id,
+            "command_persistence_failed",
+            conflict.snapshot,
+        )
+    if code in {
+        "control_boundary_failed",
+        "revision_pause_failed",
+        "user_control_currentness_unavailable",
+    }:
+        return PublicCommandRejected(
+            "rejected",
+            command_id,
+            "command_processing_failed",
+            conflict.snapshot,
+        )
+    return PublicCommandRejected(
+        "rejected",
+        command_id,
+        "internal_contract_failure",
+        conflict.snapshot,
+    )
+
+
+def _v3_command_capabilities(
+    *,
+    status: PublicSessionStatus,
+    checkpoint_store_available: bool,
+    checkpoint_id: str | None,
+    resume_eligible: bool,
+    pending_question: PublicPendingQuestion | None,
+    pending_confirmation: PublicPendingConfirmation | None,
+    control_owner: PublicSessionControlOwner,
+    control_return_in_progress: bool,
+    reconciliation_blocks_control: bool,
+    closed: bool,
+) -> tuple[PublicSessionCommandCapability, ...]:
+    if closed:
+        return ()
+    if control_return_in_progress:
+        return (PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION),)
+    if control_owner is PublicSessionControlOwner.USER:
+        return (
+            PublicSessionCommandCapability(PublicSessionCommandKind.RETURN_CONTROL),
+            PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION),
+        )
+
+    capabilities: list[PublicSessionCommandCapability] = []
+    if status is PublicSessionStatus.IDLE:
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.START_TASK))
+    if status in {
+        PublicSessionStatus.RUNNING,
+        PublicSessionStatus.WAITING_USER,
+        PublicSessionStatus.WAITING_CONFIRMATION,
+        PublicSessionStatus.PAUSED,
+    }:
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CANCEL_TASK))
+    if pending_question is not None and status is PublicSessionStatus.WAITING_USER:
+        capabilities.append(
+            PublicSessionCommandCapability(
+                PublicSessionCommandKind.ANSWER_QUESTION,
+                interaction_ref=pending_question.interrupt_id,
+                prompt=pending_question.prompt,
+            )
+        )
+    if pending_confirmation is not None and status is PublicSessionStatus.WAITING_CONFIRMATION:
+        for kind in (
+            PublicSessionCommandKind.APPROVE_ACTION,
+            PublicSessionCommandKind.REJECT_ACTION,
+        ):
+            capabilities.append(
+                PublicSessionCommandCapability(
+                    kind,
+                    interaction_ref=pending_confirmation.interrupt_id,
+                    summary=pending_confirmation.summary,
+                    risk=pending_confirmation.risk,
+                )
+            )
+    if checkpoint_store_available and status in {
+        PublicSessionStatus.RUNNING,
+        PublicSessionStatus.WAITING_USER,
+        PublicSessionStatus.WAITING_CONFIRMATION,
+    }:
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.PAUSE_TASK))
+    if (
+        checkpoint_store_available
+        and not reconciliation_blocks_control
+        and status
+        in {
+            PublicSessionStatus.RUNNING,
+            PublicSessionStatus.WAITING_USER,
+            PublicSessionStatus.WAITING_CONFIRMATION,
+            PublicSessionStatus.PAUSED,
+        }
+    ):
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.REVISE_TASK))
+    if status is PublicSessionStatus.PAUSED and resume_eligible and checkpoint_id is not None:
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.RESUME_TASK))
+    if checkpoint_store_available and status is PublicSessionStatus.PAUSED and checkpoint_id is not None:
+        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.TAKE_OVER))
+    capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION))
+    kinds = tuple(capability.kind for capability in capabilities)
+    if len(kinds) != len(set(kinds)):
+        raise AssertionError("Runtime v3 command capabilities must be unique by kind")
+    return tuple(capabilities)
+
+
 def _revision_pause_command_id(command_id: str) -> str:
     digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
     return f"revision-pause:{digest}"
@@ -1639,11 +2304,7 @@ def _public_effect_reconciliation(
             Literal["reversible", "compensatable", "irreversible", "unknown"],
             reconciliation.original_effect.reversibility.value,
         ),
-        (
-            reconciliation.compensation_effect.effect_ref
-            if reconciliation.compensation_effect is not None
-            else ""
-        ),
+        (reconciliation.compensation_effect.effect_ref if reconciliation.compensation_effect is not None else ""),
     )
 
 

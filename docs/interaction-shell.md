@@ -1,6 +1,6 @@
 # External Web Interaction and Evaluation Shell
 
-Status: **Full Web control profile implemented and verified through Phase 9**
+Status: **Full Web control profile implemented and verified through Phase 9; Interaction Shell frontend governance Phase 0–3 implemented and provider-free verified as the sole v3 contract; Phase 10 analysis-surface consolidation implemented provider-free, with a fresh remote Langfuse API witness pending separate evidence**
 
 Date: 2026-08-27
 
@@ -12,8 +12,8 @@ architecture and benchmark closure remain governed by the main Runtime architect
 ## 1. Decision
 
 Build one external Web shell. It is neither a second GUI Agent nor an internal Core module. It owns user-facing session
-lifecycle, command serialization, bounded conversational revision input, event delivery, evaluation projection, and
-browser viewing. It consumes only versioned typed Runtime commands, events, snapshots, trace exports, and benchmark
+lifecycle, command serialization, bounded conversational revision input, event delivery, bounded evaluation summary
+links, and browser viewing. It consumes only versioned typed Runtime commands, events, snapshots, trace exports, and benchmark
 artifacts. It does not import, mutate, or drive `CoreAgentLoop` internals.
 
 The shell contract, synthetic demo, frontend, diagnosis projection, provider-free tests, and local real-execution
@@ -63,7 +63,8 @@ framework can own without duplicating Runtime authority.
 | Structured model calls | existing PydanticAI/provider boundary | another LLM or Agent framework |
 | Model-history persistence | PydanticAI Harness `StepPersistence(SqliteStepStore)`, `ModelMessagesTypeAdapter`, and deferred-tool results | a parallel transcript schema or prose reconstruction |
 | Initial durable session storage | SQLite transaction/WAL, with Postgres only when multi-process deployment requires it | a custom event store or event-sourcing platform |
-| Trace, usage, and cost | PydanticAI/custom-provider OpenTelemetry instrumentation plus the existing Runtime trace/Langfuse projection; deployment exporter wiring remains pending | another observability platform |
+| Trace, usage, cost, and engineering analysis | PydanticAI/custom-provider OpenTelemetry, append-only Runtime JSONL, Langfuse observations/scores/dashboards, and benchmark-owned result artifacts | another observability platform or a second diagnostics database |
+| Optional research trajectory inspection | AgentLab `ExpResult`/AgentXRay behind a read-only artifact adapter, only if screenshot-level inspection justifies the extra dependency | replacing the Runtime/benchmark loop to obtain a viewer |
 | Charts | shadcn chart components/Recharts | custom SVG charting |
 | Web end-to-end tests | Playwright | a custom browser test harness |
 
@@ -82,7 +83,9 @@ implementation details behind those boundaries, not additional cross-layer APIs:
    Shell as a DTO and never a second evaluator or workflow state machine;
 5. `TaskRevisionCompiler`: a one-shot conversion dependency invoked inside `RuntimeSessionPort.revise`, with bounded
    user input and a closed structured-output contract using the existing PydanticAI/provider boundary;
-6. `CaseDiagnosisProjector`: deterministic interpretation of exported benchmark/trace evidence;
+6. `CaseDiagnosisProjector`: a transitional deterministic compatibility projection over exported benchmark/trace
+   evidence; the target analysis path publishes bounded owner-produced metrics to Langfuse and reduces the Shell
+   diagnosis route to a summary/deep-link surface rather than evolving this projector into a second analytics service;
 7. Web composition and small domain renderers over the reused UI components.
 
 The proposal does not introduce Temporal, Celery, a custom workflow engine, a custom event store, or multiple tracing
@@ -101,7 +104,7 @@ The following states must not be collapsed into one label such as "implemented":
 
 | Layer | Current state | Meaning |
 |---|---|---|
-| Shell contracts, API, frontend, demo, and provider-free tests | Implemented | The public interaction shape and synthetic flow exist. |
+| Shell contracts, API, frontend, demo, and provider-free tests | v3 implemented and provider-free verified | FastAPI/Pydantic is the only public operation/schema authority. One generated DTO/strict-validator/named-SDK/event chain feeds one exhaustive command builder, controller, view-model and React surface; the synthetic API/SSE/Playwright flow passes and all v2/manual transport paths are deleted. Final fresh-context review and commit attest the governance closure separately from implementation. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
 | Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, bounded task revision/effect reconciliation, snapshot/event, and close; SQLite remains private to Runtime. |
@@ -111,11 +114,11 @@ The following states must not be collapsed into one label such as "implemented":
 | Durable pause | Implemented and verified | Public `PAUSED` is projected only after one SQLite WAL transaction commits the Runtime checkpoint and pause-command outcome. |
 | Restart resume | Implemented for reconnectable leases; unavailable in local BrowserGym | Checkpoint validation/hydration, exact environment reconnection, fresh World, new event epoch, same-session auth, and one-shot `ResumeRun` are implemented. The local BrowserGym profile cannot reconnect its Playwright context and returns typed `environment_not_reconnectable`. |
 | Running-task revision | Implemented with bounded single-effect reconciliation | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. One retained known effect is either kept by fresh complete evaluation or attached to revision `n+1` as pending compensation; uncertain, irreversible, missing, or multiple effect truth fails closed without replacing revision `n`. |
-| Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
+| Model/Runtime analysis export | Partially deployed, non-blocking | Benchmark runs load the root environment and currently publish Runtime JSONL plus Langfuse observations. The standalone Shell deployment still lacks a fully verified native PydanticAI recording `TracerProvider + exporter`, and the current Langfuse projection needs standard model/cost/latency field correction. Neither gap affects Runtime truth. |
 | Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
 | Exclusive user takeover/return | Implemented and verified for Steel | Runtime owns one `agent|user` authority and opaque process-local lease. `TakeOver` consumes the exact durable paused checkpoint before user ownership; only that snapshot enables native Steel input. A WebSocket binds that lease and every frame verifies exact current equality under the session command lock. `ReturnControl` revokes the lease before fresh capture. Capture failure grants a new user lease, so old sockets never revive; restart revokes the lease and cannot reuse the consumed checkpoint. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Full Web control release profile verified | Phase 0–9 contracts, Runtime authority, Shell v2 projection, generated OpenAPI/frontend types, provider-free tests, docs, and protected Steel control agree. Viewer evidence includes a no-model/no-action CDP reset, native H.264 playback, the authenticated WHEP/video path, and a no-model takeover/return chain that fenced an old socket during blocked capture, changed the same page once, and closed from fresh World without a second policy call. No live compensation action or benchmark was run. |
+| Delivery hygiene | Full Web control release profile verified; frontend-governance v3 implementation verified provider-free | Phase 0–9 contracts, Runtime authority, sole Shell v3 projection, deterministic OpenAPI plus generated DTO/Valibot/SDK/event artifacts, provider-free tests, docs, and protected Steel control agree. Viewer evidence includes a no-model/no-action CDP reset, native H.264 playback, the authenticated WHEP/video path, and a no-model takeover/return chain that fenced an old socket during blocked capture, changed the same page once, and closed from fresh World without a second policy call. No live compensation action or benchmark was run. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -147,8 +150,8 @@ There is one current public `RuntimeSessionSnapshot` per session and one ordered
 port-owned event epoch/cursor. Runtime facts are
 converted to their public shell representation once at the adapter boundary, then reused unchanged by SSE, snapshot
 hydration, UI rendering, and optional persistence. The frontend and Langfuse adapters must not independently rebuild
-run status, pending input, task completion, or execution outcomes. Benchmark diagnosis separately consumes the
-versioned benchmark/trace export and never round-trips through UI events.
+run status, pending input, task completion, or execution outcomes. Benchmark analysis separately consumes the
+versioned benchmark/trace export, publishes only derived observations/scores, and never round-trips through UI events.
 
 `RunSessionManager` keeps only external resource state: session identity, opaque Runtime handle, command lock or
 queue, expiry, and whether the external session is open or closed. Runtime status and event position remain in the public
@@ -194,13 +197,20 @@ The control/resume design must remain shallower than the Agent loop it exposes:
 The dependency direction is one-way:
 
 ```text
-UI → Shell command/manager → RuntimeSessionPort → opaque Runtime session handle
-                                      │
-                                      ├→ owner-produced public snapshot/event → UI
-                                      └→ deployment-private Runtime/environment/checkpoint internals
+frontend controller/view-model
+← generated validator/client
+← RuntimeSessionPort wire projection
+← Runtime semantic admission/transition
+← RuntimeSessionPort fresh pre-Runtime deployment gate
+← manager credential/session lock
 
-Viewer proxy ← opaque viewer reference (independent side channel)
-Diagnosis    ← exported trace/benchmark artifacts (independent side channel)
+RuntimeSessionPort → opaque Runtime session handle
+                   → owner-produced public snapshot/event → generated validator/client
+                   → deployment-private Runtime/environment/checkpoint internals
+
+Viewer proxy      ← opaque viewer reference (independent side channel)
+Langfuse analysis ← exported trace/benchmark artifacts (independent side channel)
+Shell summary     ← bounded result/analysis locators, never raw trace reconstruction
 ```
 
 ## 2. Why this is an external proposal
@@ -249,8 +259,9 @@ viewer proxy ──> opaque viewer reference from the same browser lease
 
 benchmark artifacts / exported trace
               │
-              ▼
-     CaseDiagnosisProjector ──> Langfuse / evaluation UI
+              ├──> append-only local evidence (evaluation authority remains in result)
+              ├──> Langfuse observations/scores/dashboards (primary analysis UI)
+              └──> bounded Shell summary + analysis/evidence locators
 ```
 
 `RuntimeSessionPort` is the anti-coupling boundary. The external service may request only supported operations such as
@@ -540,50 +551,32 @@ effect evidence.
 
 ## 8. Typed command API
 
-Initial endpoints:
+Current sole v3 command surface:
 
 ```http
 POST /sessions
-POST /sessions/{session_id}/tasks
 GET  /sessions/{session_id}
 GET  /sessions/{session_id}/events
-
-POST /sessions/{session_id}/commands/answer
-POST /sessions/{session_id}/commands/approve
-POST /sessions/{session_id}/commands/reject
-POST /sessions/{session_id}/commands/close
+POST /sessions/{session_id}/commands
+POST /sessions/{session_id}/recover
 ```
 
-Capability-gated endpoints are added only after their Runtime contracts exist:
-
-```http
-POST /sessions/{session_id}/commands/pause
-POST /sessions/{session_id}/commands/resume
-POST /sessions/{session_id}/commands/cancel
-POST /sessions/{session_id}/commands/revise
-POST /sessions/{session_id}/commands/takeover
-POST /sessions/{session_id}/commands/return-control
-POST /sessions/{session_id}/commands/start-new-task
-```
-
-Every command carries:
+The unified command body is one closed discriminated union. Every command carries:
 
 ```text
 command_id
-session_id
 expected_task_revision
-expected_run_status or pending request identity where applicable
-expected_checkpoint_id where a paused/recovered state is addressed
+expected_run_status
+exact interaction/checkpoint/control ref where that command requires one
 typed payload
 ```
 
-The manager serializes commands per session. It rejects stale non-revision commands from the current Runtime snapshot;
-for `ReviseTask` it forwards the complete command and lets Runtime validate expected revision/status/checkpoint so the
-same owner also decides durable replay. An HTTP success means the command was admitted, not that the GUI task
+The manager authenticates and serializes commands per session but never reads status/refs to decide legality. The
+`RuntimeSessionPort` performs only the fresh pre-Runtime TakeOver deployment gate and wire projection; Runtime validates
+identity, expected revision/status, exact refs, session/control state and durable replay for every command. An HTTP success means the command was admitted, not that the GUI task
 succeeded. Task outcome continues to arrive through owner events.
 `command_id` and expected values provide optimistic concurrency across reconnects; a stale revision or checkpoint
-returns `Conflict` with the current owner-produced snapshot. The current in-memory implementation treats every reused
-command ID as `duplicate_command`. The durable target algebra is stricter and genuinely idempotent:
+returns `Conflict` with the current owner-produced snapshot. The implemented algebra is idempotent:
 
 ```text
 same command_id + same canonical payload digest
@@ -827,7 +820,7 @@ Three records serve different owners and must not be merged:
 |---|---|---|
 | Shell bounded conversation | interpret user-owned follow-up/revision language and render chat | bounded shell/session projection; no GUI execution authority |
 | PydanticAI model messages/steps | preserve exact ActionPolicy tool-call/result conversation and model-step lifecycle | Harness `StepPersistence`/`SqliteStepStore`; Runtime checkpoint stores only a settled snapshot reference and digest |
-| Trace/Langfuse transcript | observe provider calls, repairs, latency, and lineage | PydanticAI/native provider OpenTelemetry plus append-only Runtime diagnosis projection; never resume/control authority |
+| Trace/Langfuse transcript | observe provider calls, repairs, latency, and lineage | PydanticAI/native provider OpenTelemetry plus append-only Runtime JSONL and asynchronous Langfuse projection; never resume/control authority |
 
 The shell conversation is necessary for user experience and revision interpretation, but it is not sufficient to
 resume the Agent. The PydanticAI transcript is necessary for model continuity, but it is not sufficient to restore the
@@ -836,10 +829,12 @@ repair attempt remains captured at the provider boundary even when the enclosing
 PydanticAI ActionPolicy calls have native instrumentation with binary content
 disabled; GoalCompiler/TaskRevisionCompiler calls made through the custom
 structured `ModelPort` have compatible `gen_ai.*` instrumentation at that
-provider boundary. The current deployment does not configure a recording
-`TracerProvider` or exporter, so no deployed model-span recording is claimed.
-A later deployment may choose Langfuse or another OTLP exporter without adding
-a Runtime-specific transcript database. Ephemeral `last_invocation_result` and
+provider boundary. Benchmark runs that load the root environment currently
+persist JSONL in their per-run evidence directory and publish the asynchronous
+Langfuse projection. The standalone Shell deployment still lacks a fully
+verified native recording `TracerProvider + exporter`, and Phase 10 corrects
+the remaining standard Langfuse model/cost/timing mapping without adding a
+Runtime-specific transcript database. Ephemeral `last_invocation_result` and
 Runtime JSONL/Langfuse projections remain diagnostics, not persistence or
 recovery inputs.
 
@@ -968,48 +963,145 @@ reconnection is separately projected and may fail without changing a valid Runti
 
 ## 12. Evaluation and bad-case diagnosis
 
-Evaluation is an external consumer of exported evidence. It does not add an evaluator, monitor, state machine, or
-trace-dependent control path to the Runtime.
+Evaluation and analysis are separate responsibilities. Benchmark-native evaluation owns success, failure, reward,
+and terminal evidence. Analysis consumes those results plus owner-produced Runtime/model traces to explain cost,
+latency, context pressure, and trajectory behavior. It does not add an evaluator, monitor, state machine, Agent, or
+trace-dependent control path to Runtime.
+
+### 12.1 Authoritative result and viewing surfaces
+
+There is one result authority and three deliberately different viewing surfaces:
+
+| Concern | Owner / primary surface | Contract |
+|---|---|---|
+| Task success, failure, reward, and native-verifier evidence | benchmark evaluator and versioned `BenchmarkCaseResult` persisted in the run evidence directory | authoritative; neither Langfuse nor Shell may overwrite or reinterpret it |
+| Model/provider calls, input/output usage, cost, latency, trace tree, scores, filters, and engineering annotation | Langfuse | primary analysis UI; asynchronous and fail-open |
+| Screenshot/action/World artifacts required for a case investigation | append-only local run evidence; optionally a read-only AgentLab AgentXRay adapter | durable evidence and research inspection, never Runtime state |
+| Active task control, HITL, Viewer, pause/resume/revision/takeover, and a concise completed-run summary | Interaction Shell operator UI | product control surface; no historical analytics engine |
+
+The existing `/diagnostics` workbench is a transitional implementation, not the target primary analysis product. It
+currently accepts a manually assembled export, stores its projection in process memory, and renders only a subset of
+the available token/trajectory fields. Phase 10 reduces it to a bounded summary and evidence/Langfuse links after the
+Langfuse path proves equivalent coverage. It must not gain its own transcript store, trace index, result database,
+dashboard query engine, failure taxonomy authority, or Agent.
+
+The target data flow is:
 
 ```text
-versioned BenchmarkCaseResult + public trace export
-                    │
-                    ▼
-          CaseDiagnosisProjector
-                    │
-          ┌─────────┴──────────┐
-          ▼                    ▼
-   Langfuse projection    Web evaluation view
+Runtime/model owners                    benchmark evaluator
+        │                                      │
+        ├─ append-only typed JSONL                └─ authoritative BenchmarkCaseResult
+        │                                                   │
+        └─ asynchronous OTel/Langfuse observations ◄─ bounded result metrics/scores
+                                  │
+                    Langfuse trace + dashboards
+                                  │
+                     stable run/case analysis locator
+                                  │
+           Shell completed-run summary and "Open in Langfuse"
 ```
 
-`CaseDiagnosisProjector` emits:
+If Langfuse is unavailable, the benchmark result and local JSONL remain complete. If the Shell is unavailable, neither
+evaluation nor analysis evidence changes. No analysis result is accepted as a Runtime command, checkpoint fact,
+dispatch receipt, World fact, or task-completion signal.
 
-```text
-terminal_stage
-terminal_code
-first_abnormal_step
-last_progress_step
-likely_upstream_stage
-context_health
-trajectory_metrics
-evidence_refs
-```
+### 12.2 Reuse boundary
 
-Canonical outcome and failure fields are copied from exported owner facts. `likely_upstream_stage` is a bounded,
-non-authoritative classification with confidence and evidence references; `unknown` is valid. Monitor no-progress or
-oscillation is a control-stage terminal fact, not automatic proof that Monitor caused the run to fail. A supported
-upstream classification may identify perception, policy, grounding/binding, execution, or evaluation only when the
-preceding exported evidence establishes it.
+The implementation reuses mature components before adding code:
 
-A hard context-capacity diagnosis requires an exported capacity rejection or `complete_request_tokens` exceeding the
-exported `effective_input_limit`. High history share, compaction, and long trajectories are context pressure only.
-Claims of context pollution or summary information loss require controlled replay/ablation and are not inferred from
-one trace.
+- PydanticAI native instrumentation owns model/tool spans, provider messages, and provider usage at the model
+  boundary. Existing custom-provider spans join the same OpenTelemetry lineage; no parallel transcript schema is
+  added.
+- Langfuse owns trace storage and navigation, generation usage/cost display, filters, dashboards, scores, annotation
+  queues, and Metrics/API export. The project does not build replacements for those capabilities.
+- existing benchmark instrumentation owns request-admission estimates and case metrics; `EpisodeMonitor` owns typed
+  `control_stall` and `state_oscillation` signals. The analysis path copies them and never recomputes them from prose,
+  screenshots, or UI events.
+- AgentLab `ExpResult`/AgentXRay is an optional developer-only viewer for screenshots/actions/profiling. It may be
+  admitted behind a read-only artifact adapter if it closes a demonstrated investigation gap. The main Runtime and
+  benchmark runner are not replaced merely to satisfy AgentXRay's storage format.
 
-The projection exposes success, failure stage, first abnormal step, token usage by request section, model/runtime
-latency, steps, retries, recoveries, no-progress/cycles, context fill ratio, and capacity rejection. Langfuse remains a
-viewer for these projections. The shell neither changes benchmark status nor treats Langfuse availability as evidence
-of task success.
+Only three small project-specific projections are permitted:
+
+1. an exporter that attaches stable run/case identity and already-produced token/trajectory metrics to Langfuse
+   observations or scores;
+2. a resolver from a completed benchmark case to its local evidence and Langfuse analysis locator;
+3. a deterministic offline comparator that labels a trajectory `suspected_detour` only from explicit relative
+   evidence. It is analysis output, not evaluation or Runtime truth.
+
+No analysis Agent, second database, second event ledger, custom chart framework, transcript reconstruction, or
+Langfuse-to-Runtime feedback loop is introduced.
+
+### 12.3 Token and cost semantics
+
+Two token families must remain distinct:
+
+| Family | Fields | Meaning |
+|---|---|---|
+| Provider usage | `prompt_tokens`, `completion_tokens`, `total_tokens`, provider cost | provider-reported or provider-boundary usage suitable for usage/cost reporting |
+| Request-admission estimate | `system_tokens`, `actor_world_tokens`, `history_tokens`, `tool_schema_tokens`, `image_estimated_tokens`, `repair_tokens`, provider-envelope/model-settings/output-contract overhead, `estimated_input_tokens`, `output_reserve_tokens`, `complete_request_tokens`, `effective_input_limit` | conservative capacity and composition evidence, not a second billing total |
+
+`output_reserve_tokens` participates in admission capacity but is not prompt usage. Per-section estimates may not be
+summed with provider prompt tokens and reported as cost. A hard context-capacity diagnosis requires an exported
+capacity rejection or `complete_request_tokens > effective_input_limit`. High history share, compaction, and long
+trajectories establish context pressure only. Context pollution or summary information loss requires controlled
+replay/ablation and is not inferred from one trace.
+
+Each Langfuse generation must populate the standard `model`, `usage_details`, start/end timing, environment, and stable
+run/case tags. Provider cost is either ingested or inferred from a matching Langfuse model definition. Section-level
+estimates remain clearly named metadata or bounded analysis metrics so they cannot corrupt standard input/output cost.
+At minimum the analysis view must support:
+
+- input/output usage and cost by model, profile, task, run, and time;
+- per-turn prompt growth and cumulative usage;
+- system/World/history/tool-schema/image/repair composition and output reserve;
+- history share, context fill ratio, capacity rejection, retries, and repair attempts;
+- model latency separately from environment/runtime latency.
+
+### 12.4 Trajectory diagnosis
+
+Trajectory facts form three confidence levels:
+
+1. **Authoritative outcome:** benchmark/native evaluator result and immutable dispatch/effect receipts.
+2. **Deterministic mechanical diagnosis:** owner-emitted `control_stall`, `state_oscillation`, retry/recovery counts,
+   typed tool rejection, no-change spans, post-terminal extra calls, and semantic page/action revisit counts.
+3. **Non-authoritative strategic diagnosis:** `suspected_detour`, root-cause category, or proposed fix.
+
+`CaseDiagnosisProjector` may continue to expose copied terminal fields, first abnormal/last progress step, bounded
+context health, trajectory metrics, and evidence references while migration is in progress. `likely_upstream_stage`
+remains `unknown` unless preceding owner evidence supports one stage; a Monitor terminal signal does not prove Monitor
+caused the failure.
+
+`suspected_detour` requires a successful comparison cohort with the same task contract and compatible environment,
+model/profile, and evaluation conditions. Evidence may include materially higher turns, prompt tokens, dispatches,
+recovery count, semantic page revisits, or a long no-progress span than another successful trajectory. It must carry
+the comparison run IDs and measured deltas. Without a compatible cohort, the result is `not_assessed`, not `false`.
+Multiple valid GUI paths mean the comparator never claims an absolute shortest path.
+
+Open-ended failure taxonomy follows an offline error-analysis workflow: sample representative high-cost, failed,
+blocked, and successful cases; inspect the first 30–50 without predefined labels; cluster observed failures; calibrate
+and quantify categories; then decide whether each needs an owner repair, a deterministic metric, an optional
+observation-level judge, or monitoring only. Any LLM-assisted clustering/judging is offline, evidence-linked,
+calibrated against human labels, and non-authoritative.
+
+### 12.5 Shell presentation
+
+The operator route never loads raw traces or historical analytics. After a run completes, it may show only bounded
+owner-backed values such as final benchmark status, turns, provider input/output usage, recovery/stall counts, and
+evidence availability. It then links to:
+
+- the Langfuse trace/filter for full model and trajectory analysis;
+- the immutable local case result and JSONL/artifact viewer when local access exists;
+- optional AgentXRay only when an adapter is installed and the artifact is compatible.
+
+The summary is not recomputed by the browser. The backend copies it from the completed result/analysis locator. Missing
+Langfuse, local artifact, or optional viewer links render independently unavailable and never change the result.
+For an ordinary product session without a `BenchmarkCaseResult`, the Shell shows only the Runtime/native task-evaluation
+status and labels the benchmark result `not_applicable`; it never manufactures a benchmark score from Runtime status or
+Langfuse data.
+Locators are resolved server-side under engineering/session authorization and expose neither absolute filesystem paths,
+Langfuse credentials, provider URLs, nor arbitrary file access. The browser receives only a protected application route
+or an ordinary authenticated Langfuse UI link.
 
 ## 13. Surface viewing
 
@@ -1118,8 +1210,8 @@ The proposal lives outside the core package and depends on versioned ports/artif
 
 - `RuntimeSessionPort` for supported commands and public snapshots/events;
 - a browser-view provider handle for pixels and optional leased input;
-- versioned benchmark result and trace-export schemas for diagnosis;
-- Langfuse APIs as an optional projection sink.
+- versioned benchmark result and trace-export schemas for analysis;
+- Langfuse APIs as the configured fail-open primary analysis projection when available.
 
 It does not import `CoreAgentLoop`, Binder, Executor, Monitor, internal `RunState`, private World objects, or provider
 history. It cannot add a Runtime transition, infer one from trace, or make a projection authoritative. If a desired
@@ -1149,6 +1241,8 @@ Phase 0 → Phase 1 → Phase 2 ───────────────→
                                       └────────────────────┴→ Phase 8 (optional takeover; also requires Phase 3)
 
 Phase 9 reviews whichever release profile is declared below.
+Phase 10 is an independent analysis-surface consolidation after the selected control profile; it does not reopen or
+expand Runtime control semantics and does not require a new benchmark run to implement against existing evidence.
 ```
 
 Release profiles keep optional work from blocking an already honest capability:
@@ -1160,6 +1254,7 @@ Release profiles keep optional work from blocking an already honest capability:
 | Observed real execution | 0–3 | real GUI execution plus protected read-only Live View |
 | Resumable revision | 0–2 and 4–7 | durable pause/resume, running revision, and bounded compensation; Viewer optional |
 | Full Web control | 0–8 | adds protected user takeover/return |
+| Analysis companion | 10 plus any profile that produces exported evidence | Langfuse-centered engineering analysis and bounded Shell summary; no additional Runtime capability claim |
 
 Phase 5 additionally requires a reconnectable environment lease. That may be supplied by a local browser context with
 proven reattachment or by the remote browser-session portion of Phase 3; Live View itself is not the dependency. Phase
@@ -1438,7 +1533,8 @@ missing lineage, more than one retained dispatch-crossing receipt, no current sa
 resource, multiple compensation receipts, or unverified compensation produce a typed paused/needs-input/unsupported
 result without retrying or rewriting the original receipt. Runtime checkpoints are v3 and continue reading v2;
 revision command digests remain frozen to their existing command-payload version, independent of the additive public
-session/Shell v2 snapshot. The Shell projects the bounded reconciliation value and exact conflict codes but owns no
+then-current session/Shell v2 snapshot; frontend-governance Phase 0–3 subsequently migrated the sole public Shell
+contract to v3 without changing that digest authority. The Shell projects the bounded reconciliation value and exact conflict codes but owns no
 effect state or compensation logic. This is intentionally not a general effect ledger, task rollback, multi-effect
 Saga, or proof that an incomplete revised goal is semantically compatible with a retained effect. No live browser
 compensation witness or benchmark was run for this implementation milestone.
@@ -1508,6 +1604,117 @@ opt-in no-model live Steel witness passed and released its exact lease. This
 closes the external release profile only; it does not close the separately
 reopened Runtime benchmark program, and no live benchmark was run.
 
+### Phase 10 — consolidate evaluation and analysis surfaces
+
+Status: implementation complete provider-free; a fresh remote Langfuse v4 API observation witness remains pending
+separate operational evidence. This phase replaces the transitional two-dashboard design with the Section 12 ownership model. It is
+an observability/read-model migration, not a Runtime, checkpoint, Viewer, or Agent feature.
+
+This Phase 10 status does not close frontend-governance Phase 4. The current
+`interaction-shell.completed-run.v1` resolver is explicitly a transitional reader of the existing artifact layout,
+not a benchmark-owned canonical summary export. Phase 4 remains dependency-blocked until `docs/benchmark.md` and an
+owned schema publish the versioned producer/read-boundary/outcome contract and a real export witness.
+
+Owner split:
+
+- benchmark evaluator: authoritative result/reward/terminal evidence;
+- Runtime/model/benchmark instrumentation: authoritative producers of typed trace and metrics;
+- Langfuse adapter/project configuration: primary analysis storage, trace UI, scores, annotations, and dashboards;
+- Shell backend/frontend: bounded completed-run summary and links only;
+- optional AgentXRay adapter: developer-only screenshot/action inspection.
+
+Implementation order:
+
+1. **Freeze the analysis identity and source contract.**
+   - Define one immutable `run_attempt_id` in addition to existing suite/profile/case/task/seed/git/manifest identity so
+     repeated executions cannot collapse into one analysis session.
+   - Record the exact local case-result, JSONL, and artifact locators. Keep these locators outside Runtime snapshots,
+     commands, checkpoints, and task authority.
+   - Inventory every producer field and mark it provider usage, request-admission estimate, Runtime mechanical signal,
+     evaluator truth, or derived analysis. Do not add a second token estimator or parse transcripts for an existing
+     owner fact.
+
+2. **Correct and verify the Langfuse generation contract.**
+   - Reuse the installed Langfuse SDK and PydanticAI/OpenTelemetry instrumentation; do not add another telemetry
+     platform or direct frontend-to-Langfuse secret path.
+   - Populate standard generation model, provider usage, start/end timing, environment, release/version, case/task/run
+     tags, and parent lineage. Configure a matching model-price definition or ingest provider cost when supported.
+   - Preserve JSONL-first/fail-open ordering. Injected Langfuse enqueue, worker, flush, API, or network failure must not
+     change the benchmark result, Runtime cleanup, or local trace.
+   - Verify through the Langfuse v4 observations API that model is nonblank, input/output usage matches the local model
+     event, latency is nonzero for a nonzero recorded call, cost has a documented disposition, and all observations for
+     one attempt are queryable by its stable identity.
+
+3. **Publish existing case and trajectory metrics.**
+   - Attach final evaluator status, turns, effectful dispatches, retries, repairs, recoveries, `control_stall`,
+     `state_oscillation`, capacity rejection, and bounded token-section values as clearly named observation metadata or
+     numeric scores. Provider usage remains the standard Langfuse usage value; overlapping section estimates do not
+     become billable usage types.
+   - Create version-controlled dashboard/widget definitions where the current stable Langfuse API permits it; otherwise
+     document one reproducible project configuration without wrapping the unstable dashboard API in a project service.
+   - Minimum dashboards: outcome/turn/cost overview; model usage and latency; prompt-growth/context composition;
+     mechanical stall/recovery; high-cost/high-turn case queue. Every aggregate must drill down to the underlying
+     generation or trace.
+
+4. **Add the bounded offline comparator and error-analysis workflow.**
+   - Compute deterministic metrics directly from case result plus typed JSONL: first abnormal/last progress step,
+     longest no-progress span, semantic page/action revisits, post-terminal calls, recovery-to-progress disposition,
+     and token/turn/dispatch deltas against a compatible successful cohort.
+   - Emit `suspected_detour | not_assessed`, comparison identities, values, and evidence references. Never emit
+     `optimal_path`, infer failure cause from correlation, or feed the result into policy/control.
+   - Use Langfuse annotation queues for representative cases and observation-level scores for any later calibrated
+     evaluator. Do not create a diagnosis Agent. A model may assist offline clustering/judging only after human open
+     coding establishes categories and calibration evidence.
+
+5. **Reduce the Shell diagnostics surface.**
+   - Replace manual diagnostic ingestion and process-local diagnosis storage with one read-only completed-run summary
+     resolver over persisted result/analysis locators.
+   - The operator route remains free of historical analytics. `/diagnostics`, if retained for compatibility, lists
+     bounded owner-backed summaries and opens Langfuse/local evidence; it does not render a second token dashboard,
+     persist trace content, or reconstruct attribution.
+   - Resolve local artifacts through an authenticated, allowlisted case locator. Reject path traversal, wrong-session
+     access, missing evidence, and attempts to expose absolute paths or Langfuse/provider credentials.
+   - Remove only contracts, Recharts views, fixtures, and endpoints made redundant after equivalent Langfuse coverage
+     and deep-link behavior pass. Generated OpenAPI/TypeScript contracts and README instructions migrate in the same
+     change; no dead compatibility claim remains.
+
+6. **Evaluate optional AgentXRay reuse without changing the runner.**
+   - First test a read-only adapter from one existing run artifact to AgentLab `ExpResult`/AgentXRay semantics in an
+     isolated development extra. Do not install AgentLab in the production Shell or benchmark environment by default.
+   - Admit the dependency only if it renders screenshot/action/profiling evidence that Langfuse plus the existing local
+     artifact viewer cannot provide with less coupling. Otherwise record `not_adopted` and keep evidence links.
+
+7. **Run migration and held-out gates.**
+   - Use existing successful, blocked, failed, high-history, control-stall, and repeated-task evidence for development;
+     no provider call or live benchmark is necessary for the implementation pass.
+   - Verify exact local/Langfuse usage agreement, independent failure behavior, stable repeat-run identity,
+     deterministic comparator output, no raw trace request from the operator route, and zero analysis-to-Runtime imports
+     or calls.
+   - A fresh authorized benchmark witness is optional final operational evidence and remains separately authorized. It
+     cannot be silently started by this phase or used to repair product behavior case by case.
+
+Exit evidence: a completed case has one authoritative benchmark result and durable local trace; its stable locator
+opens a Langfuse trace with correct standard model/usage/timing fields and bounded owner-produced analysis metrics; the
+Shell shows the same final result plus independent analysis/evidence availability without storing or recomputing the
+trace; a Langfuse outage leaves result/local evidence intact; and no second Agent, evaluator, database, or control path
+exists.
+
+Implementation status (2026-08-27): the owner-level migration is complete.
+`run_attempt_id` now joins case result, JSONL, bounded analysis JSON, Langfuse
+session/tags, and Shell locators without entering Runtime state. Langfuse
+generations use standard model/provider usage and provider-measured duration,
+with explicit cost disposition and disjoint request-admission estimates. Typed
+Monitor recovery signals supply stall/cycle metrics. The offline comparator is
+relative, evidence-linked, and defaults to `not_assessed`. Shell manual POST,
+process-local diagnoses, redundant charts/DTOs, and diagnosis CLI/sink are gone;
+ordinary product sessions expose benchmark `not_applicable`. AgentXRay was
+evaluated and not adopted. Provider-free gates passed as recorded in the work
+plan; the sole full-suite failure is the already-known absent historical live
+trace. No provider call or live benchmark ran. Because this worktree has no
+maintained Phase 10 standard historical run bundle, the new observation has not
+yet been queried through a remote Langfuse v4 API; do not present that
+operational witness or the separately reopened benchmark program as closed.
+
 Android and desktop remain outside this sequence. No Android/ADB/UIAutomator, desktop/AT-SPI/VNC, cross-surface
 abstraction, dependency, or acceptance gate belongs to the current scope.
 
@@ -1521,8 +1728,8 @@ borrow evidence from a demo or projection that does not exercise its owner.
 - the external API consists of one `RuntimeSessionPort`, one closed command union, one public snapshot schema, and one
   ordered event envelope rather than parallel per-feature protocols;
 - a session survives multiple HTTP requests without reconstructing Runtime state from events;
-- event order is stable and cursor-resumable within one event epoch; the current in-memory duplicate-command conflict
-  behavior is explicit rather than described as durable idempotent replay;
+- event order is stable and cursor-resumable within one event epoch; Runtime owns canonical payload digests and returns
+  the original admission for same-identity/same-payload replay while conflicting identity reuse fails closed;
 - `AskUser` and confirmation pause and resume through existing typed Runtime entrypoints;
 - execution, viewer, durable pause/resume, revision, and takeover capabilities are independently disabled when their
   owner/deployment dependency is unavailable rather than simulated;
@@ -1607,6 +1814,30 @@ under the command lock, and return revokes that lease before capture. Capture fa
 revokes the ephemeral lease and cannot
 replay the consumed pre-takeover checkpoint.
 
+### 16.7 Analysis and evaluation surfaces
+
+- `BenchmarkCaseResult` and native evaluator evidence remain the only success/failure/reward authority;
+- an ordinary non-benchmark product session is explicitly `not_applicable` for benchmark score and is not promoted to
+  benchmark success from Runtime or Langfuse status;
+- every analyzed case retains an immutable local result and JSONL even when Langfuse, Shell, or an optional viewer is
+  unavailable;
+- one stable run-attempt/case identity locates the corresponding Langfuse trace without collapsing repeated runs;
+- Langfuse generation model, provider input/output usage, latency, and cost disposition agree with the local model
+  event; request-section estimates remain visibly distinct from provider usage and billing;
+- dashboards expose outcome, turns, usage/cost, model/runtime latency, prompt growth, history/World/tool composition,
+  retry/repair/recovery, and mechanical stall/cycle metrics with trace drill-down;
+- `control_stall`/`state_oscillation` are copied from Runtime owners; attribution and `suspected_detour` are explicitly
+  non-authoritative, evidence-linked, and `not_assessed` when their preconditions are absent;
+- the operator UI makes no raw diagnostics/history query and no browser-side evaluation; a completed-run summary and
+  Langfuse/local evidence links are its entire analysis responsibility;
+- analysis/evidence locators are server-resolved and authorized, reject traversal/wrong-session access, and expose no
+  absolute path, provider locator, or Langfuse credential;
+- the retained `/diagnostics` route has no process-local result authority, transcript store, dashboard engine, or
+  Langfuse-to-Runtime feedback path;
+- an optional AgentXRay adapter remains development-only and cannot replace or wrap the Runtime/benchmark loop;
+- injected Langfuse and optional-viewer failures cannot alter task status, benchmark result, cleanup, checkpoint, or
+  local evidence.
+
 ## 17. Alternatives considered
 
 ### assistant-ui instead of CopilotKit
@@ -1664,6 +1895,32 @@ Deferred. Explicit safe-point snapshots, SQLite, reconnectable browser leases, a
 the declared single-process/restart boundary. If durable in-flight activities or multi-service orchestration becomes a
 measured requirement, evaluate mature PydanticAI durable-execution integrations and Postgres before custom machinery.
 
+### A second custom diagnostics platform
+
+Rejected. Langfuse already owns trace navigation, usage/cost, filters, dashboards, scores, annotation, and API export.
+Growing the transitional `/diagnostics` implementation into a persistent trace database and query/dashboard engine
+would duplicate those capabilities and create another result projection to reconcile. Keep only the domain adapter,
+bounded summary, and evidence links that a general observability platform cannot derive safely.
+
+### Langfuse as benchmark authority
+
+Rejected. Langfuse is asynchronous and fail-open, and its scores may include derived or human/model annotations.
+Benchmark/native evaluator output and persisted `BenchmarkCaseResult` remain authoritative; Langfuse receives a copy
+for analysis and cannot terminate, resume, revise, or reclassify a run.
+
+### An analysis Agent in the Runtime loop
+
+Rejected. Mechanical stall/cycle facts already have deterministic owners, while strategic attribution requires
+offline comparison and calibration. A second online Agent would add latency, tokens, nondeterminism, and a competing
+control narrative. Optional model-assisted clustering or judging is limited to offline Langfuse observations after
+human calibration.
+
+### Replacing the benchmark runner with AgentLab for AgentXRay
+
+Rejected. AgentXRay is useful as a developer viewer, but adopting its execution/result loop merely to gain screenshot
+inspection would couple the product to a second runner and weaken current Runtime/evaluator authority. A read-only
+artifact adapter may be evaluated as an isolated optional extra.
+
 ## 18. References
 
 - [AG-UI event concepts](https://docs.copilotkit.ai/ag-ui/concepts/events)
@@ -1678,5 +1935,9 @@ measured requirement, evaluate mature PydanticAI durable-execution integrations 
 - [PydanticAI deferred tools](https://ai.pydantic.dev/deferred-tools/)
 - [PydanticAI step persistence](https://ai.pydantic.dev/harness/step-persistence/)
 - [PydanticAI observability](https://ai.pydantic.dev/logfire/)
+- [Langfuse token and cost tracking](https://langfuse.com/docs/observability/features/token-and-cost-tracking)
+- [Langfuse custom dashboards](https://langfuse.com/docs/metrics/features/custom-dashboards)
+- [Langfuse error-analysis workflow](https://langfuse.com/guides/cookbook/error-analysis-llm-applications)
+- [AgentLab result analysis and AgentXRay](https://github.com/ServiceNow/AgentLab#-analyse-results)
 - [PydanticAI durable execution](https://ai.pydantic.dev/durable_execution/overview/)
 - [OpenHands system architecture](https://github.com/OpenHands/OpenHands/blob/main/openhands/architecture/system-architecture.md)

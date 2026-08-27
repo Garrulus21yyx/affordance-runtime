@@ -84,10 +84,9 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     gateway.attach(handle, lease)
 
     state = gateway.project(handle)
-    assert state.status == "available"
-    assert state.provider == "steel"
+    assert state.kind == "available"
     assert state.protected_path == "/viewer/shell-session"
-    assert state.read_only is True
+    assert state.input_mode == "native"
 
     document = await gateway.document("shell-session")
     decoded = document.content.decode()
@@ -130,7 +129,7 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     await gateway.release(lease)
     await gateway.release(lease)
     assert transport.released == ["provider-1"]
-    assert gateway.project(handle).status == "unavailable"
+    assert gateway.project(handle).kind == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -168,8 +167,8 @@ async def test_gateway_keeps_two_browser_and_viewer_leases_isolated() -> None:
     await gateway.document("shell:second")
     await gateway.release(first)
 
-    assert gateway.project(first_handle).status == "unavailable"
-    assert gateway.project(second_handle).status == "available"
+    assert gateway.project(first_handle).kind == "unavailable"
+    assert gateway.project(second_handle).kind == "available"
     await gateway.ice_servers("shell:second")
     assert transport.ice_calls[-1] == ("provider-2", "rtc-token-for-provider-2")
     await gateway.release(second)

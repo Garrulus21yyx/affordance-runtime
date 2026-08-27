@@ -10,23 +10,34 @@ from datetime import UTC, datetime, timedelta
 from .contracts import (
     Accepted,
     AnswerQuestion,
-    ApproveAction,
-    Capability,
-    CloseSession,
+    AuthenticatedSessionLookup,
     CommandAdmission,
-    Conflict,
     CreateSessionResponse,
-    RecoverSessionResponse,
-    RejectAction,
+    LiveSession,
+    Recovered,
+    RecoveryAttempt,
+    RecoveryFailed,
+    RecoveryInspectionFailed,
+    RecoveryRequired,
+    RecoveryUnavailable,
+    RecoveryUnsupported,
+    Rejected,
     ReviseTask,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
     StartTask,
-    Unsupported,
 )
 from .conversation import BoundedConversation, ConversationTurn
-from .port import RuntimeSessionPort, RuntimeSessionUnavailable
+from .port import (
+    PortRecoverableCheckpoint,
+    PortRecoveredHandle,
+    PortRecoveryInspectionFailed,
+    PortRecoveryInspectionUnavailable,
+    PortRecoveryInspectionUnsupported,
+    RuntimeSessionPort,
+    RuntimeSessionUnavailable,
+)
 from .session_registry import SessionRecoveryRegistry
 
 logger = logging.getLogger(__name__)
@@ -39,7 +50,6 @@ class ManagedSession:
     runtime_handle: object
     expires_at: datetime
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    commands: set[str] = field(default_factory=set)
     conversation: BoundedConversation = field(default_factory=BoundedConversation)
     closed: bool = False
     cleanup_started: bool = False
@@ -53,11 +63,17 @@ class SessionUnauthorized(PermissionError):
     pass
 
 
+class SessionExpired(PermissionError):
+    pass
+
+
 class ViewerInputRejected(PermissionError):
     """The connected Viewer input lease is no longer authoritative."""
 
 
 class RunSessionManager:
+    """Own credentials, bounded conversation, locks, and single handle installation only."""
+
     def __init__(
         self,
         port: RuntimeSessionPort,
@@ -77,101 +93,138 @@ class RunSessionManager:
         try:
             snapshot = await self._snapshot(managed)
             if self._recovery_registry is not None:
-                await self._recovery_registry.register(
-                    session_id,
-                    session_key,
-                    expires_at,
-                )
+                await self._recovery_registry.register(session_id, session_key, expires_at)
         except BaseException:
             await self._cleanup_once(managed)
             raise
         self._sessions[session_id] = managed
         return CreateSessionResponse(session_key=session_key, snapshot=snapshot)
 
+    async def lookup(
+        self,
+        session_id: str,
+        session_key: str,
+    ) -> AuthenticatedSessionLookup:
+        live = self._sessions.get(session_id)
+        if live is not None:
+            self._authenticate_live(live, session_key)
+            if await self._expire_if_needed(live):
+                raise SessionExpired(session_id)
+            return LiveSession(kind="live_session", snapshot=await self._snapshot(live))
+        if self._recovery_registry is None:
+            return RecoveryUnsupported(
+                kind="recovery_unsupported", reason_code="recovery_registry_unavailable"
+            )
+        await self._authenticate_recovery(session_id, session_key)
+        inspection = await self._port.inspect(session_id)
+        if isinstance(inspection, PortRecoverableCheckpoint):
+            return RecoveryRequired(
+                kind="recovery_required", checkpoint_id=inspection.checkpoint_id
+            )
+        if isinstance(inspection, PortRecoveryInspectionUnavailable):
+            return RecoveryUnavailable(
+                kind="recovery_unavailable", reason_code=inspection.reason_code
+            )
+        if isinstance(inspection, PortRecoveryInspectionUnsupported):
+            return RecoveryUnsupported(
+                kind="recovery_unsupported", reason_code=inspection.reason_code
+            )
+        assert isinstance(inspection, PortRecoveryInspectionFailed)
+        return RecoveryInspectionFailed(
+            kind="recovery_inspection_failed",
+            reason_code=inspection.reason_code,
+            retryable=inspection.retryable,
+        )
+
     async def recover(
         self,
         session_id: str,
         session_key: str,
         checkpoint_id: str,
-    ) -> RecoverSessionResponse:
+    ) -> RecoveryAttempt:
         async with self._recovery_lock:
-            return await self._recover_once(session_id, session_key, checkpoint_id)
+            live = self._sessions.get(session_id)
+            if live is not None:
+                self._authenticate_live(live, session_key)
+                if await self._expire_if_needed(live):
+                    raise SessionExpired(session_id)
+                return await self._port.recover_live(live.runtime_handle, checkpoint_id)
 
-    async def _recover_once(
-        self,
-        session_id: str,
-        session_key: str,
-        checkpoint_id: str,
-    ) -> RecoverSessionResponse:
-        live = self._sessions.get(session_id)
-        if live is not None:
-            if not secrets.compare_digest(live.session_key, session_key):
-                raise SessionUnauthorized(session_id)
-            snapshot = await self._snapshot(live)
-            if (
-                snapshot.run_status.value != "paused"
-                or not snapshot.resume_eligible
-                or snapshot.checkpoint_id != checkpoint_id
-            ):
-                raise RuntimeSessionUnavailable("checkpoint_mismatch")
-            return RecoverSessionResponse(snapshot=snapshot)
-        registry = self._recovery_registry
-        if registry is None:
-            raise RuntimeSessionUnavailable("session_recovery_unavailable")
-        credential = await registry.authenticate(session_id, session_key)
-        if credential is None:
-            raise SessionUnauthorized(session_id)
-        if datetime.now(UTC) >= credential.expires_at:
-            await registry.revoke(session_id)
-            raise SessionNotFound(session_id)
-        try:
-            projection = await registry.load_projection(session_id)
-            conversation = BoundedConversation.from_projection(projection)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeSessionUnavailable("shell_recovery_projection_invalid") from exc
-        except Exception as exc:
-            raise RuntimeSessionUnavailable("shell_recovery_projection_unavailable") from exc
-        handle = await self._port.recover(
-            session_id,
-            checkpoint_id,
-            credential.expires_at,
-        )
-        managed = ManagedSession(
-            session_id,
-            session_key,
-            handle,
-            credential.expires_at,
-            conversation=conversation,
-        )
-        try:
-            snapshot = await self._snapshot(managed)
-        except BaseException:
-            await self._cleanup_once(managed, revoke=False)
-            raise
-        self._sessions[session_id] = managed
-        return RecoverSessionResponse(snapshot=snapshot)
+            if self._recovery_registry is None:
+                from .contracts import RecoveryAttemptUnavailable
+
+                return RecoveryAttemptUnavailable(
+                    kind="recovery_unavailable", reason_code="recovery_unsupported"
+                )
+
+            credential = await self._authenticate_recovery(session_id, session_key)
+            try:
+                projection = await cast_registry(self._recovery_registry).load_projection(
+                    session_id
+                )
+                conversation = BoundedConversation.from_projection(projection)
+            except (TypeError, ValueError, LookupError):
+                return RecoveryFailed(
+                    kind="recovery_failed",
+                    reason_code="shell_projection_restore_failed",
+                    retryable=False,
+                )
+            except Exception:
+                return RecoveryFailed(
+                    kind="recovery_failed",
+                    reason_code="shell_projection_restore_failed",
+                    retryable=False,
+                )
+            result = await self._port.recover_absent(
+                session_id,
+                checkpoint_id,
+                credential.expires_at,
+            )
+            if not isinstance(result, PortRecoveredHandle):
+                return result
+            managed = ManagedSession(
+                session_id,
+                session_key,
+                result.handle,
+                credential.expires_at,
+                conversation=conversation,
+            )
+            try:
+                snapshot = await self._snapshot(managed)
+            except BaseException:
+                await self._cleanup_once(managed, revoke=False)
+                return RecoveryFailed(
+                    kind="recovery_failed",
+                    reason_code="shell_projection_restore_failed",
+                    retryable=False,
+                )
+            # The recovery lock is the sole absent-handle installation boundary.
+            self._sessions[session_id] = managed
+            return Recovered(kind="recovered", snapshot=snapshot)
 
     def authenticate(self, session_id: str, session_key: str) -> ManagedSession:
         managed = self._sessions.get(session_id)
         if managed is None:
             raise SessionNotFound(session_id)
-        if not secrets.compare_digest(managed.session_key, session_key):
-            raise SessionUnauthorized(session_id)
+        self._authenticate_live(managed, session_key)
         return managed
 
     async def snapshot(self, session_id: str, session_key: str) -> RuntimeSessionSnapshot:
         managed = self.authenticate(session_id, session_key)
-        await self._expire_if_needed(managed)
-        snapshot = await self._snapshot(managed)
-        await self._cleanup_if_terminal(managed, snapshot)
-        return snapshot
+        if await self._expire_if_needed(managed):
+            raise SessionExpired(session_id)
+        return await self._snapshot(managed)
 
-    async def events(self, session_id: str, session_key: str, after: int) -> tuple[ShellEvent, ...]:
+    async def events(
+        self,
+        session_id: str,
+        session_key: str,
+        after: int,
+    ) -> tuple[ShellEvent, ...]:
         managed = self.authenticate(session_id, session_key)
-        await self._expire_if_needed(managed)
-        events = await self._port.events(managed.runtime_handle, after)
-        await self._cleanup_if_terminal(managed, await self._snapshot(managed))
-        return events
+        if await self._expire_if_needed(managed):
+            raise SessionExpired(session_id)
+        return await self._port.events(managed.runtime_handle, after)
 
     async def forward_viewer_input(
         self,
@@ -180,113 +233,52 @@ class RunSessionManager:
         control_lease_id: str,
         forward: Callable[[], Awaitable[None]],
     ) -> None:
-        """Fence one provider input frame against the current Runtime lease.
-
-        The existing per-session command lock is the linearization boundary for
-        both this check-and-forward operation and ReturnControl admission.  The
-        Shell reads Runtime ownership but does not copy or mutate it.
-        """
-
         managed = self.authenticate(session_id, session_key)
         async with managed.lock:
             if await self._expire_if_needed(managed):
-                raise SessionNotFound(session_id)
+                raise SessionExpired(session_id)
             if managed.closed:
                 raise ViewerInputRejected(session_id)
-            snapshot = await self._snapshot(managed)
-            current_lease_id = snapshot.control_lease_id
-            if (
-                snapshot.control_owner.value != "user"
-                or snapshot.viewer.status != "available"
-                or snapshot.viewer.read_only
-                or current_lease_id is None
-                or not secrets.compare_digest(current_lease_id, control_lease_id)
+            if not await self._port.forward_viewer_input(
+                managed.runtime_handle,
+                control_lease_id,
+                forward,
             ):
                 raise ViewerInputRejected(session_id)
-            await forward()
 
     async def admit(
-        self, session_id: str, session_key: str, command: ShellCommand
+        self,
+        session_id: str,
+        session_key: str,
+        command: ShellCommand,
     ) -> CommandAdmission:
         managed = self.authenticate(session_id, session_key)
         async with managed.lock:
-            await self._expire_if_needed(managed)
-            snapshot = await self._snapshot(managed)
+            if await self._expire_if_needed(managed):
+                raise SessionExpired(session_id)
+            conversation = None
             if isinstance(command, ReviseTask):
-                if managed.closed:
-                    return Conflict(
-                        command_id=command.command_id,
-                        code="session_closed",
-                        snapshot=snapshot,
-                    )
                 candidate = managed.conversation.clone()
                 first_seen = not candidate.has_revision_context(command.command_id)
-                context = candidate.revision_context(
-                    command.command_id,
-                    command.text,
-                )
+                conversation = candidate.revision_context(command.command_id, command.text)
                 if first_seen:
-                    candidate.append(context.turns[-1])
-                await self._save_conversation_projection(managed, candidate)
+                    candidate.append(conversation.turns[-1])
+                try:
+                    await self._save_conversation_projection(managed, candidate)
+                except RuntimeSessionUnavailable:
+                    return Rejected(
+                        kind="rejected",
+                        command_id=command.command_id,
+                        code="command_persistence_failed",
+                        snapshot=await self._snapshot(managed),
+                    )
                 managed.conversation = candidate
-                managed.commands.add(command.command_id)
-                runtime_command = command.model_copy(update={"conversation": context})
-                admission, _events = await self._port.revise(
-                    managed.runtime_handle,
-                    runtime_command,
-                )
-                current = await self._snapshot(managed)
-                if current.run_status.value in {
-                    "done",
-                    "failed",
-                    "blocked",
-                    "cancelled",
-                }:
-                    await self._cleanup_if_terminal(managed, current)
-                    current = await self._snapshot(managed)
-                return admission.model_copy(update={"snapshot": current})
-            if command.command_id in managed.commands:
-                return Conflict(
-                    command_id=command.command_id,
-                    code="duplicate_command",
-                    snapshot=snapshot,
-                )
-            managed.commands.add(command.command_id)
-            if managed.closed and not isinstance(command, CloseSession):
-                return Conflict(
-                    command_id=command.command_id, code="session_closed", snapshot=snapshot
-                )
-            if (
-                command.expected_task_revision != snapshot.task_revision
-                or command.expected_run_status != snapshot.run_status
-            ):
-                return Conflict(
-                    command_id=command.command_id, code="stale_command", snapshot=snapshot
-                )
-            pending_conflict = self._pending_conflict(command, snapshot)
-            if pending_conflict:
-                return Conflict(
-                    command_id=command.command_id,
-                    code="pending_request_mismatch",
-                    snapshot=snapshot,
-                )
-            capability = Capability(command.kind)
-            if capability not in snapshot.capabilities:
-                return Unsupported(
-                    command_id=command.command_id,
-                    capability=capability,
-                    reason="capability_not_advertised_by_runtime_port",
-                    snapshot=snapshot,
-                )
-            if isinstance(command, CloseSession):
-                await self._cleanup_once(managed)
-                closed_snapshot = await self._snapshot(managed)
-                return Accepted(command_id=command.command_id, snapshot=closed_snapshot)
-            admission, _events = await self._port.command(
+            admission = await self._port.command(
                 managed.runtime_handle,
                 command,
+                revision_conversation=conversation,
             )
-            if isinstance(command, (StartTask, AnswerQuestion)):
+            if isinstance(admission, Accepted) and isinstance(command, (StartTask, AnswerQuestion)):
                 text = command.task if isinstance(command, StartTask) else command.answer
                 candidate = managed.conversation.clone()
                 candidate.append(
@@ -296,13 +288,13 @@ class RunSessionManager:
                         text=text,
                     )
                 )
-                managed.conversation = candidate
-                await self._save_conversation_projection(managed, candidate)
-            current = await self._snapshot(managed)
-            if current.run_status.value in {"done", "failed", "blocked", "cancelled"}:
-                await self._cleanup_if_terminal(managed, current)
-                current = await self._snapshot(managed)
-            return admission.model_copy(update={"snapshot": current})
+                try:
+                    await self._save_conversation_projection(managed, candidate)
+                except RuntimeSessionUnavailable:
+                    logger.exception("accepted conversation projection could not be persisted")
+                else:
+                    managed.conversation = candidate
+            return admission
 
     async def expire(self) -> int:
         expired = 0
@@ -314,23 +306,31 @@ class RunSessionManager:
     async def close_all(self) -> tuple[Exception, ...]:
         errors: list[Exception] = []
         for managed in tuple(self._sessions.values()):
-            preserve_recovery = False
             try:
-                snapshot = await self._snapshot(managed)
-                preserve_recovery = (
-                    snapshot.run_status.value == "paused"
-                    and snapshot.resume_eligible
-                    and bool(snapshot.checkpoint_id)
-                )
-            except Exception as exc:
-                errors.append(exc)
-                logger.exception("session snapshot failed during shutdown: %s", managed.session_id)
-            try:
-                await self._cleanup_once(managed, revoke=not preserve_recovery)
+                # Registry owns only auth/TTL/conversation and may survive process shutdown;
+                # manager never reads checkpoint currentness to decide this lifecycle action.
+                await self._cleanup_once(managed, revoke=False)
             except Exception as exc:
                 errors.append(exc)
                 logger.exception("session cleanup failed during shutdown: %s", managed.session_id)
         return tuple(errors)
+
+    async def _authenticate_recovery(self, session_id: str, session_key: str):
+        registry = self._recovery_registry
+        if registry is None:
+            raise RuntimeSessionUnavailable("recovery_registry_unavailable")
+        credential = await registry.authenticate(session_id, session_key)
+        if credential is None:
+            raise SessionUnauthorized(session_id)
+        if datetime.now(UTC) >= credential.expires_at:
+            await registry.revoke(session_id)
+            raise SessionExpired(session_id)
+        return credential
+
+    @staticmethod
+    def _authenticate_live(managed: ManagedSession, session_key: str) -> None:
+        if not secrets.compare_digest(managed.session_key, session_key):
+            raise SessionUnauthorized(managed.session_id)
 
     async def _snapshot(self, managed: ManagedSession) -> RuntimeSessionSnapshot:
         snapshot = await self._port.snapshot(managed.runtime_handle)
@@ -342,12 +342,6 @@ class RunSessionManager:
         await self._cleanup_once(managed)
         return True
 
-    async def _cleanup_if_terminal(
-        self, managed: ManagedSession, snapshot: RuntimeSessionSnapshot
-    ) -> None:
-        if snapshot.run_status.value in {"done", "failed", "blocked", "cancelled"}:
-            await self._cleanup_once(managed)
-
     async def _save_conversation_projection(
         self,
         managed: ManagedSession,
@@ -357,19 +351,11 @@ class RunSessionManager:
         if registry is None:
             return
         try:
-            await registry.save_projection(
-                managed.session_id,
-                conversation.projection(),
-            )
+            await registry.save_projection(managed.session_id, conversation.projection())
         except Exception as exc:
             raise RuntimeSessionUnavailable("shell_recovery_projection_persistence_failed") from exc
 
-    async def _cleanup_once(
-        self,
-        managed: ManagedSession,
-        *,
-        revoke: bool = True,
-    ) -> None:
+    async def _cleanup_once(self, managed: ManagedSession, *, revoke: bool = True) -> None:
         if managed.cleanup_started:
             return
         managed.cleanup_started = True
@@ -380,16 +366,8 @@ class RunSessionManager:
             if revoke and self._recovery_registry is not None:
                 await self._recovery_registry.revoke(managed.session_id)
 
-    @staticmethod
-    def _pending_conflict(command: ShellCommand, snapshot: RuntimeSessionSnapshot) -> bool:
-        if isinstance(command, AnswerQuestion):
-            return (
-                snapshot.pending_question is None
-                or command.request_id != snapshot.pending_question.request_id
-            )
-        if isinstance(command, (ApproveAction, RejectAction)):
-            return (
-                snapshot.pending_confirmation is None
-                or command.request_id != snapshot.pending_confirmation.request_id
-            )
-        return False
+
+def cast_registry(registry: SessionRecoveryRegistry | None) -> SessionRecoveryRegistry:
+    if registry is None:  # guarded by _authenticate_recovery
+        raise RuntimeError("recovery registry unavailable")
+    return registry

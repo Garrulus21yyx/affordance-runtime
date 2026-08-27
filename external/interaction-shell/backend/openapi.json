@@ -10,7 +10,6 @@
           },
           "kind": {
             "const": "accepted",
-            "default": "accepted",
             "title": "Kind",
             "type": "string"
           },
@@ -19,6 +18,7 @@
           }
         },
         "required": [
+          "kind",
           "command_id",
           "snapshot"
         ],
@@ -50,7 +50,6 @@
           },
           "kind": {
             "const": "answer_question",
-            "default": "answer_question",
             "title": "Kind",
             "type": "string"
           },
@@ -65,10 +64,40 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "request_id",
           "answer"
         ],
         "title": "AnswerQuestion",
+        "type": "object"
+      },
+      "AnswerQuestionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "answer_question",
+            "title": "Kind",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "prompt"
+        ],
+        "title": "AnswerQuestionOffer",
         "type": "object"
       },
       "ApproveAction": {
@@ -90,7 +119,6 @@
           },
           "kind": {
             "const": "approve_action",
-            "default": "approve_action",
             "title": "Kind",
             "type": "string"
           },
@@ -105,126 +133,57 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "request_id"
         ],
         "title": "ApproveAction",
         "type": "object"
       },
-      "Capability": {
-        "enum": [
-          "start_task",
-          "answer_question",
-          "approve_action",
-          "reject_action",
-          "close_session",
-          "cancel_task",
-          "pause_task",
-          "resume_task",
-          "revise_task",
-          "start_new_task",
-          "take_over",
-          "return_control"
-        ],
-        "title": "Capability",
-        "type": "string"
-      },
-      "CaseDiagnosis": {
-        "additionalProperties": true,
+      "CancelTask": {
+        "additionalProperties": false,
         "properties": {
-          "case_id": {
-            "title": "Case Id",
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
             "type": "string"
           },
-          "confidence": {
-            "maximum": 1.0,
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
             "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
+            "title": "Expected Task Revision",
+            "type": "integer"
           },
-          "context_health": {
-            "$ref": "#/components/schemas/ContextHealth"
-          },
-          "evidence_refs": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Evidence Refs",
-            "type": "array"
-          },
-          "first_abnormal_step": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "First Abnormal Step"
-          },
-          "last_progress_step": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Progress Step"
-          },
-          "likely_upstream_stage": {
-            "title": "Likely Upstream Stage",
+          "kind": {
+            "const": "cancel_task",
+            "title": "Kind",
             "type": "string"
-          },
-          "schema_version": {
-            "const": "interaction-shell.diagnosis.v1",
-            "default": "interaction-shell.diagnosis.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "success": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Success"
-          },
-          "terminal_code": {
-            "title": "Terminal Code",
-            "type": "string"
-          },
-          "terminal_stage": {
-            "title": "Terminal Stage",
-            "type": "string"
-          },
-          "trajectory_metrics": {
-            "$ref": "#/components/schemas/TrajectoryMetrics"
           }
         },
         "required": [
-          "case_id",
-          "status",
-          "success",
-          "terminal_stage",
-          "terminal_code",
-          "first_abnormal_step",
-          "last_progress_step",
-          "likely_upstream_stage",
-          "confidence",
-          "context_health",
-          "trajectory_metrics",
-          "evidence_refs"
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind"
         ],
-        "title": "CaseDiagnosis",
+        "title": "CancelTask",
+        "type": "object"
+      },
+      "CancelTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "cancel_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CancelTaskOffer",
         "type": "object"
       },
       "CloseSession": {
@@ -246,7 +205,6 @@
           },
           "kind": {
             "const": "close_session",
-            "default": "close_session",
             "title": "Kind",
             "type": "string"
           }
@@ -254,9 +212,191 @@
         "required": [
           "command_id",
           "expected_task_revision",
-          "expected_run_status"
+          "expected_run_status",
+          "kind"
         ],
         "title": "CloseSession",
+        "type": "object"
+      },
+      "CloseSessionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "close_session",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CloseSessionOffer",
+        "type": "object"
+      },
+      "CommandOffer": {
+        "discriminator": {
+          "mapping": {
+            "answer_question": "#/components/schemas/AnswerQuestionOffer",
+            "cancel_task": "#/components/schemas/CancelTaskOffer",
+            "close_session": "#/components/schemas/CloseSessionOffer",
+            "confirm_action": "#/components/schemas/ConfirmActionOffer",
+            "pause_task": "#/components/schemas/PauseTaskOffer",
+            "resume_task": "#/components/schemas/ResumeTaskOffer",
+            "return_control": "#/components/schemas/ReturnControlOffer",
+            "revise_task": "#/components/schemas/ReviseTaskOffer",
+            "start_task": "#/components/schemas/StartTaskOffer",
+            "take_over": "#/components/schemas/TakeOverOffer"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StartTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/AnswerQuestionOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ConfirmActionOffer"
+          },
+          {
+            "$ref": "#/components/schemas/CancelTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/PauseTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ResumeTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ReviseTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/TakeOverOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ReturnControlOffer"
+          },
+          {
+            "$ref": "#/components/schemas/CloseSessionOffer"
+          }
+        ]
+      },
+      "CompletedRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "benchmark_result": {
+            "default": "available",
+            "enum": [
+              "available",
+              "not_applicable"
+            ],
+            "title": "Benchmark Result",
+            "type": "string"
+          },
+          "case_id": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Case Id",
+            "type": "string"
+          },
+          "control_stalls": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Control Stalls",
+            "type": "integer"
+          },
+          "detour_disposition": {
+            "default": "not_assessed",
+            "enum": [
+              "suspected_detour",
+              "not_assessed"
+            ],
+            "title": "Detour Disposition",
+            "type": "string"
+          },
+          "langfuse_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Url"
+          },
+          "local_evidence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Evidence Url"
+          },
+          "locator_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Locator Id",
+            "type": "string"
+          },
+          "provider_input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Provider Input Tokens",
+            "type": "integer"
+          },
+          "provider_output_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Provider Output Tokens",
+            "type": "integer"
+          },
+          "recoveries": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Recoveries",
+            "type": "integer"
+          },
+          "run_attempt_id": {
+            "pattern": "^attempt:[0-9a-f]{32}$",
+            "title": "Run Attempt Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "interaction-shell.completed-run.v1",
+            "default": "interaction-shell.completed-run.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "state_oscillations": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "State Oscillations",
+            "type": "integer"
+          },
+          "status": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "turns": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "locator_id",
+          "run_attempt_id",
+          "case_id",
+          "status"
+        ],
+        "title": "CompletedRunSummary",
         "type": "object"
       },
       "Completion": {
@@ -295,9 +435,46 @@
         "required": [
           "outcome",
           "code",
-          "message"
+          "message",
+          "evidence_refs"
         ],
         "title": "Completion",
+        "type": "object"
+      },
+      "ConfirmActionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "confirm_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "risk": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Risk",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "summary",
+          "risk"
+        ],
+        "title": "ConfirmActionOffer",
         "type": "object"
       },
       "Conflict": {
@@ -305,47 +482,15 @@
         "properties": {
           "code": {
             "enum": [
-              "duplicate_command",
               "stale_command",
-              "pending_request_mismatch",
-              "session_closed",
-              "runtime_conflict",
-              "checkpoint_mismatch",
-              "run_not_revisable",
-              "control_request_conflict",
-              "control_boundary_failed",
-              "revision_pause_failed",
-              "revision_unavailable",
-              "checkpoint_not_found",
-              "revision_needs_input",
-              "revision_no_change",
-              "revision_new_task_suggested",
-              "revision_unsupported",
-              "revision_failed",
-              "revision_persistence_failed",
-              "revision_command_conflict",
               "command_identity_reused",
-              "effect_reconciliation_required",
-              "effect_non_compensable",
-              "effect_reconciliation_unknown",
-              "effect_reconciliation_unsupported",
-              "compensation_unavailable",
-              "compensation_not_sent",
-              "compensation_effect_unknown",
-              "compensation_unverified",
-              "compensation_resource_mismatch",
-              "compensation_action_not_allowed",
-              "compensation_multiple_effects",
-              "takeover_unavailable",
-              "takeover_persistence_failed",
-              "takeover_command_consumed",
-              "takeover_command_conflict",
-              "checkpoint_already_resumed",
-              "user_control_active",
-              "user_control_not_active",
-              "control_lease_mismatch",
-              "user_control_return_unavailable",
-              "user_control_currentness_unavailable"
+              "interaction_ref_mismatch",
+              "checkpoint_mismatch",
+              "checkpoint_already_consumed",
+              "session_closed",
+              "session_state_conflict",
+              "control_owner_conflict",
+              "control_lease_mismatch"
             ],
             "title": "Code",
             "type": "string"
@@ -356,7 +501,6 @@
           },
           "kind": {
             "const": "conflict",
-            "default": "conflict",
             "title": "Kind",
             "type": "string"
           },
@@ -365,57 +509,12 @@
           }
         },
         "required": [
+          "kind",
           "command_id",
           "code",
           "snapshot"
         ],
         "title": "Conflict",
-        "type": "object"
-      },
-      "ContextHealth": {
-        "additionalProperties": true,
-        "properties": {
-          "capacity_rejections": {
-            "minimum": 0.0,
-            "title": "Capacity Rejections",
-            "type": "integer"
-          },
-          "classification": {
-            "enum": [
-              "healthy",
-              "pressure",
-              "capacity_failure",
-              "unknown"
-            ],
-            "title": "Classification",
-            "type": "string"
-          },
-          "evidence_refs": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Evidence Refs",
-            "type": "array"
-          },
-          "fill_ratio": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fill Ratio"
-          }
-        },
-        "required": [
-          "classification",
-          "capacity_rejections"
-        ],
-        "title": "ContextHealth",
         "type": "object"
       },
       "ControlOutcome": {
@@ -482,7 +581,9 @@
           "command_id",
           "kind",
           "outcome",
-          "code"
+          "code",
+          "checkpoint_id",
+          "message"
         ],
         "title": "ControlOutcome",
         "type": "object"
@@ -559,167 +660,6 @@
         "title": "CreateSessionResponse",
         "type": "object"
       },
-      "DiagnosisRequest": {
-        "additionalProperties": true,
-        "properties": {
-          "case_id": {
-            "title": "Case Id",
-            "type": "string"
-          },
-          "compaction_count": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Compaction Count",
-            "type": "integer"
-          },
-          "complete_request_tokens": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Complete Request Tokens"
-          },
-          "completion_tokens": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Completion Tokens",
-            "type": "integer"
-          },
-          "context_capacity_rejections": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Context Capacity Rejections",
-            "type": "integer"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          },
-          "cycle_count": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Cycle Count",
-            "type": "integer"
-          },
-          "effective_input_limit": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Effective Input Limit"
-          },
-          "failure_origin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure Origin"
-          },
-          "history_tokens": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "History Tokens",
-            "type": "integer"
-          },
-          "model_latency_ms": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Model Latency Ms",
-            "type": "number"
-          },
-          "no_progress_count": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "No Progress Count",
-            "type": "integer"
-          },
-          "prompt_tokens": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Prompt Tokens",
-            "type": "integer"
-          },
-          "reporting_failure_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reporting Failure Code"
-          },
-          "runtime_latency_ms": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Runtime Latency Ms",
-            "type": "number"
-          },
-          "schema_version": {
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "success": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Success"
-          },
-          "terminal_code": {
-            "default": "unknown",
-            "title": "Terminal Code",
-            "type": "string"
-          },
-          "terminal_stage": {
-            "default": "unknown",
-            "title": "Terminal Stage",
-            "type": "string"
-          },
-          "trace": {
-            "$ref": "#/components/schemas/PublicTraceExport"
-          }
-        },
-        "required": [
-          "schema_version",
-          "case_id",
-          "status",
-          "trace"
-        ],
-        "title": "DiagnosisRequest",
-        "type": "object"
-      },
       "EffectReconciliation": {
         "additionalProperties": false,
         "properties": {
@@ -779,7 +719,8 @@
           "original_effect_ref",
           "original_action",
           "resource_ref",
-          "reversibility"
+          "reversibility",
+          "compensation_effect_ref"
         ],
         "title": "EffectReconciliation",
         "type": "object"
@@ -797,7 +738,71 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "OptionalCommand": {
+      "InteractiveSurface": {
+        "additionalProperties": false,
+        "properties": {
+          "input_mode": {
+            "const": "native",
+            "title": "Input Mode",
+            "type": "string"
+          },
+          "presentation": {
+            "const": "live_media",
+            "title": "Presentation",
+            "type": "string"
+          },
+          "protected_path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Protected Path",
+            "type": "string"
+          },
+          "status": {
+            "const": "interactive",
+            "title": "Status",
+            "type": "string"
+          },
+          "surface_kind": {
+            "enum": [
+              "web",
+              "mobile",
+              "desktop",
+              "generic"
+            ],
+            "title": "Surface Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "surface_kind",
+          "presentation",
+          "protected_path",
+          "input_mode"
+        ],
+        "title": "InteractiveSurface",
+        "type": "object"
+      },
+      "LiveSession": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "live_session",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "snapshot"
+        ],
+        "title": "LiveSession",
+        "type": "object"
+      },
+      "PauseTask": {
         "additionalProperties": false,
         "properties": {
           "command_id": {
@@ -815,25 +820,9 @@
             "type": "integer"
           },
           "kind": {
-            "enum": [
-              "cancel_task",
-              "pause_task",
-              "start_new_task"
-            ],
+            "const": "pause_task",
             "title": "Kind",
             "type": "string"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "maxLength": 8000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
           }
         },
         "required": [
@@ -842,60 +831,22 @@
           "expected_run_status",
           "kind"
         ],
-        "title": "OptionalCommand",
+        "title": "PauseTask",
         "type": "object"
       },
-      "PendingConfirmation": {
+      "PauseTaskOffer": {
         "additionalProperties": false,
         "properties": {
-          "request_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Request Id",
-            "type": "string"
-          },
-          "risk": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Risk",
-            "type": "string"
-          },
-          "summary": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Summary",
+          "kind": {
+            "const": "pause_task",
+            "title": "Kind",
             "type": "string"
           }
         },
         "required": [
-          "request_id",
-          "summary",
-          "risk"
+          "kind"
         ],
-        "title": "PendingConfirmation",
-        "type": "object"
-      },
-      "PendingQuestion": {
-        "additionalProperties": false,
-        "properties": {
-          "prompt": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "request_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Request Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_id",
-          "prompt"
-        ],
-        "title": "PendingQuestion",
+        "title": "PauseTaskOffer",
         "type": "object"
       },
       "PublicStep": {
@@ -960,36 +911,56 @@
           "step",
           "stage",
           "status",
-          "label"
+          "label",
+          "attempt",
+          "retry_count",
+          "recovery_count",
+          "latency_ms",
+          "evidence_refs"
         ],
         "title": "PublicStep",
         "type": "object"
       },
-      "PublicTraceExport": {
-        "additionalProperties": true,
+      "ReadOnlySurface": {
+        "additionalProperties": false,
         "properties": {
-          "case_id": {
-            "title": "Case Id",
+          "presentation": {
+            "enum": [
+              "live_media",
+              "snapshot"
+            ],
+            "title": "Presentation",
             "type": "string"
           },
-          "schema_version": {
-            "title": "Schema Version",
+          "protected_path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Protected Path",
             "type": "string"
           },
-          "steps": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/TraceStep"
-            },
-            "title": "Steps",
-            "type": "array"
+          "status": {
+            "const": "read_only",
+            "title": "Status",
+            "type": "string"
+          },
+          "surface_kind": {
+            "enum": [
+              "web",
+              "mobile",
+              "desktop",
+              "generic"
+            ],
+            "title": "Surface Kind",
+            "type": "string"
           }
         },
         "required": [
-          "schema_version",
-          "case_id"
+          "status",
+          "surface_kind",
+          "presentation",
+          "protected_path"
         ],
-        "title": "PublicTraceExport",
+        "title": "ReadOnlySurface",
         "type": "object"
       },
       "RecoverSessionRequest": {
@@ -1008,17 +979,220 @@
         "title": "RecoverSessionRequest",
         "type": "object"
       },
-      "RecoverSessionResponse": {
+      "Recovered": {
         "additionalProperties": false,
         "properties": {
+          "kind": {
+            "const": "recovered",
+            "title": "Kind",
+            "type": "string"
+          },
           "snapshot": {
             "$ref": "#/components/schemas/RuntimeSessionSnapshot"
           }
         },
         "required": [
+          "kind",
           "snapshot"
         ],
-        "title": "RecoverSessionResponse",
+        "title": "Recovered",
+        "type": "object"
+      },
+      "RecoveryAttemptUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unavailable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_not_found",
+              "checkpoint_unavailable",
+              "recovery_unsupported",
+              "environment_not_reconnectable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "const": false,
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryAttemptUnavailable",
+        "type": "object"
+      },
+      "RecoveryConflict": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_conflict",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_already_resumed",
+              "checkpoint_already_revised",
+              "checkpoint_mismatch"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "const": false,
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryConflict",
+        "type": "object"
+      },
+      "RecoveryFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_failed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_store_failed",
+              "runtime_factory_failed",
+              "environment_reconnect_failed",
+              "session_restore_failed",
+              "shell_projection_restore_failed"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryFailed",
+        "type": "object"
+      },
+      "RecoveryInspectionFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_inspection_failed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "const": "checkpoint_inspection_failed",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryInspectionFailed",
+        "type": "object"
+      },
+      "RecoveryRequired": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "recovery_required",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "checkpoint_id"
+        ],
+        "title": "RecoveryRequired",
+        "type": "object"
+      },
+      "RecoveryUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unavailable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_not_found",
+              "checkpoint_consumed",
+              "checkpoint_unavailable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code"
+        ],
+        "title": "RecoveryUnavailable",
+        "type": "object"
+      },
+      "RecoveryUnsupported": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unsupported",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "recovery_registry_unavailable",
+              "checkpoint_store_unavailable",
+              "recovery_reconnector_unavailable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code"
+        ],
+        "title": "RecoveryUnsupported",
         "type": "object"
       },
       "RejectAction": {
@@ -1040,7 +1214,6 @@
           },
           "kind": {
             "const": "reject_action",
-            "default": "reject_action",
             "title": "Kind",
             "type": "string"
           },
@@ -1055,6 +1228,7 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "request_id"
         ],
         "title": "RejectAction",
@@ -1064,6 +1238,12 @@
         "additionalProperties": false,
         "properties": {
           "code": {
+            "enum": [
+              "command_processing_failed",
+              "command_persistence_failed",
+              "command_projection_failed",
+              "internal_contract_failure"
+            ],
             "title": "Code",
             "type": "string"
           },
@@ -1073,12 +1253,7 @@
           },
           "kind": {
             "const": "rejected",
-            "default": "rejected",
             "title": "Kind",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
             "type": "string"
           },
           "snapshot": {
@@ -1086,9 +1261,9 @@
           }
         },
         "required": [
+          "kind",
           "command_id",
           "code",
-          "message",
           "snapshot"
         ],
         "title": "Rejected",
@@ -1119,7 +1294,6 @@
           },
           "kind": {
             "const": "resume_task",
-            "default": "resume_task",
             "title": "Kind",
             "type": "string"
           }
@@ -1128,9 +1302,25 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "checkpoint_id"
         ],
         "title": "ResumeTask",
+        "type": "object"
+      },
+      "ResumeTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "resume_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ResumeTaskOffer",
         "type": "object"
       },
       "ReturnControl": {
@@ -1158,7 +1348,6 @@
           },
           "kind": {
             "const": "return_control",
-            "default": "return_control",
             "title": "Kind",
             "type": "string"
           }
@@ -1167,9 +1356,25 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "control_lease_id"
         ],
         "title": "ReturnControl",
+        "type": "object"
+      },
+      "ReturnControlOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "return_control",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ReturnControlOffer",
         "type": "object"
       },
       "ReviseTask": {
@@ -1213,7 +1418,6 @@
           },
           "kind": {
             "const": "revise_task",
-            "default": "revise_task",
             "title": "Kind",
             "type": "string"
           },
@@ -1228,9 +1432,25 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "text"
         ],
         "title": "ReviseTask",
+        "type": "object"
+      },
+      "ReviseTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "revise_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ReviseTaskOffer",
         "type": "object"
       },
       "RevisionConversationContext": {
@@ -1277,14 +1497,6 @@
       "RuntimeSessionSnapshot": {
         "additionalProperties": false,
         "properties": {
-          "capabilities": {
-            "items": {
-              "$ref": "#/components/schemas/Capability"
-            },
-            "title": "Capabilities",
-            "type": "array",
-            "uniqueItems": true
-          },
           "checkpoint_id": {
             "anyOf": [
               {
@@ -1296,6 +1508,14 @@
               }
             ],
             "title": "Checkpoint Id"
+          },
+          "command_offers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CommandOffer"
+            },
+            "title": "Command Offers",
+            "type": "array"
           },
           "completion": {
             "anyOf": [
@@ -1361,26 +1581,6 @@
               }
             ]
           },
-          "pending_confirmation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PendingConfirmation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pending_question": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PendingQuestion"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "public_steps": {
             "default": [],
             "items": {
@@ -1399,14 +1599,39 @@
             "default": "idle"
           },
           "schema_version": {
-            "const": "interaction-shell.v2",
-            "default": "interaction-shell.v2",
+            "const": "interaction-shell.v3",
             "title": "Schema Version",
             "type": "string"
           },
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "surface": {
+            "default": {
+              "reason_code": "surface_not_configured",
+              "status": "unavailable"
+            },
+            "discriminator": {
+              "mapping": {
+                "interactive": "#/components/schemas/InteractiveSurface",
+                "read_only": "#/components/schemas/ReadOnlySurface",
+                "unavailable": "#/components/schemas/UnavailableSurface"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableSurface"
+              },
+              {
+                "$ref": "#/components/schemas/ReadOnlySurface"
+              },
+              {
+                "$ref": "#/components/schemas/InteractiveSurface"
+              }
+            ],
+            "title": "Surface"
           },
           "task_id": {
             "anyOf": [
@@ -1436,51 +1661,64 @@
               }
             ],
             "title": "Task Text"
-          },
-          "usage": {
-            "$ref": "#/components/schemas/UsageSummary",
-            "default": {
-              "completion_tokens": 0,
-              "model_latency_ms": 0.0,
-              "prompt_tokens": 0,
-              "runtime_latency_ms": 0.0
-            }
-          },
-          "viewer": {
-            "$ref": "#/components/schemas/ViewerState",
-            "default": {
-              "read_only": true,
-              "reason_code": "viewer_not_configured",
-              "status": "unavailable"
-            }
           }
         },
         "required": [
+          "schema_version",
           "session_id",
+          "task_id",
+          "task_revision",
+          "task_text",
+          "run_status",
           "event_epoch",
-          "capabilities",
+          "event_cursor",
+          "completion",
+          "command_offers",
+          "surface",
+          "public_steps",
+          "checkpoint_id",
+          "resume_eligible",
+          "last_control_outcome",
+          "effect_reconciliation",
+          "control_owner",
+          "control_lease_id",
           "expires_at"
         ],
         "title": "RuntimeSessionSnapshot",
         "type": "object"
       },
-      "ShellEvent": {
+      "ShellEventEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "const": "snapshot.updated",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "CUSTOM",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/SnapshotUpdated"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "value"
+        ],
+        "title": "ShellEventEnvelope",
+        "type": "object"
+      },
+      "SnapshotUpdated": {
         "additionalProperties": false,
         "properties": {
           "cursor": {
             "minimum": 1.0,
             "title": "Cursor",
             "type": "integer"
-          },
-          "data": {
-            "additionalProperties": true,
-            "title": "Data",
-            "type": "object"
-          },
-          "durable": {
-            "default": true,
-            "title": "Durable",
-            "type": "boolean"
           },
           "emitted_at": {
             "format": "date-time",
@@ -1494,8 +1732,7 @@
             "type": "string"
           },
           "schema_version": {
-            "const": "interaction-shell.v2",
-            "default": "interaction-shell.v2",
+            "const": "interaction-shell.v3",
             "title": "Schema Version",
             "type": "string"
           },
@@ -1503,20 +1740,25 @@
             "title": "Session Id",
             "type": "string"
           },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          },
           "type": {
-            "maxLength": 120,
-            "minLength": 1,
+            "const": "snapshot.updated",
             "title": "Type",
             "type": "string"
           }
         },
         "required": [
+          "schema_version",
+          "type",
           "session_id",
           "event_epoch",
           "cursor",
-          "type"
+          "emitted_at",
+          "snapshot"
         ],
-        "title": "ShellEvent",
+        "title": "SnapshotUpdated",
         "type": "object"
       },
       "StartTask": {
@@ -1538,7 +1780,6 @@
           },
           "kind": {
             "const": "start_task",
-            "default": "start_task",
             "title": "Kind",
             "type": "string"
           },
@@ -1553,9 +1794,25 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "task"
         ],
         "title": "StartTask",
+        "type": "object"
+      },
+      "StartTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "start_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "StartTaskOffer",
         "type": "object"
       },
       "TakeOver": {
@@ -1583,7 +1840,6 @@
           },
           "kind": {
             "const": "take_over",
-            "default": "take_over",
             "title": "Kind",
             "type": "string"
           }
@@ -1592,159 +1848,59 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
+          "kind",
           "checkpoint_id"
         ],
         "title": "TakeOver",
         "type": "object"
       },
-      "TraceStep": {
-        "additionalProperties": true,
+      "TakeOverOffer": {
+        "additionalProperties": false,
         "properties": {
-          "abnormal": {
-            "default": false,
-            "title": "Abnormal",
-            "type": "boolean"
-          },
-          "evidence_refs": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Evidence Refs",
-            "type": "array"
-          },
-          "latency_ms": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Latency Ms",
-            "type": "number"
-          },
-          "progress": {
-            "default": false,
-            "title": "Progress",
-            "type": "boolean"
-          },
-          "provider_attempts": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Provider Attempts",
-            "type": "integer"
-          },
-          "recoveries": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Recoveries",
-            "type": "integer"
-          },
-          "retries": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Retries",
-            "type": "integer"
-          },
-          "stage": {
-            "title": "Stage",
+          "kind": {
+            "const": "take_over",
+            "title": "Kind",
             "type": "string"
-          },
-          "step": {
-            "minimum": 1.0,
-            "title": "Step",
-            "type": "integer"
           }
         },
         "required": [
-          "step",
-          "stage"
+          "kind"
         ],
-        "title": "TraceStep",
+        "title": "TakeOverOffer",
         "type": "object"
       },
-      "TrajectoryMetrics": {
-        "additionalProperties": true,
+      "UnavailableSurface": {
+        "additionalProperties": false,
         "properties": {
-          "completion_tokens": {
-            "minimum": 0.0,
-            "title": "Completion Tokens",
-            "type": "integer"
+          "reason_code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
           },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          },
-          "cycle_count": {
-            "minimum": 0.0,
-            "title": "Cycle Count",
-            "type": "integer"
-          },
-          "model_latency_ms": {
-            "minimum": 0.0,
-            "title": "Model Latency Ms",
-            "type": "number"
-          },
-          "no_progress_count": {
-            "minimum": 0.0,
-            "title": "No Progress Count",
-            "type": "integer"
-          },
-          "prompt_tokens": {
-            "minimum": 0.0,
-            "title": "Prompt Tokens",
-            "type": "integer"
-          },
-          "provider_attempts": {
-            "minimum": 0.0,
-            "title": "Provider Attempts",
-            "type": "integer"
-          },
-          "recoveries": {
-            "minimum": 0.0,
-            "title": "Recoveries",
-            "type": "integer"
-          },
-          "retries": {
-            "minimum": 0.0,
-            "title": "Retries",
-            "type": "integer"
-          },
-          "runtime_latency_ms": {
-            "minimum": 0.0,
-            "title": "Runtime Latency Ms",
-            "type": "number"
-          },
-          "steps": {
-            "minimum": 0.0,
-            "title": "Steps",
-            "type": "integer"
+          "status": {
+            "const": "unavailable",
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
-          "steps",
-          "provider_attempts",
-          "retries",
-          "recoveries",
-          "no_progress_count",
-          "cycle_count",
-          "model_latency_ms",
-          "runtime_latency_ms",
-          "prompt_tokens",
-          "completion_tokens"
+          "status",
+          "reason_code"
         ],
-        "title": "TrajectoryMetrics",
+        "title": "UnavailableSurface",
         "type": "object"
       },
       "Unsupported": {
         "additionalProperties": false,
         "properties": {
-          "capability": {
-            "$ref": "#/components/schemas/Capability"
+          "code": {
+            "enum": [
+              "command_not_supported",
+              "deployment_capability_unavailable"
+            ],
+            "title": "Code",
+            "type": "string"
           },
           "command_id": {
             "title": "Command Id",
@@ -1752,12 +1908,7 @@
           },
           "kind": {
             "const": "unsupported",
-            "default": "unsupported",
             "title": "Kind",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
             "type": "string"
           },
           "snapshot": {
@@ -1765,55 +1916,12 @@
           }
         },
         "required": [
+          "kind",
           "command_id",
-          "capability",
-          "reason",
+          "code",
           "snapshot"
         ],
         "title": "Unsupported",
-        "type": "object"
-      },
-      "UsageSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "completion_tokens": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Completion Tokens",
-            "type": "integer"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          },
-          "model_latency_ms": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Model Latency Ms",
-            "type": "number"
-          },
-          "prompt_tokens": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Prompt Tokens",
-            "type": "integer"
-          },
-          "runtime_latency_ms": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Runtime Latency Ms",
-            "type": "number"
-          }
-        },
-        "title": "UsageSummary",
         "type": "object"
       },
       "ValidationError": {
@@ -1855,58 +1963,13 @@
         ],
         "title": "ValidationError",
         "type": "object"
-      },
-      "ViewerState": {
-        "additionalProperties": false,
-        "properties": {
-          "protected_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Protected Path"
-          },
-          "provider": {
-            "anyOf": [
-              {
-                "enum": [
-                  "steel",
-                  "browserbase"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider"
-          },
-          "read_only": {
-            "default": true,
-            "title": "Read Only",
-            "type": "boolean"
-          },
-          "reason_code": {
-            "default": "viewer_not_configured",
-            "title": "Reason Code",
-            "type": "string"
-          },
-          "status": {
-            "default": "unavailable",
-            "enum": [
-              "available",
-              "unavailable"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "title": "ViewerState",
-        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "in": "header",
+        "name": "X-Session-Key",
+        "type": "apiKey"
       }
     }
   },
@@ -1918,16 +1981,16 @@
   "paths": {
     "/diagnostics": {
       "get": {
-        "operationId": "list_diagnostics_diagnostics_get",
+        "operationId": "listCompletedRuns",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/CaseDiagnosis"
+                    "$ref": "#/components/schemas/CompletedRunSummary"
                   },
-                  "title": "Response List Diagnostics Diagnostics Get",
+                  "title": "Response Listcompletedruns",
                   "type": "array"
                 }
               }
@@ -1936,55 +1999,35 @@
           }
         },
         "summary": "List Diagnostics"
-      },
-      "post": {
-        "operationId": "project_diagnostic_diagnostics_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiagnosisRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CaseDiagnosis"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Project Diagnostic"
       }
     },
-    "/diagnostics/{case_id}": {
+    "/diagnostics/evidence/{locator_id}/result": {
       "get": {
-        "operationId": "get_diagnostic_diagnostics__case_id__get",
+        "operationId": "getCompletedRunResult",
         "parameters": [
           {
             "in": "path",
-            "name": "case_id",
+            "name": "locator_id",
             "required": true,
             "schema": {
-              "title": "Case Id",
+              "title": "Locator Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Engineering-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Engineering-Key"
             }
           }
         ],
@@ -1992,9 +2035,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CaseDiagnosis"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -2010,19 +2051,19 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Diagnostic"
+        "summary": "Completed Result"
       }
     },
     "/health": {
       "get": {
-        "operationId": "health_health_get",
+        "operationId": "getHealth",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Health Health Get",
+                  "title": "Response Gethealth",
                   "type": "object"
                 }
               }
@@ -2036,13 +2077,13 @@
     "/schemas/shell-event": {
       "get": {
         "description": "Concrete versioned schema anchor used by OpenAPI TypeScript generation.",
-        "operationId": "shell_event_schema_schemas_shell_event_get",
+        "operationId": "getShellEventSchema",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ShellEvent"
+                  "$ref": "#/components/schemas/ShellEventEnvelope"
                 }
               }
             },
@@ -2054,7 +2095,7 @@
     },
     "/sessions": {
       "post": {
-        "operationId": "create_session_sessions_post",
+        "operationId": "createSession",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2092,7 +2133,7 @@
     },
     "/sessions/{session_id}": {
       "get": {
-        "operationId": "get_snapshot_sessions__session_id__get",
+        "operationId": "getSession",
         "parameters": [
           {
             "in": "path",
@@ -2102,22 +2143,6 @@
               "title": "Session Id",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
           }
         ],
         "responses": {
@@ -2125,7 +2150,34 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+                  "discriminator": {
+                    "mapping": {
+                      "live_session": "#/components/schemas/LiveSession",
+                      "recovery_inspection_failed": "#/components/schemas/RecoveryInspectionFailed",
+                      "recovery_required": "#/components/schemas/RecoveryRequired",
+                      "recovery_unavailable": "#/components/schemas/RecoveryUnavailable",
+                      "recovery_unsupported": "#/components/schemas/RecoveryUnsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/LiveSession"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryRequired"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryUnavailable"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryUnsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryInspectionFailed"
+                    }
+                  ],
+                  "title": "Response Getsession"
                 }
               }
             },
@@ -2142,12 +2194,17 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "summary": "Get Snapshot"
       }
     },
-    "/sessions/{session_id}/commands/answer": {
+    "/sessions/{session_id}/commands": {
       "post": {
-        "operationId": "answer_sessions__session_id__commands_answer_post",
+        "operationId": "submitCommand",
         "parameters": [
           {
             "in": "path",
@@ -2157,29 +2214,64 @@
               "title": "Session Id",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AnswerQuestion"
+                "discriminator": {
+                  "mapping": {
+                    "answer_question": "#/components/schemas/AnswerQuestion",
+                    "approve_action": "#/components/schemas/ApproveAction",
+                    "cancel_task": "#/components/schemas/CancelTask",
+                    "close_session": "#/components/schemas/CloseSession",
+                    "pause_task": "#/components/schemas/PauseTask",
+                    "reject_action": "#/components/schemas/RejectAction",
+                    "resume_task": "#/components/schemas/ResumeTask",
+                    "return_control": "#/components/schemas/ReturnControl",
+                    "revise_task": "#/components/schemas/ReviseTask",
+                    "start_task": "#/components/schemas/StartTask",
+                    "take_over": "#/components/schemas/TakeOver"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StartTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AnswerQuestion"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ApproveAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RejectAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CancelTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PauseTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResumeTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviseTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TakeOver"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReturnControl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CloseSession"
+                  }
+                ],
+                "title": "Body"
               }
             }
           },
@@ -2213,7 +2305,7 @@
                       "$ref": "#/components/schemas/Rejected"
                     }
                   ],
-                  "title": "Response Answer Sessions  Session Id  Commands Answer Post"
+                  "title": "Response Submitcommand"
                 }
               }
             },
@@ -2230,716 +2322,17 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Answer"
-      }
-    },
-    "/sessions/{session_id}/commands/approve": {
-      "post": {
-        "operationId": "approve_sessions__session_id__commands_approve_post",
-        "parameters": [
+        "security": [
           {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
+            "APIKeyHeader": []
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApproveAction"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Approve Sessions  Session Id  Commands Approve Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Approve"
-      }
-    },
-    "/sessions/{session_id}/commands/close": {
-      "post": {
-        "operationId": "close_sessions__session_id__commands_close_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CloseSession"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Close Sessions  Session Id  Commands Close Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Close"
-      }
-    },
-    "/sessions/{session_id}/commands/optional": {
-      "post": {
-        "operationId": "optional_sessions__session_id__commands_optional_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OptionalCommand"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Optional Sessions  Session Id  Commands Optional Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Optional"
-      }
-    },
-    "/sessions/{session_id}/commands/reject": {
-      "post": {
-        "operationId": "reject_sessions__session_id__commands_reject_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RejectAction"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Reject Sessions  Session Id  Commands Reject Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reject"
-      }
-    },
-    "/sessions/{session_id}/commands/resume": {
-      "post": {
-        "operationId": "resume_sessions__session_id__commands_resume_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResumeTask"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Resume Sessions  Session Id  Commands Resume Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Resume"
-      }
-    },
-    "/sessions/{session_id}/commands/return-control": {
-      "post": {
-        "operationId": "return_control_sessions__session_id__commands_return_control_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReturnControl"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Return Control Sessions  Session Id  Commands Return Control Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Return Control"
-      }
-    },
-    "/sessions/{session_id}/commands/revise": {
-      "post": {
-        "operationId": "revise_sessions__session_id__commands_revise_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReviseTask"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Revise Sessions  Session Id  Commands Revise Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Revise"
-      }
-    },
-    "/sessions/{session_id}/commands/takeover": {
-      "post": {
-        "operationId": "take_over_sessions__session_id__commands_takeover_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TakeOver"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
-                    },
-                    "propertyName": "kind"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Accepted"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Conflict"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Unsupported"
-                    },
-                    {
-                      "$ref": "#/components/schemas/Rejected"
-                    }
-                  ],
-                  "title": "Response Take Over Sessions  Session Id  Commands Takeover Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Take Over"
+        "summary": "Submit Command"
       }
     },
     "/sessions/{session_id}/events": {
       "get": {
-        "operationId": "subscribe_events_sessions__session_id__events_get",
+        "operationId": "subscribeSessionEvents",
         "parameters": [
           {
             "in": "path",
@@ -2991,29 +2384,15 @@
               ],
               "title": "Last-Event-Id"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
           }
         ],
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -3029,12 +2408,17 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "summary": "Subscribe Events"
       }
     },
     "/sessions/{session_id}/recover": {
       "post": {
-        "operationId": "recover_session_sessions__session_id__recover_post",
+        "operationId": "recoverSession",
         "parameters": [
           {
             "in": "path",
@@ -3043,22 +2427,6 @@
             "schema": {
               "title": "Session Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
             }
           }
         ],
@@ -3077,95 +2445,30 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RecoverSessionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Recover Session"
-      }
-    },
-    "/sessions/{session_id}/tasks": {
-      "post": {
-        "operationId": "start_sessions__session_id__tasks_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "title": "Session Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-Session-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Session-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartTask"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
                   "discriminator": {
                     "mapping": {
-                      "accepted": "#/components/schemas/Accepted",
-                      "conflict": "#/components/schemas/Conflict",
-                      "rejected": "#/components/schemas/Rejected",
-                      "unsupported": "#/components/schemas/Unsupported"
+                      "recovered": "#/components/schemas/Recovered",
+                      "recovery_conflict": "#/components/schemas/RecoveryConflict",
+                      "recovery_failed": "#/components/schemas/RecoveryFailed",
+                      "recovery_unavailable": "#/components/schemas/RecoveryAttemptUnavailable"
                     },
                     "propertyName": "kind"
                   },
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/Accepted"
+                      "$ref": "#/components/schemas/Recovered"
                     },
                     {
-                      "$ref": "#/components/schemas/Conflict"
+                      "$ref": "#/components/schemas/RecoveryConflict"
                     },
                     {
-                      "$ref": "#/components/schemas/Unsupported"
+                      "$ref": "#/components/schemas/RecoveryAttemptUnavailable"
                     },
                     {
-                      "$ref": "#/components/schemas/Rejected"
+                      "$ref": "#/components/schemas/RecoveryFailed"
                     }
                   ],
-                  "title": "Response Start Sessions  Session Id  Tasks Post"
+                  "title": "Response Recoversession"
                 }
               }
             },
@@ -3182,7 +2485,12 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Start"
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Recover Session"
       }
     }
   }

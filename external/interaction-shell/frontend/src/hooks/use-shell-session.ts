@@ -1,213 +1,238 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, postCommand, recoverSession, subscribeEvents } from "@/lib/api";
-import type { Snapshot } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { parse, ValiError } from "valibot";
+import { createClient } from "@/generated/client";
+import {
+  createSession as createSessionRequest,
+  getSession,
+  recoverSession,
+  submitCommand,
+  subscribeSessionEvents,
+} from "@/generated/sdk.gen";
+import {
+  vCreateSessionResponse,
+  vGetSessionResponse,
+  vRecoverSessionResponse,
+  vShellEventEnvelope,
+  vSubmitCommandResponse,
+} from "@/generated/valibot.gen";
+import { buildCommand, offerFor, type CommandIntent } from "@/session/command-builder";
+import type { CommandAdmission, ConnectionState, ShellEventEnvelope, Snapshot } from "@/session/types";
+import { projectShellView } from "@/session/view-model";
+
+const BASE_URL = "/shell-api";
+
+export type CausalEventDecision = "apply" | "duplicate" | "resync" | "protocol_mismatch";
+
+export function classifyEvent(snapshot: Snapshot, event: ShellEventEnvelope): CausalEventDecision {
+  const update = event.value;
+  if (
+    update.snapshot.session_id !== update.session_id
+    || update.snapshot.event_epoch !== update.event_epoch
+    || update.snapshot.event_cursor < update.cursor
+  ) {
+    return "protocol_mismatch";
+  }
+  if (update.session_id !== snapshot.session_id || update.event_epoch !== snapshot.event_epoch) {
+    return "resync";
+  }
+  if (update.cursor <= snapshot.event_cursor) return "duplicate";
+  if (update.cursor !== snapshot.event_cursor + 1) return "resync";
+  return "apply";
+}
 
 export function useShellSession() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [sessionKey, setSessionKey] = useState("");
-  const [connection, setConnection] = useState<"connecting" | "live" | "offline">("connecting");
+  const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [notice, setNotice] = useState("");
   const [streamGeneration, setStreamGeneration] = useState(0);
-  const cursor = useRef(0);
-  const eventEpoch = useRef("");
   const latestSnapshot = useRef<Snapshot | null>(null);
   const attemptedRecovery = useRef("");
-  const sessionOpening = useRef<ReturnType<typeof createSession> | null>(null);
-  const sessionId = snapshot?.session_id;
+  const attemptedResync = useRef("");
+  const opening = useRef<ReturnType<typeof openSession> | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    sessionOpening.current ??= createSession();
-    sessionOpening.current
-      .then((created) => {
-        if (!active) return;
-        setSessionKey(created.session_key);
-        setSnapshot(created.snapshot);
-        latestSnapshot.current = created.snapshot;
-        eventEpoch.current = created.snapshot.event_epoch;
-        cursor.current = created.snapshot.event_cursor;
-      })
-      .catch(() => setConnection("offline"));
-    return () => {
-      active = false;
-    };
+  const install = useCallback((next: Snapshot) => {
+    latestSnapshot.current = next;
+    setSnapshot(next);
   }, []);
 
   useEffect(() => {
-    if (!sessionId || !sessionKey) return;
-    const controller = new AbortController();
-    subscribeEvents(
-      sessionId,
-      sessionKey,
-      eventEpoch.current,
-      cursor.current,
-      (event) => {
-        if (event.event_epoch !== eventEpoch.current) {
-          throw new Error("shell_event_epoch_changed");
-        }
-        cursor.current = event.cursor;
-        const projected = event.data?.snapshot as Snapshot | undefined;
-        if (projected) {
-          latestSnapshot.current = projected;
-          setSnapshot(projected);
-        }
-        setConnection("live");
-      },
-      () => setConnection("live"),
-      controller.signal,
-    ).catch(async () => {
-      if (controller.signal.aborted) return;
+    let active = true;
+    opening.current ??= openSession();
+    opening.current.then((created) => {
+      if (!active) return;
+      setSessionKey(created.session_key);
+      install(created.snapshot);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setConnection(error instanceof ValiError ? "protocol_mismatch" : "offline");
+    });
+    return () => { active = false; };
+  }, [install]);
+
+  const sessionId = snapshot?.session_id;
+  useEffect(() => {
+    if (!sessionId || !sessionKey || connection === "protocol_mismatch") return;
+    const abort = new AbortController();
+    const client = authenticatedClient(sessionKey);
+
+    const resyncOnce = async () => {
       const current = latestSnapshot.current;
-      const recoveryIdentity = `${eventEpoch.current}:${current?.checkpoint_id ?? ""}`;
-      if (
-        current?.run_status === "paused"
-        && current.resume_eligible
-        && current.checkpoint_id
-        && attemptedRecovery.current !== recoveryIdentity
-      ) {
-        attemptedRecovery.current = recoveryIdentity;
-        try {
-          const recovered = await recoverSession(
-            current.session_id,
-            sessionKey,
-            current.checkpoint_id,
-          );
-          if (controller.signal.aborted) return;
-          latestSnapshot.current = recovered.snapshot;
-          eventEpoch.current = recovered.snapshot.event_epoch;
-          cursor.current = recovered.snapshot.event_cursor;
-          setSnapshot(recovered.snapshot);
-          setConnection("live");
-          setStreamGeneration((generation) => generation + 1);
-          return;
-        } catch {
-          // One bounded recovery attempt per epoch/checkpoint; remain fail-closed.
-        }
-      }
-      setConnection("offline");
-    });
-    return () => controller.abort();
-  }, [sessionId, sessionKey, streamGeneration]);
-
-  const send = useCallback(
-    async (path: string, body: Record<string, unknown>) => {
-      if (!snapshot || !sessionKey) return null;
-      const admission = await postCommand(snapshot.session_id, sessionKey, path, body);
-      latestSnapshot.current = admission.snapshot;
-      setSnapshot(admission.snapshot);
-      setNotice(
-        admission.kind === "accepted"
-          ? "Command admitted; task outcome still comes from Runtime."
-          : admission.kind === "unsupported"
-            ? `Unavailable: ${admission.reason}`
-            : `${admission.kind}: ${"code" in admission ? admission.code : "rejected"}`,
-      );
-      return admission;
-    },
-    [sessionKey, snapshot],
-  );
-
-  const commandBase = useCallback(
-    (kind: string) => ({
-      kind,
-      command_id: crypto.randomUUID(),
-      expected_task_revision: snapshot?.task_revision ?? 0,
-      expected_run_status: snapshot?.run_status ?? "idle",
-    }),
-    [snapshot],
-  );
-
-  const submitMessage = useCallback(
-    async (message: string) => {
-      if (!snapshot) return;
-      if (snapshot.run_status === "idle") {
-        await send("tasks", { ...commandBase("start_task"), task: message });
-      } else if (snapshot.run_status === "waiting_user" && snapshot.pending_question) {
-        await send("commands/answer", {
-          ...commandBase("answer_question"),
-          request_id: snapshot.pending_question.request_id,
-          answer: message,
-        });
-      } else if (snapshot.capabilities.includes("revise_task")) {
-        await send("commands/revise", {
-          ...commandBase("revise_task"),
-          expected_checkpoint_id: snapshot.checkpoint_id ?? null,
-          text: message,
-        });
-      }
-    },
-    [commandBase, send, snapshot],
-  );
-
-  const confirm = useCallback(
-    async (approved: boolean) => {
-      if (!snapshot?.pending_confirmation) return;
-      await send(approved ? "commands/approve" : "commands/reject", {
-        ...commandBase(approved ? "approve_action" : "reject_action"),
-        request_id: snapshot.pending_confirmation.request_id,
+      if (!current) return false;
+      const identity = `${current.event_epoch}:${current.event_cursor}`;
+      if (attemptedResync.current === identity) return false;
+      attemptedResync.current = identity;
+      const response = await getSession({
+        client,
+        path: { session_id: current.session_id },
+        throwOnError: true,
       });
-    },
-    [commandBase, send, snapshot],
-  );
+      const lookup = parse(vGetSessionResponse, response.data);
+      if (lookup.kind === "live_session") {
+        install(lookup.snapshot);
+        setStreamGeneration((generation) => generation + 1);
+        return true;
+      }
+      if (lookup.kind !== "recovery_required") return false;
+      const recoveryIdentity = `${current.session_id}:${lookup.checkpoint_id}`;
+      if (attemptedRecovery.current === recoveryIdentity) return false;
+      attemptedRecovery.current = recoveryIdentity;
+      const recoveredResponse = await recoverSession({
+        client,
+        path: { session_id: current.session_id },
+        body: { checkpoint_id: lookup.checkpoint_id },
+        throwOnError: true,
+      });
+      const recovered = parse(vRecoverSessionResponse, recoveredResponse.data);
+      if (recovered.kind !== "recovered") return false;
+      install(recovered.snapshot);
+      setStreamGeneration((generation) => generation + 1);
+      return true;
+    };
 
-  const cancel = useCallback(async () => {
-    if (!snapshot?.capabilities.includes("cancel_task")) return;
-    await send("commands/optional", commandBase("cancel_task"));
-  }, [commandBase, send, snapshot]);
+    const subscribe = async () => {
+      const current = latestSnapshot.current;
+      if (!current) return;
+      const result = await subscribeSessionEvents({
+        client,
+        path: { session_id: current.session_id },
+        query: { event_epoch: current.event_epoch, cursor: current.event_cursor },
+        signal: abort.signal,
+        sseMaxRetryAttempts: 1,
+      });
+      for await (const rawEvent of result.stream) {
+        const event = parse(vShellEventEnvelope, rawEvent);
+        const active = latestSnapshot.current;
+        if (!active) continue;
+        const decision = classifyEvent(active, event);
+        if (decision === "protocol_mismatch") {
+          setConnection("protocol_mismatch");
+          abort.abort();
+          return;
+        }
+        if (decision === "duplicate") {
+          setConnection("live");
+          continue;
+        }
+        if (decision === "resync") {
+          if (!await resyncOnce()) setConnection("offline");
+          return;
+        }
+        install(event.value.snapshot);
+        attemptedResync.current = "";
+        setConnection("live");
+      }
+      if (!abort.signal.aborted) {
+        if (!await resyncOnce()) setConnection("offline");
+      }
+    };
 
-  const pause = useCallback(async () => {
-    if (!snapshot?.capabilities.includes("pause_task")) return;
-    await send("commands/optional", commandBase("pause_task"));
-  }, [commandBase, send, snapshot]);
-
-  const resume = useCallback(async () => {
-    if (
-      !snapshot?.capabilities.includes("resume_task")
-      || !snapshot.checkpoint_id
-      || !snapshot.resume_eligible
-    ) return;
-    await send("commands/resume", {
-      ...commandBase("resume_task"),
-      checkpoint_id: snapshot.checkpoint_id,
+    subscribe().catch((error: unknown) => {
+      if (abort.signal.aborted) return;
+      if (error instanceof ValiError) {
+        setConnection("protocol_mismatch");
+        abort.abort();
+      } else {
+        setConnection("offline");
+      }
     });
-  }, [commandBase, send, snapshot]);
+    return () => abort.abort();
+  }, [connection, install, sessionId, sessionKey, streamGeneration]);
 
-  const takeOver = useCallback(async () => {
-    if (
-      !snapshot?.capabilities.includes("take_over")
-      || snapshot.run_status !== "paused"
-      || !snapshot.checkpoint_id
-    ) return;
-    await send("commands/takeover", {
-      ...commandBase("take_over"),
-      checkpoint_id: snapshot.checkpoint_id,
+  const sendIntent = useCallback(async (intent: CommandIntent): Promise<CommandAdmission | null> => {
+    const current = latestSnapshot.current;
+    if (!current || !sessionKey) return null;
+    const offer = offerFor(current, intent.kind);
+    if (!offer) return null;
+    const command = buildCommand(current, offer, intent, crypto.randomUUID());
+    const response = await submitCommand({
+      client: authenticatedClient(sessionKey),
+      path: { session_id: current.session_id },
+      body: command,
+      throwOnError: true,
     });
-  }, [commandBase, send, snapshot]);
+    const admission = parse(vSubmitCommandResponse, response.data);
+    install(admission.snapshot);
+    setNotice(admissionNotice(admission));
+    return admission;
+  }, [install, sessionKey]);
 
-  const returnControl = useCallback(async () => {
-    if (
-      !snapshot?.capabilities.includes("return_control")
-      || snapshot.control_owner !== "user"
-      || !snapshot.control_lease_id
-    ) return;
-    await send("commands/return-control", {
-      ...commandBase("return_control"),
-      control_lease_id: snapshot.control_lease_id,
-    });
-  }, [commandBase, send, snapshot]);
+  const submitMessage = useCallback(async (text: string) => {
+    const current = latestSnapshot.current;
+    if (!current) return;
+    if (offerFor(current, "answer_question")) {
+      await sendIntent({ kind: "answer_question", text });
+    } else if (offerFor(current, "start_task")) {
+      await sendIntent({ kind: "start_task", text });
+    }
+  }, [sendIntent]);
 
+  const revise = useCallback(async (text: string) => {
+    await sendIntent({ kind: "revise_task", text });
+  }, [sendIntent]);
+
+  const viewModel = useMemo(() => projectShellView(snapshot), [snapshot]);
   return {
     snapshot,
+    viewModel,
     connection,
     notice,
     submitMessage,
-    confirm,
-    cancel,
-    pause,
-    resume,
-    takeOver,
-    returnControl,
+    revise,
+    confirm: (approved: boolean) => sendIntent({ kind: "confirm_action", approved }),
+    cancel: () => sendIntent({ kind: "cancel_task" }),
+    pause: () => sendIntent({ kind: "pause_task" }),
+    resume: () => sendIntent({ kind: "resume_task" }),
+    takeOver: () => sendIntent({ kind: "take_over" }),
+    returnControl: () => sendIntent({ kind: "return_control" }),
+    close: () => sendIntent({ kind: "close_session" }),
   };
+}
+
+async function openSession() {
+  const response = await createSessionRequest({
+    client: createClient({ baseUrl: BASE_URL }),
+    body: {},
+    throwOnError: true,
+  });
+  return parse(vCreateSessionResponse, response.data);
+}
+
+function authenticatedClient(sessionKey: string) {
+  return createClient({ baseUrl: BASE_URL, auth: sessionKey });
+}
+
+function admissionNotice(admission: CommandAdmission): string {
+  switch (admission.kind) {
+    case "accepted":
+      return "Command admitted; task outcome still comes from Runtime.";
+    case "conflict":
+      return `Conflict: ${admission.code}`;
+    case "unsupported":
+      return `Unavailable: ${admission.code}`;
+    case "rejected":
+      return `Rejected: ${admission.code}`;
+  }
 }

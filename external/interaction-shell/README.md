@@ -10,8 +10,9 @@ imports only the versioned `affordance_runtime.app.public_session` boundary.
 ```text
 external/interaction-shell/
 ├── backend/       FastAPI, Pydantic contracts, session manager, port boundary
-├── frontend/      Next.js, CopilotKit, Radix primitives, Recharts, Playwright
-├── diagnostics/   exported-artifact diagnosis notes
+├── frontend/      Next.js, CopilotKit, Radix primitives, Playwright
+├── diagnostics/   completed-run resolver notes
+├── langfuse/      reproducible analysis-view configuration
 ├── tests/         backend contracts/properties and architecture guards
 ├── docs/          standalone public contract documentation
 └── README.md
@@ -28,7 +29,7 @@ python -m venv .venv
 ```
 
 Production-safe backend without a configured Runtime/environment factory
-(capabilities are typed `Unsupported`):
+(commands are typed `Unsupported`):
 
 ```bash
 .venv/bin/uvicorn interaction_shell.api:app --host 127.0.0.1 --port 8100
@@ -139,9 +140,13 @@ no second page effect, and then observed WebSocket close 4409. The exact checkpo
 was consumed, cleanup ran once, and the exact Steel lease was released. This is
 a deployment/control witness, not a benchmark result.
 
-Model-call OpenTelemetry instrumentation is present, but this deployment does
-not yet configure a recording `TracerProvider` or exporter; existing Runtime
-JSONL/Langfuse projection remains the deployed diagnostic path.
+Benchmark runs that load the repository `.env` currently persist Runtime JSONL
+under their run evidence directory and publish the asynchronous Langfuse
+projection. Native/custom model-call OpenTelemetry instrumentation is present,
+but the standalone Shell deployment still lacks a fully verified recording
+`TracerProvider + exporter`, and its Langfuse generation mapping still needs
+standard model/cost/latency verification. These are fail-open analysis gaps,
+not Runtime or benchmark-result gaps.
 
 Start the frontend in another shell:
 
@@ -152,30 +157,49 @@ SHELL_BACKEND_URL=http://127.0.0.1:8200 npm run dev -- --port 3100
 ```
 
 Open `http://127.0.0.1:3100` for the operator shell. It contains only
-conversation/HITL, the browser surface, capability-gated takeover/return controls,
+conversation/HITL, the live surface, Runtime-offered takeover/return controls,
 and concise Runtime-projected progress hydrated from SSE. The surface is
 read-only unless Runtime projects the current user-control lease. The UI does not
 load or render token, latency, evaluation, or attribution data.
 
-Open `http://127.0.0.1:3100/diagnostics` for the separate engineering bad-case
-workbench. Token/cost, latency, trajectory metrics, failure attribution, and
-evidence references live only on that surface.
+`http://127.0.0.1:3100/diagnostics` is a read-only completed-run index. It has no
+POST ingestion, process-local diagnosis store, transcript reader, chart engine,
+or evaluator. Configure exact run directories and the authenticated Langfuse UI:
+
+```bash
+export INTERACTION_SHELL_EVIDENCE_RUNS=/absolute/evidence/run-a:/absolute/evidence/run-b
+export LANGFUSE_BASE_URL=https://langfuse.example.test
+```
+
+The route shows only benchmark status, turns, provider input/output usage,
+recovery/stall counts, `suspected_detour | not_assessed`, and independent links.
+`INTERACTION_SHELL_LOCAL_EVIDENCE_ENABLED=true` plus a nonblank
+`INTERACTION_SHELL_EVIDENCE_ACCESS_KEY` enables the opaque fixed-result route.
+The engineering reverse proxy must inject the matching `X-Engineering-Key`;
+unauthorized and unknown locators both return 404.
+It never accepts or exposes filesystem paths. Full token, cost, latency, trace,
+dashboard, and annotation analysis stays in Langfuse. An ordinary product task
+without `BenchmarkCaseResult` explicitly displays benchmark result
+`not_applicable`. See `docs/interaction-shell.md`, Section 12 and Phase 10.
 
 ## Viewer and optional services
 
-The local/default production profile remains typed Viewer unavailable. The
-explicit Steel profile supplies a protected same-origin path through
-`ViewerStateProjector`; the contract rejects provider URLs, query secrets, and
-non-`/viewer/` routes. Interactive projection is valid only while Runtime owns an
-exact user-control lease; all other projections remain read-only. Browserbase
-remains an unimplemented alternative. Langfuse is an optional fail-open diagnosis
-sink.
+The local/default production profile remains typed Surface unavailable. The
+explicit Steel profile produces an ephemeral provider-neutral
+`SurfaceAvailability`; `CoreRuntimeSessionPort` alone projects the protected
+same-origin `SurfaceView`. The contract rejects provider URLs and query secrets.
+Interactive projection is valid only while Runtime owns an exact user-control
+lease; all other projections remain read-only. Browserbase
+remains an unimplemented alternative. Langfuse is the fail-open primary
+engineering-analysis surface when configured; benchmark evidence remains the
+evaluation authority and durable local fallback.
 
 ## Verification
 
 ```bash
 backend/.venv/bin/pytest tests/backend tests/architecture
 cd frontend
+npm run check:generated
 npm test
 npm run lint
 npm run typecheck

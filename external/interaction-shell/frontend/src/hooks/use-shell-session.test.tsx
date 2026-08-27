@@ -1,380 +1,60 @@
-import { StrictMode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreatedSession } from "@/lib/types";
+import { describe, expect, it } from "vitest";
+import { parse } from "valibot";
+import { vRuntimeSessionSnapshot, vShellEventEnvelope } from "@/generated/valibot.gen";
+import { classifyEvent } from "./use-shell-session";
 
-const api = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  postCommand: vi.fn(),
-  recoverSession: vi.fn(),
-  subscribeEvents: vi.fn(),
-}));
+const snapshot = parse(vRuntimeSessionSnapshot, {
+  schema_version: "interaction-shell.v3",
+  session_id: "session-1",
+  event_epoch: "event-epoch-00000001",
+  event_cursor: 4,
+  expires_at: "2026-08-27T12:00:00Z",
+  task_id: null,
+  task_text: null,
+  completion: null,
+  checkpoint_id: null,
+  last_control_outcome: null,
+  effect_reconciliation: null,
+  control_lease_id: null,
+  surface: { status: "unavailable", reason_code: "surface_not_configured" },
+});
 
-vi.mock("@/lib/api", () => api);
-
-import { useShellSession } from "./use-shell-session";
-
-const created = {
-  session_key: "session-key",
-  snapshot: {
-    schema_version: "interaction-shell.v2",
-    session_id: "session:strict-mode",
-    task_id: null,
-    task_revision: 0,
-    task_text: null,
-    run_status: "idle",
-    event_epoch: "epoch:strict-mode",
-    event_cursor: 0,
-    pending_question: null,
-    pending_confirmation: null,
-    completion: null,
-    capabilities: ["start_task", "close_session"],
-    viewer: {
-      status: "unavailable",
-      provider: null,
-      protected_path: null,
-      reason_code: "viewer_provider_not_configured",
-      read_only: true,
+function event(cursor: number, epoch = snapshot.event_epoch) {
+  return parse(vShellEventEnvelope, {
+    type: "CUSTOM",
+    name: "snapshot.updated",
+    value: {
+      schema_version: "interaction-shell.v3",
+      type: "snapshot.updated",
+      session_id: snapshot.session_id,
+      event_epoch: epoch,
+      cursor,
+      emitted_at: "2026-08-27T12:00:00Z",
+      snapshot: { ...snapshot, event_epoch: epoch, event_cursor: cursor },
     },
-    usage: {
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      cost_usd: null,
-      model_latency_ms: 0,
-      runtime_latency_ms: 0,
-    },
-    public_steps: [],
-    resume_eligible: false,
-    control_owner: "agent",
-    control_lease_id: null,
-    expires_at: "2026-08-26T13:00:00Z",
-  },
-} as CreatedSession;
-
-function Probe() {
-  const shell = useShellSession();
-  return <div data-testid="session-id">{shell.snapshot?.session_id ?? "opening"}</div>;
+  });
 }
 
-function CancelProbe() {
-  const shell = useShellSession();
-  return <button onClick={shell.cancel}>cancel</button>;
-}
-
-function PauseProbe() {
-  const shell = useShellSession();
-  return <button onClick={shell.pause}>pause</button>;
-}
-
-function ResumeProbe() {
-  const shell = useShellSession();
-  return <button onClick={shell.resume}>resume</button>;
-}
-
-function ReviseProbe() {
-  const shell = useShellSession();
-  return <button onClick={() => shell.submitMessage("Inspect the account and its owner")}>revise</button>;
-}
-
-function TakeoverProbe() {
-  const shell = useShellSession();
-  return <button onClick={shell.takeOver}>take over</button>;
-}
-
-function ReturnControlProbe() {
-  const shell = useShellSession();
-  return <button onClick={shell.returnControl}>return control</button>;
-}
-
-describe("session acquisition", () => {
-  beforeEach(() => {
-    api.createSession.mockReset();
-    api.createSession.mockResolvedValue(created);
-    api.postCommand.mockReset();
-    api.recoverSession.mockReset();
-    api.subscribeEvents.mockReset();
-    api.subscribeEvents.mockReturnValue(new Promise(() => undefined));
-  });
-
-  it("opens one backend session across the React StrictMode effect replay", async () => {
-    render(
-      <StrictMode>
-        <Probe />
-      </StrictMode>,
-    );
-
-    await waitFor(() => expect(screen.getByTestId("session-id")).toHaveTextContent("session:strict-mode"));
-    expect(api.createSession).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends the advertised cooperative cancel command through the optional route", async () => {
-    const active = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Choose an option",
-        run_status: "running" as const,
-        capabilities: ["start_task", "cancel_task", "close_session"] as const,
-      },
-    } as CreatedSession;
-    api.createSession.mockResolvedValue(active);
-    api.postCommand.mockResolvedValue({ kind: "accepted", command_id: "cancel", snapshot: active.snapshot });
-    render(<CancelProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: "cancel" }));
-
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
-    expect(api.postCommand).toHaveBeenCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/optional",
-      expect.objectContaining({
-        kind: "cancel_task",
-        expected_task_revision: 1,
-        expected_run_status: "running",
-      }),
-    );
-  });
-
-  it("sends the advertised durable pause command through the optional route", async () => {
-    const active = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Choose an option",
-        run_status: "running" as const,
-        capabilities: ["start_task", "pause_task", "close_session"] as const,
-      },
-    } as CreatedSession;
-    api.createSession.mockResolvedValue(active);
-    api.postCommand.mockResolvedValue({ kind: "accepted", command_id: "pause", snapshot: active.snapshot });
-    render(<PauseProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: "pause" }));
-
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
-    expect(api.postCommand).toHaveBeenCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/optional",
-      expect.objectContaining({
-        kind: "pause_task",
-        expected_task_revision: 1,
-        expected_run_status: "running",
-      }),
-    );
-  });
-
-  it("resumes only the exact advertised durable checkpoint", async () => {
-    const checkpointId = `runtime-checkpoint:${"b".repeat(64)}`;
-    const paused = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Choose an option",
-        run_status: "paused" as const,
-        capabilities: ["resume_task", "close_session"] as const,
-        checkpoint_id: checkpointId,
-        resume_eligible: true,
-      },
-    } as CreatedSession;
-    api.createSession.mockResolvedValue(paused);
-    api.postCommand.mockResolvedValue({
-      kind: "accepted",
-      command_id: "resume",
-      snapshot: paused.snapshot,
-    });
-    render(<ResumeProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: "resume" }));
-
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
-    expect(api.postCommand).toHaveBeenCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/resume",
-      expect.objectContaining({
-        kind: "resume_task",
-        checkpoint_id: checkpointId,
-        expected_task_revision: 1,
-        expected_run_status: "paused",
-      }),
-    );
-  });
-
-  it("takes over and returns only with the exact projected identities", async () => {
-    const checkpointId = `runtime-checkpoint:${"f".repeat(64)}`;
-    const paused = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Inspect the account",
-        run_status: "paused" as const,
-        capabilities: ["take_over", "close_session"] as const,
-        checkpoint_id: checkpointId,
-        viewer: {
-          status: "available" as const,
-          provider: "steel" as const,
-          protected_path: "/viewer/session:strict-mode",
-          reason_code: "",
-          read_only: true,
-        },
-      },
-    } as CreatedSession;
-    api.createSession.mockResolvedValue(paused);
-    api.postCommand.mockResolvedValue({
-      kind: "accepted",
-      command_id: "takeover",
-      snapshot: paused.snapshot,
-    });
-    const first = render(<TakeoverProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "take over" }));
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
-    expect(api.postCommand).toHaveBeenLastCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/takeover",
-      expect.objectContaining({
-        kind: "take_over",
-        checkpoint_id: checkpointId,
-        expected_run_status: "paused",
-      }),
-    );
-    first.unmount();
-
-    api.createSession.mockReset();
-    const controlled = {
-      ...paused,
-      snapshot: {
-        ...paused.snapshot,
-        capabilities: ["return_control", "close_session"] as const,
-        resume_eligible: false,
-        control_owner: "user" as const,
-        control_lease_id: "user-control-lease:" + "u".repeat(32),
-        viewer: { ...paused.snapshot.viewer, read_only: false },
-      },
-    } as CreatedSession;
-    api.createSession.mockResolvedValue(controlled);
-    render(<ReturnControlProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "return control" }));
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(2));
-    expect(api.postCommand).toHaveBeenLastCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/return-control",
-      expect.objectContaining({
-        kind: "return_control",
-        control_lease_id: "user-control-lease:" + "u".repeat(32),
-        expected_run_status: "paused",
-      }),
-    );
-  });
-
-  it("revises through the dedicated endpoint and remains paused", async () => {
-    const checkpointId = `runtime-checkpoint:${"d".repeat(64)}`;
-    const active = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Inspect the account",
-        run_status: "running" as const,
-        capabilities: ["revise_task", "close_session"] as const,
-        checkpoint_id: checkpointId,
-      },
-    } as CreatedSession;
-    const revised = {
-      ...active.snapshot,
-      task_revision: 2,
-      task_text: "Inspect the account and its owner",
-      run_status: "paused" as const,
-      capabilities: ["resume_task", "revise_task", "close_session"] as const,
-      checkpoint_id: `runtime-checkpoint:${"e".repeat(64)}`,
-      resume_eligible: true,
-    };
-    api.createSession.mockResolvedValue(active);
-    api.postCommand.mockResolvedValue({
-      kind: "accepted",
-      command_id: "revise",
-      snapshot: revised,
-    });
-    render(<ReviseProbe />);
-    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: "revise" }));
-
-    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
-    expect(api.postCommand).toHaveBeenCalledWith(
-      "session:strict-mode",
-      "session-key",
-      "commands/revise",
-      expect.objectContaining({
-        kind: "revise_task",
-        expected_checkpoint_id: checkpointId,
-        expected_task_revision: 1,
-        expected_run_status: "running",
-        text: "Inspect the account and its owner",
-      }),
-    );
-    expect(api.postCommand).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      "commands/resume",
-      expect.anything(),
-    );
-  });
-
-  it("attempts one exact checkpoint recovery when a paused SSE stream is lost", async () => {
-    const checkpointId = `runtime-checkpoint:${"c".repeat(64)}`;
-    const paused = {
-      ...created,
-      snapshot: {
-        ...created.snapshot,
-        task_id: "session:strict-mode",
-        task_revision: 1,
-        task_text: "Choose an option",
-        run_status: "paused" as const,
-        capabilities: ["resume_task", "close_session"] as const,
-        checkpoint_id: checkpointId,
-        resume_eligible: true,
-      },
-    } as CreatedSession;
-    const recovered = {
-      snapshot: {
-        ...paused.snapshot,
-        event_epoch: "epoch:after-process-restart",
-        event_cursor: 1,
+describe("causal event admission", () => {
+  it("applies only the next event", () => expect(classifyEvent(snapshot, event(5))).toBe("apply"));
+  it("ignores duplicate and old events", () => expect(classifyEvent(snapshot, event(4))).toBe("duplicate"));
+  it("requires resync for gaps", () => expect(classifyEvent(snapshot, event(7))).toBe("resync"));
+  it("requires resync for epoch changes", () => expect(classifyEvent(snapshot, event(5, "event-epoch-00000002"))).toBe("resync"));
+  it.each([
+    { snapshot: { session_id: "other-session" } },
+    { snapshot: { event_epoch: "nested-event-epoch" } },
+    { snapshot: { event_cursor: 4 } },
+  ])("fails closed when nested snapshot causality disagrees with its envelope", (change) => {
+    const candidate = event(5);
+    const malformed = {
+      ...candidate,
+      value: {
+        ...candidate.value,
+        snapshot: { ...candidate.value.snapshot, ...change.snapshot },
       },
     };
-    api.createSession.mockResolvedValue(paused);
-    api.subscribeEvents
-      .mockRejectedValueOnce(new Error("service restarted"))
-      .mockReturnValue(new Promise(() => undefined));
-    api.recoverSession.mockResolvedValue(recovered);
-
-    render(<Probe />);
-
-    await waitFor(() => expect(api.recoverSession).toHaveBeenCalledWith(
-      "session:strict-mode",
-      "session-key",
-      checkpointId,
-    ));
-    await waitFor(() => expect(api.subscribeEvents).toHaveBeenCalledTimes(2));
-    expect(api.subscribeEvents.mock.calls[1][2]).toBe("epoch:after-process-restart");
-    expect(api.subscribeEvents.mock.calls[1][3]).toBe(1);
+    expect(classifyEvent(snapshot, malformed)).toBe("protocol_mismatch");
   });
+  it("fails closed on an unknown event kind", () => expect(() => parse(vShellEventEnvelope, { type: "CUSTOM", name: "unknown", value: {} })).toThrow());
+  it("fails closed on an unknown nested event field", () => expect(() => parse(vShellEventEnvelope, { ...event(5), value: { ...event(5).value, unknown: true } })).toThrow());
 });

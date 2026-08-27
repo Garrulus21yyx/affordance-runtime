@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+
 from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
 from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
 from affordance_runtime.app.checkpoint import SQLiteRuntimeCheckpointStore
@@ -22,7 +24,10 @@ from affordance_runtime.app.public_session import (
     PublicSessionOpenError,
     PublicSessionOpenStage,
     RuntimeEnvironmentLease,
+    RuntimeRecoveryAttempt,
+    RuntimeRecoveryInspection,
     TargetRuntimeSession,
+    TargetRuntimeSessionFactory,
 )
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.model.policy import model_roles_from_environment
@@ -40,9 +45,9 @@ from affordance_runtime.task import (
     TaskBoundary,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
-from dotenv import load_dotenv
 
 from .api import create_app
+from .completed_runs import CompletedRunSummaryResolver
 from .core_runtime_port import CoreRuntimeSessionPort, unavailable_viewer
 from .manager import RunSessionManager
 from .session_registry import SQLiteSessionRecoveryRegistry
@@ -139,6 +144,27 @@ class BrowserGymDeploymentSessionFactory:
     environment: Mapping[str, str]
     checkpoint_store: SQLiteRuntimeCheckpointStore | None = None
     viewer_gateway: SteelViewerGateway | None = None
+    _target_factory: TargetRuntimeSessionFactory = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        def unavailable_runtime(session_id: str):
+            del session_id
+            raise RuntimeError("deployment recovery runtime is unavailable without a reconnector")
+
+        def unavailable_environment(session_id: str):
+            del session_id
+            raise RuntimeError("deployment recovery environment is unavailable without a reconnector")
+
+        object.__setattr__(
+            self,
+            "_target_factory",
+            TargetRuntimeSessionFactory(
+                unavailable_runtime,
+                unavailable_environment,
+                checkpoint_store=self.checkpoint_store,
+                environment_reconnector=None,
+            ),
+        )
 
     async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
         try:
@@ -230,17 +256,16 @@ class BrowserGymDeploymentSessionFactory:
                 task_revision_compiler=roles.task_revision_compiler,
             )
             lease = RuntimeEnvironmentLease(world, cleanup.close)
-            session = TargetRuntimeSession(
-                runtime,
-                lease,
+            session = await self._target_factory.open_prepared(
                 session_id,
                 expires_at,
-                _request_factory(
+                runtime,
+                lease,
+                request_factory=_request_factory(
                     surface.goal_instruction,
                     self.settings.task_id,
                     self.settings.max_turns,
                 ),
-                self.checkpoint_store,
             )
             if self.viewer_gateway is not None and viewer_lease is not None:
                 self.viewer_gateway.attach(session, viewer_lease)
@@ -262,12 +287,21 @@ class BrowserGymDeploymentSessionFactory:
         checkpoint_id: str,
         expires_at: datetime,
     ) -> TargetRuntimeSession:
-        del session_id, checkpoint_id, expires_at
-        # The local BrowserGym profile cannot reconnect its exact Playwright context.
-        # Opening a replacement context here would risk replaying an external effect.
-        raise PublicSessionOpenError(
-            PublicSessionOpenStage.ENVIRONMENT,
-            "environment_not_reconnectable",
+        return await self._target_factory.recover(session_id, checkpoint_id, expires_at)
+
+    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection:
+        return await self._target_factory.inspect(session_id)
+
+    async def recover_typed(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> RuntimeRecoveryAttempt:
+        return await self._target_factory.recover_typed(
+            session_id,
+            checkpoint_id,
+            expires_at,
         )
 
     def health(self) -> Mapping[str, object]:
@@ -529,7 +563,7 @@ session_factory = BrowserGymDeploymentSessionFactory(
 )
 runtime_port = CoreRuntimeSessionPort(
     session_factory,
-    viewer_projector=(viewer_gateway.project if viewer_gateway is not None else unavailable_viewer),
+    surface_projector=(viewer_gateway.project if viewer_gateway is not None else unavailable_viewer),
 )
 app = create_app(
     RunSessionManager(
@@ -538,4 +572,10 @@ app = create_app(
     ),
     health_provider=session_factory.health,
     viewer_gateway=viewer_gateway,
+    completed_run_resolver=CompletedRunSummaryResolver.from_environment(
+        _deployment_environment
+    ),
+    evidence_access_key=_deployment_environment.get(
+        "INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""
+    ),
 )

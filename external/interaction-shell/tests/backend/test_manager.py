@@ -2,476 +2,192 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from interaction_shell.contracts import (
-    AnswerQuestion,
-    ApproveAction,
-    Capability,
-    CloseSession,
-    ControlOwner,
+    Conflict,
+    Recovered,
+    RecoveryAttemptUnavailable,
     RunStatus,
+    RuntimeSessionSnapshot,
     StartTask,
-    TakeOver,
-    ViewerState,
 )
-from interaction_shell.demo_port import ContractDemoPort
-from interaction_shell.manager import (
-    RunSessionManager,
-    SessionUnauthorized,
-    ViewerInputRejected,
-)
+from interaction_shell.manager import RunSessionManager
+from interaction_shell.port import PortRecoverableCheckpoint, PortRecoveredHandle
 from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 
 
+def snapshot(session_id: str, expires_at: datetime) -> RuntimeSessionSnapshot:
+    return RuntimeSessionSnapshot(
+        schema_version="interaction-shell.v3",
+        session_id=session_id,
+        event_epoch="manager-epoch-00001",
+        expires_at=expires_at,
+        command_offers=(),
+    )
+
+
+class FakePort:
+    def __init__(self) -> None:
+        self.handles: dict[str, object] = {}
+        self.command_calls = 0
+        self.viewer_input_calls = 0
+        self.viewer_input_admitted = True
+        self.active_calls = 0
+        self.max_active_calls = 0
+        self.inspection = PortRecoverableCheckpoint("recoverable_checkpoint", "checkpoint-1")
+        self.absent_result = RecoveryAttemptUnavailable(
+            kind="recovery_unavailable",
+            reason_code="checkpoint_not_found",
+        )
+
+    async def open(self, session_id, expires_at):
+        handle = {"session_id": session_id, "expires_at": expires_at}
+        self.handles[session_id] = handle
+        return handle
+
+    async def snapshot(self, handle):
+        return snapshot(handle["session_id"], handle["expires_at"])
+
+    async def events(self, handle, after):
+        del handle, after
+        return ()
+
+    async def forward_viewer_input(self, handle, control_lease_id, forward):
+        del handle, control_lease_id
+        self.viewer_input_calls += 1
+        if not self.viewer_input_admitted:
+            return False
+        await forward()
+        return True
+
+    async def command(self, handle, command, *, revision_conversation=None):
+        del revision_conversation
+        self.command_calls += 1
+        self.active_calls += 1
+        self.max_active_calls = max(self.max_active_calls, self.active_calls)
+        await asyncio.sleep(0)
+        self.active_calls -= 1
+        projected = await self.snapshot(handle)
+        return Conflict(
+            kind="conflict",
+            command_id=command.command_id,
+            code="stale_command",
+            snapshot=projected,
+        )
+
+    async def inspect(self, session_id):
+        del session_id
+        return self.inspection
+
+    async def recover_absent(self, session_id, checkpoint_id, expires_at):
+        del session_id, checkpoint_id, expires_at
+        return self.absent_result
+
+    async def recover_live(self, handle, checkpoint_id):
+        del handle, checkpoint_id
+        return RecoveryAttemptUnavailable(kind="recovery_unavailable", reason_code="checkpoint_unavailable")
+
+    async def close(self, handle):
+        del handle
+
+
+def command(command_id: str) -> StartTask:
+    return StartTask(
+        kind="start_task",
+        command_id=command_id,
+        expected_task_revision=99,
+        expected_run_status=RunStatus.DONE,
+        task="Task",
+    )
+
+
 @pytest.mark.asyncio
-async def test_command_idempotency_stale_conflict_and_unsupported_capability():
-    manager = RunSessionManager(ContractDemoPort())
+async def test_manager_serializes_calls_but_does_not_recompute_runtime_legality():
+    port = FakePort()
+    manager = RunSessionManager(port)
     created = await manager.create()
-    snapshot = created.snapshot
-    start = StartTask(
-        command_id="start-1",
-        expected_task_revision=0,
-        expected_run_status=RunStatus.IDLE,
-        task="Choose an option",
-    )
-    accepted = await manager.admit(snapshot.session_id, created.session_key, start)
-    assert accepted.kind == "accepted"
-    duplicate = await manager.admit(snapshot.session_id, created.session_key, start)
-    assert duplicate.kind == "conflict" and duplicate.code == "duplicate_command"
-    stale = await manager.admit(
-        snapshot.session_id,
-        created.session_key,
-        ApproveAction(
-            command_id="approve-stale",
-            expected_task_revision=0,
-            expected_run_status=RunStatus.IDLE,
-            request_id="wrong",
-        ),
-    )
-    assert stale.kind == "conflict" and stale.code == "stale_command"
-    current = await manager.snapshot(snapshot.session_id, created.session_key)
-    unsupported = await manager.admit(
-        snapshot.session_id,
-        created.session_key,
-        TakeOver(
-            command_id="takeover-1",
-            kind="take_over",
-            expected_task_revision=current.task_revision,
-            expected_run_status=current.run_status,
-            checkpoint_id="runtime-checkpoint:" + "a" * 64,
-        ),
-    )
-    assert unsupported.kind == "unsupported"
-
-
-@pytest.mark.asyncio
-async def test_snapshot_event_consistency_and_reconnect_cursor():
-    manager = RunSessionManager(ContractDemoPort())
-    created = await manager.create()
-    session_id = created.snapshot.session_id
-    await manager.admit(
-        session_id,
-        created.session_key,
-        StartTask(
-            command_id="start",
-            expected_task_revision=0,
-            expected_run_status=RunStatus.IDLE,
-            task="Ask first",
-        ),
-    )
-    snapshot = await manager.snapshot(session_id, created.session_key)
-    events = await manager.events(session_id, created.session_key, 0)
-    managed = manager.authenticate(session_id, created.session_key)
-    assert not hasattr(managed, "events")
-    assert events == tuple(managed.runtime_handle.events)
-    assert tuple(event.cursor for event in events) == tuple(range(1, len(events) + 1))
-    assert all(event.event_epoch == snapshot.event_epoch for event in events)
-    assert snapshot.event_cursor == events[-1].cursor
-    assert await manager.events(session_id, created.session_key, events[-2].cursor) == (events[-1],)
-    assert events[-1].data["snapshot"]["run_status"] == snapshot.run_status.value
-
-
-@pytest.mark.asyncio
-async def test_viewer_input_cannot_cross_return_control_linearization_boundary():
-    manager = RunSessionManager(ContractDemoPort())
-    created = await manager.create()
-    managed = manager.authenticate(created.snapshot.session_id, created.session_key)
-    old_lease = "user-control-lease:" + "a" * 32
-    managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
-        update={
-            "run_status": RunStatus.PAUSED,
-            "capabilities": frozenset(
-                {Capability.RETURN_CONTROL, Capability.CLOSE_SESSION}
-            ),
-            "viewer": ViewerState(
-                status="available",
-                provider="steel",
-                protected_path=f"/viewer/{managed.session_id}",
-                reason_code="",
-                read_only=False,
-            ),
-            "control_owner": ControlOwner.USER,
-            "control_lease_id": old_lease,
-        }
-    )
-    return_admitted = asyncio.Event()
-    allow_capture_to_finish = asyncio.Event()
-    forwarded: list[str] = []
-
-    async def blocked_return() -> None:
-        async with managed.lock:
-            managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
-                update={
-                    "capabilities": frozenset({Capability.CLOSE_SESSION}),
-                    "viewer": managed.runtime_handle.snapshot.viewer.model_copy(
-                        update={"read_only": True}
-                    ),
-                    "control_owner": ControlOwner.AGENT,
-                    "control_lease_id": None,
-                }
-            )
-            return_admitted.set()
-            await allow_capture_to_finish.wait()
-
-    async def forward() -> None:
-        forwarded.append("stale-frame")
-
-    returning = asyncio.create_task(blocked_return())
-    await asyncio.wait_for(return_admitted.wait(), timeout=1)
-    input_frame = asyncio.create_task(
-        manager.forward_viewer_input(
-            managed.session_id,
-            managed.session_key,
-            old_lease,
-            forward,
+    results = await asyncio.gather(
+        *(
+            manager.admit(created.snapshot.session_id, created.session_key, command(f"command-{index}"))
+            for index in range(4)
         )
     )
-    await asyncio.sleep(0)
-    assert forwarded == []
-    assert not input_frame.done()
-
-    allow_capture_to_finish.set()
-    await asyncio.wait_for(returning, timeout=1)
-    with pytest.raises(ViewerInputRejected):
-        await asyncio.wait_for(input_frame, timeout=1)
-    assert forwarded == []
+    assert port.command_calls == 4
+    assert port.max_active_calls == 1
+    assert {result.code for result in results} == {"stale_command"}
 
 
 @pytest.mark.asyncio
-async def test_external_cleanup_exactly_once_on_close_and_expiry():
-    port = ContractDemoPort()
-    manager = RunSessionManager(port)
-    created = await manager.create(ttl_seconds=60)
-    session = manager.authenticate(created.snapshot.session_id, created.session_key)
-    close = CloseSession(
-        command_id="close",
-        expected_task_revision=0,
-        expected_run_status=RunStatus.IDLE,
-    )
-    assert (await manager.admit(session.session_id, session.session_key, close)).kind == "accepted"
-    session.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-    await manager.expire()
-    assert session.runtime_handle.cleanup_count == 1
-
-
-@pytest.mark.asyncio
-async def test_session_create_snapshot_failure_cleans_opaque_handle_once():
-    class SnapshotFailurePort(ContractDemoPort):
-        handle = None
-
-        async def open(self, session_id, expires_at):
-            self.handle = await super().open(session_id, expires_at)
-            return self.handle
-
-        async def snapshot(self, handle):
-            raise RuntimeError("snapshot unavailable after open")
-
-    port = SnapshotFailurePort()
-    manager = RunSessionManager(port)
-    with pytest.raises(RuntimeError, match="snapshot unavailable"):
-        await manager.create()
-    assert port.handle is not None
-    assert port.handle.cleanup_count == 1
-    assert port.handle.closed is True
-    assert manager._sessions == {}
-
-
-@pytest.mark.asyncio
-async def test_manager_shutdown_closes_all_session_handles_once():
-    port = ContractDemoPort()
-    manager = RunSessionManager(port)
-    first = await manager.create()
-    second = await manager.create()
-    first_handle = manager.authenticate(first.snapshot.session_id, first.session_key).runtime_handle
-    second_handle = manager.authenticate(second.snapshot.session_id, second.session_key).runtime_handle
-
-    await manager.close_all()
-    await manager.close_all()
-
-    assert first_handle.cleanup_count == 1
-    assert second_handle.cleanup_count == 1
-
-
-@pytest.mark.asyncio
-async def test_manager_shutdown_attempts_every_handle_when_one_cleanup_fails():
-    class OneFailurePort(ContractDemoPort):
-        failed_handle = None
-
-        async def close(self, handle):
-            if handle is self.failed_handle:
-                raise RuntimeError("first cleanup failed")
-            await super().close(handle)
-
-    port = OneFailurePort()
-    manager = RunSessionManager(port)
-    first = await manager.create()
-    second = await manager.create()
-    port.failed_handle = manager.authenticate(first.snapshot.session_id, first.session_key).runtime_handle
-    second_handle = manager.authenticate(second.snapshot.session_id, second.session_key).runtime_handle
-
-    errors = await manager.close_all()
-
-    assert [str(error) for error in errors] == ["first cleanup failed"]
-    assert second_handle.cleanup_count == 1
-
-
-@pytest.mark.asyncio
-async def test_terminal_owner_snapshot_triggers_external_cleanup_once():
-    port = ContractDemoPort()
+async def test_manager_holds_session_lock_but_delegates_viewer_input_admission_to_port():
+    port = FakePort()
     manager = RunSessionManager(port)
     created = await manager.create()
-    session_id, key = created.snapshot.session_id, created.session_key
-    await manager.admit(
-        session_id,
-        key,
-        StartTask(
-            command_id="s",
-            expected_task_revision=0,
-            expected_run_status=RunStatus.IDLE,
-            task="task",
-        ),
-    )
-    await manager.admit(
-        session_id,
-        key,
-        AnswerQuestion(
-            command_id="a",
-            expected_task_revision=1,
-            expected_run_status=RunStatus.WAITING_USER,
-            request_id="demo-question",
-            answer="second",
-        ),
-    )
-    finished = await manager.admit(
-        session_id,
-        key,
-        ApproveAction(
-            command_id="c",
-            expected_task_revision=2,
-            expected_run_status=RunStatus.WAITING_CONFIRMATION,
-            request_id="demo-confirmation",
-        ),
-    )
-    session = manager.authenticate(session_id, key)
-    assert finished.snapshot.run_status is RunStatus.DONE
-    assert session.runtime_handle.cleanup_count == 1
-    await manager.expire()
-    assert session.runtime_handle.cleanup_count == 1
+    forwarded = 0
 
+    async def forward():
+        nonlocal forwarded
+        forwarded += 1
 
-@pytest.mark.asyncio
-async def test_restart_authenticates_same_session_without_persisting_reusable_key(tmp_path):
-    checkpoint_id = "runtime-checkpoint:" + "b" * 64
-    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
-    first_port = ContractDemoPort()
-    first_manager = RunSessionManager(first_port, registry)
-    created = await first_manager.create()
-    original = first_manager.authenticate(
+    await manager.forward_viewer_input(
         created.snapshot.session_id,
         created.session_key,
+        "opaque-lease",
+        forward,
     )
-    original.runtime_handle.snapshot = original.runtime_handle.snapshot.model_copy(
-        update={
-            "task_id": created.snapshot.session_id,
-            "task_revision": 1,
-            "task_text": "Paused task",
-            "run_status": RunStatus.PAUSED,
-            "checkpoint_id": checkpoint_id,
-            "resume_eligible": True,
-            "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
-        }
-    )
-    original_epoch = original.runtime_handle.snapshot.event_epoch
-
-    assert await first_manager.close_all() == ()
-    assert original.runtime_handle.cleanup_count == 1
-    with sqlite3.connect(registry.path) as connection:
-        persisted = " ".join(
-            str(value)
-            for row in connection.execute("SELECT session_id, salt, verifier, expires_at FROM shell_session_recovery")
-            for value in row
-        )
-    assert created.session_key not in persisted
-
-    class RecoveringDemoPort(ContractDemoPort):
-        recover_calls = []
-
-        async def recover(self, session_id, supplied_checkpoint_id, expires_at):
-            self.recover_calls.append((session_id, supplied_checkpoint_id, expires_at))
-            handle = await self.open(session_id, expires_at)
-            handle.snapshot = handle.snapshot.model_copy(
-                update={
-                    "task_id": session_id,
-                    "task_revision": 1,
-                    "task_text": "Paused task",
-                    "run_status": RunStatus.PAUSED,
-                    "checkpoint_id": supplied_checkpoint_id,
-                    "resume_eligible": True,
-                    "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
-                }
-            )
-            return handle
-
-    second_port = RecoveringDemoPort()
-    second_manager = RunSessionManager(second_port, registry)
-    with pytest.raises(SessionUnauthorized):
-        await second_manager.recover(
-            created.snapshot.session_id,
-            "wrong-session-key",
-            checkpoint_id,
-        )
-
-    recovered = await second_manager.recover(
-        created.snapshot.session_id,
-        created.session_key,
-        checkpoint_id,
-    )
-    assert recovered.snapshot.session_id == created.snapshot.session_id
-    assert recovered.snapshot.event_epoch != original_epoch
-    assert recovered.snapshot.run_status is RunStatus.PAUSED
-    assert recovered.snapshot.checkpoint_id == checkpoint_id
-    assert second_port.recover_calls == [
-        (
-            created.snapshot.session_id,
-            checkpoint_id,
-            created.snapshot.expires_at,
-        )
-    ]
-
-    closed = await second_manager.admit(
-        created.snapshot.session_id,
-        created.session_key,
-        CloseSession(
-            command_id="close:recovered",
-            expected_task_revision=1,
-            expected_run_status=RunStatus.PAUSED,
-        ),
-    )
-    assert closed.kind == "accepted"
-    assert (
-        await registry.authenticate(
-            created.snapshot.session_id,
-            created.session_key,
-        )
-        is None
-    )
-    with pytest.raises(LookupError, match="projection is unavailable"):
-        await registry.load_projection(created.snapshot.session_id)
+    assert port.viewer_input_calls == 1
+    assert forwarded == 1
 
 
 @pytest.mark.asyncio
-async def test_recovery_registry_migrates_existing_credential_rows_to_empty_projection(
-    tmp_path,
-) -> None:
-    path = tmp_path / "shell-recovery.sqlite3"
-    with sqlite3.connect(path) as connection:
-        connection.execute(
-            "CREATE TABLE shell_session_recovery ("
-            "session_id TEXT PRIMARY KEY, salt TEXT NOT NULL, verifier TEXT NOT NULL, "
-            "expires_at TEXT NOT NULL)"
-        )
-    registry = SQLiteSessionRecoveryRegistry(path)
-
-    await registry.register(
-        "new-session",
-        "new-session-key",
-        datetime.now(timezone.utc) + timedelta(minutes=5),
-    )
-
-    projection = await registry.load_projection("new-session")
-    assert projection.turns == ()
-    assert projection.revision_contexts == ()
-    with sqlite3.connect(path) as connection:
-        columns = {
-            str(row[1])
-            for row in connection.execute("PRAGMA table_info(shell_session_recovery)")
-        }
-    assert "projection_json" in columns
+async def test_manager_maps_recoverable_inspection_one_to_one_without_checkpoint_read(tmp_path):
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "registry.sqlite3")
+    expires_at = datetime.now(UTC) + timedelta(hours=1)
+    await registry.register("session-1", "secret", expires_at)
+    result = await RunSessionManager(FakePort(), registry).lookup("session-1", "secret")
+    assert result.kind == "recovery_required"
+    assert result.checkpoint_id == "checkpoint-1"
 
 
 @pytest.mark.asyncio
-async def test_concurrent_recovery_installs_only_one_runtime_handle(tmp_path):
-    checkpoint_id = "runtime-checkpoint:" + "c" * 64
-    registry = SQLiteSessionRecoveryRegistry(tmp_path / "shell-recovery.sqlite3")
-    first_manager = RunSessionManager(ContractDemoPort(), registry)
-    created = await first_manager.create()
-    original = first_manager.authenticate(created.snapshot.session_id, created.session_key)
-    original.runtime_handle.snapshot = original.runtime_handle.snapshot.model_copy(
-        update={
-            "task_id": created.snapshot.session_id,
-            "task_revision": 1,
-            "task_text": "Paused task",
-            "run_status": RunStatus.PAUSED,
-            "checkpoint_id": checkpoint_id,
-            "resume_eligible": True,
-            "capabilities": frozenset({Capability.RESUME_TASK, Capability.CLOSE_SESSION}),
-        }
-    )
-    assert await first_manager.close_all() == ()
-
-    class BlockingRecoveryPort(ContractDemoPort):
-        def __init__(self):
-            super().__init__()
-            self.recover_started = asyncio.Event()
-            self.release_recovery = asyncio.Event()
-            self.recover_calls = 0
-
-        async def recover(self, session_id, supplied_checkpoint_id, expires_at):
-            self.recover_calls += 1
-            self.recover_started.set()
-            await self.release_recovery.wait()
-            handle = await self.open(session_id, expires_at)
-            handle.snapshot = handle.snapshot.model_copy(
-                update={
-                    "task_id": session_id,
-                    "task_revision": 1,
-                    "task_text": "Paused task",
-                    "run_status": RunStatus.PAUSED,
-                    "checkpoint_id": supplied_checkpoint_id,
-                    "resume_eligible": True,
-                    "capabilities": frozenset(
-                        {Capability.RESUME_TASK, Capability.CLOSE_SESSION}
-                    ),
-                }
-            )
-            return handle
-
-    port = BlockingRecoveryPort()
+async def test_absent_recovery_installs_exactly_one_handle_only_for_recovered(tmp_path):
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "registry.sqlite3")
+    expires_at = datetime.now(UTC) + timedelta(hours=1)
+    await registry.register("session-1", "secret", expires_at)
+    port = FakePort()
     manager = RunSessionManager(port, registry)
-    first = asyncio.create_task(
-        manager.recover(created.snapshot.session_id, created.session_key, checkpoint_id)
-    )
-    await port.recover_started.wait()
-    second = asyncio.create_task(
-        manager.recover(created.snapshot.session_id, created.session_key, checkpoint_id)
-    )
-    await asyncio.sleep(0)
-    assert port.recover_calls == 1
-    port.release_recovery.set()
+    unavailable = await manager.recover("session-1", "secret", "checkpoint-1")
+    assert unavailable.kind == "recovery_unavailable"
+    assert "session-1" not in manager._sessions
 
-    first_result, second_result = await asyncio.gather(first, second)
-    assert first_result == second_result
-    assert port.recover_calls == 1
-    await manager.close_all()
+    handle = {"session_id": "session-1", "expires_at": expires_at}
+    recovered = Recovered(kind="recovered", snapshot=snapshot("session-1", expires_at))
+    port.absent_result = PortRecoveredHandle(handle, recovered)
+    result = await manager.recover("session-1", "secret", "checkpoint-1")
+    assert result.kind == "recovered"
+    assert manager.authenticate("session-1", "secret").runtime_handle is handle
+
+
+@pytest.mark.asyncio
+async def test_live_handle_recovery_delegates_exact_checkpoint_to_port():
+    port = FakePort()
+    manager = RunSessionManager(port)
+    created = await manager.create()
+    result = await manager.recover(created.snapshot.session_id, created.session_key, "checkpoint-exact")
+    assert result.kind == "recovery_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_registry_schema_contains_only_auth_ttl_and_conversation_not_checkpoint_truth(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    registry = SQLiteSessionRecoveryRegistry(path)
+    await registry.register("session-1", "secret", datetime.now(UTC) + timedelta(hours=1))
+    connection = sqlite3.connect(path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(shell_session_recovery)")}
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        connection.close()
+    assert columns == {"session_id", "salt", "verifier", "expires_at", "projection_json"}
+    assert not any("checkpoint" in name or "resume" in name for name in tables | columns)

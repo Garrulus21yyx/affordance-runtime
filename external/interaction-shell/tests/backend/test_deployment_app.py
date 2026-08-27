@@ -249,7 +249,7 @@ async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_on
 
     session = await factory.open("session:steel", datetime.now(UTC) + timedelta(minutes=5))
 
-    assert gateway.project(session).status == "available"
+    assert gateway.project(session).kind == "available"
     assert gateway.project(session).protected_path == "/viewer/session:steel"
     assert surface_open_calls[0]["gym_factory"] is not None
     await session.close()
@@ -257,7 +257,7 @@ async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_on
     assert [surface.close_count for surface in surfaces] == [1]
     assert [trace.flush_count for trace in traces] == [1]
     assert transport.released == ["provider-1"]
-    assert gateway.project(session).status == "unavailable"
+    assert gateway.project(session).kind == "unavailable"
 
 
 @pytest.mark.asyncio
