@@ -196,6 +196,12 @@ evaluation authority and durable local fallback.
 
 ## Verification
 
+The frontend Playwright configuration uses `backend/.venv/bin/python` by
+default. A clean integration worktree may instead reuse any interpreter where
+the Runtime and Shell backend dependencies are installed by setting
+`INTERACTION_SHELL_BACKEND_PYTHON`; the E2E server always starts Uvicorn through
+that exact interpreter.
+
 ```bash
 backend/.venv/bin/pytest tests/backend tests/architecture
 cd frontend
@@ -205,6 +211,14 @@ npm run lint
 npm run typecheck
 npm run build
 npm run test:e2e
+```
+
+For the repository's pinned BrowserGym environment, the equivalent E2E command
+is:
+
+```bash
+INTERACTION_SHELL_BACKEND_PYTHON=/home/yang/.venvs/affordance-browsergym-py312/bin/python \
+  npm run test:e2e
 ```
 
 The opt-in no-model Steel control witness runs only after loading a server-side

@@ -27,10 +27,11 @@ test("operator shell is isolated from completed-run summaries", async ({ page })
   expect(commandPaths.every((path) => path.endsWith("/commands"))).toBe(true);
   await expect(page.getByTestId("completed-run-summary")).toHaveCount(0);
   expect(diagnosisReads).toBe(0);
+  await mkdir("output/playwright", { recursive: true });
+  await page.screenshot({ path: "output/playwright/interaction-shell-connected.png", fullPage: true });
   await page.goto("/diagnostics");
   await expect(page.getByText("No configured completed runs.")).toBeVisible();
   expect(diagnosisReads).toBeGreaterThan(0);
-  await mkdir("output/playwright", { recursive: true });
   await page.screenshot({ path: "output/playwright/diagnostics-workbench.png", fullPage: true });
   await page.goto("/");
   await expect(page.getByText("Surface unavailable")).toBeVisible();
