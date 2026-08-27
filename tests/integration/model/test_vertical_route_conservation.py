@@ -544,8 +544,9 @@ def test_gate_4_unselected_mark_does_not_authorize_route_and_find_controls_recov
             for item in part["content"]
             if item["part_kind"] == "binary"
         )
-        assert historical_binary_parts
-        assert all("data" not in item and item["digest"] for item in historical_binary_parts)
+        assert historical_binary_parts == ()
+        assert len(second_envelope.media) == 1
+        assert marked_ref in {ref for ref, _bbox in second_envelope.media[0].marks}
         assert len(environment.executed_requests) == 1
         assert environment.executed_requests[0].selection.target_id == marked_target_id
 

@@ -169,6 +169,56 @@ def test_unique_browser_context_operation_uses_business_parameters_without_groun
     assert outcome.decision.parameters == {"url": "https://example.test/docs"}
 
 
+def test_browser_context_public_schema_is_stable_while_private_domain_stays_current() -> None:
+    first = _compile(
+        _candidate(
+            1,
+            operation="tab_focus",
+            schema={
+                "type": "object",
+                "properties": {"index": {"type": "integer", "enum": [0]}},
+                "required": ["index"],
+                "additionalProperties": False,
+            },
+            subject_kind="browser_context",
+            target_role="browser_context",
+        )
+    )[0]
+    second = _compile(
+        _candidate(
+            1,
+            operation="tab_focus",
+            schema={
+                "type": "object",
+                "properties": {"index": {"type": "integer", "enum": [0, 1, 2]}},
+                "required": ["index"],
+                "additionalProperties": False,
+            },
+            subject_kind="browser_context",
+            target_role="browser_context",
+        )
+    )[0]
+
+    assert first.public_spec == second.public_spec
+    assert first.public_spec.input_schema["properties"]["index"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
+    with pytest.raises(GroundedToolResolutionError) as rejected:
+        resolve_catalog_call(
+            _catalog(first),
+            ToolCall("tab_focus", {"index": 1}),
+            expected_context_id=_CONTEXT,
+        )
+    assert rejected.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    accepted = resolve_catalog_call(
+        _catalog(second),
+        ToolCall("tab_focus", {"index": 1}),
+        expected_context_id=_CONTEXT,
+    )
+    assert accepted.decision.parameters == {"index": 1}
+
+
 def test_browser_context_operation_rejects_ambiguous_current_owner() -> None:
     with pytest.raises(GroundedToolResolutionError) as failure:
         _compile(

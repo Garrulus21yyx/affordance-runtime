@@ -19,6 +19,12 @@ model-visible action minimum with both one task-ranked target and one direct fre
 producer-specific recovery guidance for action discovery versus local-result replay. The current owner repair further
 decouples action callability from that prefix: stable registry action schemas accept current E-ref syntax and the
 existing complete current `ActionSpace` resolver performs exact route/domain validation.
+The post-Task740 efficiency repair changes no control path: repeated read records fold adjacent AX text fragments at
+their producer, browser-context tools expose the registry's stable parameter family while private current bindings
+validate exact domains, and PydanticAI history removes every historical World before supplying the one fresh current
+World. Harness now uses an 80% complete-request capacity arm plus a 50% history high-water arm gated by a 15%
+minimum-reclaim batch; accepted compaction targets 30% history and retains a 12% exact pair-safe suffix. No memory,
+replanner, result-specific scheduler, or second current-state channel was added.
 Task266 run6 crossed the run5 failure and exposed the remaining browser-profile selector mismatch. Browser-level
 primitives now follow BrowserGym's target-less public shape and bind the unique fresh `browser_context` privately;
 page-control primitives still require current `E-ref` grounding. Explicit `find_controls` recall is limited to literal
@@ -31,10 +37,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1805 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1801 passed / 25 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed; every other collected test passed. The focused provider-envelope/PydanticAI boundary reports
-`91 passed`; Ruff, compileall, and `git diff --check` pass.
+modified or removed; every other collected test passed. The combined focused read/Catalog/PydanticAI boundary reports
+`221 passed`; Ruff, compileall, and `git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -827,10 +833,9 @@ read_region(Rx)
 
 The second physical provider input contains page 1 under its original call ID. The final physical input contains both
 completed accepted pairs in order: page 1 under call 1 and page 2 under call 2. Their contents equal the corresponding
-committed results. Exactly one prompt part anchors the current task/plan; other retained user prompts are World-only,
-and an admission-derived recent tail keeps the newest raw Worlds while older World prompt parts may expire without
-changing the completed pairs. A terminal response clears the bridge history. The Store contains only bounded digest
-receipts and no result body/inventory.
+committed results. Exactly one prompt part anchors the current task/plan; historical World prompt parts are removed
+without changing the completed pairs, and the physical request supplies exactly one fresh current World. A terminal
+response clears the bridge history. The Store contains only bounded digest receipts and no result body/inventory.
 
 A second Recording PydanticAI gate emits `ThinkingPart + N ToolCallPart`. Exactly the first current call is resolved;
 later calls are not executed, queued, or used as fallback. Canonical history preserves the exact response, including
@@ -838,18 +843,15 @@ thinking and every proposal. The next physical input pairs the first with its ow
 native failed returns. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
 verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
-Before semantic compaction, generated 5..12-turn properties verify one task/plan anchor, an
-admission-token-bounded recent raw World/reasoning tail, exact unique model conclusions and call/result pairs, bounded
-equivalent repeated prose, and canonical provider projection. PydanticAI Harness pair-safe compaction runs before hard
-overflow or when expired unsummarized model prose fills an age/size batch bounded by the smaller of the recent-tail
-target and the existing maximum summary-output budget. The
-same final RequestAdmission breakdown counts history, pending ToolReturn, fresh World, tools, and overhead; below 80%
-of effective input no capacity-driven summary call occurs. The expired-prose gate may still batch old narration
-without semantic matching. The summary input contains the remaining historical Worlds,
-model-authored conclusions, ToolCalls, and ToolReturns; the task anchor, newest pair-safe SDK suffix, and unresolved
-call remain byte-for-byte unchanged. Compaction is accepted only after the complete canonical history algebra passes;
-a provider error, timeout, or invalid compacted topology returns the exact raw history. Source-coverage,
-knowledge bootstrap/batching, result-kind triggers, and failed-input memos are absent from production.
+Before semantic compaction, generated 5..12-turn properties verify one task/plan anchor, no historical World prompts,
+exact model conclusions/reasoning and call/result pairs, bounded equivalent repeated prose, and canonical provider
+projection. The same final `RequestAdmission` breakdown counts history, pending ToolReturn, the one fresh World,
+tools, and overhead. PydanticAI Harness pair-safe compaction runs at 80% complete-request pressure, or at 50% history
+pressure only when at least 15% of history capacity is reclaimable outside the exact suffix. It targets 30% history
+and retains the newest pair-safe 12% suffix. The task anchor and unresolved call remain byte-for-byte unchanged.
+Compaction is accepted only after the complete canonical history algebra passes; a provider error, timeout, or invalid
+compacted topology returns the exact raw history. Source-coverage, knowledge bootstrap/batching, result-kind triggers,
+semantic matching, and failed-input memos are absent from production.
 
 Monitor gates prove a different empty discovery/read attempt remains in the same recovery episode, while typed
 `NEW_INFORMATION` clears it. A generated property over every period representable by the fixed window proves GUI cycle identity is phase-independent; a
@@ -1241,6 +1243,15 @@ never entered recovery. Wall time was about 216 seconds and aggregate tokens wer
 falsifies a Task268-only explanation for the repaired control path, but one unseen case still does not establish the
 declared multi-case held-out cohort or close aggregate-token efficiency.
 
+Run1 is also the frozen pre-optimization efficiency baseline. Its formal estimator accumulated 772,712 history tokens
+across 29 ordinary calls. Offline replay of the exact provider inputs under the post-run owner contracts removes 100
+stale historical World prompts, about 213,428 conservative tokens, and reduces repeated ToolReturn AX representation
+from about 422,526 to 300,666 conservative tokens, another 121,860. These disjoint reductions total 335,288 tokens,
+or a 43.4% lower bound against the old accumulated history count; earlier high-water compaction can reduce the live
+total further. The tab-domain schema change merges one of seven observed Catalog variants but does not remove other
+legitimate current-capability variants. This is offline replay, not a post-change live result, cost promise, or
+wall-time claim; a live benchmark still requires separate authorization.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1285,8 +1296,9 @@ The final read-only review for this cutover must answer:
 15. Are browser-global actions selected explicitly by the environment profile and executed through BrowserGym's
     existing ActionSpace/Binder/Executor path, with unrestricted generic navigation and WebArena's configured netlocs
     preserved identically through World, ActionBinding, Catalog, and resolver?
-16. Does SDK history preserve exact recent thinking/calls/results, use complete RequestAdmission pressure for
-    Harness pair-safe compaction, retain an exact pair-safe suffix, and restore raw history on summary failure?
+16. Does SDK history preserve exact recent thinking/calls/results, use the complete RequestAdmission capacity arm plus
+    the declared history high-water/minimum-reclaim arm for Harness pair-safe compaction, retain an exact pair-safe
+    suffix, and restore raw history on summary failure?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
@@ -1322,9 +1334,9 @@ The final read-only review for this cutover must answer:
 29. Do ActionPolicy and Harness compaction consume one prompt-owned evidence-status rule without Runtime converting
     summary prose into claim state, and does GoalCompiler disable thinking only through the selected provider's
     declared wire capability?
-30. Does physical SDK history contain exactly one current task/plan anchor and an admission-token-bounded recent raw
-    World tail, while retaining exact model progress, thinking, ToolCall/ToolReturn pairing, media, and unresolved
-    suffix across cheap projection and optional Harness compaction?
+30. Does physical SDK history contain exactly one current task/plan anchor and no historical World/media prompts,
+    while retaining exact model progress, thinking, ToolCall/ToolReturn pairing, and the unresolved suffix; and does
+    the physical request contain exactly one fresh World with current media?
 31. Does every admitted action-delivery prefix render each E-ref once with the complete current verb set while leaving
     the Catalog resolver's complete route set unchanged?
 32. Does a schema-valid operation/target mismatch return the existing `ToolRejectedResult` under the original call ID
@@ -1336,8 +1348,8 @@ The final read-only review for this cutover must answer:
     independent smaller codec capacity, while an unknown well-shaped ref still fails at the current Catalog resolver?
 35. When exact supported values fill every requested final-answer field, does ActionPolicy submit without reopening a
     source solely for formatting or confirmation; does Harness retain those values ahead of transient execution setup;
-    and can expired-prose compaction trigger only after one complete recent-suffix input budget rather than the summary
-    output cap?
+    and can history compaction trigger only after the declared high-water and minimum-reclaim hysteresis rather than a
+    result kind, semantic event, or summary-output cap?
 36. Can representation repair keep the operation and every schema-declared operand unchanged while accepting the new
     provider-generated call ID of its own physical response, with the later ToolReturn paired under that same new ID?
 

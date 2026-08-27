@@ -73,6 +73,9 @@ def test_browsergym_read_delivers_complete_records_with_text_beyond_control_labe
     assert isinstance(outcome, Opened)
     records = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
     assert len(records) == 2
-    assert tuple(item["content"][0]["text"] for item in records) == (first_body, second_body)
+    assert tuple(item["content"][0]["text"] for item in records) == (
+        f"{first_body}\nReview by Person 1",
+        f"{second_body}\nReview by Person 2",
+    )
     assert all(len(body) > 240 for body in (first_body, second_body))
     assert all(item.get("content_truncated") is not True for item in records)

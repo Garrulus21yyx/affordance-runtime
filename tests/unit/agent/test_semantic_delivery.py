@@ -21,6 +21,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     Opened,
     Page,
     StaleContext,
+    _compact_repeated_content,
     inspect_actor_world,
     inspect_outcome_public,
     render_compact_actor_world,
@@ -741,7 +742,7 @@ def test_search_returns_the_smallest_complete_repeated_item_not_a_leaf_snippet()
         canonical_world=context.canonical_world,
         observation=world,
         action="find",
-        query="ear cups",
+        query="fit The ear cups",
     )
 
     assert isinstance(outcome, Matches)
@@ -749,12 +750,32 @@ def test_search_returns_the_smallest_complete_repeated_item_not_a_leaf_snippet()
     match = outcome.items[0]
     assert match["kind"] == "complete_item"
     texts = tuple(item["text"] for item in match["content"])
-    assert texts == (
-        "Compact fit",
-        "The ear cups are small for me.",
-        "Review by Dibbins",
-    )
+    assert texts == ("Compact fit\nThe ear cups are small for me.\nReview by Dibbins",)
     assert "Review by Morgan" not in texts
+
+
+def test_repeated_content_folds_ax_fragments_and_only_interactive_label_echoes() -> None:
+    content = (
+        {"role": "link", "text": "Madison Square Garden"},
+        {"role": "StaticText", "text": "Madison Square Garden"},
+        {"role": "StaticText", "text": "Madison"},
+        {"role": "StaticText", "text": " Square "},
+        {"role": "StaticText", "text": "Garden"},
+        {"role": "heading", "text": "Details"},
+        {"role": "StaticText", "text": "Details"},
+        {"role": "button", "text": "Open", "state": {"disabled": False}},
+    )
+
+    compacted = _compact_repeated_content(content)
+
+    assert compacted == (
+        {"role": "link", "text": "Madison Square Garden"},
+        {"role": "StaticText", "text": "Madison Square Garden"},
+        {"role": "heading", "text": "Details"},
+        {"role": "StaticText", "text": "Details"},
+        {"role": "button", "text": "Open", "state": {"disabled": False}},
+    )
+    assert len(json.dumps(compacted)) < len(json.dumps(content))
 
 
 def test_search_matches_visible_text_but_not_dom_tag_class_or_id_values() -> None:
@@ -966,7 +987,8 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
     rows = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
     assert schema_labels >= {"Product", "Price", "Quantity"}
     assert len(rows) == 5
-    assert all(len(item["content"]) == 3 for item in rows)
+    assert all(len(item["content"]) == 1 for item in rows)
+    assert rows[0]["content"][0]["text"].splitlines() == ["Product 0", "$19.00", "1"]
 
     view = render_compact_actor_world(
         context.actor_world,

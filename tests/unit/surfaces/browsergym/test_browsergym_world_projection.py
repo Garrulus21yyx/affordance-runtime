@@ -235,7 +235,10 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     }
     assert set(browser_specs) == set(actions)
     assert all("target" not in item.input_schema["properties"] for item in browser_specs.values())
-    assert tuple(browser_specs["tab_focus"].input_schema["properties"]["index"]["enum"]) == (0,)
+    assert browser_specs["tab_focus"].input_schema["properties"]["index"] == {
+        "type": "integer",
+        "minimum": 0,
+    }
     goto = next(item for item in catalog.specs if item.name == "goto")
     assert tuple(goto.input_schema["required"]) == ("url",)
     assert "target" not in goto.input_schema["properties"]

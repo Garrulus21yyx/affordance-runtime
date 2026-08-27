@@ -1277,7 +1277,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
     asyncio.run(scenario())
 
 
-def test_action_narration_and_fresh_world_prompts_remain_in_official_history() -> None:
+def test_action_narration_remains_while_only_the_fresh_world_prompt_is_sent() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-carry-forward", False)
@@ -1352,7 +1352,7 @@ def test_action_narration_and_fresh_world_prompts_remain_in_official_history() -
                 if isinstance(message, ModelRequest)
                 for part in message.parts
             )
-            == 3
+            == 2
         )
         prompt_payloads = tuple(
             json.loads(part.content)
@@ -1362,7 +1362,7 @@ def test_action_narration_and_fresh_world_prompts_remain_in_official_history() -
             if isinstance(part, UserPromptPart) and isinstance(part.content, str)
         )
         assert sum(set(payload) == {"task", "goal_plan"} for payload in prompt_payloads) == 1
-        assert sum(set(payload) == {"observation"} for payload in prompt_payloads) == 2
+        assert sum(set(payload) == {"observation"} for payload in prompt_payloads) == 1
         assert isinstance(history[-1], ModelResponse)
         assert [part.content for part in history[-1].parts if isinstance(part, TextPart)] == [
             "I will switch back to the Portland tab now."
@@ -1477,7 +1477,7 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
         user_prompts = tuple(
             part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "user-prompt"
         )
-        assert len(user_prompts) == 4
+        assert len(user_prompts) == 2
         anchor_payload = json.loads(user_prompts[0]["content"][0]["content"])
         assert set(anchor_payload) == {"task", "goal_plan"}
         assert anchor_payload["task"]["instruction"] == task.instruction
@@ -1541,7 +1541,7 @@ def _assert_summary_keeps_task_anchor_and_exact_suffix(
 
 @given(turns=st.integers(min_value=5, max_value=12))
 @settings(max_examples=12)
-def test_history_projection_keeps_one_task_anchor_recent_world_and_all_pairs(
+def test_history_projection_keeps_one_task_anchor_no_stale_world_and_all_pairs(
     turns: int,
 ) -> None:
     original = list(_official_history_with_pending_actions(turns))
@@ -1586,9 +1586,8 @@ def test_history_projection_keeps_one_task_anchor_recent_world_and_all_pairs(
         for part in message.parts
         if isinstance(part, UserPromptPart)
     )
-    assert len(prompts) == 2
+    assert len(prompts) == 1
     assert json.loads(prompts[0].content) == task_plan
-    assert set(json.loads(prompts[1].content)) == {"observation"}
     original_returns = tuple(
         part
         for message in normalized
@@ -1996,7 +1995,7 @@ def test_history_compaction_pressure_uses_complete_request_admission_accounting(
     assert pydantic_bridge._available_history_tokens(over_capacity) == 49_594
 
 
-def test_expired_model_prose_uses_recent_tail_budget_without_semantic_matching() -> None:
+def test_history_economy_pressure_requires_both_high_water_and_reclaim_batch() -> None:
     history = list(_official_history_with_pending_actions(8))
     for index, message in enumerate(tuple(history)):
         if not isinstance(message, ModelResponse):
@@ -2012,43 +2011,34 @@ def test_expired_model_prose_uses_recent_tail_budget_without_semantic_matching()
         )
     history_tuple = tuple(history)
 
-    assert not pydantic_bridge._expired_model_prose_compaction_required(
+    assert not pydantic_bridge._history_economy_compaction_required(
+        history_tuple,
+        max_estimated_tokens=500,
+        available_history_tokens=4_000,
+        observed_history_tokens=1_999,
+    )
+    assert not pydantic_bridge._history_economy_compaction_required(
         history_tuple,
         max_estimated_tokens=100_000,
+        available_history_tokens=4_000,
+        observed_history_tokens=3_000,
     )
-    assert pydantic_bridge._expired_model_prose_compaction_required(
+    assert pydantic_bridge._history_economy_compaction_required(
         history_tuple,
         max_estimated_tokens=500,
+        available_history_tokens=4_000,
+        observed_history_tokens=3_000,
     )
 
 
-def test_expired_model_prose_batch_is_independent_of_summary_output_cap() -> None:
-    history = list(_official_history_with_pending_actions(8))
-    for index, message in enumerate(tuple(history)):
-        if not isinstance(message, ModelResponse):
-            continue
-        calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
-        history[index] = replace(
-            message,
-            parts=(
-                TextPart(f"step-{index}: " + "ordinary policy narration " * 30),
-                *calls,
-            ),
-        )
-    history_tuple = tuple(history)
-
+def test_history_watermarks_are_independent_of_summary_output_cap() -> None:
     assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
-    assert not pydantic_bridge._expired_model_prose_compaction_required(
-        history_tuple,
-        max_estimated_tokens=8_000,
-    )
-    assert pydantic_bridge._expired_model_prose_compaction_required(
-        history_tuple,
-        max_estimated_tokens=500,
-    )
+    assert pydantic_bridge._HISTORY_ECONOMY_PRESSURE_RATIO == 0.5
+    assert pydantic_bridge._HISTORY_COMPACTION_TARGET_RATIO == 0.3
+    assert pydantic_bridge._HISTORY_COMPACTION_MIN_RECLAIM_RATIO == 0.15
 
 
-def test_harness_compacts_expired_prose_before_whole_request_pressure() -> None:
+def test_harness_compacts_reclaimable_history_before_whole_request_pressure() -> None:
     history = list(_official_history_with_pending_actions(8))
     for index, message in enumerate(tuple(history)):
         if not isinstance(message, ModelResponse):
@@ -2071,14 +2061,14 @@ def test_harness_compacts_expired_prose_before_whole_request_pressure() -> None:
             history_tuple,
             model=scripted.build(),
             max_estimated_tokens=1_000,
-            observed_estimated_tokens=1,
+            observed_estimated_tokens=600,
             timeout_s=2.0,
-            trigger="expired_model_prose",
+            trigger="history_pressure",
         )
     )
 
     assert run.attempted is True
-    assert run.trigger == "expired_model_prose"
+    assert run.trigger == "history_pressure"
     assert run.error == ""
     assert len(scripted.records) == 1
     _assert_summary_keeps_task_anchor_and_exact_suffix(run.messages, history_tuple)
@@ -2249,7 +2239,7 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
             max_estimated_tokens=55_000,
             observed_estimated_tokens=999_999,
             timeout_s=2.0,
-            trigger="expired_model_prose",
+            trigger="history_pressure",
         )
     )
 

@@ -65,6 +65,22 @@ _SOURCE_TEXT_TRUNCATION_FIELD = "semantic.accessible_name.truncated"
 _CURRENT_ACTION_SUBJECT_ROLES = frozenset(
     kind.value for kind in InteractionSubjectKind if kind is not InteractionSubjectKind.ENTITY
 )
+_AX_TEXT_ECHO_ROLES = frozenset(
+    {
+        "button",
+        "checkbox",
+        "combobox",
+        "link",
+        "menuitem",
+        "option",
+        "radio",
+        "searchbox",
+        "spinbutton",
+        "switch",
+        "tab",
+        "textbox",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -1440,7 +1456,7 @@ def _find_matches(
     public_fact_bindings: Mapping[str, str] | None = None,
     evidence_index: WorldEvidenceIndex | None = None,
 ) -> tuple[Mapping[str, object], ...]:
-    needle = query.casefold()[:120]
+    needle = _normalized_readable_text(query).casefold()[:120]
     public_by_canonical = {canonical: public for public, canonical in (public_fact_bindings or {}).items()}
     sources = {item.observation_id: item for item in observation.sources}
     locations = {
@@ -1462,7 +1478,7 @@ def _find_matches(
         if target.target_id in repeated_target_ids:
             continue
         values = _readable_target_search_values(target)
-        if needle not in " ".join(values).casefold():
+        if needle not in _normalized_readable_text(" ".join(values)).casefold():
             continue
         region_ref, node_ref = locations.get(target.target_id, ("", ""))
         match = {
@@ -1646,10 +1662,12 @@ def _repeated_item_records(
             )
         )
         repeated_target_ids.update(target_ids)
-        content = tuple(
-            compact
-            for target_id in target_ids
-            if (compact := _compact_repeated_target(targets[target_id])) is not None
+        content = _compact_repeated_content(
+            tuple(
+                compact
+                for target_id in target_ids
+                if (compact := _compact_repeated_target(targets[target_id])) is not None
+            )
         )
         record: dict[str, object] = {
             "kind": (
@@ -1684,6 +1702,63 @@ def _compact_repeated_target(target) -> Mapping[str, object] | None:
     return item
 
 
+def _compact_repeated_content(
+    content: tuple[Mapping[str, object], ...],
+) -> tuple[Mapping[str, object], ...]:
+    """Fold AX text fragments without removing readable record content.
+
+    Browser accessibility trees commonly emit one logical text run as many
+    adjacent ``StaticText`` targets, especially around highlighted search
+    terms.  Repeating the role/text object wrapper for every fragment makes a
+    bounded record much larger and harder to read.  The record producer owns
+    this representation, so coalesce only stateless adjacent text fragments
+    here and remove the exact text echo that immediately follows an
+    interactive element with the same accessible label.  Links, controls,
+    state, record order, and completeness metadata remain unchanged.
+    """
+
+    compacted: list[Mapping[str, object]] = []
+    for item in content:
+        role = item.get("role")
+        text = item.get("text")
+        state = item.get("state")
+        is_plain_text = role == "StaticText" and isinstance(text, str) and not state
+        if not is_plain_text:
+            compacted.append(item)
+            continue
+
+        if compacted:
+            previous = compacted[-1]
+            previous_text = previous.get("text")
+            if (
+                previous.get("role") in _AX_TEXT_ECHO_ROLES
+                and isinstance(previous_text, str)
+                and _normalized_readable_text(previous_text) == _normalized_readable_text(text)
+            ):
+                continue
+            if previous.get("role") == "StaticText" and not previous.get("state"):
+                merged = dict(previous)
+                merged["text"] = _join_readable_fragments(str(previous_text or ""), text)
+                compacted[-1] = merged
+                continue
+        compacted.append(item)
+    return tuple(compacted)
+
+
+def _normalized_readable_text(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _join_readable_fragments(left: str, right: str) -> str:
+    if not left:
+        return right
+    if not right:
+        return left
+    if left[-1].isspace() or right[0].isspace():
+        return left + right
+    return left + "\n" + right
+
+
 def _tool_record_search_text(item: Mapping[str, object]) -> str:
     values: list[str] = []
     label = item.get("label")
@@ -1700,7 +1775,7 @@ def _tool_record_search_text(item: Mapping[str, object]) -> str:
             state = current.get("state")
             if isinstance(state, Mapping):
                 values.extend(_readable_state_search_values(state))
-    return " ".join(values).casefold()
+    return _normalized_readable_text(" ".join(values)).casefold()
 
 
 def _readable_target_search_values(target) -> list[str]:

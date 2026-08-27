@@ -171,11 +171,13 @@ class GroundedToolCompiler:
         self._validate_current_refs(rows, context_id)
         self._validate_private_parameter_contracts(operation, rows)
         fields, selector_values, mode = _current_reference_selectors(rows)
-        parameter_schemas = (
-            (rows[0].option.parameter_schema,)
-            if mode is SelectorMode.CURRENT_BROWSER_CONTEXT
-            else _public_business_schemas(operation)
-        )
+        # The registry-owned public parameter family is stable across fresh
+        # Worlds.  Current domains (for example the legal tab indexes) remain
+        # on the private resolution entry and are validated again in
+        # ``resolve``.  Publishing the current domain here would make a tab
+        # title/open/close change rewrite the provider tool prefix even though
+        # the browser capability and public call contract did not change.
+        parameter_schemas = _public_business_schemas(operation)
         schema = _public_operation_schema(parameter_schemas, fields)
         resolutions = tuple(
             PrivateResolutionEntry(

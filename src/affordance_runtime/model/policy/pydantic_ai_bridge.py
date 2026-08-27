@@ -98,6 +98,9 @@ _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
+_HISTORY_ECONOMY_PRESSURE_RATIO = 0.5
+_HISTORY_COMPACTION_TARGET_RATIO = 0.3
+_HISTORY_COMPACTION_MIN_RECLAIM_RATIO = 0.15
 _HISTORY_RECENT_EXACT_TOKENS_RATIO = 0.12
 _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
 _TASK_ANCHOR_METADATA_KEY = "affordance_runtime.task_anchor"
@@ -549,12 +552,14 @@ class PydanticAIGroundedDecisionPort:
                 raw_breakdown,
                 has_history=bool(history_messages),
             )
-            expired_prose_pressure = _expired_model_prose_compaction_required(
+            history_pressure = _history_economy_compaction_required(
                 history_messages,
                 max_estimated_tokens=recent_exact_tokens,
+                available_history_tokens=_available_history_tokens(raw_breakdown),
+                observed_history_tokens=raw_breakdown.history_tokens,
             )
             compaction_trigger = (
-                "token_pressure" if request_pressure else "expired_model_prose" if expired_prose_pressure else ""
+                "token_pressure" if request_pressure else "history_pressure" if history_pressure else ""
             )
             compaction_required = bool(compaction_trigger)
             if compaction_required:
@@ -2060,14 +2065,20 @@ def _fold_expired_world_prompts(
     *,
     max_estimated_tokens: int,
 ) -> tuple[object, ...]:
-    """Retain a token-bounded recent World tail and exact completed exchanges."""
+    """Remove historical World prompts while preserving exact SDK exchanges.
+
+    ``TurnPacker`` supplies the one authoritative fresh World after this
+    history processor runs.  Retaining any older World here duplicates a
+    temporal observation and makes the provider prefix slide every turn.
+    TaskGoal/GoalPlan remain in the separately marked task anchor; ToolCall,
+    ToolReturn, model conclusions, and the unresolved call suffix are not
+    changed.
+    """
 
     if max_estimated_tokens < 1:
         raise ValueError("recent World history target must be positive")
     from pydantic_ai.messages import ModelRequest, UserPromptPart
-    from pydantic_ai_harness.compaction import estimate_token_count
-
-    candidates: list[tuple[int, UserPromptPart, int]] = []
+    candidates: list[tuple[int, UserPromptPart]] = []
     for index, message in enumerate(messages):
         if not isinstance(message, ModelRequest):
             continue
@@ -2081,22 +2092,11 @@ def _fold_expired_world_prompts(
         elif len(prompts) != 1:
             raise ValueError("PydanticAI history request has multiple World prompts")
         for prompt in prompts:
-            prompt_tokens = estimate_token_count([ModelRequest(parts=[prompt])])
-            candidates.append((index, prompt, prompt_tokens))
-    if len(candidates) <= 1:
+            candidates.append((index, prompt))
+    if not candidates:
         return messages
 
-    retained: set[int] = set()
-    used = 0
-    for index, _prompt, prompt_tokens in reversed(candidates):
-        if retained and used + prompt_tokens > max_estimated_tokens:
-            break
-        retained.add(index)
-        used += prompt_tokens
-    if len(retained) == len(candidates):
-        return messages
-
-    expired = {id(prompt) for index, prompt, _tokens in candidates if index not in retained}
+    expired = {id(prompt) for _index, prompt in candidates}
     folded: list[object] = []
     for message in messages:
         if not isinstance(message, ModelRequest):
@@ -2113,10 +2113,10 @@ def _project_expired_history(
     *,
     max_estimated_tokens: int,
 ) -> tuple[object, ...]:
-    """Project one bounded recent raw tail without changing history facts.
+    """Project bounded exact history without changing history facts.
 
-    Fresh World prompts are temporal observations and use the existing bounded
-    tail projection.  Completed ToolCall/ToolReturn parts and unique model
+    Historical World prompts are temporal observations and are removed because
+    TurnPacker supplies exactly one fresh World. Completed ToolCall/ToolReturn parts and unique model
     conclusions remain exact.  Outside the same recent token window, only
     equivalent repeated model prose is removed, retaining its newest instance.
     This is deterministic structural history processing; semantic replacement
@@ -2197,35 +2197,56 @@ def _recent_history_start(
     return recent_start
 
 
-def _expired_model_prose_compaction_required(
+def _history_economy_compaction_required(
     messages: tuple[object, ...],
     *,
     max_estimated_tokens: int,
+    available_history_tokens: int,
+    observed_history_tokens: int,
 ) -> bool:
-    """Request Harness after one bounded batch of model prose expires."""
+    """Request Harness only after a useful pair-safe history batch expires.
 
-    if not messages:
+    The high watermark bounds steady-state history cost.  The independent
+    minimum reclaim watermark is the hysteresis: a compacted summary plus a
+    small amount of new history cannot immediately schedule another provider
+    call.  This schedule depends only on typed history size, never task or page
+    semantics.
+    """
+
+    if (
+        not messages
+        or max_estimated_tokens < 1
+        or available_history_tokens < 1
+        or observed_history_tokens
+        < int(available_history_tokens * _HISTORY_ECONOMY_PRESSURE_RATIO)
+    ):
         return False
-    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+    from pydantic_ai.messages import ModelRequest, SystemPromptPart
     from pydantic_ai_harness.compaction import estimate_token_count
 
     recent_start = _recent_history_start(
         messages,
         max_estimated_tokens=max_estimated_tokens,
     )
-    expired_prose = tuple(
-        ModelResponse(parts=[part])
+    reclaimable = tuple(
+        message
         for message in messages[:recent_start]
-        if isinstance(message, ModelResponse)
-        for part in message.parts
-        if isinstance(part, (TextPart, ThinkingPart))
+        if not (
+            isinstance(message, ModelRequest)
+            and (
+                bool((message.metadata or {}).get(_TASK_ANCHOR_METADATA_KEY))
+                or (
+                    bool(message.parts)
+                    and all(isinstance(part, SystemPromptPart) for part in message.parts)
+                )
+            )
+        )
     )
-    # This is an input-batch schedule, not a summary-output budget.  Reusing
-    # the 1,024-token output cap here caused a new provider call after only a
-    # few ordinary responses and repeatedly re-summarized essentially the
-    # same prefix.  Compact after one complete raw-suffix budget of prose has
-    # expired; whole-request pressure remains the independent capacity arm.
-    return bool(expired_prose and estimate_token_count(expired_prose) >= max_estimated_tokens)
+    minimum_reclaim = max(
+        1,
+        int(available_history_tokens * _HISTORY_COMPACTION_MIN_RECLAIM_RATIO),
+    )
+    return bool(reclaimable and estimate_token_count(reclaimable) >= minimum_reclaim)
 
 
 def _prompt_json_object(prompt: object) -> dict[str, object] | None:
@@ -2410,7 +2431,7 @@ async def _compact_pydantic_history(
         raise ValueError("history soft target must be positive")
     if timeout_s <= 0:
         raise ValueError("history compaction timeout must be positive")
-    if trigger not in {"token_pressure", "expired_model_prose"}:
+    if trigger not in {"token_pressure", "history_pressure"}:
         raise ValueError("history compaction trigger is unsupported")
     from pydantic_ai import capture_run_messages
     from pydantic_ai.usage import RunUsage
@@ -2420,18 +2441,27 @@ async def _compact_pydantic_history(
         estimate_token_count,
     )
 
-    pressure_threshold = max(
+    activation_ratio = (
+        _HISTORY_COMPACTION_PRESSURE_RATIO
+        if trigger == "token_pressure"
+        else _HISTORY_ECONOMY_PRESSURE_RATIO
+    )
+    activation_threshold = max(
         1,
-        int(max_estimated_tokens * _HISTORY_COMPACTION_PRESSURE_RATIO),
+        int(max_estimated_tokens * activation_ratio),
     )
     estimated_tokens = (
         estimate_token_count(messages) if observed_estimated_tokens is None else observed_estimated_tokens
     )
-    if trigger == "token_pressure" and estimated_tokens < pressure_threshold:
+    if estimated_tokens < activation_threshold:
         return _HistoryCompactionRun(messages)
+    compaction_target = max(
+        1,
+        int(max_estimated_tokens * _HISTORY_COMPACTION_TARGET_RATIO),
+    )
     strategy = SummarizingCompaction(
         model=model,
-        max_tokens=pressure_threshold,
+        max_tokens=compaction_target,
         keep_tokens=max(
             1,
             int(max_estimated_tokens * _HISTORY_RECENT_EXACT_TOKENS_RATIO),

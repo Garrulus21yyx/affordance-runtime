@@ -62,20 +62,16 @@ pressure-only semantic compaction was sufficient: 135 historical user prompts re
 large expired Worlds, while only 39 prompts represented the authoritative current turn.
 
 The history owner now performs a cheap structural projection before deciding whether semantic compaction is needed.
-One metadata-marked SDK `UserPromptPart` anchors the current `TaskGoal + GoalPlan`; each other user prompt contains
-only that turn's World and optional control feedback. The initial World remains a separate prompt part in the same
-PydanticAI request, preserving multimodal content and matching the SDK's physical request coalescing. Expired World
-prompts are removed oldest-first until the recent raw World tail fits 12% of the admission-derived history capacity;
-at least the newest historical World remains. The same recent raw window preserves model text/thinking exactly.
-Outside it, deterministic history processing removes only whitespace-equivalent repeated `TextPart` or
-`ThinkingPart` values while retaining their newest instance; unique model conclusions and every ToolCall/ToolReturn
-stay exact. Harness `SummarizingCompaction` runs when either the remaining complete request reaches the existing 80%
-capacity threshold or unsummarized model prose outside the recent raw tail fills one compaction batch. That batch is
-bounded by the smaller of the recent-tail target and the existing maximum summary-output budget, so old paraphrased
-narration is handled before whole-request pressure without per-step reducer calls. The second trigger measures only
-typed-message age and size, not semantic similarity. Harness preserves the task anchor and exact unresolved suffix.
-This is one projection inside the existing PydanticAI history owner, not a memory, progress reducer, evidence path,
-cursor, or second current-state authority.
+One metadata-marked SDK `UserPromptPart` anchors the current `TaskGoal + GoalPlan`. Every historical World prompt is
+removed before packing because `TurnPacker` supplies exactly one authoritative fresh World for the current call;
+model text/thinking and every ToolCall/ToolReturn remain exact. Harness `SummarizingCompaction` has two size-only
+admission arms: the existing 80% complete-request capacity guard, and a 50% history high-water mark that also requires
+at least 15% of history capacity to be reclaimable outside the exact suffix. Once admitted, Harness targets 30% of
+history capacity and preserves the newest pair-safe 12% suffix exactly. The separate reclaim threshold supplies
+hysteresis, so a summary plus a small amount of new history cannot immediately schedule another model call. No
+result kind, task text, semantic novelty, Monitor state, or summary-output cap participates in scheduling. This is one
+projection inside the existing PydanticAI history owner, not a memory, progress reducer, evidence path, cursor, or
+second current-state authority.
 
 The authorized W1b Task7
 [`run1`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260826-run1/run.json) falsified one wrapper assumption in that
@@ -103,7 +99,7 @@ number repeated under `Verified facts` and `Remaining questions` as the same con
 restored raw history, so the run paid both 198,783 compactor input tokens and the ordinary ActionPolicy requests;
 prompt tokens rose to 1,379,172. Claim identity is open-world semantics, not a deterministic history invariant. The
 history owner now accepts Harness summary prose after typed message and exact suffix validation; the shared prompt
-remains guidance, and the current task, recent raw tail, and exact call/result history remain available to the single
+remains guidance, and the current task, one fresh World, and exact call/result history remain available to the single
 ActionPolicy. No retry or alternate summary path was added. A post-repair live efficiency witness was required.
 
 [`run39`](../evidence/live/w1b-task-266-deepseek-v4-flash-20260826-run39/run.json) crossed that scheduling repair: one
@@ -298,17 +294,16 @@ The converged owner is the official PydanticAI message history, using Harness
 
 - every accepted turn initially persists the SDK-produced fresh-World `UserPromptPart`, ordinary `TextPart`,
   `ThinkingPart`, provider metadata, every proposed `ToolCallPart`, and the next same-ID `ToolReturnPart`;
-- one current task/plan prompt part is preserved as the only historical anchor. Other historical user prompts are
-  World-only. Before any model-backed compaction decision, the history owner removes only expired World prompt parts
-  outside a 12%-of-history-capacity recent tail. It never edits model responses, ToolCalls, ToolReturns, or the newest
-  historical World, and it preserves non-text media on retained Worlds;
-- only a canonical request whose existing `RequestAdmission` breakdown reaches 80% of effective provider input can
-  trigger compaction. That same breakdown already counts SDK history, pending ToolReturn, fresh World, tools, and
-  protocol overhead; read/search type, Monitor recovery, task revision, semantic novelty, and the provider usage
-  anchor do not schedule another model call. The current-World delivery soft target is not a history capacity;
-- Harness summarizes only a pair-safe expired prefix and keeps the newest pair-safe suffix fitting 12% of that history
-  capacity at full fidelity. This token-bound tail adapts to variable-size GUI Worlds instead of assuming that eight
-  messages are small. Its plain `SystemPromptPart` summary retains at most three completed user outcomes plus the
+- one current task/plan prompt part is preserved as the only historical anchor. All historical World prompt parts,
+  including historical media, are removed; the one current fresh World and its media are supplied separately on the
+  physical request. This structural projection never edits model responses, ToolCalls, or ToolReturns;
+- the existing `RequestAdmission` breakdown triggers the capacity arm at 80% of effective provider input. A second
+  size-only arm triggers when history itself reaches 50% of its available capacity and at least 15% is reclaimable
+  outside the recent exact suffix. That same breakdown already counts SDK history, pending ToolReturn, fresh World,
+  tools, and protocol overhead; read/search type, Monitor recovery, task revision, semantic novelty, and the provider
+  usage anchor do not schedule another model call. The current-World delivery soft target is not history capacity;
+- Harness targets a 30% post-compaction history budget and keeps the newest pair-safe suffix fitting 12% of history
+  capacity at full fidelity. Its plain `SystemPromptPart` summary retains at most three completed user outcomes plus the
   eight task-critical verified facts, and two failed strategies. It does not retain current stage, remaining work,
   next intent, an action-by-action log, old URLs, or stale current-state references;
 - Harness 0.25's formatter does not render `ThinkingPart`. The history owner therefore maps accepted thinking to
@@ -942,6 +937,11 @@ without copying internal evidence metadata or serializing the whole surrounding 
 sets `content_truncated=true`. This rule is generic to the public tree shape and contains no site, task, phrase, or
 fixed-region branch.
 
+Within one repeated item, the same producer joins adjacent stateless AX `StaticText` fragments into one ordered text
+block and removes only an exact accessible-label echo immediately following an interactive element. It does not drop
+links, controls, state, fields, record order, or completeness metadata. This is representation compaction at the
+ToolResult owner, not retrieval, summarization, or another evidence projection.
+
 Pagination, when needed, is deliberately small:
 
 ```text
@@ -1054,8 +1054,8 @@ queue. The next ActionPolicy call alone decides whether to reissue one after see
 Harness performs pair-safe semantic compaction before provider invocation only when the complete canonical request's
 existing admission breakdown reaches pressure. Neither the provider's cumulative usage anchor nor the current-World
 soft target is treated as history capacity. Before that pressure test, the same history owner retains one task/plan
-anchor, removes repeated task/plan fields from historical Worlds, and keeps only an admission-derived recent raw World
-tail. This structural projection does not change responses or call/result pairs. Harness then replaces an expired prefix
+anchor and removes every historical World prompt. This structural projection does not change responses or call/result
+pairs. Harness then replaces an expired prefix
 with one historical `SystemPromptPart` summary and retains the newest pair-safe token-bounded suffix exactly. Summary
 failure preserves raw history and lets the existing hard-capacity gate fail closed. The unresolved response and all
 its calls remain present. A terminal decision consumes the last results and clears transport history so it cannot leak
@@ -1073,7 +1073,7 @@ into another episode.
 | browser side effect | Executor/BrowserGym | Catalog, Monitor, Workspace |
 | local result shape and byte bound | local read/search/list owner | Store, TurnPacker, Workspace |
 | delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
-| task anchor, recent-World projection, typed call/result history, correlation, and Harness compaction | PydanticAI boundary | Store, Workspace, Monitor |
+| task anchor, historical-World removal, typed call/result history, correlation, and Harness compaction | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
 | local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
@@ -1094,8 +1094,8 @@ The model context contains only:
 - current typed control feedback;
 - at most one Harness-produced, visible, non-authoritative historical summary;
 - bounded completed owner-produced `ToolCallPart/ToolReturnPart` pairs, including same-ID failed returns for proposals
-  not selected for execution, plus one task/plan anchor and a token-bounded recent raw World tail. Harness additionally
-  preserves its newest exact pair-safe suffix, including `ThinkingPart`.
+  not selected for execution, plus one task/plan anchor. Harness additionally preserves its newest exact pair-safe
+  suffix, including `ThinkingPart`; only the current request supplies a World prompt and image.
 
 The boundary preserves each accepted model response exactly, including `ThinkingPart`, ordinary text, provider
 reasoning metadata, and all tool proposals. Only the summarizer's throwaway input maps thinking to ordinary text
@@ -1361,6 +1361,16 @@ ActionPolicy selects the next semantic action, and the native evaluator owns ter
 unseen accepted case broadens the empirical surface beyond Task268 but does not yet satisfy the multi-case held-out
 campaign exit criterion.
 
+The post-run efficiency repair keeps that control path intact and changes only three existing owners. The repeated
+record producer coalesces lossless AX text fragments and interactive-label echoes. The Catalog publishes the stable
+registry parameter family for browser-context tools while the current private binding still validates exact tab
+domains. The PydanticAI history processor removes every historical World before adding the one fresh current World,
+and uses the 50% high-water / 15% minimum-reclaim / 30% target schedule described above. Offline replay of the exact
+Task740 provider transcripts finds 100 stale historical World prompts (about 213k conservative tokens) and about 122k
+additional conservative tokens removable from repeated ToolReturn AX wrappers. These disjoint reductions are a
+43.4% lower bound against run1's 772,712 accumulated history tokens; they do not predict a live provider total or
+claim a wall-time improvement. No live post-optimization run has yet been authorized.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1466,9 +1476,9 @@ This cutover is implementation-complete only when all of the following agree:
     information novelty that clears Monitor.
 12. WebArena-family browser navigation is published only through the existing ActionSpace/BrowserGym route, while
     MiniWoB remains unchanged.
-13. proactive SDK history processing preserves exact call/result pairs and exactly one latest cumulative progress
-    note across tool-only turns, and a partial PageMap remains aggregate-bounded and recoverable through the existing
-    read tools.
+13. proactive SDK history processing preserves exact call/result pairs and unique model conclusions across tool-only
+    turns without requiring a per-step progress artifact, and a partial PageMap remains aggregate-bounded and
+    recoverable through the existing read tools.
 14. dispatched GUI attempts have one bounded ref-free Monitor history; every repeated cycle representable in that
     window recovers once and blocks only on recurrence. Different public attempt signatures retain recovery feedback
     but never accumulate into a hidden semantic-attempt budget; exact replay still blocks after one recovery, and the
@@ -1496,12 +1506,12 @@ This cutover is implementation-complete only when all of the following agree:
     receive one prompt-owned evidence-status rule without Runtime parsing summary prose into fact state.
 23. Explicit control discovery cannot lose an exact label because the same token names another current operation, and
     exhausted output-retry tracing cannot count responses from the supplied official history as new physical calls.
-24. SDK history exposes the current task/plan exactly once, retains an admission-token-bounded recent raw World tail
-    with media intact, and expires older World prompts without altering model progress, thinking, calls, returns, or
-    the unresolved suffix; only the remaining request can trigger Harness semantic compaction.
+24. SDK history exposes the current task/plan exactly once and no historical World/media prompts, while retaining
+    model progress, thinking, calls, returns, and the unresolved suffix; the physical request supplies exactly one
+    fresh World and current media.
 25. Exact values that directly fill requested final-answer fields outrank transient execution setup in Harness
-    compaction, ActionPolicy submits rather than re-verifying when all requested fields are supported, and the
-    expired-prose input-batch threshold is independent of the summary output cap.
+    compaction, ActionPolicy submits rather than re-verifying when all requested fields are supported, and history
+    compaction requires the declared high-water plus minimum-reclaim hysteresis independent of summary output size.
 26. A separate representation-repair provider response may own a new call ID while preserving the rejected operation
     and every schema-declared semantic operand; the accepted response and subsequent ToolReturn pair under that new ID.
 
