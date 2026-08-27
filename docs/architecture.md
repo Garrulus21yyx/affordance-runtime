@@ -127,9 +127,14 @@ exchange. Viewer failure never changes Runtime status, receipt, evaluation, or
 cleanup truth. The local BrowserGym profile remains Viewer unavailable, and a
 cloud profile rejects loopback/private task sources instead of opening a second
 browser. Provider-free tests plus a no-model/no-action live Steel CDP reset and
-document/ICE probe verify this deployment boundary; they are not benchmark
-witnesses and do not alter the reopened overall project status. No live
-compensation action or benchmark was performed.
+document/ICE probe verify this deployment boundary. Full live media remains an
+open deployment gate: the configured provider returns WHEP 400 from both the
+same-origin proxy and Steel's original unproxied `debugUrl`, including a control
+session created without `debugConfig`. The proxy preserves the document's
+bounded Steel region value, but no second media path or retry branch is added to
+hide an upstream-native failure. These are not benchmark witnesses and do not
+alter the reopened overall project status. No live compensation action or
+benchmark was performed.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

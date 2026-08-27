@@ -23,6 +23,7 @@ class ViewerGateway(Protocol):
         session_id: str,
         body: bytes,
         content_type: str,
+        region: str,
     ) -> ViewerHTTPResponse: ...
 
 

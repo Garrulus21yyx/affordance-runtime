@@ -153,8 +153,14 @@ def create_app(
             body = await request.body()
             if len(body) > 2 * 1024 * 1024:
                 raise HTTPException(413, "viewer_request_too_large")
+            region = request.query_params.get("region", "")
             try:
-                upstream = await viewer_gateway.whep(session_id, body, content_type)
+                upstream = await viewer_gateway.whep(
+                    session_id,
+                    body,
+                    content_type,
+                    region,
+                )
             except ViewerUnavailable as exc:
                 raise HTTPException(exc.status_code, exc.code) from exc
             if upstream.status_code not in {200, 201}:

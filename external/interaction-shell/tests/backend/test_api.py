@@ -89,7 +89,7 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
         def __init__(self) -> None:
             self.documents: list[str] = []
             self.ice: list[str] = []
-            self.offers: list[tuple[str, bytes, str]] = []
+            self.offers: list[tuple[str, bytes, str, str]] = []
 
         async def document(self, session_id: str):
             self.documents.append(session_id)
@@ -99,8 +99,8 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
             self.ice.append(session_id)
             return ViewerHTTPResponse(200, b'{"iceServers":[]}', "application/json")
 
-        async def whep(self, session_id: str, body: bytes, content_type: str):
-            self.offers.append((session_id, body, content_type))
+        async def whep(self, session_id: str, body: bytes, content_type: str, region: str):
+            self.offers.append((session_id, body, content_type, region))
             return ViewerHTTPResponse(201, b"answer", "application/sdp")
 
     gateway = FakeViewerGateway()
@@ -130,7 +130,7 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
             f"/viewer/{session_id}/steel/v1/rtc/ice-servers/{session_id}"
         )
         offer = await client.post(
-            f"/viewer/{session_id}/steel/v1/rtc/whep/{session_id}",
+            f"/viewer/{session_id}/steel/v1/rtc/whep/{session_id}?region=iad",
             content=b"offer",
             headers={"Content-Type": "application/sdp"},
         )
@@ -142,7 +142,7 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
     assert unauthorized.status_code == 401
     assert gateway.documents == [session_id]
     assert gateway.ice == [session_id]
-    assert gateway.offers == [(session_id, b"offer", "application/sdp")]
+    assert gateway.offers == [(session_id, b"offer", "application/sdp", "iad")]
 
 
 @pytest.mark.asyncio

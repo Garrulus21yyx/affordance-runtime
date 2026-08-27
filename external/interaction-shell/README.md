@@ -110,6 +110,12 @@ HttpOnly same-session auth, removes provider locators and reusable credentials
 from Steel's document, and proxies only its read-only WebRTC ICE/WHEP calls.
 Viewer loss remains fail-open for Runtime truth; no screenshot polling, custom
 video path, input WebSocket, second browser, or takeover is added.
+
+Current live verification note (2026-08-27): the configured Steel account
+accepts session/CDP/document/ICE operations, but its native unproxied debug page
+and this proxy both receive WHEP 400, leaving the video unready. The Viewer code
+and provider-free gates are complete, but live media remains unverified until
+Steel's own viewer succeeds; Runtime execution remains independent and usable.
 Model-call OpenTelemetry instrumentation is present, but this deployment does
 not yet configure a recording `TracerProvider` or exporter; existing Runtime
 JSONL/Langfuse projection remains the deployed diagnostic path.

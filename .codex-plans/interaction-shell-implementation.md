@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded compensation and protected read-only Steel Viewer complete; takeover unavailable
+Status: Phase 7 bounded compensation complete; Steel Viewer implementation complete with live media gate open on provider-native WHEP 400; takeover unavailable
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -587,7 +587,7 @@ Constraints:
       module's established startup behavior, but Phase 7 did not inspect,
       print, or use the Viewer credential and did not start Viewer, a live
       model/provider, a browser compensation profile, or a benchmark.
-22. **done — protected read-only Viewer deployment.**
+22. **in progress — protected read-only Viewer deployment; provider-native live media gate open.**
     - Owner model: the deployment browser/environment lease owns the provider
       session locator and cleanup; a deployment-private viewer registry/proxy
       owns authenticated short-lived resolution; the Runtime public session
@@ -649,7 +649,7 @@ Constraints:
       validated and stripped of reusable locators/credentials, and only native
       read-only ICE/WHEP calls are proxied. Cleanup releases surface, provider,
       and trace owners independently and idempotently.
-    - Verification: 72 external backend/architecture tests passed, including
+    - Verification: 73 external backend/architecture tests passed, including
       session auth, wrong nested identity, provider disconnect, two-session
       isolation, partial/composition cleanup, no-secret document projection,
       exact provider lease reuse, and Viewer/Runtime failure independence. Seven
@@ -659,6 +659,22 @@ Constraints:
       session; a separate real document/ICE probe returned 200 after confirming
       provider locator removal. No benchmark, model call, GUI task action,
       compensation action, input WebSocket, or takeover ran.
+      The post-feature full provider-free repository suite reached 1837 passed
+      and 19 skipped; only the two unchanged baseline failures remained (the
+      five-document governance assertion and an absent historical live trace).
+      Demo Playwright E2E passed one Chromium test.
+    - Live media finding: Steel's current document appends its session region
+      to the WHEP request. The proxy now admits only the documented current
+      Steel region algebra and forwards that value to the fixed provider host;
+      missing/unknown values fail typed. The same-origin browser still receives
+      502 because Steel returns WHEP 400. A held-out control opened the original
+      unauthenticated Steel `debugUrl` with no Shell proxy and observed the same
+      provider-native WHEP 400, video `readyState=0`, and zero page errors; a
+      default session without `debugConfig` behaved identically. Therefore the
+      remaining live-media failure is upstream/provider state, not evidence for
+      another Shell transport branch. CDP execution, protected document/ICE,
+      cleanup, and provider-free contracts pass, but this step stays non-closed
+      until Steel's native viewer completes WHEP in the configured account.
 
 ## Current-work produced files
 

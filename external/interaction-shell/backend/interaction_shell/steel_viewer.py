@@ -26,6 +26,21 @@ _STEEL_API_HOST = "api.steel.dev"
 _STEEL_CDP_HOST = "connect.steel.dev"
 _MAX_VIEWER_DOCUMENT_BYTES = 2 * 1024 * 1024
 _MAX_RTC_BODY_BYTES = 2 * 1024 * 1024
+_STEEL_REGIONS = frozenset(
+    {
+        "ap-northeast",
+        "ap-southeast",
+        "eu-central",
+        "eu-west",
+        "iad",
+        "lax",
+        "ord",
+        "sa-east",
+        "us-central",
+        "us-east",
+        "us-west",
+    }
+)
 
 
 SteelViewerUnavailable = ViewerUnavailable
@@ -67,6 +82,7 @@ class SteelViewerTransport(Protocol):
         rtc_token: str,
         body: bytes,
         content_type: str,
+        region: str,
     ) -> ViewerHTTPResponse: ...
 
 
@@ -147,12 +163,13 @@ class HTTPXSteelViewerTransport:
         rtc_token: str,
         body: bytes,
         content_type: str,
+        region: str,
     ) -> ViewerHTTPResponse:
         if len(body) > _MAX_RTC_BODY_BYTES:
             raise SteelViewerUnavailable("viewer_request_too_large", 413)
         response = await self._request(
             "POST",
-            f"{_STEEL_API_ORIGIN}/v1/rtc/whep/{provider_session_id}",
+            f"{_STEEL_API_ORIGIN}/v1/rtc/whep/{provider_session_id}?{urlencode({'region': region})}",
             headers={
                 "Authorization": f"Bearer {rtc_token}",
                 "Content-Type": content_type,
@@ -301,13 +318,17 @@ class SteelViewerGateway:
         session_id: str,
         body: bytes,
         content_type: str,
+        region: str,
     ) -> ViewerHTTPResponse:
         lease = self._lease_with_rtc_token(session_id)
+        if region not in _STEEL_REGIONS:
+            raise SteelViewerUnavailable("viewer_region_unsupported", 400)
         response = await self._transport.whep(
             lease.provider_session_id,
             lease.rtc_token,
             body,
             content_type,
+            region,
         )
         if response.status_code not in {200, 201}:
             self._record_provider_failure(lease, response.status_code)

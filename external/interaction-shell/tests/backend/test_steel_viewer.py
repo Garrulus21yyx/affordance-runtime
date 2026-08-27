@@ -16,7 +16,7 @@ class FakeSteelTransport:
         self.created: list[int] = []
         self.released: list[str] = []
         self.ice_calls: list[tuple[str, str]] = []
-        self.whep_calls: list[tuple[str, str, bytes, str]] = []
+        self.whep_calls: list[tuple[str, str, bytes, str, str]] = []
         self.document_status = 200
         self.ice_status = 200
 
@@ -60,8 +60,9 @@ class FakeSteelTransport:
         rtc_token: str,
         body: bytes,
         content_type: str,
+        region: str,
     ):
-        self.whep_calls.append((provider_session_id, rtc_token, body, content_type))
+        self.whep_calls.append((provider_session_id, rtc_token, body, content_type, region))
         return ViewerHTTPResponse(201, b"answer", "application/sdp")
 
 
@@ -96,13 +97,16 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     assert "window.location.origin" in decoded
 
     ice = await gateway.ice_servers("shell-session")
-    whep = await gateway.whep("shell-session", b"offer", "application/sdp")
+    whep = await gateway.whep("shell-session", b"offer", "application/sdp", "iad")
     assert ice.status_code == 200
     assert whep.status_code == 201
     assert transport.ice_calls == [("provider-1", "rtc-token-for-provider-1")]
     assert transport.whep_calls == [
-        ("provider-1", "rtc-token-for-provider-1", b"offer", "application/sdp")
+        ("provider-1", "rtc-token-for-provider-1", b"offer", "application/sdp", "iad")
     ]
+    with pytest.raises(ViewerUnavailable) as unsupported_region:
+        await gateway.whep("shell-session", b"offer", "application/sdp", "unknown-region")
+    assert unsupported_region.value.code == "viewer_region_unsupported"
 
     await gateway.release(lease)
     await gateway.release(lease)

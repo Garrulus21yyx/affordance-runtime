@@ -83,8 +83,15 @@ class FakeSteelTransport:
         del provider_session_id, rtc_token
         return ViewerHTTPResponse(500, b"", "text/plain")
 
-    async def whep(self, provider_session_id: str, rtc_token: str, body: bytes, content_type: str):
-        del provider_session_id, rtc_token, body, content_type
+    async def whep(
+        self,
+        provider_session_id: str,
+        rtc_token: str,
+        body: bytes,
+        content_type: str,
+        region: str,
+    ):
+        del provider_session_id, rtc_token, body, content_type, region
         return ViewerHTTPResponse(500, b"", "text/plain")
 
 
