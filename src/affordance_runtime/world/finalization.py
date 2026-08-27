@@ -15,6 +15,18 @@ class FinalResponseCodec(Protocol):
     def normalize(self, content: str) -> str: ...
 
 
+def final_response_model_guidance(codec: FinalResponseCodec) -> str:
+    """Return optional bounded tool guidance owned by the response codec."""
+
+    guidance = getattr(codec, "model_guidance", "")
+    if not isinstance(guidance, str):
+        raise TypeError("final response model guidance must be text")
+    guidance = " ".join(guidance.split())
+    if len(guidance) > 380:
+        raise ValueError("final response model guidance exceeds its tool-contract bound")
+    return guidance
+
+
 @dataclass(frozen=True)
 class PlainTextFinalResponseCodec:
     """Identity codec for environments whose native response is plain text."""

@@ -1291,6 +1291,17 @@ output cap. It reopens the existing GoalCompiler/ActionPolicy finalization contr
 be compiled as a user outcome, and advisory GoalPlan prose cannot override TaskGoal classification or requested final
 payload. No task-specific repair is authorized by this witness.
 
+The corresponding owner repair is now implemented locally and is not yet a live acceptance claim. The
+WebArena-Verified response codec removes the exact upstream response-schema suffix before BrowserGym publishes the
+public task instruction, so GoalCompiler and ActionPolicy receive the original semantic intent rather than a mixture
+of task and provider envelope. The codec's concise `FinalAgentResponse` guidance is delivered through the existing
+`submit_final_response` ToolSpec and included in its Context/ToolCatalog identity; it does not enter TaskGoal,
+GoalPlan, history summary, or a separate finalizer episode. Prompt `grounded-agent-context.v40` makes the remaining
+authority explicit: response protocol controls representation, while TaskGoal alone determines task type and
+requested payload. Focused tests pass 440/440 with 11 skips. The full suite has 1,809 passes and 19 skips with only
+the previously recorded unrelated `docs/interaction-shell.md` governance failure. A fresh Task740 live run is still
+required to verify that the final call is the bounded `NAVIGATE/SUCCESS` response and reaches native evaluation.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:

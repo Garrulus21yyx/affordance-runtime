@@ -371,6 +371,7 @@ class BrowserGymSurfaceAdapter:
         registration_modules: tuple[str, ...] = ("browsergym.miniwob",),
         browser_action_primitives: tuple[str, ...] = (),
         browser_navigation_urls: tuple[str, ...] | None = None,
+        task_instruction_transform: Callable[[str], str] | None = None,
     ) -> BrowserGymSurfaceAdapter:
         if not task_id.strip():
             raise ValueError("BrowserGym task ID must be nonempty")
@@ -393,6 +394,10 @@ class BrowserGymSurfaceAdapter:
             goal = raw.get("goal") if isinstance(raw, dict) else None
             if not isinstance(goal, str) or not goal.strip():
                 raise RuntimeError("BrowserGym reset omitted the public task instruction")
+            if task_instruction_transform is not None:
+                goal = task_instruction_transform(goal)
+                if not isinstance(goal, str) or not goal.strip():
+                    raise RuntimeError("BrowserGym task instruction transform returned no public task")
             task_run_id = f"run:{uuid.uuid4().hex}"
             environment = cls(
                 task_id=task_id,

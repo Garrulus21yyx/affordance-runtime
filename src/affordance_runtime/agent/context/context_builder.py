@@ -157,6 +157,7 @@ class ContextBuilder:
         action_discovery: ActionDiscoveryResult | None = None,
         last_step: StepResult | None = None,
         observation_projection: ObservationContextProjection | None = None,
+        final_response_guidance: str = "",
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -244,7 +245,10 @@ class ContextBuilder:
             page,
             context_generation,
             goal_plan,
-            current_projection.tool_catalog_digest,
+            _final_response_tool_catalog_digest(
+                current_projection.tool_catalog_digest,
+                final_response_guidance,
+            ),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
         complete_page = close_action_candidates(
@@ -296,6 +300,7 @@ class ContextBuilder:
             candidate_projection,
             action_delivery_plan,
             last_step,
+            final_response_guidance,
         )
 
     def page(
@@ -463,6 +468,15 @@ def _tool_catalog_digest(
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
+def _final_response_tool_catalog_digest(base_digest: str, guidance: str) -> str:
+    """Extend the current tool identity only when its final-response contract changes."""
+
+    normalized = " ".join(guidance.split())
+    if not normalized:
+        return base_digest
+    return hashlib.sha256(f"{base_digest}\0{normalized}".encode()).hexdigest()
+
+
 def _pinned_targets(
     actions,
     observation,
@@ -499,6 +513,7 @@ def _fit_context(
     action_candidates,
     action_delivery_plan,
     last_step: StepResult | None,
+    final_response_guidance: str,
 ) -> AgentContext:
     world = observation_projection.model_world
     grounding = observation_projection.grounding
@@ -532,6 +547,7 @@ def _fit_context(
         action_candidates,
         action_delivery_plan,
         last_step,
+        final_response_guidance,
     )
 
 

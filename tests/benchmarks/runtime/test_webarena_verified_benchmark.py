@@ -17,7 +17,6 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
-    WA_ZERO_RESULT_RESPONSE_RULE,
     WebArenaVerifiedFinalResponseCodec,
     _capability_census,
     _private_leak_markers,
@@ -179,8 +178,10 @@ def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
 
 
 @pytest.mark.parametrize("case_ref", (WA_W1_SMOKE_CASES[0], WA_W1_HELD_OUT_CASES[0]))
-def test_webarena_public_task_clarifies_zero_result_response_without_rewriting_goal(case_ref) -> None:
-    public_goal = "Retrieve every qualifying item and use the official FinalAgentResponse schema."
+def test_webarena_intake_separates_semantic_goal_from_upstream_response_envelope(case_ref) -> None:
+    semantic_goal = "Retrieve every qualifying item."
+    codec = WebArenaVerifiedFinalResponseCodec()
+    public_goal = semantic_goal + codec._upstream_instruction_suffix()
     browsergym = FakeBrowserGym(raw_observation(goal=public_goal))
 
     environment, task, _evaluator = open_webarena_verified_case(
@@ -190,26 +191,49 @@ def test_webarena_public_task_clarifies_zero_result_response_without_rewriting_g
     )
 
     try:
-        assert environment.surface.goal_instruction == public_goal
-        assert task.instruction == public_goal
-        assert WA_ZERO_RESULT_RESPONSE_RULE in task.constraints
+        assert environment.surface.goal_instruction == semantic_goal
+        assert task.instruction == semantic_goal
+        assert task.constraints == ()
+        assert "Final response format" not in task.instruction
         acquisition = asyncio.run(environment.reset(task))
         assert acquisition.observation is not None
         observation = acquisition.observation
+        action_space = ActionSpaceBuilder().build(task, observation)
+        evaluation = TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        )
+        context_without_output_contract = ContextBuilder().build(
+            task,
+            observation,
+            action_space,
+            evaluation,
+        )
         context = ContextBuilder().build(
             task,
             observation,
-            ActionSpaceBuilder().build(task, observation),
-            TaskEvaluation(
-                task.task_id,
-                observation.observation_id,
-                TaskEvaluationStatus.INCOMPLETE,
-                "ongoing",
-            ),
+            action_space,
+            evaluation,
+            final_response_guidance=environment.final_response_codec.model_guidance,
         )
-        assert WA_ZERO_RESULT_RESPONSE_RULE in context.task.constraints.items
+        assert context.task.instruction == semantic_goal
+        assert context.task.constraints.items == ()
+        assert "Final response format" not in context.task.instruction
+        assert context.final_response_guidance == environment.final_response_codec.model_guidance
+        assert context.context_id != context_without_output_contract.context_id
     finally:
         asyncio.run(environment.close())
+
+
+def test_webarena_codec_fails_closed_on_a_recognized_but_changed_response_envelope() -> None:
+    pytest.importorskip("webarena_verified")
+    codec = WebArenaVerifiedFinalResponseCodec()
+    malformed = "Do the task.\n\n---\nFinal response format: changed upstream contract"
+
+    with pytest.raises(ValueError, match="pinned codec"):
+        codec.semantic_instruction(malformed)
 
 
 def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() -> None:

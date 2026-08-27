@@ -111,6 +111,7 @@ from affordance_runtime.world.acquisition import (
 )
 from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.environment import WorldEnvironment
+from affordance_runtime.world.finalization import final_response_model_guidance
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
 from affordance_runtime.world.source_profile import ObservationAssurance, ObservationModality
 
@@ -644,6 +645,9 @@ class CoreAgentLoop:
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,
                 observation_projection=observation_projection,
+                final_response_guidance=final_response_model_guidance(
+                    environment.final_response_codec
+                ),
             )
         except PublicGroundingAmbiguousError:
             return StepResult(

@@ -1402,7 +1402,24 @@ tool arguments. Increasing that output cap would mask the incorrect finalization
 is bounded to the existing GoalCompiler/ActionPolicy task boundary: a generic final-response envelope is not a user
 outcome, GoalPlan must not turn it into one, and ActionPolicy must derive final response classification and requested
 payload from TaskGoal rather than intermediate evidence or advisory plan prose. No World, history, ToolReturn,
-Monitor, Catalog, executor, or evaluator change is implicated.
+Monitor, executor, or evaluator change is implicated; the final-response ToolSpec is the existing model-facing
+projection of that output boundary.
+
+The post-run3 owner repair is implemented locally as prompt version `grounded-agent-context.v40`, but remains open
+pending a fresh live witness. The pinned BrowserGym WebArena-Verified task appends its `FinalAgentResponse` schema to
+the semantic intent inside one `goal` string. `WebArenaVerifiedFinalResponseCodec` now recognizes and removes only
+that exact pinned suffix at the BrowserGym `external goal -> public instruction` conversion boundary; an absent
+suffix remains a valid plain semantic goal, while a recognized but changed suffix fails closed. Consequently
+`TaskGoal`, GoalCompiler, GoalPlan, and the model-facing task projection contain only the semantic instruction.
+
+The same existing codec remains the sole final representation authority. Its bounded model guidance is projected
+directly into the existing `submit_final_response` ToolSpec, participates in Context/ToolCatalog identity, and is
+never projected as a task objective, public input, progress item, finalizing turn, or Supervisor request. The tool
+contract tells ActionPolicy to derive `task_type` and requested payload from TaskGoal rather than GoalPlan; Runtime
+still applies the codec once before the existing STOP/native-evaluation path. Focused verification passes 440 tests
+with 11 skips; the full suite passes 1,809 tests with 19 skips except for the pre-existing documentation-governance
+failure caused by the unmaintained `docs/interaction-shell.md`. No World, history, cursor, ToolReturn, Monitor,
+Workspace, evaluator, or additional model role changed.
 
 ## World, perception, and action boundaries
 

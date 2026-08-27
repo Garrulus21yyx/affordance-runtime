@@ -241,12 +241,22 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    final_response_guidance: str = field(
+        default="",
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
             raise ValueError("AgentContext requires opaque context identity")
         if self.last_step is not None and type(self.last_step).__name__ != "StepResult":
             raise TypeError("AgentContext last step must be committed Runtime truth")
+        guidance = " ".join(self.final_response_guidance.split())
+        if len(guidance) > 380:
+            raise ValueError("AgentContext final response guidance exceeds its bound")
+        object.__setattr__(self, "final_response_guidance", guidance)
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(
             not isinstance(item, VisualEvidenceFragment) for item in self.image_inputs

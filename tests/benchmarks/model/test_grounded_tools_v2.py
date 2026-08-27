@@ -1044,6 +1044,20 @@ def test_final_response_tool_accepts_content_without_world_fact_lineage() -> Non
     assert resolution.decision.evidence_refs == ()
 
 
+def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_projection() -> None:
+    guidance = (
+        "JSON object: task_type RETRIEVE|MUTATE|NAVIGATE. "
+        "Derive task_type and payload from task, never goal_plan."
+    )
+    context = replace(_context(), final_response_guidance=guidance)
+    catalog = _compile_catalog(context)
+    spec = next(item for item in catalog.specs if item.name == "submit_final_response")
+
+    assert guidance in spec.description
+    assert not hasattr(context.task, "final_response_guidance")
+    assert guidance not in context.task.instruction
+
+
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:
     context = _context()
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)

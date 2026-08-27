@@ -405,7 +405,7 @@ def compile_grounded_tool_catalog(
         RegisteredGroundedTool(
             ToolSpec(
                 GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
-                "Submit the complete final answer supported in the current agent context for native evaluation.",
+                _final_response_description(context.final_response_guidance),
                 _object_schema(
                     {
                         "content": {
@@ -540,6 +540,11 @@ def compile_grounded_action_catalog(
         GroundedToolPhase.ACTION_SELECTION,
         delivery,
     )
+
+
+def _final_response_description(guidance: str) -> str:
+    base = "Submit the complete final answer supported in the current agent context for native evaluation."
+    return base if not guidance else f"{base} Output contract: {guidance}"
 
 
 def resolve_grounded_tool_call(

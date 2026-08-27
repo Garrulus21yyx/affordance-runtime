@@ -136,10 +136,11 @@ WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v2"
-WA_ZERO_RESULT_RESPONSE_RULE = (
-    "For the WebArena-Verified FinalAgentResponse protocol, when a completed RETRIEVE finds zero qualifying items, "
-    "use status NOT_FOUND_ERROR with retrieved_data null; use SUCCESS with retrieved_data containing the qualifying "
-    "items when one or more are found."
+WA_FINAL_RESPONSE_MODEL_GUIDANCE = (
+    "JSON object: task_type RETRIEVE|MUTATE|NAVIGATE; status SUCCESS|ACTION_NOT_ALLOWED_ERROR|"
+    "PERMISSION_DENIED_ERROR|NOT_FOUND_ERROR|DATA_VALIDATION_ERROR|UNKNOWN_ERROR; retrieved_data; error_details. "
+    "Derive task_type and payload from task, never goal_plan. NAVIGATE/MUTATE: retrieved_data=null. SUCCESS: "
+    "error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
 )
 _W1B_PRIVATE_MARKERS = (
     "browsergym_id",
@@ -434,6 +435,38 @@ def webarena_gym_task_id(task: WebArenaVerifiedCaseRef | WebArenaVerifiedTaskRef
 class WebArenaVerifiedFinalResponseCodec:
     """Delegate response representation to the pinned upstream Pydantic model."""
 
+    @property
+    def model_guidance(self) -> str:
+        return WA_FINAL_RESPONSE_MODEL_GUIDANCE
+
+    def semantic_instruction(self, goal_instruction: str) -> str:
+        """Remove only the pinned upstream response envelope from its intent."""
+
+        suffix = self._upstream_instruction_suffix()
+        marker = "\n\n---\nFinal response format:"
+        if marker not in goal_instruction:
+            return goal_instruction
+        if not goal_instruction.endswith(suffix):
+            raise ValueError("WebArena final-response instruction does not match the pinned codec")
+        semantic_instruction = goal_instruction[: -len(suffix)].rstrip()
+        if not semantic_instruction:
+            raise ValueError("WebArena task is missing its semantic instruction")
+        return semantic_instruction
+
+    @staticmethod
+    def _upstream_instruction_suffix() -> str:
+        final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
+        response_schema = final_agent_response.model_json_schema()
+        return f"""
+
+---
+Final response format: When you send your final answer to the user with `send_msg_to_user`, your message must be a json formatted string that matches the following schema:
+```
+{json.dumps(response_schema, indent=4)}
+```
+Your message in `send_msg_to_user` will be validated against this schema.
+"""
+
     def normalize(self, content: str) -> str:
         final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
 
@@ -604,6 +637,7 @@ def open_webarena_verified_case(
         if browser_navigation_urls is None
         else browser_navigation_urls
     )
+    final_response_codec = WebArenaVerifiedFinalResponseCodec()
     surface = BrowserGymSurfaceAdapter.open(
         case_ref.gym_id,
         seed,
@@ -611,6 +645,7 @@ def open_webarena_verified_case(
         registration_modules=(WA_REGISTRATION_MODULE,),
         browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
         browser_navigation_urls=navigation_urls,
+        task_instruction_transform=final_response_codec.semantic_instruction,
     )
     try:
         intake = ThinTaskIntake().compile(
@@ -620,10 +655,6 @@ def open_webarena_verified_case(
                 TaskBoundary(
                     allowed_effects=("external_ui_interaction",),
                     forbidden_effects=("credential_use",),
-                    constraints=(
-                        "Provide exactly one final response matching the public task format when ready.",
-                        WA_ZERO_RESULT_RESPONSE_RULE,
-                    ),
                     risk_profile=RiskProfile.LOW,
                     loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
                 ),
@@ -637,6 +668,7 @@ def open_webarena_verified_case(
             surface,
             UnifiedWorldEnvironment((surface,)),
             intake.task,
+            final_response_codec=final_response_codec,
         )
         return environment, intake.task, WebArenaVerifiedNativeEvaluator(environment)
     except BaseException:
