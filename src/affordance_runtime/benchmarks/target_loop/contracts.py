@@ -508,7 +508,12 @@ class BenchmarkCaseResult:
                 raise ValueError("benchmark cleanup diagnostic phase must be cleanup")
         if (
             not self.case_id
-            or self.status not in {str(item) for item in RunStatus if item is not RunStatus.RUNNING}
+            or self.status
+            not in {
+                str(item)
+                for item in RunStatus
+                if item not in {RunStatus.RUNNING, RunStatus.PAUSED}
+            }
             or type(self.execution_completed) is not bool
             or isinstance(self.latency_ms, bool)
             or not isinstance(self.latency_ms, int | float)

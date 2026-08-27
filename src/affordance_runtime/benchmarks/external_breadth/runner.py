@@ -126,7 +126,9 @@ REQUIRED_METRICS = (
     "cleanup_failures",
     "observation_contract_exceptions",
 )
-_TERMINAL_STATUSES = tuple(item for item in RunStatus if item is not RunStatus.RUNNING)
+_TERMINAL_STATUSES = tuple(
+    item for item in RunStatus if item not in {RunStatus.RUNNING, RunStatus.PAUSED}
+)
 
 
 async def run_breadth_campaign(

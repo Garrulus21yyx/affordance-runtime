@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import cast
 
 from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalVerifierReason,
@@ -12,9 +10,17 @@ from affordance_runtime.benchmarks.external_smoke.case_environment import (
     ExternalVerifierStatus,
     VerifierFactSource,
 )
+from affordance_runtime.surfaces.browsergym.task_evaluator import (
+    BrowserGymTaskAssessment,
+    BrowserGymTaskStatus,
+)
+from affordance_runtime.surfaces.browsergym.task_evaluator import (
+    assess_browsergym_task_state as assess_native_browsergym_task_state,
+)
 from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
+    BrowserGymTaskStateSource,
 )
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
 
@@ -74,88 +80,33 @@ def classify_browsergym_verifier(
     done: object = _MISSING,
     ready: object = _MISSING,
 ) -> VerifierAssessment:
-    """Total source-aware classifier for the pinned official MiniWoB facts."""
+    """Compatibility projection over the surface-owned native-state classifier."""
 
     if not isinstance(source, VerifierFactSource):
         return _unavailable(VerifierFactSource.READ_ONLY_PROBE, ExternalVerifierReason.UNSUPPORTED_STATE)
-    required = {
-        VerifierFactSource.RESET: (reward, raw_reward, terminated, truncated, done, ready),
-        VerifierFactSource.POST_ACTION: (
-            reward, raw_reward, terminated, truncated, done, ready,
-        ),
-        VerifierFactSource.READ_ONLY_PROBE: (raw_reward, done, ready),
-    }[source]
-    if any(value is _MISSING for value in required):
-        return _unavailable(source, ExternalVerifierReason.MISSING_FACTS)
-    numeric = (raw_reward,) if source is VerifierFactSource.READ_ONLY_PROBE else (reward, raw_reward)
-    if any(not _is_real(value) for value in numeric):
-        return _unavailable(source, ExternalVerifierReason.INVALID_FACTS)
-    numeric_values = tuple(cast(int | float, value) for value in numeric)
-    if any(not _is_finite_real(value) for value in numeric_values):
-        return _unavailable(source, ExternalVerifierReason.NON_FINITE_FACTS)
-    booleans = (done, ready) if source is VerifierFactSource.READ_ONLY_PROBE else (
-        terminated, truncated, done, ready,
-    )
-    if any(type(value) is not bool for value in booleans):
-        return _unavailable(source, ExternalVerifierReason.INVALID_FACTS)
-
-    reward_value = numeric_values[0] if source is not VerifierFactSource.READ_ONLY_PROBE else 0.0
-    raw_value = numeric_values[-1]
-    if source is VerifierFactSource.RESET:
-        if (
-            reward_value == 0
-            and raw_value == 0
-            and terminated is False
-            and truncated is False
-            and done is False
-            and ready is True
-        ):
-            return VerifierAssessment(source, ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING)
-        return _unavailable(source, ExternalVerifierReason.UNSUPPORTED_STATE)
-    if source is VerifierFactSource.READ_ONLY_PROBE:
-        if ready is True and done is False and raw_value == 0:
-            return VerifierAssessment(source, ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING)
-        if ready is True and done is True and raw_value > 0:
-            return VerifierAssessment(source, ExternalVerifierStatus.SUCCESS, ExternalVerifierReason.VERIFIED_SUCCESS)
-        if ready is True and done is True and raw_value <= 0:
-            return VerifierAssessment(
-                source,
-                ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
-                ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE,
-            )
-        return _unavailable(source, ExternalVerifierReason.INCONSISTENT_FACTS)
-
-    if truncated is True:
-        return _unavailable(source, ExternalVerifierReason.UNSUPPORTED_STATE)
-    if (
-        reward_value > 0
-        and raw_value > 0
-        and terminated is True
-        and done is True
-        and ready is True
-    ):
-        return VerifierAssessment(source, ExternalVerifierStatus.SUCCESS, ExternalVerifierReason.VERIFIED_SUCCESS)
-    if (
-        reward_value == 0
-        and raw_value <= 0
-        and terminated is True
-        and done is True
-        and ready is True
-    ):
-        return VerifierAssessment(
-            source,
-            ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
-            ExternalVerifierReason.VERIFIED_TERMINAL_TASK_FAILURE,
+    values = {
+        name: value
+        for name, value in (
+            ("reward", reward),
+            ("raw_reward", raw_reward),
+            ("terminated", terminated),
+            ("truncated", truncated),
+            ("done", done),
+            ("ready", ready),
         )
-    if (
-        reward_value == 0
-        and raw_value == 0
-        and terminated is False
-        and done is False
-        and ready is True
-    ):
-        return VerifierAssessment(source, ExternalVerifierStatus.INCOMPLETE, ExternalVerifierReason.VERIFIED_RUNNING)
-    return _unavailable(source, ExternalVerifierReason.INCONSISTENT_FACTS)
+        if value is not _MISSING
+    }
+    native = assess_native_browsergym_task_state(
+        BrowserGymTaskStateSnapshot(
+            "benchmark-verifier-classification",
+            "benchmark-verifier-classification",
+            "benchmark-verifier-classification",
+            BrowserGymTaskStateSource(source.value),
+            values,
+            frozenset(values),
+        )
+    )
+    return _external_assessment(native)
 
 
 def verifier_snapshot(
@@ -213,23 +164,18 @@ def as_external_result(snapshot: BrowserGymVerifierSnapshot) -> ExternalVerifier
 def assess_browsergym_task_state(
     snapshot: BrowserGymTaskStateSnapshot,
 ) -> BrowserGymVerifierSnapshot:
-    """Interpret raw surface state under the pinned MiniWoB benchmark contract."""
+    """Project the surface-owned native assessment into benchmark compatibility types."""
 
-    source = VerifierFactSource(snapshot.source.value)
-    assessment = classify_browsergym_verifier(
-        source,
-        reward=snapshot.value("reward", _MISSING),
-        raw_reward=snapshot.value("raw_reward", _MISSING),
-        terminated=snapshot.value("terminated", _MISSING),
-        truncated=snapshot.value("truncated", _MISSING),
-        done=snapshot.value("done", _MISSING),
-        ready=snapshot.value("ready", _MISSING),
-    )
-    return _snapshot(
-        snapshot.task_run_id,
-        snapshot.observation_id,
-        snapshot.source_observation_id,
-        assessment,
+    native = assess_native_browsergym_task_state(snapshot)
+    assessment = _external_assessment(native)
+    return BrowserGymVerifierSnapshot(
+        native.task_run_id,
+        native.observation_id,
+        native.source_observation_id,
+        assessment.source,
+        assessment.status,
+        assessment.reason,
+        native.evidence_refs,
     )
 
 
@@ -261,12 +207,18 @@ def _snapshot(
     )
 
 
-def _is_real(value: object) -> bool:
-    return type(value) in {int, float}
-
-
-def _is_finite_real(value: int | float) -> bool:
-    return isinstance(value, int) or math.isfinite(value)
+def _external_assessment(native: BrowserGymTaskAssessment) -> VerifierAssessment:
+    status = {
+        BrowserGymTaskStatus.SUCCESS: ExternalVerifierStatus.SUCCESS,
+        BrowserGymTaskStatus.INCOMPLETE: ExternalVerifierStatus.INCOMPLETE,
+        BrowserGymTaskStatus.TERMINAL_FAILURE: ExternalVerifierStatus.TERMINAL_TASK_FAILURE,
+        BrowserGymTaskStatus.UNAVAILABLE: ExternalVerifierStatus.UNAVAILABLE,
+    }[native.status]
+    return VerifierAssessment(
+        VerifierFactSource(native.source.value),
+        status,
+        ExternalVerifierReason(native.reason.value),
+    )
 
 
 def _unavailable(

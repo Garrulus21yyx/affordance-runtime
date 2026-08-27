@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
@@ -120,6 +122,93 @@ class ModelBackedAgentPolicy:
         if outcome.decision.context_id != context.context_id:
             return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
         return outcome.decision
+
+    def close_deferred_call(self, step: object) -> None:
+        close = getattr(self.port, "close_deferred_call", None)
+        if callable(close):
+            close(step)
+
+    def export_checkpoint_history(self) -> Mapping[str, object]:
+        exporter = getattr(self.port, "export_checkpoint_history", None)
+        if not callable(exporter):
+            raise TypeError("model port does not support checkpoint history")
+        history = exporter()
+        if not isinstance(history, Mapping):
+            raise TypeError("model checkpoint history must be a mapping")
+        return history
+
+    def bind_checkpoint_history_identity(
+        self,
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        binder = getattr(self.port, "bind_checkpoint_history_identity", None)
+        if not callable(binder):
+            return
+        binder(task_id=task_id, task_revision=task_revision)
+
+    async def persist_checkpoint_history(self) -> Mapping[str, object]:
+        persister = getattr(self.port, "persist_checkpoint_history", None)
+        if not callable(persister):
+            return self.export_checkpoint_history()
+        history = persister()
+        if inspect.isawaitable(history):
+            history = await history
+        if not isinstance(history, Mapping):
+            raise TypeError("model persisted checkpoint history must be a mapping")
+        return history
+
+    def restore_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(self.port, "restore_checkpoint_history", None)
+        if not callable(restorer):
+            raise TypeError("model port does not support checkpoint history restoration")
+        restorer(payload, task_id=task_id, task_revision=task_revision)
+
+    async def restore_persisted_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(self.port, "restore_persisted_checkpoint_history", None)
+        if not callable(restorer):
+            self.restore_checkpoint_history(
+                payload,
+                task_id=task_id,
+                task_revision=task_revision,
+            )
+            return
+        restored = restorer(
+            payload,
+            task_id=task_id,
+            task_revision=task_revision,
+        )
+        if inspect.isawaitable(restored):
+            await restored
+
+    def rebind_checkpoint_history(
+        self,
+        *,
+        task_id: str,
+        current_revision: int,
+        revised_revision: int,
+    ) -> None:
+        rebind = getattr(self.port, "rebind_checkpoint_history", None)
+        if not callable(rebind):
+            raise TypeError("model port does not support task revision")
+        rebind(
+            task_id=task_id,
+            current_revision=current_revision,
+            revised_revision=revised_revision,
+        )
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:

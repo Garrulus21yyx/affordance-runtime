@@ -241,6 +241,101 @@ activity projection and private-field exclusion, trace-root confinement and dige
 desktop/mobile rendering, Labs navigation, and hidden-drawer focus isolation. No live benchmark was launched for this
 UI change, so it contributes no new task witness and does not alter any benchmark acceptance or closure claim.
 
+The separate external interaction shell's local real-execution profile has now
+passed its Phase 0–2 deployment gate. A held-out Web/UI smoke used one isolated
+BrowserGym session, one real dispatch, two fresh observations, native
+`verified_success`, Runtime-owned SSE, explicit close, and clean application
+shutdown. A separate real two-session check proved independent browser owners
+and that closing one leaves the other alive. The reusable BrowserGym native
+task-state classifier now belongs to the surface package, while the existing
+benchmark verifier is a compatibility projection of that result. These were
+deployment smokes only: no benchmark cohort was launched, no benchmark artifact
+was accepted, and the reopened/non-closed benchmark status below is unchanged.
+The interaction shell has subsequently verified cooperative durable pause with
+a Runtime-private SQLite WAL store, including atomic checkpoint/command outcome
+commit and rollback plus fresh-World continuation after injected persistence
+failure. Reconnectable test leases now verify restart hydration, fresh-World
+resume without GUI-effect replay, and bounded paused task revision. Revision
+idempotency is Runtime-owned: one existing SQLite outcome row stores the
+canonical complete-command digest including the immutable, at-most-six-turn,
+16-KiB conversation snapshot and bounded result. Exact retries replay, while
+changed text or context under one ID fails typed before compiler/environment
+mutation. The sole Runtime compiler receives the Shell language snapshot plus
+Runtime-owned current goal and pending interruption facts; no Shell compiler or
+ActionPolicy-history injection remains. The existing Shell recovery SQLite row
+now also carries a versioned bounded language projection: at most six recent
+turns and 64 immutable revision contexts. A revision context is committed before
+the Runtime call, restored before the Runtime handle, and deleted with session
+recovery credentials. Held-out process-boundary tests cover a first post-restart
+contextual revision, lost-response exact replay with one compiler invocation,
+and same-ID changed-payload rejection. This is not a second command-result store
+or a Runtime checkpoint.
+Phase 7 provider-free verification now adds one bounded retained-effect path:
+typed `resource_ref` and reversibility survive the existing binding/execution
+chain, a fresh complete revised evaluation preserves the effect, and one known
+reversible/compensatable conflict can resume through the same ActionPolicy,
+Binder, Risk/Confirmation, Executor, fresh World, ActionOutcome, checkpoint, and
+public Shell projection. The original receipt remains immutable and the
+compensation receipt is appended. Unknown, irreversible, missing, multiple,
+unavailable, mismatched, or unverified effect cases fail closed without replay.
+Checkpoint v3 remains backward-readable for v2, and the additive public snapshot
+is v2 without changing historical revision-command digests. This evidence uses
+generic/provider-free fixtures and properties only; no browser compensation
+witness or benchmark case was run, so it does not change benchmark closure.
+The post-push whole provider-free suite recorded `1830 passed / 25 skipped` and
+only the two previously documented non-Phase-7 failures: the fixed
+five-document governance assertion rejects the required interaction-shell
+document, and one semantic-delivery witness cannot open its absent historical
+live trace. The synthetic Demo Playwright flow passed separately. Existing
+deployment tests may load the project `.env` through established deployment
+startup, but Phase 7 did not inspect, print, or use the Viewer credential and
+did not start Viewer, a live model/provider, a real compensation browser
+profile, or a benchmark.
+Phase 8 subsequently verified exclusive user takeover as a deployment/control
+capability. Runtime alone owns `agent|user` control and the opaque lease;
+takeover consumes the exact durable paused checkpoint, and return captures and
+evaluates fresh World before Agent dispatch can resume. Return now revokes the
+old input lease before capture; each Viewer frame verifies the socket's connected
+lease against the current Runtime lease under the same session lock used by the
+control command. Capture failure signs a new user lease. Provider-free tests
+cover the blocked-capture window, old-socket/new-takeover epochs, restart
+fail-closed behavior, and currentness failure. A separate no-model live Steel
+witness changed the same CDP-owned page, blocked return capture, proved a second
+old-lease click had no effect and closed 4409, then reached terminal fresh
+evaluation after one World capture and before a second policy call. The exact
+provider lease was released. This did not call a model, execute a compensation,
+run a benchmark case, or create benchmark evidence, so benchmark closure remains
+unchanged.
+The external Phase 9 release review then reran the whole provider-free
+repository after the fencing repair: 1842 tests passed and 19 skipped, with only
+the absent historical live trace failing. The stale fixed-document governance
+gate now declares the maintained document set explicitly and passes. External
+backend/architecture passed 79 tests, and the
+frontend unit/lint/typecheck/build plus synthetic Demo E2E gates passed. These
+numbers close the external Full Web control release profile, not the benchmark
+program; no live benchmark was launched.
+The local BrowserGym deployment still reports process-restart reconnect as
+unavailable because it cannot reconnect the exact Playwright context. This is
+control-plane verification only; no benchmark case was run for these changes.
+
+Model persistence and tracing do not enlarge that Runtime authority. The
+ActionPolicy now uses PydanticAI Harness `StepPersistence` with a per-session
+conversation ID and a deterministic per-session SQLite step-store file. A
+committed Runtime safe checkpoint refers to one immutable, provider-valid Harness snapshot by run ID and digest;
+it does not treat Harness tool effects as GUI execution receipts. PydanticAI
+and the custom structured provider boundary have native/compatible
+OpenTelemetry instrumentation, but the current deployment does not configure a
+recording `TracerProvider` or exporter. Existing Runtime JSONL/Langfuse
+projection remains available; exporter wiring is a non-blocking observability
+follow-up, not benchmark or Phase 6 closure evidence. No live benchmark was run
+for this change.
+
+The local simplify integration retains the current benchmark delivery/context/provider/history implementation and
+adapts the external Shell control/checkpoint paths into it. Provider-free owner, integration, generated-contract and
+synthetic browser gates cover the merged path. No live benchmark was run for this integration, so this is regression
+protection for the bounded contracts, not evidence that benchmark score, token cost or latency is unchanged. The live
+acceptance status above remains authoritative.
+
 The thin tool-result/history cutover, accepted-response repair, owner-level action-discovery/catalog repair,
 readable-AX completeness repair, single-current-World cutover, atomic PageMap/Manifest repair, and bounded post-action
 recapture repair, and BrowserGym large-page liveness, viewport-grounded media, canonical public-identity, and linear

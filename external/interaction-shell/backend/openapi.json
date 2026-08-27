@@ -1,0 +1,2497 @@
+{
+  "components": {
+    "schemas": {
+      "Accepted": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "accepted",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "command_id",
+          "snapshot"
+        ],
+        "title": "Accepted",
+        "type": "object"
+      },
+      "AnswerQuestion": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "answer_question",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "request_id",
+          "answer"
+        ],
+        "title": "AnswerQuestion",
+        "type": "object"
+      },
+      "AnswerQuestionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "answer_question",
+            "title": "Kind",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "prompt"
+        ],
+        "title": "AnswerQuestionOffer",
+        "type": "object"
+      },
+      "ApproveAction": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "approve_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "request_id"
+        ],
+        "title": "ApproveAction",
+        "type": "object"
+      },
+      "CancelTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "cancel_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind"
+        ],
+        "title": "CancelTask",
+        "type": "object"
+      },
+      "CancelTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "cancel_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CancelTaskOffer",
+        "type": "object"
+      },
+      "CloseSession": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "close_session",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind"
+        ],
+        "title": "CloseSession",
+        "type": "object"
+      },
+      "CloseSessionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "close_session",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CloseSessionOffer",
+        "type": "object"
+      },
+      "CommandOffer": {
+        "discriminator": {
+          "mapping": {
+            "answer_question": "#/components/schemas/AnswerQuestionOffer",
+            "cancel_task": "#/components/schemas/CancelTaskOffer",
+            "close_session": "#/components/schemas/CloseSessionOffer",
+            "confirm_action": "#/components/schemas/ConfirmActionOffer",
+            "pause_task": "#/components/schemas/PauseTaskOffer",
+            "resume_task": "#/components/schemas/ResumeTaskOffer",
+            "return_control": "#/components/schemas/ReturnControlOffer",
+            "revise_task": "#/components/schemas/ReviseTaskOffer",
+            "start_task": "#/components/schemas/StartTaskOffer",
+            "take_over": "#/components/schemas/TakeOverOffer"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StartTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/AnswerQuestionOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ConfirmActionOffer"
+          },
+          {
+            "$ref": "#/components/schemas/CancelTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/PauseTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ResumeTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ReviseTaskOffer"
+          },
+          {
+            "$ref": "#/components/schemas/TakeOverOffer"
+          },
+          {
+            "$ref": "#/components/schemas/ReturnControlOffer"
+          },
+          {
+            "$ref": "#/components/schemas/CloseSessionOffer"
+          }
+        ]
+      },
+      "CompletedRunSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "benchmark_result": {
+            "default": "available",
+            "enum": [
+              "available",
+              "not_applicable"
+            ],
+            "title": "Benchmark Result",
+            "type": "string"
+          },
+          "case_id": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Case Id",
+            "type": "string"
+          },
+          "control_stalls": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Control Stalls",
+            "type": "integer"
+          },
+          "detour_disposition": {
+            "default": "not_assessed",
+            "enum": [
+              "suspected_detour",
+              "not_assessed"
+            ],
+            "title": "Detour Disposition",
+            "type": "string"
+          },
+          "langfuse_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Url"
+          },
+          "local_evidence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Evidence Url"
+          },
+          "locator_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Locator Id",
+            "type": "string"
+          },
+          "provider_input_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Provider Input Tokens",
+            "type": "integer"
+          },
+          "provider_output_tokens": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Provider Output Tokens",
+            "type": "integer"
+          },
+          "recoveries": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Recoveries",
+            "type": "integer"
+          },
+          "run_attempt_id": {
+            "pattern": "^attempt:[0-9a-f]{32}$",
+            "title": "Run Attempt Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "interaction-shell.completed-run.v1",
+            "default": "interaction-shell.completed-run.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "state_oscillations": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "State Oscillations",
+            "type": "integer"
+          },
+          "status": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "turns": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "locator_id",
+          "run_attempt_id",
+          "case_id",
+          "status"
+        ],
+        "title": "CompletedRunSummary",
+        "type": "object"
+      },
+      "Completion": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 4000,
+            "title": "Message",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "success",
+              "failure",
+              "blocked",
+              "cancelled"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "code",
+          "message",
+          "evidence_refs"
+        ],
+        "title": "Completion",
+        "type": "object"
+      },
+      "ConfirmActionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "confirm_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "risk": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Risk",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "summary",
+          "risk"
+        ],
+        "title": "ConfirmActionOffer",
+        "type": "object"
+      },
+      "Conflict": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "stale_command",
+              "command_identity_reused",
+              "interaction_ref_mismatch",
+              "checkpoint_mismatch",
+              "checkpoint_already_consumed",
+              "session_closed",
+              "session_state_conflict",
+              "control_owner_conflict",
+              "control_lease_mismatch"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "conflict",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "command_id",
+          "code",
+          "snapshot"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "ControlOutcome": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "pause",
+              "revise",
+              "take_over",
+              "return_control"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "paused",
+              "failed",
+              "revised",
+              "needs_input",
+              "no_change",
+              "new_task_suggested",
+              "unsupported",
+              "effect_reconciliation_required",
+              "user_control_granted",
+              "user_control_returned"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "kind",
+          "outcome",
+          "code",
+          "checkpoint_id",
+          "message"
+        ],
+        "title": "ControlOutcome",
+        "type": "object"
+      },
+      "ControlOwner": {
+        "enum": [
+          "agent",
+          "user"
+        ],
+        "title": "ControlOwner",
+        "type": "string"
+      },
+      "ConversationTurn": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "turn_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "role",
+          "text"
+        ],
+        "title": "ConversationTurn",
+        "type": "object"
+      },
+      "CreateSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ttl_seconds": {
+            "default": 1800,
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "CreateSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "title": "Session Key",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "session_key",
+          "snapshot"
+        ],
+        "title": "CreateSessionResponse",
+        "type": "object"
+      },
+      "EffectReconciliation": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "compensation_effect_ref": {
+            "default": "",
+            "maxLength": 256,
+            "title": "Compensation Effect Ref",
+            "type": "string"
+          },
+          "original_action": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Original Action",
+            "type": "string"
+          },
+          "original_effect_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Original Effect Ref",
+            "type": "string"
+          },
+          "resource_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Resource Ref",
+            "type": "string"
+          },
+          "reversibility": {
+            "enum": [
+              "reversible",
+              "compensatable",
+              "irreversible",
+              "unknown"
+            ],
+            "title": "Reversibility",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "compensated",
+              "needs_input"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "original_effect_ref",
+          "original_action",
+          "resource_ref",
+          "reversibility",
+          "compensation_effect_ref"
+        ],
+        "title": "EffectReconciliation",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InteractiveSurface": {
+        "additionalProperties": false,
+        "properties": {
+          "input_mode": {
+            "const": "native",
+            "title": "Input Mode",
+            "type": "string"
+          },
+          "presentation": {
+            "const": "live_media",
+            "title": "Presentation",
+            "type": "string"
+          },
+          "protected_path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Protected Path",
+            "type": "string"
+          },
+          "status": {
+            "const": "interactive",
+            "title": "Status",
+            "type": "string"
+          },
+          "surface_kind": {
+            "enum": [
+              "web",
+              "mobile",
+              "desktop",
+              "generic"
+            ],
+            "title": "Surface Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "surface_kind",
+          "presentation",
+          "protected_path",
+          "input_mode"
+        ],
+        "title": "InteractiveSurface",
+        "type": "object"
+      },
+      "LiveSession": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "live_session",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "snapshot"
+        ],
+        "title": "LiveSession",
+        "type": "object"
+      },
+      "PauseTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "pause_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind"
+        ],
+        "title": "PauseTask",
+        "type": "object"
+      },
+      "PauseTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pause_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "PauseTaskOffer",
+        "type": "object"
+      },
+      "PublicStep": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "label": {
+            "maxLength": 500,
+            "title": "Label",
+            "type": "string"
+          },
+          "latency_ms": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "recovery_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Recovery Count",
+            "type": "integer"
+          },
+          "retry_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "stage": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "stage",
+          "status",
+          "label",
+          "attempt",
+          "retry_count",
+          "recovery_count",
+          "latency_ms",
+          "evidence_refs"
+        ],
+        "title": "PublicStep",
+        "type": "object"
+      },
+      "ReadOnlySurface": {
+        "additionalProperties": false,
+        "properties": {
+          "presentation": {
+            "enum": [
+              "live_media",
+              "snapshot"
+            ],
+            "title": "Presentation",
+            "type": "string"
+          },
+          "protected_path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Protected Path",
+            "type": "string"
+          },
+          "status": {
+            "const": "read_only",
+            "title": "Status",
+            "type": "string"
+          },
+          "surface_kind": {
+            "enum": [
+              "web",
+              "mobile",
+              "desktop",
+              "generic"
+            ],
+            "title": "Surface Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "surface_kind",
+          "presentation",
+          "protected_path"
+        ],
+        "title": "ReadOnlySurface",
+        "type": "object"
+      },
+      "RecoverSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint_id"
+        ],
+        "title": "RecoverSessionRequest",
+        "type": "object"
+      },
+      "Recovered": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovered",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "snapshot"
+        ],
+        "title": "Recovered",
+        "type": "object"
+      },
+      "RecoveryAttemptUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unavailable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_not_found",
+              "checkpoint_unavailable",
+              "recovery_unsupported",
+              "environment_not_reconnectable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "const": false,
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryAttemptUnavailable",
+        "type": "object"
+      },
+      "RecoveryConflict": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_conflict",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_already_resumed",
+              "checkpoint_already_revised",
+              "checkpoint_mismatch"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "const": false,
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryConflict",
+        "type": "object"
+      },
+      "RecoveryFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_failed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_store_failed",
+              "runtime_factory_failed",
+              "environment_reconnect_failed",
+              "session_restore_failed",
+              "shell_projection_restore_failed"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryFailed",
+        "type": "object"
+      },
+      "RecoveryInspectionFailed": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_inspection_failed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "const": "checkpoint_inspection_failed",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code",
+          "retryable"
+        ],
+        "title": "RecoveryInspectionFailed",
+        "type": "object"
+      },
+      "RecoveryRequired": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "recovery_required",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "checkpoint_id"
+        ],
+        "title": "RecoveryRequired",
+        "type": "object"
+      },
+      "RecoveryUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unavailable",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "checkpoint_not_found",
+              "checkpoint_consumed",
+              "checkpoint_unavailable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code"
+        ],
+        "title": "RecoveryUnavailable",
+        "type": "object"
+      },
+      "RecoveryUnsupported": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "recovery_unsupported",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason_code": {
+            "enum": [
+              "recovery_registry_unavailable",
+              "checkpoint_store_unavailable",
+              "recovery_reconnector_unavailable"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "reason_code"
+        ],
+        "title": "RecoveryUnsupported",
+        "type": "object"
+      },
+      "RejectAction": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "reject_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "request_id"
+        ],
+        "title": "RejectAction",
+        "type": "object"
+      },
+      "Rejected": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "command_processing_failed",
+              "command_persistence_failed",
+              "command_projection_failed",
+              "internal_contract_failure"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rejected",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "command_id",
+          "code",
+          "snapshot"
+        ],
+        "title": "Rejected",
+        "type": "object"
+      },
+      "ResumeTask": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "resume_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "checkpoint_id"
+        ],
+        "title": "ResumeTask",
+        "type": "object"
+      },
+      "ResumeTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "resume_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ResumeTaskOffer",
+        "type": "object"
+      },
+      "ReturnControl": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "control_lease_id": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Control Lease Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "return_control",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "control_lease_id"
+        ],
+        "title": "ReturnControl",
+        "type": "object"
+      },
+      "ReturnControlOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "return_control",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ReturnControlOffer",
+        "type": "object"
+      },
+      "ReviseTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RevisionConversationContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Checkpoint Id"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "revise_task",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "text"
+        ],
+        "title": "ReviseTask",
+        "type": "object"
+      },
+      "ReviseTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "revise_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ReviseTaskOffer",
+        "type": "object"
+      },
+      "RevisionConversationContext": {
+        "additionalProperties": false,
+        "properties": {
+          "latest_turn_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Latest Turn Id",
+            "type": "string"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurn"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Turns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "turns",
+          "latest_turn_id"
+        ],
+        "title": "RevisionConversationContext",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "idle",
+          "running",
+          "paused",
+          "waiting_user",
+          "waiting_confirmation",
+          "done",
+          "cancelled",
+          "failed",
+          "blocked"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "RuntimeSessionSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "command_offers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CommandOffer"
+            },
+            "title": "Command Offers",
+            "type": "array"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Completion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control_lease_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Lease Id"
+          },
+          "control_owner": {
+            "$ref": "#/components/schemas/ControlOwner",
+            "default": "agent"
+          },
+          "effect_reconciliation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectReconciliation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_cursor": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Event Cursor",
+            "type": "integer"
+          },
+          "event_epoch": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Event Epoch",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "last_control_outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "public_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PublicStep"
+            },
+            "title": "Public Steps",
+            "type": "array"
+          },
+          "resume_eligible": {
+            "default": false,
+            "title": "Resume Eligible",
+            "type": "boolean"
+          },
+          "run_status": {
+            "$ref": "#/components/schemas/RunStatus",
+            "default": "idle"
+          },
+          "schema_version": {
+            "const": "interaction-shell.v3",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "surface": {
+            "default": {
+              "reason_code": "surface_not_configured",
+              "status": "unavailable"
+            },
+            "discriminator": {
+              "mapping": {
+                "interactive": "#/components/schemas/InteractiveSurface",
+                "read_only": "#/components/schemas/ReadOnlySurface",
+                "unavailable": "#/components/schemas/UnavailableSurface"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableSurface"
+              },
+              {
+                "$ref": "#/components/schemas/ReadOnlySurface"
+              },
+              {
+                "$ref": "#/components/schemas/InteractiveSurface"
+              }
+            ],
+            "title": "Surface"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Task Revision",
+            "type": "integer"
+          },
+          "task_text": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Text"
+          }
+        },
+        "required": [
+          "schema_version",
+          "session_id",
+          "task_id",
+          "task_revision",
+          "task_text",
+          "run_status",
+          "event_epoch",
+          "event_cursor",
+          "completion",
+          "command_offers",
+          "surface",
+          "public_steps",
+          "checkpoint_id",
+          "resume_eligible",
+          "last_control_outcome",
+          "effect_reconciliation",
+          "control_owner",
+          "control_lease_id",
+          "expires_at"
+        ],
+        "title": "RuntimeSessionSnapshot",
+        "type": "object"
+      },
+      "ShellEventEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "const": "snapshot.updated",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "CUSTOM",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/SnapshotUpdated"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "value"
+        ],
+        "title": "ShellEventEnvelope",
+        "type": "object"
+      },
+      "SnapshotUpdated": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 1.0,
+            "title": "Cursor",
+            "type": "integer"
+          },
+          "emitted_at": {
+            "format": "date-time",
+            "title": "Emitted At",
+            "type": "string"
+          },
+          "event_epoch": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Event Epoch",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "interaction-shell.v3",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          },
+          "type": {
+            "const": "snapshot.updated",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "type",
+          "session_id",
+          "event_epoch",
+          "cursor",
+          "emitted_at",
+          "snapshot"
+        ],
+        "title": "SnapshotUpdated",
+        "type": "object"
+      },
+      "StartTask": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "start_task",
+            "title": "Kind",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "task"
+        ],
+        "title": "StartTask",
+        "type": "object"
+      },
+      "StartTaskOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "start_task",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "StartTaskOffer",
+        "type": "object"
+      },
+      "TakeOver": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "take_over",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "checkpoint_id"
+        ],
+        "title": "TakeOver",
+        "type": "object"
+      },
+      "TakeOverOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "take_over",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "TakeOverOffer",
+        "type": "object"
+      },
+      "UnavailableSurface": {
+        "additionalProperties": false,
+        "properties": {
+          "reason_code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason_code"
+        ],
+        "title": "UnavailableSurface",
+        "type": "object"
+      },
+      "Unsupported": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "command_not_supported",
+              "deployment_capability_unavailable"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "unsupported",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeSessionSnapshot"
+          }
+        },
+        "required": [
+          "kind",
+          "command_id",
+          "code",
+          "snapshot"
+        ],
+        "title": "Unsupported",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "in": "header",
+        "name": "X-Session-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "Affordance Interaction Shell",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/diagnostics": {
+      "get": {
+        "operationId": "listCompletedRuns",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CompletedRunSummary"
+                  },
+                  "title": "Response Listcompletedruns",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Diagnostics"
+      }
+    },
+    "/diagnostics/evidence/{locator_id}/result": {
+      "get": {
+        "operationId": "getCompletedRunResult",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "locator_id",
+            "required": true,
+            "schema": {
+              "title": "Locator Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Engineering-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Engineering-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Completed Result"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gethealth",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/schemas/shell-event": {
+      "get": {
+        "description": "Concrete versioned schema anchor used by OpenAPI TypeScript generation.",
+        "operationId": "getShellEventSchema",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShellEventEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Shell Event Schema"
+      }
+    },
+    "/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session"
+      }
+    },
+    "/sessions/{session_id}": {
+      "get": {
+        "operationId": "getSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "live_session": "#/components/schemas/LiveSession",
+                      "recovery_inspection_failed": "#/components/schemas/RecoveryInspectionFailed",
+                      "recovery_required": "#/components/schemas/RecoveryRequired",
+                      "recovery_unavailable": "#/components/schemas/RecoveryUnavailable",
+                      "recovery_unsupported": "#/components/schemas/RecoveryUnsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/LiveSession"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryRequired"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryUnavailable"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryUnsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryInspectionFailed"
+                    }
+                  ],
+                  "title": "Response Getsession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Get Snapshot"
+      }
+    },
+    "/sessions/{session_id}/commands": {
+      "post": {
+        "operationId": "submitCommand",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "answer_question": "#/components/schemas/AnswerQuestion",
+                    "approve_action": "#/components/schemas/ApproveAction",
+                    "cancel_task": "#/components/schemas/CancelTask",
+                    "close_session": "#/components/schemas/CloseSession",
+                    "pause_task": "#/components/schemas/PauseTask",
+                    "reject_action": "#/components/schemas/RejectAction",
+                    "resume_task": "#/components/schemas/ResumeTask",
+                    "return_control": "#/components/schemas/ReturnControl",
+                    "revise_task": "#/components/schemas/ReviseTask",
+                    "start_task": "#/components/schemas/StartTask",
+                    "take_over": "#/components/schemas/TakeOver"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StartTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AnswerQuestion"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ApproveAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RejectAction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CancelTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PauseTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResumeTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviseTask"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TakeOver"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReturnControl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CloseSession"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Submitcommand"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Submit Command"
+      }
+    },
+    "/sessions/{session_id}/events": {
+      "get": {
+        "operationId": "subscribeSessionEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_epoch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Epoch"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Subscribe Events"
+      }
+    },
+    "/sessions/{session_id}/recover": {
+      "post": {
+        "operationId": "recoverSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "recovered": "#/components/schemas/Recovered",
+                      "recovery_conflict": "#/components/schemas/RecoveryConflict",
+                      "recovery_failed": "#/components/schemas/RecoveryFailed",
+                      "recovery_unavailable": "#/components/schemas/RecoveryAttemptUnavailable"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Recovered"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryConflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryAttemptUnavailable"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RecoveryFailed"
+                    }
+                  ],
+                  "title": "Response Recoversession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Recover Session"
+      }
+    }
+  }
+}

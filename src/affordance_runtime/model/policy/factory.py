@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from affordance_runtime.goals.compiler import GoalCompiler, UnavailableGoalCompiler
 from affordance_runtime.model.goal_compiler import (
@@ -16,14 +17,25 @@ from affordance_runtime.model.policy.perception import (
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.wire_capability import action_policy_wire_capability
 from affordance_runtime.model.providers.port import ModelPort
+from affordance_runtime.model.task_revision_compiler import (
+    model_task_revision_compiler_from_environment,
+)
+from affordance_runtime.task.revision import (
+    TaskRevisionCompiler,
+    UnavailableTaskRevisionCompiler,
+)
+
+if TYPE_CHECKING:
+    from pydantic_ai_harness.step_persistence import StepStore
 
 
 @dataclass(frozen=True)
 class ConfiguredModelRoles:
-    """The two cognitive roles sharing one configured provider transport."""
+    """Bounded cognitive roles composed per Runtime session."""
 
     action_policy: ModelBackedAgentPolicy
     goal_compiler: GoalCompiler
+    task_revision_compiler: TaskRevisionCompiler
 
 
 def model_policy_from_environment(
@@ -33,6 +45,8 @@ def model_policy_from_environment(
     perception_profile: DecisionPerceptionProfile | str | None = None,
     model_port: ModelPort | None = None,
     provider_retry_budget: int = 1,
+    step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
     if provider_retry_budget not in {0, 1}:
         raise ValueError("ActionPolicy provider retry budget must be zero or one")
@@ -52,6 +66,8 @@ def model_policy_from_environment(
         env,
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
+        step_store=step_store,
+        conversation_id=conversation_id,
     )
 
 
@@ -61,32 +77,61 @@ def model_roles_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
     provider_retry_budget: int = 1,
+    action_step_store: StepStore | None = None,
+    conversation_id: str = "",
 ) -> ConfiguredModelRoles:
-    """Compose ActionPolicy and GoalCompiler from one selected model profile."""
+    """Compose the single policy plus bounded compilers from one model profile."""
 
     env = os.environ if environment is None else environment
     goal_compiler_mode = env.get("LLM_GOAL_COMPILER_MODE", "model").strip().casefold()
     if goal_compiler_mode not in {"model", "disabled"}:
         raise ValueError("LLM_GOAL_COMPILER_MODE must be model or disabled")
+    revision_compiler_mode = env.get(
+        "LLM_TASK_REVISION_COMPILER_MODE",
+        goal_compiler_mode,
+    ).strip().casefold()
+    if revision_compiler_mode not in {"model", "disabled"}:
+        raise ValueError("LLM_TASK_REVISION_COMPILER_MODE must be model or disabled")
     policy = model_policy_from_environment(
         env,
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
         provider_retry_budget=provider_retry_budget,
+        step_store=action_step_store,
+        conversation_id=conversation_id,
     )
     compiler = (
         UnavailableGoalCompiler()
         if goal_compiler_mode == "disabled"
         else model_goal_compiler_from_environment(
-            _goal_compiler_environment(env),
+            _compiler_environment(env, "LLM_GOAL_COMPILER_MODEL"),
             call_timeout_s=call_timeout_s,
         )
     )
-    return ConfiguredModelRoles(policy, compiler)
+    revision_model_override = env.get(
+        "LLM_TASK_REVISION_COMPILER_MODEL",
+        "",
+    ).strip()
+    revision_compiler: TaskRevisionCompiler = UnavailableTaskRevisionCompiler()
+    if revision_compiler_mode == "model":
+        shared_port = (
+            getattr(compiler, "port", None)
+            if not revision_model_override
+            else None
+        )
+        revision_compiler = model_task_revision_compiler_from_environment(
+            _compiler_environment(env, "LLM_TASK_REVISION_COMPILER_MODEL"),
+            port=shared_port,
+            call_timeout_s=call_timeout_s,
+        )
+    return ConfiguredModelRoles(policy, compiler, revision_compiler)
 
 
-def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, str]:
-    compiler_model = environment.get("LLM_GOAL_COMPILER_MODEL", "").strip()
+def _compiler_environment(
+    environment: Mapping[str, str],
+    override_name: str,
+) -> Mapping[str, str]:
+    compiler_model = environment.get(override_name, "").strip()
     if not compiler_model:
         return environment
     model_key = {
@@ -98,7 +143,7 @@ def _goal_compiler_environment(environment: Mapping[str, str]) -> Mapping[str, s
         "local": "LLM_LOCAL_MODEL",
     }.get(environment.get("LLM_ACTIVE_PROFILE", "local").strip().casefold())
     if model_key is None:
-        raise ValueError("goal compiler model override requires a supported profile")
+        raise ValueError("compiler model override requires a supported profile")
     compiler_environment = dict(environment)
     compiler_environment[model_key] = compiler_model
     return compiler_environment

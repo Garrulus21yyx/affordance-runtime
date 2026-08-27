@@ -10,6 +10,7 @@ from typing import Any
 
 from affordance_runtime.actions.admission import AdmissionIssue, AdmissionIssueCode
 from affordance_runtime.actions.classification import EffectCategory
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.actions.schema_validation import (
     reject_private_parameter_values,
     validate_value,
@@ -50,7 +51,20 @@ _FORBIDDEN_PARAMETER_KEYS = frozenset(
         "y",
     }
 )
-_GroupKey = tuple[str, str, str, tuple[str, ...], str, bool, bool, tuple[str, ...], str, str]
+_GroupKey = tuple[
+    str,
+    str,
+    str,
+    tuple[str, ...],
+    str,
+    bool,
+    bool,
+    tuple[str, ...],
+    str,
+    str,
+    str,
+    Reversibility,
+]
 
 
 @dataclass(frozen=True)
@@ -89,6 +103,8 @@ class ActionSpaceBuilder:
                 binding.eligible_destination_ids,
                 binding.verification_family,
                 binding.verification_contract_digest,
+                binding.resource_ref,
+                binding.reversibility,
             )
             grouped.setdefault(group_key, []).append(binding)
         selectors: dict[tuple[str, str], list[_GroupKey]] = {}
@@ -164,6 +180,8 @@ class ActionSpaceBuilder:
                 destinations,
                 verification_family,
                 verification_digest,
+                resource_ref,
+                reversibility,
             ) = group_key
             risk = max((binding.risk for binding in bindings), key=_risk_rank)
             parameter_schema_digest = schema_digest(bindings[0].parameter_schema)
@@ -183,6 +201,8 @@ class ActionSpaceBuilder:
                         destinations,
                         verification_family,
                         verification_digest,
+                        resource_ref,
+                        str(reversibility),
                     ],
                     separators=(",", ":"),
                 ).encode()
@@ -205,6 +225,8 @@ class ActionSpaceBuilder:
                     observation_barrier=barrier,
                     verification_family=verification_family,
                     verification_contract_digest=verification_digest,
+                    resource_ref=resource_ref,
+                    reversibility=reversibility,
                 )
             )
         return ActionSpace(observation.observation_id, tuple(options), tuple(issues))
@@ -263,6 +285,8 @@ class ActionSpaceBuilder:
                 option.verification_contract_digest,
                 option.verification_family,
                 _expected_outcome(expected_outcome),
+                option.resource_ref,
+                option.reversibility,
             )
         )
 
@@ -361,8 +385,10 @@ def _conflicting_contract_fields(group_keys: list[_GroupKey]) -> tuple[str, ...]
         "destination_required",
         "verification_family",
         "verification_contract",
+        "resource_ref",
+        "reversibility",
     )
-    indexes = (2, 3, 4, 5, 6, 8, 9)
+    indexes = (2, 3, 4, 5, 6, 8, 9, 10, 11)
     return tuple(
         name
         for name, index in zip(names, indexes, strict=True)

@@ -726,6 +726,207 @@ def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_polic
     asyncio.run(scenario())
 
 
+def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    history = (
+        ModelRequest(parts=[UserPromptPart("current task")]),
+        ModelResponse(
+            parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:checkpoint")]
+        ),
+    )
+    object.__setattr__(policy.port, "message_history", history)
+    object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+    serialized = policy.export_checkpoint_history()
+
+    assert serialized["format"] == "pydantic-ai.messages.v1"
+    assert serialized["active_task_identity"] == ["task:checkpoint", 3]
+    assert [message["kind"] for message in serialized["messages"]] == [
+        "request",
+        "response",
+        "request",
+    ]
+
+    restored = _policy(ScriptedModel(["first_gui_action"]).build())
+    restored.restore_checkpoint_history(
+        serialized,
+        task_id="task:checkpoint",
+        task_revision=3,
+    )
+    assert restored.port.message_history == history
+    assert restored.port.active_task_identity == ("task:checkpoint", 3)
+
+    from affordance_runtime.immutable import freeze_json
+
+    frozen = freeze_json(serialized)
+    restored_from_checkpoint = _policy(ScriptedModel(["first_gui_action"]).build())
+    restored_from_checkpoint.restore_checkpoint_history(
+        frozen,
+        task_id="task:checkpoint",
+        task_revision=3,
+    )
+    assert restored_from_checkpoint.port.message_history == history
+
+
+def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
+    tmp_path,
+) -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        database = tmp_path / "model-steps.sqlite3"
+        store = step_persistence.SqliteStepStore(database=database)
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:checkpoint")
+        history = (
+            ModelRequest(parts=[UserPromptPart("current task")]),
+            ModelResponse(
+                parts=[ToolCallPart("activate", {"target": "E1"}, "call:settled")]
+            ),
+            ModelRequest(
+                parts=[ToolReturnPart("activate", {"status": "paused"}, "call:settled")]
+            ),
+        )
+        object.__setattr__(policy.port, "message_history", history)
+        object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+        reference = await policy.persist_checkpoint_history()
+
+        assert reference["format"] == "pydantic-ai.step-persistence.v1"
+        assert reference["conversation_id"] == "session:checkpoint"
+        assert "messages" not in reference
+        snapshot = await store.latest_snapshot(run_id=reference["run_id"])
+        assert snapshot is not None
+        assert snapshot.state == "complete"
+        assert snapshot.messages == list(history)
+
+        restored = _policy(ScriptedModel(["first_gui_action"]).build())
+        restarted_store = step_persistence.SqliteStepStore(database=database)
+        object.__setattr__(restored.port, "step_store", restarted_store)
+        object.__setattr__(
+            restored.port,
+            "step_conversation_id",
+            "session:checkpoint",
+        )
+        await restored.restore_persisted_checkpoint_history(
+            reference,
+            task_id="task:checkpoint",
+            task_revision=3,
+        )
+        assert restored.port.message_history == history
+
+        tampered = {**reference, "message_digest": "f" * 64}
+        with pytest.raises(ValueError, match="digest"):
+            await restored.restore_persisted_checkpoint_history(
+                tampered,
+                task_id="task:checkpoint",
+                task_revision=3,
+            )
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_empty_history_binds_and_restores_before_first_policy(
+    tmp_path,
+) -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        database = tmp_path / "empty-model-steps.sqlite3"
+        store = step_persistence.SqliteStepStore(database=database)
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:empty")
+
+        policy.bind_checkpoint_history_identity(
+            task_id="task:empty",
+            task_revision=1,
+        )
+        reference = await policy.persist_checkpoint_history()
+
+        assert policy.port.message_history == ()
+        snapshot = await store.latest_snapshot(run_id=reference["run_id"])
+        assert snapshot is not None
+        assert snapshot.state == "complete"
+        assert snapshot.messages == []
+
+        restored = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(
+            restored.port,
+            "step_store",
+            step_persistence.SqliteStepStore(database=database),
+        )
+        object.__setattr__(
+            restored.port,
+            "step_conversation_id",
+            "session:empty",
+        )
+        await restored.restore_persisted_checkpoint_history(
+            reference,
+            task_id="task:empty",
+            task_revision=1,
+        )
+        assert restored.port.message_history == ()
+        assert restored.port.active_task_identity == ("task:empty", 1)
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    object.__setattr__(
+        policy.port,
+        "message_history",
+        (
+            ModelResponse(
+                parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unclosed tool call"):
+        policy.export_checkpoint_history()
+
+
+def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    history = (
+        ModelRequest(parts=[UserPromptPart("current task")]),
+        ModelResponse(
+            parts=[ToolCallPart("activate", {"target": "E1"}, "call:revision")]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:revision")]
+        ),
+    )
+    object.__setattr__(policy.port, "message_history", history)
+    object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+
+    policy.rebind_checkpoint_history(
+        task_id="task:checkpoint",
+        current_revision=3,
+        revised_revision=4,
+    )
+
+    assert policy.port.message_history == history
+    assert policy.export_checkpoint_history()["active_task_identity"] == [
+        "task:checkpoint",
+        4,
+    ]
+    with pytest.raises(ValueError, match="consecutive"):
+        policy.rebind_checkpoint_history(
+            task_id="task:checkpoint",
+            current_revision=4,
+            revised_revision=6,
+        )
+
+
 def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
@@ -781,6 +982,83 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
         assert attempt.transcript["llm.output_messages"][0]["parts"][0]["tool_name"]
         assert policy.last_metadata is not None
         assert policy.last_metadata.latency_ms >= attempt.latency_ms > 0
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_step_persistence_records_each_action_policy_run() -> None:
+    async def scenario() -> None:
+        step_persistence = pytest.importorskip(
+            "pydantic_ai_harness.step_persistence"
+        )
+        store = step_persistence.InMemoryStepStore()
+        scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
+        object.__setattr__(policy.port, "step_store", store)
+        object.__setattr__(policy.port, "step_conversation_id", "session:steps")
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("before", False),
+            post_observations=(shared_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("step_persistence_test"),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.DONE
+        runs = await store.list_runs(conversation_id="session:steps")
+        assert len(runs) == 1
+        assert runs[0].agent_name == "action-policy"
+        events = await store.list_events(run_id=runs[0].run_id)
+        assert [event.kind for event in events] == [
+            "run_started",
+            "model_request_started",
+            "model_request_completed",
+            "run_completed",
+        ]
+        assert policy.port.last_step_run_id == runs[0].run_id
+
+    asyncio.run(scenario())
+
+
+def test_pydantic_ai_action_policy_emits_native_open_telemetry_spans() -> None:
+    async def scenario() -> None:
+        trace_module = pytest.importorskip("opentelemetry.sdk.trace")
+        export_module = pytest.importorskip("opentelemetry.sdk.trace.export")
+        in_memory_module = pytest.importorskip(
+            "opentelemetry.sdk.trace.export.in_memory_span_exporter"
+        )
+        exporter = in_memory_module.InMemorySpanExporter()
+        tracer_provider = trace_module.TracerProvider()
+        tracer_provider.add_span_processor(export_module.SimpleSpanProcessor(exporter))
+        policy = _policy(ScriptedModel(["first_gui_action"]).build())
+        object.__setattr__(policy.port, "tracer_provider", tracer_provider)
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("before", False),
+            post_observations=(shared_world("after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("otel_test"),
+        ).run_task(environment, shared_task())
+
+        spans = exporter.get_finished_spans()
+        assert {span.name for span in spans} == {
+            "chat recording-scripted",
+            "invoke_agent action-policy",
+        }
+        chat_span = next(span for span in spans if span.name == "chat recording-scripted")
+        assert chat_span.attributes["gen_ai.agent.name"] == "action-policy"
+        assert chat_span.attributes["gen_ai.operation.name"] == "chat"
+        assert chat_span.attributes["gen_ai.usage.input_tokens"] > 0
 
     asyncio.run(scenario())
 
@@ -1591,7 +1869,9 @@ def test_unexecuted_second_proposal_can_be_reissued_after_the_fresh_world() -> N
             )
         )
 
-        assert second.failure is None and second.output is not None
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
         assert second.output.decision.tool_name == "search_page_content"
         assert second.output.decision.arguments == {"query": "scope"}
         recorded = normalize_recorded_provider_input(scripted.records[1])
@@ -1818,6 +2098,74 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
             assert all(f"recording-call:1:discarded:{index}" in physical for index in range(1, call_count))
             assert all("Not executed" in item["content"] for item in paired_results[1:])
         assert scripted.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_control_boundary_closes_pending_pydantic_history_before_another_model_turn() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("control-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        scripted = ScriptedModel(
+            [
+                "first_gui_action",
+                (
+                    "submit_final_response",
+                    {"content": "Closed control boundary observed."},
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        context = builder.build(task, world, actions, evaluation)
+        first = await policy.port.generate(ModelDecisionRequest("request:control:first", context))
+        assert first.output is not None
+        step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="action_not_dispatched:control_pause_boundary_reached",
+        )
+
+        policy.close_deferred_call(step)
+
+        assert len(policy.port.message_history) == 3
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        closed_request = policy.port.message_history[-1]
+        assert isinstance(closed_request, ModelRequest)
+        returned = tuple(part for part in closed_request.parts if isinstance(part, ToolReturnPart))
+        assert len(returned) == 1
+        assert returned[0].tool_call_id == first.output.decision.tool_call_id
+        assert returned[0].content["completion"] == "not_dispatched"
+
+        next_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:control:second", next_context, last_step=step)
+        )
+
+        assert second.failure is None and second.output is not None, json.dumps(
+            second.diagnostics, default=str
+        )
+        assert isinstance(second.output.decision, FinalResponse)
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        paired = tuple(
+            part
+            for message in recorded["messages"]
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert len(paired) == 1
+        assert paired[0]["content"]["completion"] == "not_dispatched"
+        assert policy.port.message_history == ()
 
     asyncio.run(scenario())
 

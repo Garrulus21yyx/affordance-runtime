@@ -24,7 +24,12 @@ from affordance_runtime.app.composition import compose_target_runtime_from_envir
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
 from affordance_runtime.goals import NotRequiredGoalCompiler, UnavailableGoalCompiler
 from affordance_runtime.model.policy import ConfiguredModelRoles
-from affordance_runtime.task import ReadyTask, RiskProfile, ThinTaskIntake
+from affordance_runtime.task import (
+    ReadyTask,
+    RiskProfile,
+    ThinTaskIntake,
+    UnavailableTaskRevisionCompiler,
+)
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
 
 
@@ -106,7 +111,11 @@ def test_target_product_composition_defaults_to_grounded_tools(monkeypatch) -> N
             "environment": environment,
             "call_timeout_s": call_timeout_s,
         })
-        return ConfiguredModelRoles(Policy(), UnavailableGoalCompiler())
+        return ConfiguredModelRoles(
+            Policy(),
+            UnavailableGoalCompiler(),
+            UnavailableTaskRevisionCompiler(),
+        )
 
     monkeypatch.setattr(
         "affordance_runtime.app.composition.model_roles_from_environment",

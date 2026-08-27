@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from affordance_runtime.actions.capabilities import INTERACTION_CAPABILITY_REGISTRY
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.actions.paging import InternalActionPage
 from affordance_runtime.actions.relevance import ActionRelevance
 from affordance_runtime.actions.schema_validation import validate_parameter_schema_contract
@@ -123,7 +124,7 @@ def _project_action_options(
                 option.observation_barrier,
                 option.effect_category,
                 option.effect_category,
-                option.risk != "irreversible",
+                option.reversibility is Reversibility.REVERSIBLE,
                 relevance[option.action_id].role if option.action_id in relevance else "other",
                 relevance[option.action_id].score if option.action_id in relevance else 0.0,
                 relevance[option.action_id].reason_codes if option.action_id in relevance else (),
@@ -132,6 +133,8 @@ def _project_action_options(
                 ).subject_kinds[0].value,
                 verification_family=option.verification_family,
                 verification_contract_digest=option.verification_contract_digest,
+                reversibility=option.reversibility,
+                resource_ref=option.resource_ref,
             )
             for action_id in visible_action_ids
             if (option := by_id.get(action_id)) is not None

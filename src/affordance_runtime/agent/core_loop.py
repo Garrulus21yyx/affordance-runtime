@@ -8,6 +8,11 @@ from typing import assert_never
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
 from affordance_runtime.actions.binder import ActionBinder, BindingError
+from affordance_runtime.actions.reconciliation import (
+    EffectReconciliationReason,
+    EffectReconciliationStatus,
+)
+from affordance_runtime.actions.space_contracts import ActionSpace
 from affordance_runtime.agent.attempt_signature import public_attempt_signature
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.canonical_world_projection import (
@@ -54,9 +59,17 @@ from affordance_runtime.agent.policy import (
     TaskEvaluator,
 )
 from affordance_runtime.agent.result_code import AgentFailureCode
+from affordance_runtime.agent.run_control import (
+    CooperativeRunControl,
+    RunControlAdmissionKind,
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcome,
+)
 from affordance_runtime.agent.run_state import (
     ControlTermination,
     ControlTerminationKind,
+    RunCheckpointFacts,
     RunState,
     RunStatus,
     StepResult,
@@ -101,7 +114,7 @@ from affordance_runtime.goals.compiler import (
 )
 from affordance_runtime.goals.plan import GoalPlanResolution, NeedsInput, Ready
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.risk.contracts import RiskDecisionKind
+from affordance_runtime.risk.contracts import ConfirmationSubject, RiskDecisionKind
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
@@ -155,6 +168,7 @@ class CoreAgentLoop:
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
+    run_control: CooperativeRunControl = field(default_factory=CooperativeRunControl)
 
     async def run(
         self,
@@ -257,6 +271,213 @@ class CoreAgentLoop:
             self._record_official_outcome(evaluation)
         return state
 
+    async def restore_paused(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        facts: RunCheckpointFacts,
+        checkpoint_id: str,
+    ) -> RunState:
+        """Hydrate one committed boundary against a newly captured current World."""
+
+        if task.revision != facts.task_revision:
+            raise ValueError("checkpoint task revision is stale")
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh World after checkpoint environment reconnect",
+            )
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            raise CoreLoopStartError("checkpoint_fresh_world_unavailable")
+        current = acquisition.observation
+        projection, region_index = self._canonical_world_for(task, current)
+        evaluation = await self._validated_task_evaluation(task, current, projection)
+        last_decision = facts.last_decision
+        if (
+            facts.status_before_pause is RunStatus.WAITING_CONFIRMATION
+            and isinstance(last_decision, SelectAction)
+            and facts.last_confirmation is not None
+        ):
+            last_decision = self._rebase_checkpoint_confirmation(
+                task,
+                current,
+                last_decision,
+                facts.last_confirmation.subject,
+            )
+        last_step = (
+            StepResult(
+                last_decision,
+                current,
+                current,
+                evaluation,
+                facts.status_before_pause,
+                confirmation=facts.last_confirmation,
+                feedback=facts.last_feedback,
+            )
+            if last_decision is not None
+            else None
+        )
+        state = RunState(
+            current,
+            evaluation,
+            facts.remaining_steps,
+            status=facts.status_before_pause,
+            last_step=last_step,
+            observation_count=facts.observation_count + 1,
+            execution_count=facts.execution_count,
+            step_count=facts.step_count,
+            context_generation=facts.context_generation,
+            workspace=facts.workspace,
+            waited_ms=facts.waited_ms,
+            task_revision=facts.task_revision,
+            goal_resolution=facts.goal_resolution,
+            goal_plan_version_counter=facts.goal_plan_version_counter,
+            committed_sent_unknown_count=facts.committed_sent_unknown_count,
+            decision_counts=dict(facts.decision_counts),
+            currentness_probe_count=facts.currentness_probe_count,
+            control_boundary=facts.pause_boundary,
+            latest_effect=facts.latest_effect,
+            effect_reconciliation=facts.effect_reconciliation,
+        )
+        state.install_delivery_index(region_index)
+        state.install_canonical_world(projection)
+        state.commit_durable_pause(checkpoint_id)
+        return state
+
+    async def revise_paused(
+        self,
+        environment: WorldEnvironment,
+        current_task: TaskGoal,
+        revised_task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Build a fresh revision candidate without resuming the policy loop."""
+
+        if (
+            state.status is not RunStatus.PAUSED
+            or state.control_boundary is None
+            or state.paused_from_status is None
+            or current_task.task_id != revised_task.task_id
+            or current_task.revision != state.task_revision
+            or revised_task.revision != current_task.revision + 1
+        ):
+            raise ValueError("task revision requires one durable consecutive pause")
+        await environment.revise_task(revised_task)
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "fresh World after task revision",
+            )
+        )
+        if (
+            acquisition.status is not AcquisitionStatus.ACQUIRED
+            or acquisition.observation is None
+        ):
+            raise CoreLoopStartError("task_revision_fresh_world_unavailable")
+        current = acquisition.observation
+        projection, region_index = self._canonical_world_for(revised_task, current)
+        evaluation = await self._validated_task_evaluation(
+            revised_task,
+            current,
+            projection,
+        )
+        resolution = await self.goal_plan_boundary.resolve(
+            self.goal_compiler,
+            revised_task,
+            current,
+            next_plan_version=state.goal_plan_version_counter + 1,
+            trigger=GoalCompileTrigger.TASK_REVISION,
+        )
+        status = self._status_for_goal_resolution(
+            revised_task,
+            evaluation,
+            resolution,
+        )
+        if status in {RunStatus.DONE, RunStatus.BLOCKED}:
+            status = RunStatus.RUNNING
+        pending = (
+            StepResult(
+                AskUser(
+                    f"context:goal-compiler:{revised_task.revision}",
+                    resolution.question,
+                    resolution.fields,
+                ),
+                current,
+                current,
+                evaluation,
+                RunStatus.WAITING_USER,
+                feedback="goal_compiler_needs_input",
+            )
+            if isinstance(resolution, NeedsInput)
+            and status is RunStatus.WAITING_USER
+            else None
+        )
+        candidate = RunState(
+            current,
+            evaluation,
+            max(0, revised_task.loop_budget.max_turns - state.step_count),
+            status=status,
+            last_step=pending,
+            observation_count=state.observation_count + 1,
+            execution_count=state.execution_count,
+            step_count=state.step_count,
+            context_generation=state.context_generation,
+            workspace=state.workspace,
+            waited_ms=state.waited_ms,
+            task_revision=revised_task.revision,
+            goal_resolution=resolution,
+            goal_plan_version_counter=(
+                resolution.accepted_plan.plan_version
+                if isinstance(resolution, Ready)
+                else state.goal_plan_version_counter
+            ),
+            committed_sent_unknown_count=state.committed_sent_unknown_count,
+            decision_counts=dict(state.decision_counts),
+            currentness_probe_count=state.currentness_probe_count,
+            control_boundary=state.control_boundary,
+            latest_effect=state.latest_effect,
+        )
+        candidate.install_delivery_index(region_index)
+        candidate.install_canonical_world(projection)
+        self.trace_sink.goal_compiler_completed(
+            goal_compiler_trace_diagnostic(
+                self.goal_compiler,
+                resolution,
+                task_revision=revised_task.revision,
+                trigger=GoalCompileTrigger.TASK_REVISION,
+                initial_evidence=current,
+            )
+        )
+        return candidate
+
+    def _rebase_checkpoint_confirmation(
+        self,
+        task: TaskGoal,
+        current: WorldObservation,
+        decision: SelectAction,
+        subject: ConfirmationSubject,
+    ) -> SelectAction:
+        """Map confirmed semantics to one fresh action ID without dispatching it."""
+
+        action_space = self.action_space_builder.build(task, current)
+        candidates = tuple(
+            option
+            for option in action_space.options
+            if option.semantic_action == subject.semantic_action
+            and option.target_id == subject.target_id
+            and option.effect_category == subject.effect_category
+            and tuple(sorted(option.semantic_effects)) == subject.selection_effects
+            and (
+                subject.destination_id in option.eligible_destination_ids
+                if subject.destination_id
+                else not option.destination_required
+            )
+        )
+        if len(candidates) != 1 or dict(decision.parameters) != dict(subject.parameters):
+            raise CoreLoopStartError("checkpoint_confirmation_not_current")
+        return replace(decision, action_id=candidates[0].action_id)
+
     async def continue_run(
         self,
         environment: WorldEnvironment,
@@ -267,27 +488,320 @@ class CoreAgentLoop:
 
         return await self._run_until_pause(environment, task, state)
 
+    def settle_restored_currentness(self, state: RunState) -> None:
+        """Honor a terminal fresh evaluation before any post-restart policy call."""
+
+        evaluation = state.current_task_evaluation
+        if evaluation is None:
+            raise ValueError("restored state requires a fresh task evaluation")
+        status = _status_for_evaluation(evaluation)
+        if status not in {RunStatus.DONE, RunStatus.BLOCKED}:
+            return
+        state.status = status
+        self._record_official_outcome(evaluation)
+        self.trace_sink.run_finished(state)
+
+    async def refresh_after_pause_persistence_failure(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Re-establish currentness before continuing after a failed pause commit."""
+
+        if state.status is not RunStatus.RUNNING or state.control_boundary is not None:
+            raise ValueError("pause persistence recovery requires a running unpaused state")
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "fresh currentness after pause persistence failure",
+            )
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            raise CoreLoopStartError("pause_persistence_currentness_unavailable")
+        after = acquisition.observation
+        delta = WorldTransitionProjector().project(state.current_world, after)
+        after_projection, _after_index = self._canonical_world_for(
+            task,
+            after,
+            previous_index=state.delivery_index,
+            delta=delta,
+        )
+        evaluation = await self._validated_task_evaluation(task, after, after_projection)
+        decision = RequestObservation(
+            "context:runtime:pause-persistence-recovery",
+            ObservationPurpose.CRITERION_VERIFICATION.value,
+            task.task_id,
+            "",
+            "refresh currentness after pause persistence failure",
+        )
+        result = StepResult(
+            decision,
+            state.current_world,
+            after,
+            evaluation,
+            self._status_for_task(task, evaluation),
+            feedback="pause_persistence_failed_currentness_refreshed",
+            public_world_delta=delta,
+            before_public_world=state.canonical_world,
+            after_public_world=after_projection,
+        )
+        result = self._attach_canonical_worlds(task, state, result)
+        delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count))
+        self._commit_step(
+            state,
+            result,
+            consume_step=False,
+            delivery_transition=delivery,
+        )
+        return state
+
+    async def refresh_after_user_control(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Re-establish Runtime currentness after an exclusive external control lease."""
+
+        state.begin_external_currentness_refresh()
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "fresh currentness after user control",
+            )
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            raise CoreLoopStartError("user_control_currentness_unavailable")
+        after = acquisition.observation
+        delta = WorldTransitionProjector().project(state.current_world, after)
+        after_projection, _after_index = self._canonical_world_for(
+            task,
+            after,
+            previous_index=state.delivery_index,
+            delta=delta,
+        )
+        evaluation = await self._validated_task_evaluation(task, after, after_projection)
+        decision = RequestObservation(
+            "context:runtime:user-control-return",
+            ObservationPurpose.CRITERION_VERIFICATION.value,
+            task.task_id,
+            "",
+            "refresh currentness after user control",
+        )
+        result = StepResult(
+            decision,
+            state.current_world,
+            after,
+            evaluation,
+            self._status_for_task(task, evaluation),
+            feedback="user_control_currentness_refreshed",
+            public_world_delta=delta,
+            before_public_world=state.canonical_world,
+            after_public_world=after_projection,
+        )
+        result = self._attach_canonical_worlds(task, state, result)
+        delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count))
+        self._commit_step(
+            state,
+            result,
+            consume_step=False,
+            delivery_transition=delivery,
+        )
+        if state.terminal:
+            self.trace_sink.run_finished(state)
+        return state
+
     async def _run_until_pause(
         self,
         environment: WorldEnvironment,
         task: TaskGoal,
         state: RunState,
     ) -> RunState:
-        while state.status is RunStatus.RUNNING:
+        while state.status is RunStatus.RUNNING and state.control_boundary is None:
+            if self._pause_unavailable_reconciliation(state, task):
+                break
+            if self._apply_control_before_policy(state):
+                break
             try:
                 result = await self.step(environment, task, state)
             except BaseException as exc:
                 self.trace_sink.run_error(exc, state)
                 raise
+            result = self._apply_control_after_closed_step(state, result)
             result = self._attach_canonical_worlds(task, state, result)
             delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
             result = self._apply_episode_monitor(result, state, delivery)
             self._commit_step(state, result, delivery_transition=delivery)
         if state.terminal:
+            self.run_control.resolve_terminal()
             self.trace_sink.run_finished(state)
+        elif state.control_boundary is not None:
+            self._trace_control_boundary(state.control_boundary)
         else:
             self.trace_sink.run_paused(state)
         return state
+
+    def _apply_control_before_policy(self, state: RunState) -> bool:
+        request = self.run_control.pending
+        if request is None:
+            return False
+        if not self._close_deferred_call(state.last_step) and request.kind is RunControlKind.PAUSE:
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return False
+        outcome = self.run_control.acknowledge(RunControlBoundary.BEFORE_POLICY)
+        if outcome is None:
+            return False
+        state.apply_control_boundary(outcome)
+        return True
+
+    def _pause_unavailable_reconciliation(
+        self,
+        state: RunState,
+        task: TaskGoal,
+    ) -> bool:
+        reconciliation = state.effect_reconciliation
+        if reconciliation is None:
+            return False
+        if reconciliation.status is EffectReconciliationStatus.PENDING:
+            action_space = self.action_space_builder.build(task, state.current_world)
+            if any(
+                option.resource_ref == reconciliation.original_effect.resource_ref
+                for option in action_space.options
+            ):
+                return False
+            state.require_reconciliation_input(
+                EffectReconciliationReason.COMPENSATION_UNAVAILABLE
+            )
+        elif reconciliation.status is not EffectReconciliationStatus.NEEDS_INPUT:
+            return False
+        self._request_reconciliation_pause(state, "needs-input")
+        if not self._apply_control_before_policy(state):
+            raise RuntimeError("effect reconciliation pause boundary was not admitted")
+        return True
+
+    def _request_reconciliation_pause(self, state: RunState, suffix: str) -> None:
+        reconciliation = state.effect_reconciliation
+        if reconciliation is None:
+            raise ValueError("run has no effect reconciliation to pause")
+        command_id = (
+            f"runtime-reconcile:{state.task_revision}:"
+            f"{reconciliation.original_effect.effect_ref[-24:]}:"
+            f"{state.execution_count}:{suffix}"
+        )
+        admission = self.run_control.request(command_id, RunControlKind.PAUSE)
+        if admission.outcome is not RunControlAdmissionKind.ACCEPTED:
+            raise RuntimeError("effect reconciliation pause command was not admitted")
+
+    def _apply_control_after_closed_step(
+        self,
+        state: RunState,
+        result: StepResult,
+    ) -> StepResult:
+        request = self.run_control.pending
+        if request is None:
+            return result
+        dispatch_status = _last_dispatch_status(result)
+        pause_uncertain_dispatch = (
+            request.kind is RunControlKind.PAUSE
+            and dispatch_status is DispatchStatus.SENT_UNKNOWN
+            and result.status_after is RunStatus.BLOCKED
+            and result.runtime_failure is None
+            and result.failure_code is None
+        )
+        if (
+            result.status_after
+            in {
+                RunStatus.DONE,
+                RunStatus.BLOCKED,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+            }
+            and not pause_uncertain_dispatch
+        ):
+            self.run_control.resolve_terminal()
+            return result
+        boundary = {
+            RunStatus.WAITING_USER: RunControlBoundary.WAITING_USER,
+            RunStatus.WAITING_CONFIRMATION: RunControlBoundary.WAITING_CONFIRMATION,
+        }.get(result.status_after, RunControlBoundary.AFTER_EVALUATION)
+        preview = self.run_control.preview(
+            boundary,
+            dispatch_status=dispatch_status,
+        )
+        if preview is None:
+            return result
+        controlled = replace(
+            result,
+            status_after=(
+                RunStatus.CANCELLED
+                if preview.kind is RunControlKind.CANCEL
+                else (RunStatus.RUNNING if pause_uncertain_dispatch else result.status_after)
+            ),
+            feedback=f"{result.feedback}:control_{preview.outcome.value}",
+            control_boundary=preview,
+        )
+        if not self._close_deferred_call(controlled) and request.kind is RunControlKind.PAUSE:
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return result
+        outcome = self.run_control.acknowledge(
+            boundary,
+            dispatch_status=dispatch_status,
+        )
+        assert outcome is not None
+        return replace(controlled, control_boundary=outcome)
+
+    def _control_after_policy(
+        self,
+        state: RunState,
+        decision: AgentDecision,
+    ) -> StepResult | None:
+        request = self.run_control.pending
+        if request is None:
+            return None
+        preview = self.run_control.preview(
+            RunControlBoundary.AFTER_POLICY,
+            dispatch_status=DispatchStatus.NOT_SENT,
+        )
+        if preview is None:
+            return None
+        result = _same_world_step(
+            state,
+            decision,
+            (RunStatus.CANCELLED if preview.kind is RunControlKind.CANCEL else RunStatus.RUNNING),
+            f"action_not_dispatched:control_{preview.outcome.value}",
+            control_boundary=preview,
+        )
+        if not self._close_deferred_call(result) and request.kind is RunControlKind.PAUSE:
+            self.run_control.fail_pending("deferred_history_closure_failed")
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.RUNNING,
+                "action_not_dispatched:control_boundary_failed",
+            )
+        outcome = self.run_control.acknowledge(
+            RunControlBoundary.AFTER_POLICY,
+            dispatch_status=DispatchStatus.NOT_SENT,
+        )
+        assert outcome is not None
+        return replace(result, control_boundary=outcome)
+
+    def _close_deferred_call(self, result: StepResult | None) -> bool:
+        if result is None:
+            return True
+        close = getattr(self.decision_ports.action_policy, "close_deferred_call", None)
+        if callable(close):
+            try:
+                close(result)
+            except Exception:
+                return False
+        return True
+
+    def _trace_control_boundary(self, outcome: RunControlOutcome) -> None:
+        emit = getattr(self.trace_sink, "control_boundary_reached", None)
+        if callable(emit):
+            emit(outcome)
 
     async def resume_user(
         self,
@@ -491,6 +1005,7 @@ class CoreAgentLoop:
                 RunStatus.WAITING_CONFIRMATION,
                 RunStatus.CANCELLED,
             }
+            or result.control_boundary is not None
         ):
             return result
         evaluate = getattr(monitor, "evaluate", None)
@@ -556,7 +1071,14 @@ class CoreAgentLoop:
             )
             self._commit_step(state, declined, consume_step=False)
             return await self._run_until_pause(environment, task, state)
-        action_space = self.action_space_builder.build(task, state.current_world)
+        complete_action_space = self.action_space_builder.build(
+            task,
+            state.current_world,
+        )
+        action_space = self._reconciliation_action_space(
+            state,
+            complete_action_space,
+        )
         action_page = self.context_builder.page(action_space, state.current_world)
         result = await self._select(
             environment,
@@ -568,6 +1090,8 @@ class CoreAgentLoop:
             pending.decision,
             confirmed_subject_id=pending.confirmation.subject_id,
         )
+        result = self._close_reconciliation_attempt(state, result)
+        result = self._apply_control_after_closed_step(state, result)
         result = self._attach_canonical_worlds(task, state, result)
         self._commit_step(state, result, consume_step=False)
         return await self._run_until_pause(environment, task, state)
@@ -580,7 +1104,19 @@ class CoreAgentLoop:
     ) -> StepResult:
         if state.status is not RunStatus.RUNNING:
             raise ValueError("core step requires a running state")
-        action_space = self.action_space_builder.build(task, state.current_world)
+        complete_action_space = self.action_space_builder.build(
+            task,
+            state.current_world,
+        )
+        action_space = self._reconciliation_action_space(
+            state,
+            complete_action_space,
+        )
+        canonical_world = (
+            state.canonical_world
+            if action_space.action_space_id == complete_action_space.action_space_id
+            else None
+        )
         region_index = state.delivery_index
         if (
             region_index is None
@@ -598,7 +1134,6 @@ class CoreAgentLoop:
                 previous_index=state.delivery_index or state.prior_delivery_index,
             )
         state.install_delivery_index(region_index)
-        canonical_world = state.canonical_world
         if canonical_world is None:
             canonical_world = CanonicalPublicWorldProjection.build(
                 state.current_world,
@@ -641,7 +1176,7 @@ class CoreAgentLoop:
                 runtime_controls=self.runtime_controls,
                 region_index=region_index,
                 canonical_world=canonical_world,
-                control_feedback=_recovery_feedback(state.recovery_signal),
+                control_feedback=_control_feedback(state),
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,
                 observation_projection=observation_projection,
@@ -738,6 +1273,29 @@ class CoreAgentLoop:
             raise TypeError("agent policy returned an unsupported decision")
         if decision.context_id != context.context_id:
             return _same_world_step(state, decision, RunStatus.FAILED, "decision_context_is_stale")
+        controlled = self._control_after_policy(state, decision)
+        if controlled is not None:
+            return replace(
+                controlled,
+                policy_observation=context.actor_world,
+                policy_target_refs=context.grounding.target_refs,
+                model_delivery=getattr(
+                    getattr(self.decision_ports.action_policy, "port", None),
+                    "last_model_delivery",
+                    None,
+                ),
+            )
+        if state.reconciliation_pending and isinstance(decision, (FinalResponse, Abort)):
+            state.require_reconciliation_input(
+                EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED
+            )
+            self._request_reconciliation_pause(state, "action-not-allowed")
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.RUNNING,
+                "effect_reconciliation:compensation_action_required",
+            )
         match decision.kind:
             case DecisionKind.SELECT_ACTION:
                 assert isinstance(decision, SelectAction)
@@ -787,6 +1345,7 @@ class CoreAgentLoop:
                 )
             case unexpected:
                 assert_never(unexpected)
+        result = self._close_reconciliation_attempt(state, result)
         return replace(
             result,
             policy_observation=context.actor_world,
@@ -796,6 +1355,74 @@ class CoreAgentLoop:
                 "last_model_delivery",
                 None,
             ),
+        )
+
+    def _reconciliation_action_space(
+        self,
+        state: RunState,
+        action_space: ActionSpace,
+    ) -> ActionSpace:
+        reconciliation = state.effect_reconciliation
+        if (
+            reconciliation is None
+            or reconciliation.status is not EffectReconciliationStatus.PENDING
+        ):
+            return action_space
+        resource_ref = reconciliation.original_effect.resource_ref
+        return ActionSpace(
+            action_space.observation_id,
+            tuple(
+                option
+                for option in action_space.options
+                if option.resource_ref == resource_ref
+            ),
+            action_space.issues,
+        )
+
+    def _close_reconciliation_attempt(
+        self,
+        state: RunState,
+        result: StepResult,
+    ) -> StepResult:
+        if not state.reconciliation_pending or self.run_control.pending is not None:
+            return result
+        receipts = (
+            ()
+            if result.execution_receipts is None
+            else result.execution_receipts.receipts
+        )
+        if receipts:
+            if result.task_evaluation is None:
+                return result
+            self._request_reconciliation_pause(state, "attempt-closed")
+            return replace(
+                result,
+                status_after=RunStatus.RUNNING,
+                failure_code=None,
+                runtime_failure=None,
+                control_termination=None,
+            )
+        if not isinstance(result.decision, SelectAction):
+            return result
+        if result.status_after not in {RunStatus.BLOCKED, RunStatus.FAILED}:
+            return result
+        if result.runtime_failure is not None or result.task_evaluation is None:
+            return result
+        reason = (
+            EffectReconciliationReason.COMPENSATION_NOT_SENT
+            if result.execution_receipts is not None
+            else EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED
+            if result.feedback.startswith(("risk_blocked", "admission_rejected"))
+            else EffectReconciliationReason.COMPENSATION_UNAVAILABLE
+        )
+        state.require_reconciliation_input(reason)
+        self._request_reconciliation_pause(state, "attempt-rejected")
+        return replace(
+            result,
+            status_after=RunStatus.RUNNING,
+            failure_code=None,
+            runtime_failure=None,
+            control_termination=None,
         )
 
     async def _finalize(
@@ -1178,6 +1805,19 @@ class CoreAgentLoop:
             assert admission.issue is not None
             return _same_world_step(state, decision, RunStatus.BLOCKED, f"admission_rejected:{admission.issue.code}")
         selection = admission.admitted
+        reconciliation = state.effect_reconciliation
+        if (
+            reconciliation is not None
+            and reconciliation.status is EffectReconciliationStatus.PENDING
+            and selection.resource_ref
+            != reconciliation.original_effect.resource_ref
+        ):
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.BLOCKED,
+                "effect_reconciliation:resource_mismatch",
+            )
         if _repeats_recovery_signature(state.recovery_signal, selection, state.current_world):
             return _same_world_step(
                 state,
@@ -1745,6 +2385,7 @@ def _same_world_step(
     *,
     finalization: FinalizationProtocolResult | None = None,
     control_termination: ControlTermination | None = None,
+    control_boundary: RunControlOutcome | None = None,
 ) -> StepResult:
     return StepResult(
         decision,
@@ -1755,7 +2396,18 @@ def _same_world_step(
         feedback=feedback,
         finalization=finalization,
         control_termination=control_termination,
+        control_boundary=control_boundary,
     )
+
+
+def _last_dispatch_status(result: StepResult) -> DispatchStatus | None:
+    batch = result.execution_receipts
+    if batch is None:
+        return None
+    if batch.receipts:
+        return batch.receipts[-1].result.dispatch_status
+    terminal = batch.terminal_failure
+    return terminal.dispatch_status if terminal is not None else None
 
 
 def _recovery_feedback(signal) -> dict[str, object]:
@@ -1774,6 +2426,24 @@ def _recovery_feedback(signal) -> dict[str, object]:
         "human_instruction": signal.human_instruction,
         "recovery_attempt": signal.recovery_attempt,
     }
+
+
+def _control_feedback(state: RunState) -> dict[str, object]:
+    feedback = _recovery_feedback(state.recovery_signal)
+    reconciliation = state.effect_reconciliation
+    if (
+        reconciliation is not None
+        and reconciliation.status is EffectReconciliationStatus.PENDING
+    ):
+        feedback["effect_reconciliation"] = {
+            **reconciliation.public_summary(),
+            "instruction": (
+                "Choose one current ordinary action that compensates the retained effect on "
+                "this same resource. Do not blindly replay the original request or continue the "
+                "revised goal until compensation is verified; ask the user if no safe action exists."
+            ),
+        }
+    return feedback
 
 
 def _repeats_recovery_signature(signal, selection, world) -> bool:

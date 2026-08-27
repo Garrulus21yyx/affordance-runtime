@@ -259,4 +259,6 @@ def _binding(
         expires_at_s=affordance.lease.expires_at_s,
         confidence=affordance.confidence,
         risk=classification.risk,
+        resource_ref=affordance.id,
+        reversibility=classification.reversibility,
     )

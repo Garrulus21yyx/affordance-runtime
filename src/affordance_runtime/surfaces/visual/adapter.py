@@ -266,6 +266,8 @@ class VisualSurfaceAdapter:
             classification.observation_barrier,
             confidence=region.confidence,
             risk=classification.risk,
+            resource_ref=region.region_id,
+            reversibility=classification.reversibility,
         )
 
     def _not_sent(self, request: BoundActionRequest, error: ActionError, probes: int) -> ActionResult:

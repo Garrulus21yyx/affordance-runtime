@@ -305,10 +305,165 @@ recorded SHA-256 digest. The browser pane is therefore a near-real-time, read-on
 second browser authority and not pixel-derived task state. Raw `/events` remains available only to the explicit Labs
 evidence view.
 
-This shell does not invent a free-form Runtime session API, task revision, or interactive browser takeover. Those
-controls are visibly unavailable until their owning Runtime contracts exist; the current benchmark runner remains the
-only launch and stop owner. Run history and automatic bad-case grouping are bounded to the current Console process.
-This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
+This local benchmark Console does not expose the external product session API, task revision, or interactive browser
+takeover; the benchmark runner remains its only launch and stop owner. Those controls belong to the separately
+packaged external shell described below. Run history and automatic bad-case grouping are bounded to the current
+Console process. This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
+
+### External interaction shell real-execution profile
+
+Phases 0–2 of the separately packaged external interaction shell are now
+implemented. `interaction_shell.api:app` remains fail-closed and the Demo
+remains synthetic; real local execution starts only through
+`interaction_shell.deployment_app:app`. Each Web session creates its own
+TargetRuntime, PydanticAI ActionPolicy/history, Unified World environment,
+BrowserGym browser context, public Runtime session handle, event epoch, and
+per-session trace directory. The Shell manager retains only the opaque handle,
+TTL, command lock/idempotency admission, and bounded conversation, and directly
+forwards Runtime-owned `events(after)`.
+
+The real BrowserGym witness found that BrowserGym 0.14.3's nominally global
+synchronous Playwright cache cannot be shared by per-session owner threads. The
+BrowserGym integration boundary now installs owner-thread-local driver access
+at every cached BrowserGym import site before reset; browser contexts remain
+independent, and closing one real session leaves the other alive. The deployed
+TaskEvaluator consumes the surface-owned native task-state classifier with
+fresh World lineage; benchmark code projects that same result into its legacy
+benchmark types instead of owning a second classifier. Same-origin SSE declares
+an identity, non-transforming, non-buffered response so asynchronous Runtime
+events reach the Next.js UI incrementally.
+
+A held-out local real-execution run opened one Web session, made one real
+BrowserGym dispatch, captured two observations, terminated from native
+`verified_success`, updated the Shell to `done` through SSE, accepted explicit
+close, and completed application shutdown. The subsequent control milestone
+adds one Runtime-private SQLite WAL checkpoint store: a cooperative pause first
+closes policy/dispatch/history truth, then atomically commits the checkpoint and
+pause-command outcome, and only then changes the sole `RunState` to `PAUSED`
+and projects `checkpoint_id`. A failed commit rolls back both rows, reports
+typed `pause_persistence_failed`, refreshes current World when execution was
+active, and continues the original task revision. Checkpoints retain bounded
+task/plan/run counters, last receipt, pending interrupt identity, official
+PydanticAI history, and an opaque environment reference; they exclude complete
+Worlds, Shell events/conversation, Viewer/trace projections, tasks, locks, and
+clients. Reconnectable deployments can now hydrate that checkpoint under a new
+event epoch, capture fresh World, and wait for explicit `ResumeRun`; a lost
+environment fails typed rather than opening a replacement browser. Bounded
+`ReviseTask` reuses the same cooperative pause, validates one complete
+consecutive `TaskGoal`, revises the same environment, captures fresh World,
+compiles one new GoalPlan, atomically commits revision `n+1`, and remains
+paused. The Shell attaches one immutable language-only conversation snapshot
+of at most six turns and 16 KiB of UTF-8 text, ending at exactly one identified
+latest user turn. Runtime adds the authoritative current `TaskGoal` and pending
+question/confirmation from `RunState` before invoking the sole existing
+`TaskRevisionCompiler`; neither value enters ActionPolicy history or authorizes
+GUI effects. Runtime also owns revision command identity: the existing outcome
+row stores a canonical digest covering the complete command and conversation
+plus bounded result/message, exact retries replay before current-state
+validation, and changed text/context under one ID fails as
+`command_identity_reused`. Shell owns no durable revision result; its existing
+recovery-registry row durably projects only the last six conversation turns and
+last 64 immutable revision contexts. The Shell commits a new context before
+calling Runtime, restores it before installing the recovered opaque handle, and
+can therefore reproduce the same complete digest after a Shell restart.
+Start/answer turns use the same bounded projection, while TTL, terminal cleanup,
+or explicit revoke deletes it with the recovery credential. The unused external
+Shell revision compiler has been removed. Model continuity is a separate
+authority: admitted task identity is
+bound before environment reset, GoalCompiler, or the first ActionPolicy call,
+so an empty history can be committed as an official settled Harness snapshot.
+Every PydanticAI ActionPolicy invocation records official Harness step events under the Web
+session conversation ID, and each Runtime safe checkpoint first writes one
+immutable, provider-valid Harness `ContinuableSnapshot` through the session's
+deterministically located `SqliteStepStore` file.
+The Runtime checkpoint contains only that run reference, conversation ID,
+message digest, and task identity; it does not embed or invent a parallel model
+transcript. Legacy `ModelMessagesTypeAdapter` checkpoints remain readable.
+Harness persistence never decides GUI dispatch truth, pause eligibility, or
+browser recovery. PydanticAI and the custom structured-model boundary expose
+native/compatible OpenTelemetry instrumentation, but the current deployment
+does not install a recording `TracerProvider` or exporter. Connecting one later
+is a non-blocking deployment/observability task. Runtime JSONL/Langfuse trace
+remains an observation of GUI owner facts, not model-history or control
+authority. The bounded Phase 7 owner path now conserves one typed semantic effect
+from ActionBinding through receipt/checkpoint and handles one retained known
+dispatch-crossing effect. Fresh revised-goal completion preserves it; otherwise
+a reversible/compensatable effect becomes a pending Runtime reconciliation.
+After an explicit Resume, the same ActionPolicy sees only current actions for
+that resource, and any selected compensation still crosses the existing
+Binder/currentness/Risk/Confirmation/Executor/fresh-World/ActionOutcome path.
+Runtime appends the new receipt, atomically checkpoints the closed result, and
+pauses again before ordinary revised-goal execution. Unknown dispatch,
+irreversible/unknown semantics, missing or multiple retained effects, unavailable
+or mismatched actions, multi-receipt compensation, and unverified postconditions
+fail closed as typed paused/unsupported outcomes. Checkpoint v3 retains this
+bounded pair and still reads v2; the unchanged revision command payload keeps its
+old durable digest version while the additive Runtime/Shell snapshot advances to
+v2. The Shell projects only semantic reconciliation facts and exact codes. It is
+not an effect ledger, rollback mechanism, multi-effect Saga, second policy, or
+second loop. The deployment Viewer milestone adds one explicit Steel profile:
+BrowserGym's surface-owned Chromium launch connects over CDP to one Steel
+session, and the snapshot projects only a same-origin `/viewer/{session}` path
+for that same lease. HttpOnly Shell-session auth guards the route; a bounded
+proxy removes the reusable key, provider debug/CDP URL, provider session ID, RTC
+bearer, and input WebSocket from the delivered document, then forwards Steel's
+native WebRTC ICE/WHEP exchange. Viewer failure never changes Runtime status,
+receipt, evaluation, or cleanup truth. The local BrowserGym profile remains
+Viewer unavailable, and a cloud profile rejects loopback/private task sources
+instead of opening a second browser. Provider-free tests plus a
+no-model/no-action live Steel CDP reset and document/ICE probe verify this
+deployment boundary. The earlier WHEP 400 from
+both the proxy and Steel's native `debugUrl` was traced to the validation
+client: Playwright's bundled Linux Chromium advertised no H.264 codec, while
+Steel's headful stream requires H.264 baseline. A held-out native control with
+an H.264-capable Steel browser completed WHEP with 201 and rendered 1280x720
+video at `readyState=4`. A separate protected-path witness using temporary
+official Chrome for Testing observed unauthenticated 401, authenticated document
+200, proxied WHEP 201, 1280x720 video at `readyState=4`, no page error, no
+provider locator in the delivered HTML, and exact lease release. The strict CSP
+was not weakened; acceptance used Python-side polling because Playwright string
+`wait_for_function` requires `unsafe-eval`. No second media path or retry branch
+was added. Phase 8 now places one Runtime-owned `agent|user` authority and opaque
+process-local lease on that same session. `TakeOver` is admitted only against an
+exact durable paused checkpoint, consumes it before publishing user ownership,
+and disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
+snapshot enables the authenticated same-origin proxy to Steel's native input
+WebSocket. A socket binds the Runtime lease active at connection; each incoming
+frame verifies current user ownership and exact lease equality, and that
+check-plus-forward shares the Shell session command lock with `ReturnControl`.
+`ReturnControl` revokes the old lease before capture, invalidates stale action
+material, and captures and evaluates one fresh World before the existing
+ActionPolicy can run again. A capture failure restores user ownership with a new
+lease, so old sockets remain fenced; process restart revokes the ephemeral
+lease and the consumed checkpoint cannot be replayed. A no-model live witness
+changed the same CDP-owned page through the protected input route, blocked return
+capture, proved a second old-lease click had no page effect and closed 4409, then
+returned to a terminal fresh evaluation with one World capture and no second
+policy call; cleanup ran once and released the exact Steel lease. These are
+Viewer/control deployment witnesses, not benchmark evidence, and do not alter
+the reopened overall project status. No live compensation action or benchmark
+was performed.
+
+The external Phase 9 review closes only the declared single-process Steel Full
+Web control profile. After the fencing repair, a fresh whole-suite run reached
+1842 passed and 19 skipped with only the absent historical live trace failing;
+the stale fixed-document governance gate now includes the maintained interaction
+shell document and passes. External backend/architecture passed 79
+tests; frontend unit/lint/typecheck/build, generated OpenAPI equality, and one
+synthetic Demo E2E passed. External Pyright and Ruff passed. The two touched-Core
+MyPy findings remain the pre-existing nullable-task reports in `core_loop.py`.
+Implementation, public contracts, UI, generated types, startup instructions,
+and capability docs now agree. This does not close the separately reopened GUI
+benchmark program.
+
+The local simplify integration keeps the current delivery index, observation projection, context-aware action page,
+canonical World transition, provider repair/retry, task-anchor history and compaction pipeline as the benchmark hot
+path. Shell control adds cooperative boundaries, durable checkpoint/recovery/revision, retained-effect reconciliation
+and user-control lease state to those same Runtime owners. A filtered reconciliation capability space now rebuilds
+one matching canonical World and observation projection instead of reusing the complete-action projection. Harness
+StepPersistence conversation/run lineage is attached inside the current physical SDK invocation path; it does not
+restore the superseded direct provider call. There is still one `CoreAgentLoop`, one `RunState`, one ActionPolicy
+history and one Runtime checkpoint authority.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

@@ -24,6 +24,7 @@ from affordance_runtime.agent.policy import (
     AgentPolicy,
     TaskEvaluator,
 )
+from affordance_runtime.agent.run_control import CooperativeRunControl
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector, ProductionTaskEvaluator
@@ -31,6 +32,11 @@ from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, Un
 from affordance_runtime.model.policy import model_roles_from_environment
 from affordance_runtime.risk.policy import RiskPolicy
 from affordance_runtime.task.intake import TaskIntake, ThinTaskIntake
+from affordance_runtime.task.revision import (
+    TaskRevisionBoundary,
+    TaskRevisionCompiler,
+    UnavailableTaskRevisionCompiler,
+)
 
 
 def compose_target_runtime(
@@ -48,9 +54,12 @@ def compose_target_runtime(
     trace_sink: RunTraceSink | None = None,
     goal_compiler: GoalCompiler | None = None,
     goal_plan_boundary: GoalPlanBoundary | None = None,
+    task_revision_compiler: TaskRevisionCompiler | None = None,
+    task_revision_boundary: TaskRevisionBoundary | None = None,
     runtime_controls: tuple[str, ...] = (),
     episode_monitor: object | None = None,
     official_outcome_sink: object | None = None,
+    run_control: CooperativeRunControl | None = None,
 ) -> TargetRuntime:
     """Compose product and benchmark target runs through one validation boundary."""
 
@@ -68,9 +77,14 @@ def compose_target_runtime(
         required_decisions=required_decisions,
         goal_compiler=goal_compiler or UnavailableGoalCompiler(),
         goal_plan_boundary=goal_plan_boundary or GoalPlanBoundary(),
+        task_revision_compiler=(
+            task_revision_compiler or UnavailableTaskRevisionCompiler()
+        ),
+        task_revision_boundary=task_revision_boundary or TaskRevisionBoundary(),
         runtime_controls=runtime_controls,
         episode_monitor=episode_monitor if episode_monitor is not None else EpisodeMonitor(),
         official_outcome_sink=official_outcome_sink,
+        run_control=run_control or CooperativeRunControl(),
     )
 
 
@@ -93,4 +107,5 @@ def compose_target_runtime_from_environment(
         required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
         trace_sink=trace_recorder_from_environment(runtime_environment),
         goal_compiler=model_roles.goal_compiler,
+        task_revision_compiler=model_roles.task_revision_compiler,
     )

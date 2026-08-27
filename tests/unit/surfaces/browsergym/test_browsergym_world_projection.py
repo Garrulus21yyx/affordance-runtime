@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
@@ -106,6 +107,11 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
     assert len(_page_targets(projected.world)) == 3
     assert {item.role for item in _runtime_targets(projected.world)} == {"viewport", "focused_context"}
     assert len(_page_bindings(projected.world)) == 6
+    assert all(
+        binding.reversibility is Reversibility.UNKNOWN
+        for binding in _page_bindings(projected.world)
+        if binding.semantic_action != "read"
+    )
     assert projected.target_count_total == 5
     assert str(projected.world.source_manifest[0].coverage) == "complete"
     public = repr(projected.world)

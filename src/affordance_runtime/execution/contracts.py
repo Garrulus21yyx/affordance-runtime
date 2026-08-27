@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.schema_digest import schema_digest
 
@@ -193,6 +196,8 @@ class BoundActionRequest:
             or self.binding.verification_family != self.selection.verification_family
             or self.binding.verification_contract_digest != self.selection.verification_contract_digest
             or self.binding.verification_contract != self.selection.verification_contract
+            or self.binding.resource_ref != self.selection.resource_ref
+            or self.binding.reversibility is not self.selection.reversibility
             or (
                 self.selection.destination_id
                 and self.selection.destination_id not in self.selection.eligible_destination_ids
@@ -379,6 +384,81 @@ class ExecutionReceipt:
             raise ValueError("execution receipt before-world lineage mismatch")
         if not self.after_observation_id.strip():
             raise ValueError("execution receipt requires after-world lineage")
+
+
+@dataclass(frozen=True)
+class CommittedEffect:
+    """Bounded public-semantic projection of one dispatch-crossing receipt."""
+
+    effect_ref: str
+    task_revision: int
+    request_id: str
+    semantic_action: str
+    resource_ref: str
+    semantic_effects: tuple[str, ...]
+    reversibility: Reversibility
+    dispatch_status: DispatchStatus
+    before_observation_id: str
+    after_observation_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            re.fullmatch(r"effect:sha256:[0-9a-f]{64}", self.effect_ref) is None
+            or type(self.task_revision) is not int
+            or self.task_revision < 1
+            or not all(
+                value.strip()
+                for value in (
+                    self.request_id,
+                    self.semantic_action,
+                    self.resource_ref,
+                    self.before_observation_id,
+                    self.after_observation_id,
+                )
+            )
+            or self.dispatch_status is DispatchStatus.NOT_SENT
+        ):
+            raise ValueError("committed effect receipt is invalid")
+        object.__setattr__(self, "semantic_effects", tuple(self.semantic_effects))
+        if any(not isinstance(item, str) or not item.strip() for item in self.semantic_effects):
+            raise ValueError("committed effect semantics must be non-empty strings")
+        if not isinstance(self.reversibility, Reversibility):
+            raise TypeError("committed effect reversibility must be typed")
+
+    @classmethod
+    def from_receipt(
+        cls,
+        receipt: ExecutionReceipt,
+        *,
+        task_revision: int,
+    ) -> CommittedEffect:
+        selection = receipt.request.selection
+        payload = {
+            "task_revision": task_revision,
+            "request_id": receipt.request.request_id,
+            "semantic_action": selection.semantic_action,
+            "resource_ref": selection.resource_ref,
+            "semantic_effects": list(selection.semantic_effects),
+            "reversibility": selection.reversibility.value,
+            "dispatch_status": receipt.result.dispatch_status.value,
+            "before_observation_id": receipt.before_observation_id,
+            "after_observation_id": receipt.after_observation_id,
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return cls(
+            f"effect:sha256:{digest}",
+            task_revision,
+            receipt.request.request_id,
+            selection.semantic_action,
+            selection.resource_ref,
+            selection.semantic_effects,
+            selection.reversibility,
+            receipt.result.dispatch_status,
+            receipt.before_observation_id,
+            receipt.after_observation_id,
+        )
 
 
 @dataclass(frozen=True)

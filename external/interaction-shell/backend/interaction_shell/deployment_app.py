@@ -1,0 +1,581 @@
+"""Concrete local or Steel-connected BrowserGym interaction-shell deployment."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import ipaddress
+import logging
+import os
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+from urllib.parse import urlparse
+
+from dotenv import load_dotenv
+
+from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
+from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
+from affordance_runtime.app.checkpoint import SQLiteRuntimeCheckpointStore
+from affordance_runtime.app.composition import compose_target_runtime
+from affordance_runtime.app.public_session import (
+    PublicSessionOpenError,
+    PublicSessionOpenStage,
+    RuntimeEnvironmentLease,
+    RuntimeRecoveryAttempt,
+    RuntimeRecoveryInspection,
+    TargetRuntimeSession,
+    TargetRuntimeSessionFactory,
+)
+from affordance_runtime.evaluation import ProductionActionOutcomeProjector
+from affordance_runtime.model.policy import model_roles_from_environment
+from affordance_runtime.surfaces.browsergym import (
+    BrowserGymPort,
+    BrowserGymSurfaceAdapter,
+    BrowserGymTaskEvaluator,
+    ThreadBoundBrowserGym,
+    browsergym_api_inventory,
+)
+from affordance_runtime.task import (
+    LoopBudget,
+    NaturalLanguageTaskRequest,
+    RiskProfile,
+    TaskBoundary,
+)
+from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+
+from .api import create_app
+from .completed_runs import CompletedRunSummaryResolver
+from .core_runtime_port import CoreRuntimeSessionPort, unavailable_viewer
+from .manager import RunSessionManager
+from .session_registry import SQLiteSessionRecoveryRegistry
+from .steel_viewer import SteelBrowserLease, SteelViewerGateway
+
+if TYPE_CHECKING:
+    from pydantic_ai_harness.step_persistence import StepStore
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _DeploymentSessionCleanup:
+    """Own every deployment resource created for one opaque Runtime session."""
+
+    session_id: str
+    trace_sink: RunTraceSink
+    viewer_gateway: SteelViewerGateway | None = None
+    viewer_lease: SteelBrowserLease | None = None
+    surface: BrowserGymSurfaceAdapter | None = None
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
+
+    def attach_surface(self, surface: BrowserGymSurfaceAdapter) -> None:
+        if self._closed or self.surface is not None:
+            raise RuntimeError("deployment surface ownership is already resolved")
+        self.surface = surface
+
+    def attach_viewer(self, lease: SteelBrowserLease) -> None:
+        if self._closed or self.viewer_lease is not None or self.viewer_gateway is None:
+            raise RuntimeError("deployment viewer ownership is already resolved")
+        self.viewer_lease = lease
+
+    async def close(self) -> None:
+        async with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            surface_error: BaseException | None = None
+            if self.surface is not None:
+                try:
+                    await self.surface.close()
+                except BaseException as exc:  # noqa: BLE001 - finish all cleanup owners
+                    surface_error = exc
+            if self.viewer_gateway is not None and self.viewer_lease is not None:
+                await self.viewer_gateway.release(self.viewer_lease)
+            flush_viewer = getattr(self.trace_sink, "flush_viewer", None)
+            if callable(flush_viewer):
+                try:
+                    await asyncio.to_thread(flush_viewer)
+                except Exception:
+                    logger.exception("trace viewer cleanup failed for session %s", self.session_id)
+            if surface_error is not None:
+                raise surface_error
+
+
+@dataclass(frozen=True)
+class BrowserGymDeploymentSettings:
+    task_id: str
+    seed: int
+    max_turns: int
+    call_timeout_s: float
+    browser_provider: str = "local"
+
+    @classmethod
+    def from_environment(cls, environment: Mapping[str, str]) -> BrowserGymDeploymentSettings:
+        task_id = environment.get(
+            "INTERACTION_SHELL_BROWSERGYM_TASK_ID",
+            "browsergym/miniwob.click-test",
+        ).strip()
+        if not task_id.startswith("browsergym/"):
+            raise ValueError("interaction shell deployment requires a BrowserGym task ID")
+        seed = _bounded_int(environment, "INTERACTION_SHELL_BROWSERGYM_SEED", 7, 0, 2**31 - 1)
+        max_turns = _bounded_int(environment, "INTERACTION_SHELL_MAX_TURNS", 10, 1, 100)
+        call_timeout_s = _bounded_float(
+            environment,
+            "INTERACTION_SHELL_MODEL_TIMEOUT_S",
+            90.0,
+            2.0,
+            300.0,
+        )
+        browser_provider = environment.get(
+            "INTERACTION_SHELL_BROWSER_PROVIDER",
+            "local",
+        ).strip().lower()
+        if browser_provider not in {"local", "steel"}:
+            raise ValueError("INTERACTION_SHELL_BROWSER_PROVIDER must be local or steel")
+        return cls(task_id, seed, max_turns, call_timeout_s, browser_provider)
+
+
+@dataclass(frozen=True)
+class BrowserGymDeploymentSessionFactory:
+    settings: BrowserGymDeploymentSettings
+    environment: Mapping[str, str]
+    checkpoint_store: SQLiteRuntimeCheckpointStore | None = None
+    viewer_gateway: SteelViewerGateway | None = None
+    _target_factory: TargetRuntimeSessionFactory = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        def unavailable_runtime(session_id: str):
+            del session_id
+            raise RuntimeError("deployment recovery runtime is unavailable without a reconnector")
+
+        def unavailable_environment(session_id: str):
+            del session_id
+            raise RuntimeError("deployment recovery environment is unavailable without a reconnector")
+
+        object.__setattr__(
+            self,
+            "_target_factory",
+            TargetRuntimeSessionFactory(
+                unavailable_runtime,
+                unavailable_environment,
+                checkpoint_store=self.checkpoint_store,
+                environment_reconnector=None,
+            ),
+        )
+
+    async def open(self, session_id: str, expires_at: datetime) -> TargetRuntimeSession:
+        try:
+            roles = model_roles_from_environment(
+                self.environment,
+                call_timeout_s=self.settings.call_timeout_s,
+                action_step_store=_model_step_store(
+                    self.checkpoint_store,
+                    session_id,
+                ),
+                conversation_id=session_id,
+            )
+            raw_trace_directory = self.environment.get("AFFORDANCE_TRACE_DIR", "").strip()
+            trace_sink = trace_recorder_from_environment(
+                self.environment,
+                directory=(Path(raw_trace_directory) / session_id if raw_trace_directory else None),
+                run_id=f"interaction-shell:{session_id}",
+                session_id=session_id,
+            )
+        except Exception as exc:
+            logger.exception("runtime composition prerequisites failed for session %s", session_id)
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.RUNTIME,
+                "runtime_factory_failed",
+            ) from exc
+
+        cleanup = _DeploymentSessionCleanup(
+            session_id,
+            trace_sink,
+            viewer_gateway=self.viewer_gateway,
+        )
+        viewer_lease: SteelBrowserLease | None = None
+        if self.settings.browser_provider == "steel":
+            if self.viewer_gateway is None:
+                await cleanup.close()
+                raise PublicSessionOpenError(
+                    PublicSessionOpenStage.ENVIRONMENT,
+                    "viewer_api_key_missing",
+                )
+            if not _is_remotely_reachable_source(self.environment.get("MINIWOB_URL", "")):
+                await cleanup.close()
+                raise PublicSessionOpenError(
+                    PublicSessionOpenStage.ENVIRONMENT,
+                    "environment_source_not_remote",
+                )
+            try:
+                viewer_lease = await self.viewer_gateway.open(session_id, expires_at)
+                try:
+                    cleanup.attach_viewer(viewer_lease)
+                except BaseException:
+                    await self.viewer_gateway.release(viewer_lease)
+                    raise
+            except PublicSessionOpenError:
+                raise
+            except Exception as exc:
+                await cleanup.close()
+                logger.exception("Steel environment lease creation failed for session %s", session_id)
+                raise PublicSessionOpenError(
+                    PublicSessionOpenStage.ENVIRONMENT,
+                    "environment_factory_failed",
+                ) from exc
+        try:
+            surface = await _open_surface(
+                self.settings,
+                self.viewer_gateway,
+                viewer_lease,
+            )
+        except asyncio.CancelledError:
+            await cleanup.close()
+            raise
+        except Exception as exc:
+            await cleanup.close()
+            logger.exception("BrowserGym environment creation failed for session %s", session_id)
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.ENVIRONMENT,
+                "environment_factory_failed",
+            ) from exc
+
+        cleanup.attach_surface(surface)
+        try:
+            world = UnifiedWorldEnvironment((surface,))
+            runtime = compose_target_runtime(
+                roles.action_policy,
+                ProductionActionOutcomeProjector(),
+                BrowserGymTaskEvaluator(surface),
+                required_decisions=GROUNDED_ACTION_DECISION_CAPABILITIES,
+                trace_sink=trace_sink,
+                goal_compiler=roles.goal_compiler,
+                task_revision_compiler=roles.task_revision_compiler,
+            )
+            lease = RuntimeEnvironmentLease(world, cleanup.close)
+            session = await self._target_factory.open_prepared(
+                session_id,
+                expires_at,
+                runtime,
+                lease,
+                request_factory=_request_factory(
+                    surface.goal_instruction,
+                    self.settings.task_id,
+                    self.settings.max_turns,
+                ),
+            )
+            if self.viewer_gateway is not None and viewer_lease is not None:
+                self.viewer_gateway.attach(session, viewer_lease)
+            return session
+        except Exception as exc:
+            try:
+                await cleanup.close()
+            except Exception:
+                logger.exception("resource cleanup failed after session composition failure")
+            logger.exception("runtime session composition failed for session %s", session_id)
+            raise PublicSessionOpenError(
+                PublicSessionOpenStage.SESSION,
+                "session_initialization_failed",
+            ) from exc
+
+    async def recover(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> TargetRuntimeSession:
+        return await self._target_factory.recover(session_id, checkpoint_id, expires_at)
+
+    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection:
+        return await self._target_factory.inspect(session_id)
+
+    async def recover_typed(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        expires_at: datetime,
+    ) -> RuntimeRecoveryAttempt:
+        return await self._target_factory.recover_typed(
+            session_id,
+            checkpoint_id,
+            expires_at,
+        )
+
+    def health(self) -> Mapping[str, object]:
+        inventory = browsergym_api_inventory()
+        model_ready = True
+        try:
+            model_roles_from_environment(
+                self.environment,
+                call_timeout_s=self.settings.call_timeout_s,
+            )
+        except (ImportError, ValueError):
+            model_ready = False
+        source_ready = bool(self.environment.get("MINIWOB_URL", "").strip())
+        task_ready = self.settings.task_id in inventory.registered_task_ids
+        viewer_key_ready = self.viewer_gateway is not None
+        remote_source_ready = _is_remotely_reachable_source(
+            self.environment.get("MINIWOB_URL", "")
+        )
+        steel_ready = (
+            self.settings.browser_provider != "steel"
+            or (viewer_key_ready and remote_source_ready)
+        )
+        runtime_ready = inventory.accepted and task_ready and model_ready and source_ready and steel_ready
+        reason = (
+            ""
+            if runtime_ready
+            else "browsergym_profile_unavailable"
+            if not inventory.accepted or not task_ready
+            else "runtime_factory_unavailable"
+            if not model_ready
+            else "environment_source_unavailable"
+            if not source_ready
+            else "viewer_api_key_missing"
+            if not viewer_key_ready
+            else "environment_source_not_remote"
+        )
+        viewer_ready = runtime_ready and self.settings.browser_provider == "steel"
+        viewer_reason = (
+            ""
+            if viewer_ready
+            else "viewer_runtime_profile_not_enabled"
+            if self.settings.browser_provider != "steel"
+            else "viewer_api_key_missing"
+            if not viewer_key_ready
+            else "environment_source_not_remote"
+            if not remote_source_ready
+            else "viewer_provider_unavailable"
+        )
+        return {
+            "status": "ok" if runtime_ready else "degraded",
+            "runtime_execution": {
+                "status": "available" if runtime_ready else "unavailable",
+                "profile": (
+                    "steel_browsergym"
+                    if self.settings.browser_provider == "steel"
+                    else "local_browsergym"
+                ),
+                "reason_code": reason,
+            },
+            "viewer": {
+                "status": "available" if viewer_ready else "unavailable",
+                "provider": "steel" if viewer_ready else None,
+                "read_only": True,
+                "reason_code": viewer_reason,
+            },
+            "durable_resume": {
+                "status": "unavailable",
+                "reason_code": "environment_reconnect_not_implemented",
+            },
+            "durable_pause": {
+                "status": "available" if self.checkpoint_store is not None else "unavailable",
+                "reason_code": "" if self.checkpoint_store is not None else "checkpoint_store_not_configured",
+            },
+        }
+
+
+async def _open_surface(
+    settings: BrowserGymDeploymentSettings,
+    viewer_gateway: SteelViewerGateway | None = None,
+    viewer_lease: SteelBrowserLease | None = None,
+) -> BrowserGymSurfaceAdapter:
+    """Finish a non-cancellable sync open and recover its surface on request cancellation."""
+
+    gym_factory: Callable[..., BrowserGymPort] | None = None
+    if viewer_gateway is not None and viewer_lease is not None:
+        playwright_factory = viewer_gateway.environment_playwright_factory(viewer_lease)
+
+        def open_remote_gym(
+            task_id: str,
+            *,
+            headless: bool,
+            registration_modules: tuple[str, ...],
+        ) -> ThreadBoundBrowserGym:
+            return ThreadBoundBrowserGym(
+                task_id,
+                headless=headless,
+                registration_modules=registration_modules,
+                environment_playwright_factory=playwright_factory,
+            )
+
+        gym_factory = cast(Callable[..., BrowserGymPort], open_remote_gym)
+    opening = asyncio.create_task(
+        asyncio.to_thread(
+            BrowserGymSurfaceAdapter.open,
+            settings.task_id,
+            settings.seed,
+            gym_factory=gym_factory,
+        )
+    )
+    try:
+        return await asyncio.shield(opening)
+    except asyncio.CancelledError:
+        try:
+            surface = await opening
+        except BaseException:  # noqa: BLE001, S110 - the primary cancellation wins
+            pass
+        else:
+            try:
+                await surface.close()
+            except Exception:
+                logger.exception("BrowserGym cleanup failed after session-open cancellation")
+        raise
+
+
+def _request_factory(goal: str, task_id: str, max_turns: int):
+    def create(session_id: str, instruction: str) -> NaturalLanguageTaskRequest:
+        if instruction.strip() != goal.strip():
+            raise ValueError("task instruction must match the active BrowserGym environment goal")
+        return NaturalLanguageTaskRequest(
+            session_id,
+            instruction,
+            TaskBoundary(
+                allowed_effects=("external_ui_interaction",),
+                forbidden_effects=("external_network_side_effect", "credential_use"),
+                risk_profile=RiskProfile.LOW,
+                loop_budget=LoopBudget(max_turns=max_turns, max_observations=max_turns * 2),
+            ),
+            source_ref=f"interaction-shell:{task_id}:goal",
+        )
+
+    return create
+
+
+def _model_step_store(
+    checkpoint_store: SQLiteRuntimeCheckpointStore | None,
+    session_id: str,
+) -> StepStore | None:
+    if checkpoint_store is None:
+        return None
+    from pydantic_ai_harness.step_persistence import SqliteStepStore
+
+    session_digest = hashlib.sha256(session_id.encode()).hexdigest()
+    model_store_directory = checkpoint_store.path.parent / (
+        checkpoint_store.path.name + ".model-steps"
+    )
+    return SqliteStepStore(
+        database=model_store_directory / f"{session_digest}.sqlite3",
+        max_snapshots_per_run=2,
+    )
+
+
+def _bounded_int(
+    environment: Mapping[str, str],
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = environment.get(name, "").strip()
+    try:
+        value = default if not raw else int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be within [{minimum}, {maximum}]")
+    return value
+
+
+def _bounded_float(
+    environment: Mapping[str, str],
+    name: str,
+    default: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    raw = environment.get(name, "").strip()
+    try:
+        value = default if not raw else float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be numeric") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be within [{minimum}, {maximum}]")
+    return value
+
+
+def _is_remotely_reachable_source(value: str) -> bool:
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.hostname.lower() == "localhost":
+        return False
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        return True
+    return not (
+        address.is_loopback
+        or address.is_private
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_unspecified
+    )
+
+
+def _load_project_environment() -> None:
+    configured = os.environ.get("INTERACTION_SHELL_ENV_FILE", "").strip()
+    repository = Path(__file__).resolve().parents[4]
+    candidates = (
+        Path(configured) if configured else None,
+        repository / ".env",
+        repository.parent / "affordance-runtime" / ".env",
+    )
+    for candidate in candidates:
+        if candidate is not None and candidate.is_file():
+            load_dotenv(candidate, override=False)
+            return
+
+
+_load_project_environment()
+_deployment_environment = dict(os.environ)
+settings = BrowserGymDeploymentSettings.from_environment(_deployment_environment)
+_configured_checkpoint_path = _deployment_environment.get(
+    "INTERACTION_SHELL_CHECKPOINT_DB", ""
+).strip()
+_checkpoint_path = (
+    Path(_configured_checkpoint_path)
+    if _configured_checkpoint_path
+    else Path(__file__).resolve().parents[4]
+    / ".runtime"
+    / "interaction-shell-checkpoints.sqlite3"
+)
+_viewer_key = (
+    _deployment_environment.get("Viewer_API_KEY", "").strip()
+    or _deployment_environment.get("STEEL_API_KEY", "").strip()
+)
+viewer_gateway = (
+    SteelViewerGateway(_viewer_key)
+    if settings.browser_provider == "steel" and _viewer_key
+    else None
+)
+session_factory = BrowserGymDeploymentSessionFactory(
+    settings,
+    _deployment_environment,
+    SQLiteRuntimeCheckpointStore(_checkpoint_path),
+    viewer_gateway,
+)
+runtime_port = CoreRuntimeSessionPort(
+    session_factory,
+    surface_projector=(viewer_gateway.project if viewer_gateway is not None else unavailable_viewer),
+)
+app = create_app(
+    RunSessionManager(
+        runtime_port,
+        SQLiteSessionRecoveryRegistry(_checkpoint_path),
+    ),
+    health_provider=session_factory.health,
+    viewer_gateway=viewer_gateway,
+    completed_run_resolver=CompletedRunSummaryResolver.from_environment(
+        _deployment_environment
+    ),
+    evidence_access_key=_deployment_environment.get(
+        "INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""
+    ),
+)

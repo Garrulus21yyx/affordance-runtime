@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from affordance_runtime.actions.action_space import ActionSpaceBuilder
@@ -14,9 +16,17 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
+from affordance_runtime.agent.decisions import AskUser
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisionPorts, TaskEvaluator
-from affordance_runtime.agent.run_state import RunState
+from affordance_runtime.agent.run_control import (
+    CooperativeRunControl,
+    RunControlAdmission,
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcome,
+)
+from affordance_runtime.agent.run_state import RunCheckpointFacts, RunState, RunStatus
 from affordance_runtime.agent.waiting import SystemWaitController, WaitController
 from affordance_runtime.goals.compiler import GoalCompiler, GoalPlanBoundary, UnavailableGoalCompiler
 from affordance_runtime.risk.policy import RiskPolicy
@@ -27,6 +37,15 @@ from affordance_runtime.task.intake import (
     TaskIntake,
     TaskIntakeOutcome,
     ThinTaskIntake,
+)
+from affordance_runtime.task.revision import (
+    RevisionConversationContext,
+    RevisionReady,
+    TaskRevisionBoundary,
+    TaskRevisionCompiler,
+    TaskRevisionCompilerOutcome,
+    TaskRevisionRuntimeContext,
+    UnavailableTaskRevisionCompiler,
 )
 from affordance_runtime.world.environment import WorldEnvironment
 
@@ -48,6 +67,16 @@ class TargetRuntimeRunOutcome:
 
 
 @dataclass(frozen=True)
+class TargetRuntimeRevisionOutcome:
+    compiler: TaskRevisionCompilerOutcome
+    intake: TaskIntakeOutcome | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.compiler, RevisionReady) != (self.intake is not None):
+            raise ValueError("Runtime revision must align compiler and intake outcomes")
+
+
+@dataclass(frozen=True)
 class TargetRuntime:
     """Own the only product loop; adapters and benchmarks inject ports."""
 
@@ -64,9 +93,16 @@ class TargetRuntime:
     required_decisions: frozenset[DecisionCapability] = field(default_factory=frozenset)
     goal_compiler: GoalCompiler = field(default_factory=UnavailableGoalCompiler)
     goal_plan_boundary: GoalPlanBoundary = field(default_factory=GoalPlanBoundary)
+    task_revision_compiler: TaskRevisionCompiler = field(default_factory=UnavailableTaskRevisionCompiler)
+    task_revision_boundary: TaskRevisionBoundary = field(default_factory=TaskRevisionBoundary)
     runtime_controls: tuple[str, ...] = ()
     episode_monitor: object | None = None
     official_outcome_sink: object | None = None
+    run_control: CooperativeRunControl = field(
+        default_factory=CooperativeRunControl,
+        compare=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.decision_ports, AgentDecisionPorts):
@@ -79,6 +115,10 @@ class TargetRuntime:
             raise TypeError("TargetRuntime intake is invalid")
         if not callable(getattr(self.goal_compiler, "compile", None)):
             raise TypeError("TargetRuntime goal compiler is invalid")
+        if not callable(getattr(self.task_revision_compiler, "compile", None)):
+            raise TypeError("TargetRuntime task revision compiler is invalid")
+        if not isinstance(self.run_control, CooperativeRunControl):
+            raise TypeError("TargetRuntime cooperative control owner is invalid")
         required = normalize_decision_capabilities(
             self.required_decisions,
             field_name="TargetRuntime required_decisions",
@@ -105,6 +145,277 @@ class TargetRuntime:
             runtime_controls=self.runtime_controls,
             episode_monitor=self.episode_monitor,
             official_outcome_sink=self.official_outcome_sink,
+            run_control=self.run_control,
+        )
+
+    def request_control(
+        self,
+        command_id: str,
+        kind: RunControlKind,
+    ) -> RunControlAdmission:
+        return self.run_control.request(command_id, kind)
+
+    def export_checkpoint_history(self) -> Mapping[str, object]:
+        """Read model history at the policy owner after a closed safe boundary."""
+
+        exporter = getattr(self.decision_ports.action_policy, "export_checkpoint_history", None)
+        if not callable(exporter):
+            return {"format": "unavailable", "messages": []}
+        history = exporter()
+        if not isinstance(history, Mapping):
+            raise TypeError("Runtime checkpoint history must be a mapping")
+        return history
+
+    def bind_checkpoint_history_identity(self, task: TaskGoal) -> None:
+        """Bind model continuity to admitted task authority before initialization."""
+
+        binder = getattr(
+            self.decision_ports.action_policy,
+            "bind_checkpoint_history_identity",
+            None,
+        )
+        if callable(binder):
+            binder(task_id=task.task_id, task_revision=task.revision)
+
+    async def persist_checkpoint_history(self) -> Mapping[str, object]:
+        """Durably settle model history before the Runtime checkpoint refers to it."""
+
+        persister = getattr(
+            self.decision_ports.action_policy,
+            "persist_checkpoint_history",
+            None,
+        )
+        if not callable(persister):
+            return self.export_checkpoint_history()
+        history = persister()
+        if inspect.isawaitable(history):
+            history = await history
+        if not isinstance(history, Mapping):
+            raise TypeError("Runtime persisted checkpoint history must be a mapping")
+        return history
+
+    def restore_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(self.decision_ports.action_policy, "restore_checkpoint_history", None)
+        if not callable(restorer):
+            raise TypeError("Runtime model policy does not support checkpoint restoration")
+        restorer(payload, task_id=task_id, task_revision=task_revision)
+
+    async def restore_persisted_checkpoint_history(
+        self,
+        payload: Mapping[str, object],
+        *,
+        task_id: str,
+        task_revision: int,
+    ) -> None:
+        restorer = getattr(
+            self.decision_ports.action_policy,
+            "restore_persisted_checkpoint_history",
+            None,
+        )
+        if not callable(restorer):
+            self.restore_checkpoint_history(
+                payload,
+                task_id=task_id,
+                task_revision=task_revision,
+            )
+            return
+        restored = restorer(
+            payload,
+            task_id=task_id,
+            task_revision=task_revision,
+        )
+        if inspect.isawaitable(restored):
+            await restored
+
+    def rebind_checkpoint_history(
+        self,
+        *,
+        task_id: str,
+        current_revision: int,
+        revised_revision: int,
+    ) -> None:
+        rebind = getattr(self.decision_ports.action_policy, "rebind_checkpoint_history", None)
+        if not callable(rebind):
+            raise TypeError("Runtime model policy does not support task revision")
+        rebind(
+            task_id=task_id,
+            current_revision=current_revision,
+            revised_revision=revised_revision,
+        )
+
+    def apply_waiting_control(
+        self,
+        state: RunState,
+    ) -> RunControlOutcome | None:
+        boundary = {
+            "waiting_user": RunControlBoundary.WAITING_USER,
+            "waiting_confirmation": RunControlBoundary.WAITING_CONFIRMATION,
+        }.get(state.status.value)
+        if (
+            boundary is None
+            and state.control_boundary is not None
+            and state.control_boundary.kind is RunControlKind.PAUSE
+        ):
+            boundary = RunControlBoundary.BEFORE_POLICY
+        if boundary is None:
+            raise ValueError("run is not at a waiting control boundary")
+        request = self.run_control.pending
+        close = getattr(self.decision_ports.action_policy, "close_deferred_call", None)
+        if callable(close) and state.last_step is not None:
+            try:
+                close(state.last_step)
+            except Exception:
+                if request is not None and request.kind is RunControlKind.PAUSE:
+                    return self.run_control.fail_pending("deferred_history_closure_failed")
+        outcome = self.run_control.acknowledge(boundary)
+        if outcome is not None:
+            state.apply_control_boundary(outcome)
+            emit = getattr(self.trace_sink, "control_boundary_reached", None)
+            if callable(emit):
+                emit(outcome)
+            if outcome.kind is RunControlKind.CANCEL:
+                self.trace_sink.run_finished(state)
+        return outcome
+
+    def resume_control(self, state: RunState, command_id: str) -> RunControlOutcome:
+        if (
+            state.control_boundary is None
+            or state.control_boundary.kind is not RunControlKind.PAUSE
+            or self.run_control.paused is None
+        ):
+            raise ValueError("run has no matching internal pause boundary")
+        restored_checkpoint = bool(state.durable_checkpoint_id)
+        outcome = self.run_control.resume(command_id)
+        state.resume_control_boundary()
+        self.trace_sink.run_resumed(
+            "control",
+            {"command_id": command_id, "outcome": outcome.outcome.value},
+        )
+        if restored_checkpoint:
+            self.build_loop().settle_restored_currentness(state)
+        return outcome
+
+    async def recover_pause_persistence_failure(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+        command_id: str,
+    ) -> RunState:
+        """Clear an uncommitted pause and recover a fresh current World."""
+
+        prior_status = state.status
+        self.resume_control(state, command_id)
+        if prior_status is RunStatus.RUNNING:
+            return await self.build_loop().refresh_after_pause_persistence_failure(
+                environment,
+                task,
+                state,
+            )
+        return state
+
+    async def refresh_after_user_control(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Capture and evaluate the only authoritative post-user-control World."""
+
+        return await self.build_loop().refresh_after_user_control(
+            environment,
+            task,
+            state,
+        )
+
+    async def restore_paused_checkpoint(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        facts: RunCheckpointFacts,
+        checkpoint_id: str,
+    ) -> RunState:
+        """Restore Runtime/model/control owners before exposing a recovered session."""
+
+        self.run_control.restore_paused(facts.pause_boundary)
+        try:
+            return await self.build_loop().restore_paused(
+                environment,
+                task,
+                facts,
+                checkpoint_id,
+            )
+        except BaseException:
+            self.run_control.resume("restore-failed")
+            raise
+
+    async def compile_task_revision(
+        self,
+        admitted: ReadyTask,
+        conversation: RevisionConversationContext,
+        state: RunState,
+    ) -> TargetRuntimeRevisionOutcome:
+        """Compile once, then re-admit the complete consecutive TaskGoal."""
+
+        compiled = await self.task_revision_boundary.resolve(
+            self.task_revision_compiler,
+            admitted.task,
+            conversation,
+            self._task_revision_runtime_context(state),
+        )
+        if not isinstance(compiled, RevisionReady):
+            return TargetRuntimeRevisionOutcome(compiled)
+        request = NaturalLanguageTaskRequest(
+            admitted.task.task_id,
+            compiled.proposal.instruction,
+            compiled.proposal.boundary,
+            admitted.intent_context,
+            admitted.source_ref,
+            admitted.task.revision + 1,
+        )
+        return TargetRuntimeRevisionOutcome(compiled, self.intake.compile(request))
+
+    @staticmethod
+    def _task_revision_runtime_context(state: RunState) -> TaskRevisionRuntimeContext:
+        """Read interruption facts from the sole authoritative RunState."""
+
+        effective_status = state.paused_from_status if state.status is RunStatus.PAUSED else state.status
+        step = state.last_step
+        if effective_status is RunStatus.WAITING_USER and step is not None and isinstance(step.decision, AskUser):
+            decision = step.decision
+            identity = decision.tool_call_id or decision.context_id
+            return TaskRevisionRuntimeContext(
+                pending_question_id=f"ask:{identity}",
+                pending_question=decision.question,
+                pending_question_fields=decision.requested_fields,
+            )
+        if effective_status is RunStatus.WAITING_CONFIRMATION and step is not None and step.confirmation is not None:
+            confirmation = step.confirmation
+            return TaskRevisionRuntimeContext(
+                pending_confirmation_id=(f"confirmation:{confirmation.subject_id}"),
+                pending_confirmation_summary=confirmation.reason,
+                pending_confirmation_risk=confirmation.risk.value,
+            )
+        return TaskRevisionRuntimeContext()
+
+    async def prepare_paused_task_revision(
+        self,
+        environment: WorldEnvironment,
+        current_task: TaskGoal,
+        revised_task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        return await self.build_loop().revise_paused(
+            environment,
+            current_task,
+            revised_task,
+            state,
         )
 
     def with_runtime_controls(
@@ -124,6 +435,7 @@ class TargetRuntime:
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> RunState:
+        self.bind_checkpoint_history_identity(task)
         return await self.build_loop().run(environment, task)
 
     async def initialize_task(
@@ -131,6 +443,7 @@ class TargetRuntime:
         environment: WorldEnvironment,
         task: TaskGoal,
     ) -> RunState:
+        self.bind_checkpoint_history_identity(task)
         return await self.build_loop().initialize(environment, task)
 
     async def continue_task(
@@ -167,7 +480,10 @@ class TargetRuntime:
     def admit(self, request: NaturalLanguageTaskRequest) -> TaskIntakeOutcome:
         """Compile stable task authority before allocating a world session."""
 
-        return self.intake.compile(request)
+        admitted = self.intake.compile(request)
+        if isinstance(admitted, ReadyTask):
+            self.bind_checkpoint_history_identity(admitted.task)
+        return admitted
 
     async def run_request(
         self,
