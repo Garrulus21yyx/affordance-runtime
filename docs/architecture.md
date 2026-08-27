@@ -1450,7 +1450,18 @@ allocation as progress; Agent S2's optional reflection likewise evaluates the la
 requires a second World, Replanner, evidence ledger, or cursor for this failure. Generated identity-rekeying tests and
 the full BrowserGym/Agent/Evaluation owner surface protect the repaired invariant. The focused owner surface passes
 `551 tests / 3 skipped`; the full suite passes `1,813 / 19 skipped` with only the previously recorded unrelated
-`docs/interaction-shell.md` governance failure. A fresh live Task740 witness remains required.
+`docs/interaction-shell.md` governance failure.
+
+The fresh post-repair Task740
+[`run6`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run6/run.json) closes this reopened invariant with
+native benchmark evidence. The first coordinate-result activation changed the page; the next equivalent activation
+was typed `UNCHANGED`, and the following repeat reached the existing `control_stall` recovery instead of resetting
+Monitor on DOM identity churn. Six recovery turns remained ordinary ActionPolicy calls with typed feedback; no second
+policy or control loop was involved. The same policy then found the browser's directions control, filled both
+coordinate fields, activated `Go`, read the route result, and submitted `NAVIGATE/SUCCESS`. The native evaluator
+returned `terminal_success / verified_success`; the suite reports `accepted=true` with no acceptance errors. This
+fresh witness restores closure for identity-free action-effect projection and Monitor delivery, while broader
+held-out benchmark coverage and efficiency remain separate non-closed concerns.
 
 ## World, perception, and action boundaries
 

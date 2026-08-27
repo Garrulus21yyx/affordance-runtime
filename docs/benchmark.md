@@ -1327,7 +1327,18 @@ repeated attempts, recovers on the second equivalent replay, and can reject anot
 typed recovery contract. Generated re-keying properties plus focused BrowserGym/Agent/Evaluation tests cover the
 full owner/consumer chain (`551 passed / 3 skipped`); the full suite reports `1,813 passed / 19 skipped` plus only the
 known documentation-governance failure above. No OSM/task/label branch, Replanner, cursor, evidence inventory, retry,
-or additional model role was added. A fresh live Task740 run remains required.
+or additional model role was added.
+
+The authorized fresh Task740
+[`run6`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run6/run.json) is accepted. It completed in 56 policy
+calls, 33 executions, 35 observations, and about 443.5 seconds. The trace records six existing `control_stall`
+recoveries: after the first real coordinate-result transition, equivalent repeat clicks were no longer promoted from
+raw ID/fact churn to progress. ActionPolicy left that route, found `Find directions between two points`, filled CMU
+`40.4425, -79.9433` and Madison Square Garden `40.7506, -73.9936`, activated `Go`, read the route, and submitted the
+typed final response. Native evaluation is `terminal_success / verified_success`; cleanup succeeded and suite
+acceptance is true with no errors. This is fresh closure evidence for the repaired effect/Monitor invariant, not an
+efficiency claim: the run still used 896,290 total model tokens (873,335 prompt and 22,955 completion), including
+572,288 prompt-cache-hit tokens recorded in the provider transcripts.
 
 ## Live-run authorization and execution
 
