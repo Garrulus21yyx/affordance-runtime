@@ -1274,6 +1274,23 @@ before restoring correctness acceptance for the optimized cutover. The post-repa
 the full suite passed 1,807 with 19 skips and only the pre-existing documentation-governance failure caused by the
 unmaintained `docs/interaction-shell.md` file outside the five-document allowlist.
 
+The authorized v39 Task740
+[`run3`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run3/run.json), at commit `33241be8`, crossed the
+repaired GUI semantics but is not accepted. It preserved the two Wiki coordinate pairs as `lat, lon`, filled the OSM
+directions form, submitted it, produced route region `R9`, and read records 1–20 and 21–38. Formal context use remained
+below run1 despite four additional policy turns: prompt tokens were 526,977 versus 702,419, accumulated history was
+524,062 versus 772,712, and aggregate tokens were 531,429 versus 706,384. Different paths and 355.8-second wall time
+still preclude an aggregate efficiency or latency closure.
+
+Run3 failed on policy turn 33 with zero STOP/native-evaluator calls. GoalCompiler's advisory final item said to deliver
+route details in the final response even though the authoritative task asks to view the route on the map. ActionPolicy
+therefore selected `RETRIEVE` rather than `NAVIGATE` and attempted to place all 37 route instructions in
+`retrieved_data`; the physical `submit_final_response` call exhausted the existing 1,024-token output bound before its
+JSON arguments closed. This is not missing evidence—the route was already complete—and not a reason to enlarge the
+output cap. It reopens the existing GoalCompiler/ActionPolicy finalization contract: response-envelope text must not
+be compiled as a user outcome, and advisory GoalPlan prose cannot override TaskGoal classification or requested final
+payload. No task-specific repair is authorized by this witness.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:

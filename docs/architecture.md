@@ -1390,6 +1390,20 @@ ActionPolicy contract ambiguities: exact GUI values retain their supported repre
 requires conversion, and E-ref verbs—not `active`—own executability (`disabled=true` owns unavailability). This adds
 no formatter, site rule, memory, cursor, or recovery path. A fresh live correctness witness remains required.
 
+The authorized v39 Task740
+[`run3`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run3/run.json) verifies those two repaired semantics:
+ActionPolicy entered the Wiki coordinates into the OSM GUI in their supported `lat, lon` representation, treated the
+returned controls as executable, produced the real route region `R9`, and read both pages of its 38 records. It did
+not revisit the failed route strategy. The run nevertheless ended `failed` before STOP because the task's advisory
+GoalPlan said that route details should be delivered in the final response. ActionPolicy allowed that advice to
+override the authoritative navigation objective, classified the task as `RETRIEVE`, and attempted to serialize all
+37 turn instructions into `submit_final_response`; the bounded 1,024-token ordinary response ended with truncated
+tool arguments. Increasing that output cap would mask the incorrect finalization semantics. The remaining owner gap
+is bounded to the existing GoalCompiler/ActionPolicy task boundary: a generic final-response envelope is not a user
+outcome, GoalPlan must not turn it into one, and ActionPolicy must derive final response classification and requested
+payload from TaskGoal rather than intermediate evidence or advisory plan prose. No World, history, ToolReturn,
+Monitor, Catalog, executor, or evaluator change is implicated.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
