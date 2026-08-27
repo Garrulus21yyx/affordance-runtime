@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass, field
 from time import time
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit, urlunsplit
 
 from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     InteractionCapabilityError,
 )
 from affordance_runtime.actions.classification import classify_dom_action
-from affordance_runtime.actions.effect_authority import EffectClass, Externality, Reversibility
+from affordance_runtime.actions.effect_authority import EffectClass, Externality
 from affordance_runtime.actions.effect_policy import semantics_for_operation
+from affordance_runtime.actions.effect_semantics import Reversibility
+from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.execution.contracts import (
     ActionError,
     ActionResult,
@@ -20,7 +26,10 @@ from affordance_runtime.execution.contracts import (
     DispatchStatus,
 )
 from affordance_runtime.surfaces.dom.document import project_structured_document
-from affordance_runtime.surfaces.dom.interaction_profile import DOM_INTERACTION_CAPABILITIES
+from affordance_runtime.surfaces.dom.interaction_profile import (
+    DOM_BROWSER_GLOBAL_PRIMITIVES,
+    DOM_INTERACTION_CAPABILITIES,
+)
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationOffer,
@@ -69,9 +78,14 @@ class DomSurfaceAdapter:
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
-        return (ObservationOffer(
-            self.surface, "structural", "structural", "low",
-        ),)
+        return (
+            ObservationOffer(
+                self.surface,
+                "structural",
+                "structural",
+                "low",
+            ),
+        )
 
     def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
@@ -90,12 +104,11 @@ class DomSurfaceAdapter:
             str(snapshot.observation.metadata.get("html") or ""),
             snapshot.observation.url,
         )
-        document_enabled = (
-            len(document.targets) > 1
-            or "structured_document" in self._task.requested_outputs
-        )
+        document_enabled = len(document.targets) > 1 or "structured_document" in self._task.requested_outputs
+        browser_state = self.session.browser_context_state()
+        browser_target = _browser_context_target(browser_state)
         action_targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
-        targets = (*action_targets, *(document.targets if document_enabled else ()))
+        targets = (browser_target, *action_targets, *(document.targets if document_enabled else ()))
         binding_results = tuple(
             _binding(
                 self._task,
@@ -106,6 +119,10 @@ class DomSurfaceAdapter:
             for affordance in snapshot.affordance_model.affordances
         )
         bindings = tuple(binding for binding in binding_results if binding is not None)
+        bindings = (
+            *_browser_context_bindings(observation_id, snapshot.observation.page_revision, browser_state),
+            *bindings,
+        )
         unsupported = tuple(
             affordance.action
             for affordance, binding in zip(snapshot.affordance_model.affordances, binding_results, strict=True)
@@ -160,6 +177,9 @@ class DomSurfaceAdapter:
         )
         if not identity_is_current:
             return False, 0
+        if binding.payload.get("binding_kind") == "browser_context":
+            current = _browser_context_fingerprint(self.session.browser_context_state())
+            return current == binding.target_fingerprint, 1
         live = self.session.probe_dom_target(binding.source_target_id)
         current = bool(live and live[0] == binding.source_revision and live[1] == binding.target_fingerprint)
         return current, 1
@@ -177,12 +197,35 @@ class DomSurfaceAdapter:
             )
         selector = str(request.binding.payload.get("selector") or "")
         try:
-            if request.binding.primitive_action == "click":
+            primitive = request.binding.primitive_action
+            if primitive == "click":
                 self.session.click(selector)
-            elif request.binding.primitive_action in {"type", "fill"}:
+            elif primitive in {"type", "fill"}:
                 self.session.fill(selector, str(request.intent.parameters["text"]))
-            elif request.binding.primitive_action == "select":
+            elif primitive == "select":
                 self.session.select_option(selector, str(request.intent.parameters["value"]))
+            elif primitive == "goto":
+                url = request.intent.parameters.get("url")
+                if not _valid_navigation_url(url):
+                    return ActionResult(
+                        request.request_id,
+                        DispatchStatus.NOT_SENT,
+                        self.surface,
+                        False,
+                        ActionError.INVALID_PARAMETERS,
+                        {"currentness_probe_count": probe_count},
+                    )
+                self.session.open(str(url))
+            elif primitive == "go_back":
+                self.session.go_back()
+            elif primitive == "go_forward":
+                self.session.go_forward()
+            elif primitive == "new_tab":
+                self.session.new_tab()
+            elif primitive == "tab_focus":
+                self.session.focus_tab(int(request.intent.parameters["index"]))
+            elif primitive == "tab_close":
+                self.session.close_tab()
             else:
                 return ActionResult(
                     request.request_id,
@@ -219,6 +262,147 @@ def _target(affordance: Affordance) -> SemanticTarget:
         affordance.role,
         affordance.label,
         dict(affordance.state),
+    )
+
+
+def _browser_context_target(state: object) -> SemanticTarget:
+    public_tabs = tuple(
+        {
+            "index": tab["index"],
+            "title": _public_title(tab.get("title")),
+            "route": _public_route(tab.get("url")) or "opaque",
+            "active": tab["active"],
+        }
+        for tab in _browser_tabs(state)
+    )
+    return SemanticTarget(
+        "browser-context:current",
+        "browser_context",
+        "Browser navigation",
+        {
+            "subject.kind": "browser_context",
+            "open_tabs": public_tabs,
+            "active_tab_index": _active_tab_index(state),
+            "navigation_scope": "unrestricted",
+        },
+    )
+
+
+def _browser_context_bindings(
+    observation_id: str,
+    source_revision: str,
+    state: object,
+) -> tuple[ActionBinding, ...]:
+    tabs = _browser_tabs(state)
+    active_index = _active_tab_index(state)
+    fingerprint = _browser_context_fingerprint(state)
+    primitives = tuple(
+        primitive
+        for primitive in DOM_BROWSER_GLOBAL_PRIMITIVES
+        if primitive != "tab_focus" or len(tabs) > 1
+        if primitive != "tab_close" or len(tabs) > 1
+    )
+    bindings = []
+    for primitive in primitives:
+        schema = (
+            INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+                primitive,
+                current_value_schema={
+                    "type": "integer",
+                    "enum": [index for index in range(len(tabs)) if index != active_index],
+                },
+            )
+            if primitive == "tab_focus"
+            else INTERACTION_CAPABILITY_REGISTRY.parameter_schema(primitive)
+        )
+        bindings.append(
+            ActionBinding(
+                f"{observation_id}:browser-context:{primitive}",
+                observation_id,
+                observation_id,
+                source_revision,
+                fingerprint,
+                "browser-context:current",
+                "browser-context:current",
+                "dom",
+                "dom",
+                primitive,
+                primitive,
+                "local_reversible",
+                ("external_ui_interaction",),
+                schema,
+                {"binding_kind": "browser_context"},
+                observation_barrier=True,
+                risk=ActionRisk.LOW,
+                reversibility=Reversibility.REVERSIBLE,
+            )
+        )
+    return tuple(bindings)
+
+
+def _browser_tabs(state: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(state, dict):
+        raise TypeError("browser context state must be an object")
+    raw_tabs = state.get("open_tabs")
+    if not isinstance(raw_tabs, tuple | list) or not raw_tabs:
+        raise ValueError("browser context requires at least one tab")
+    tabs = tuple(raw_tabs)
+    if any(not isinstance(tab, dict) for tab in tabs):
+        raise TypeError("browser context tabs must be objects")
+    return tabs
+
+
+def _active_tab_index(state: object) -> int:
+    if not isinstance(state, dict):
+        raise TypeError("browser context state must be an object")
+    value = state.get("active_tab_index")
+    tabs = _browser_tabs(state)
+    if type(value) is not int or not 0 <= value < len(tabs):
+        raise ValueError("browser context active tab is invalid")
+    return value
+
+
+def _browser_context_fingerprint(state: object) -> str:
+    tabs = _browser_tabs(state)
+    payload = (
+        tuple(
+            (
+                tab["index"] if type(tab.get("index")) is int else -1,
+                str(tab.get("url") or ""),
+                bool(tab.get("active")),
+            )
+            for tab in tabs
+        ),
+        _active_tab_index(state),
+    )
+    return "sha256:" + hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
+
+
+def _public_route(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    host = parsed.hostname
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return urlunsplit((parsed.scheme, host, parsed.path or "/", "", ""))[:1_000]
+
+
+def _public_title(value: object) -> str:
+    return re.sub(r"\s+", " ", value).strip()[:240] if isinstance(value, str) else ""
+
+
+def _valid_navigation_url(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = urlsplit(value.strip())
+    except ValueError:
+        return False
+    return bool(
+        parsed.scheme in {"http", "https"} and parsed.hostname and parsed.username is None and parsed.password is None
     )
 
 

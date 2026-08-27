@@ -15,9 +15,7 @@ from tests.support.canonical_world import canonical_world
 
 
 def project_model_world(observation, budget, *args, **kwargs):
-    return _project_model_world(
-        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
-    )
+    return _project_model_world(observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs)
 
 
 class InteractivePage:
@@ -87,7 +85,8 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         assert session.currentness_probes == 1
         assert page.clicks == 1
         assert after.observation_id != before.observation_id
-        assert after.targets[0].label == "Shared state enabled"
+        assert next(target for target in after.targets if target.role == "button").label == ("Shared state enabled")
+        assert any(target.role == "browser_context" for target in after.targets)
 
     asyncio.run(scenario())
 
@@ -108,6 +107,7 @@ def test_stale_dom_binding_makes_zero_executor_calls() -> None:
         option = ActionSpaceBuilder().build(effectful, old).options[0]
         request = ActionBinder().bind(ActionSpaceBuilder().admit(option, {}), old, "context:test")
         from affordance_runtime.world import ObservationRequestKind, WorldObservationRequest
+
         await world.capture(WorldObservationRequest(ObservationRequestKind.CURRENTNESS_REFRESH, "new"))
 
         assert not world.is_current(request)
@@ -163,7 +163,8 @@ def test_unsupported_dom_primitive_does_not_discard_supported_actions() -> None:
         observed = acquisition.observation
         space = ActionSpaceBuilder().build(task, observed)
 
-        assert len(observed.targets) == 2
+        assert sum(target.role != "browser_context" for target in observed.targets) == 2
+        assert any(target.role == "browser_context" for target in observed.targets)
         assert len(space.options) == 1
         assert "download" in observed.sources[0].artifacts["unsupported_actions"]
 

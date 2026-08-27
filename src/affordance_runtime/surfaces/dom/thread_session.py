@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 
@@ -21,6 +22,7 @@ class ThreadBoundBrowserSession:
     action_timeout_ms: int = 8_000
     lease_ttl_ms: int = 2_000
     command_timeout_s: float = 30.0
+    environment_playwright_factory: Callable[[object], object] | None = None
     _commands: queue.Queue[_Command | None] = field(init=False, repr=False)
     _ready: Future = field(init=False, repr=False)
     _thread: threading.Thread = field(init=False, repr=False)
@@ -49,8 +51,15 @@ class ThreadBoundBrowserSession:
         headless: bool = True,
         action_timeout_ms: int = 8_000,
         lease_ttl_ms: int = 2_000,
+        environment_playwright_factory: Callable[[object], object] | None = None,
     ) -> ThreadBoundBrowserSession:
-        return cls(url, headless, action_timeout_ms, lease_ttl_ms)
+        return cls(
+            url,
+            headless,
+            action_timeout_ms,
+            lease_ttl_ms,
+            environment_playwright_factory=environment_playwright_factory,
+        )
 
     def _run(self) -> None:
         try:
@@ -59,6 +68,7 @@ class ThreadBoundBrowserSession:
                 headless=self.headless,
                 action_timeout_ms=self.action_timeout_ms,
                 lease_ttl_ms=self.lease_ttl_ms,
+                environment_playwright_factory=self.environment_playwright_factory,
             )
             self._ready.set_result(True)
         except BaseException as exc:
@@ -98,6 +108,27 @@ class ThreadBoundBrowserSession:
 
     def select_option(self, selector: str, value: str):
         return self._call("select_option", selector, value)
+
+    def open(self, url: str):
+        return self._call("open", url)
+
+    def go_back(self):
+        return self._call("go_back")
+
+    def go_forward(self):
+        return self._call("go_forward")
+
+    def new_tab(self):
+        return self._call("new_tab")
+
+    def focus_tab(self, index: int):
+        return self._call("focus_tab", index)
+
+    def close_tab(self):
+        return self._call("close_tab")
+
+    def browser_context_state(self):
+        return self._call("browser_context_state")
 
     def capture_visual_frame(self, observation_id: str):
         return self._call("capture_visual_frame", observation_id)

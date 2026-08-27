@@ -119,9 +119,7 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     assert ice.status_code == 200
     assert whep.status_code == 201
     assert transport.ice_calls == [("provider-1", "rtc-token-for-provider-1")]
-    assert transport.whep_calls == [
-        ("provider-1", "rtc-token-for-provider-1", b"offer", "application/sdp", "iad")
-    ]
+    assert transport.whep_calls == [("provider-1", "rtc-token-for-provider-1", b"offer", "application/sdp", "iad")]
     with pytest.raises(ViewerUnavailable) as unsupported_region:
         await gateway.whep("shell-session", b"offer", "application/sdp", "unknown-region")
     assert unsupported_region.value.code == "viewer_region_unsupported"
@@ -130,6 +128,35 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     await gateway.release(lease)
     assert transport.released == ["provider-1"]
     assert gateway.project(handle).kind == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_gateway_adapts_long_shell_ttl_to_provider_session_limit() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        maximum_session_timeout_ms=900_000,
+    )
+    shell_expiry = datetime.now(UTC) + timedelta(minutes=30)
+
+    before_open = datetime.now(UTC)
+    lease = await gateway.open("shell-session", shell_expiry)
+    after_open = datetime.now(UTC)
+
+    assert transport.created == [900_000]
+    assert lease.expires_at < shell_expiry
+    assert before_open + timedelta(milliseconds=900_000) <= lease.expires_at
+    assert lease.expires_at <= after_open + timedelta(milliseconds=900_000)
+
+
+def test_gateway_rejects_provider_timeout_below_supported_minimum() -> None:
+    with pytest.raises(ValueError, match="at least 60000"):
+        SteelViewerGateway(
+            "viewer-key",
+            FakeSteelTransport(),
+            maximum_session_timeout_ms=59_999,
+        )
 
 
 @pytest.mark.asyncio
@@ -190,6 +217,31 @@ async def test_provider_viewer_loss_does_not_release_the_runtime_browser_lease()
     assert response.status_code == 410
     assert gateway.project(handle).reason_code == "viewer_session_lost"
     assert transport.released == []
+    await gateway.release(lease)
+
+
+@pytest.mark.asyncio
+async def test_client_specific_whep_failure_does_not_poison_browser_lease() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    lease = await gateway.open("shell-session", datetime.now(UTC) + timedelta(minutes=5))
+    handle = SimpleNamespace()
+    gateway.attach(handle, lease)
+    await gateway.document("shell-session")
+
+    original_whep = transport.whep
+
+    async def rejected_offer(*args, **kwargs):
+        del args, kwargs
+        return ViewerHTTPResponse(400, b"unsupported offer", "text/plain")
+
+    transport.whep = rejected_offer
+    response = await gateway.whep("shell-session", b"offer", "application/sdp", "iad")
+
+    assert response.status_code == 400
+    assert gateway.project(handle).kind == "available"
+    transport.whep = original_whep
+    assert (await gateway.whep("shell-session", b"offer", "application/sdp", "iad")).status_code == 201
     await gateway.release(lease)
 
 

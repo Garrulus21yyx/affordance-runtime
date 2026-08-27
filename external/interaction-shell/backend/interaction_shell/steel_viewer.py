@@ -8,7 +8,7 @@ import re
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 _STEEL_API_ORIGIN = "https://api.steel.dev"
 _STEEL_API_HOST = "api.steel.dev"
 _STEEL_CDP_HOST = "connect.steel.dev"
+_STEEL_DEFAULT_MAX_SESSION_TIMEOUT_MS = 900_000
 _MAX_VIEWER_DOCUMENT_BYTES = 2 * 1024 * 1024
 _MAX_RTC_BODY_BYTES = 2 * 1024 * 1024
 _STEEL_REGIONS = frozenset(
@@ -226,26 +227,34 @@ class SteelViewerGateway:
         self,
         api_key: str,
         transport: SteelViewerTransport | None = None,
+        *,
+        maximum_session_timeout_ms: int = _STEEL_DEFAULT_MAX_SESSION_TIMEOUT_MS,
     ) -> None:
         if not api_key.strip():
             raise ValueError("Steel viewer requires a nonempty API key")
+        if maximum_session_timeout_ms < 60_000:
+            raise ValueError("Steel maximum session timeout must be at least 60000 ms")
         self.__api_key = api_key
         self._transport = transport or HTTPXSteelViewerTransport()
+        self._maximum_session_timeout_ms = maximum_session_timeout_ms
         self._leases: dict[str, SteelBrowserLease] = {}
         self._handle_sessions: dict[int, str] = {}
 
     async def open(self, session_id: str, expires_at: datetime) -> SteelBrowserLease:
-        remaining_ms = max(60_000, int((expires_at - datetime.now(UTC)).total_seconds() * 1000))
+        now = datetime.now(UTC)
+        remaining_ms = max(60_000, int((expires_at - now).total_seconds() * 1000))
+        provider_timeout_ms = min(remaining_ms, self._maximum_session_timeout_ms)
         provider_session_id, websocket_url, debug_url = await self._transport.create_session(
             self.__api_key,
-            timeout_ms=remaining_ms,
+            timeout_ms=provider_timeout_ms,
         )
+        provider_expires_at = now + timedelta(milliseconds=provider_timeout_ms)
         return SteelBrowserLease(
             session_id,
             provider_session_id,
             websocket_url,
             debug_url,
-            expires_at,
+            min(expires_at, provider_expires_at),
         )
 
     def attach(
@@ -307,8 +316,8 @@ class SteelViewerGateway:
             interactive=interactive,
         )
         if response.status_code != 200:
-            self._record_provider_failure(lease, response.status_code)
-            raise SteelViewerUnavailable(lease.unavailable_reason)
+            failure_code = self._record_provider_failure(lease, response.status_code)
+            raise SteelViewerUnavailable(failure_code)
         if not response.content_type.startswith("text/html"):
             lease.unavailable_reason = "viewer_provider_document_invalid"
             raise SteelViewerUnavailable(lease.unavailable_reason)
@@ -361,6 +370,11 @@ class SteelViewerGateway:
             region,
         )
         if response.status_code not in {200, 201}:
+            logger.warning(
+                "Steel viewer WHEP negotiation failed: status=%d code=%s",
+                response.status_code,
+                _bounded_provider_error_code(response.content),
+            )
             self._record_provider_failure(lease, response.status_code)
         return response
 
@@ -381,10 +395,14 @@ class SteelViewerGateway:
         return lease
 
     @staticmethod
-    def _record_provider_failure(lease: SteelBrowserLease, status_code: int) -> None:
-        lease.unavailable_reason = (
-            "viewer_session_lost" if status_code in {404, 410} else "viewer_provider_unavailable"
-        )
+    def _record_provider_failure(lease: SteelBrowserLease, status_code: int) -> str:
+        if status_code in {404, 410}:
+            lease.unavailable_reason = "viewer_session_lost"
+            return lease.unavailable_reason
+        # ICE/WHEP negotiation is viewer-client-specific. A rejected offer or a
+        # transient provider response does not invalidate the browser lease and
+        # must not prevent another compatible client from connecting.
+        return "viewer_provider_unavailable"
 
 
 class _SteelEnvironmentPlaywright:
@@ -437,7 +455,9 @@ class _SteelBrowser:
         if unsupported:
             raise RuntimeError("Steel browser context does not support requested overrides")
         if options.get("record_video_dir") is not None:
-            raise RuntimeError("Steel browser context cannot enable local Playwright video recording")
+            raise RuntimeError(
+                "Steel browser context cannot enable local Playwright video recording"
+            )
         viewport = options.get("viewport")
         self._context_claimed = True
         return _SteelContext(contexts[0], viewport if isinstance(viewport, dict) else None)
@@ -510,6 +530,19 @@ def _bounded_response(response: httpx.Response, maximum_bytes: int) -> ViewerHTT
     )
 
 
+def _bounded_provider_error_code(content: bytes) -> str:
+    if len(content) > 16_384:
+        return "response_too_large"
+    try:
+        payload = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return "unstructured"
+    code = payload.get("code") if isinstance(payload, dict) else None
+    return (
+        code if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", code) else "unknown"
+    )
+
+
 def _protect_steel_document(
     source: str,
     shell_session_id: str,
@@ -535,9 +568,7 @@ def _protect_steel_document(
 
     upstream_input_url = matches["websocket"][0].group("value")
     input_websocket_url = (
-        _validated_input_websocket(upstream_input_url, provider_session_id)
-        if interactive
-        else ""
+        _validated_input_websocket(upstream_input_url, provider_session_id) if interactive else ""
     )
     document = assignments["session"].sub(
         f"const sessionId = {json.dumps(shell_session_id)};",
@@ -570,12 +601,12 @@ def _protect_steel_document(
     forbidden = tuple(
         value
         for value in (
-        provider_session_id,
-        rtc_token,
-        input_websocket_url,
-        "api.steel.dev",
-        "connect.steel.dev",
-        "app.steel.dev",
+            provider_session_id,
+            rtc_token,
+            input_websocket_url,
+            "api.steel.dev",
+            "connect.steel.dev",
+            "app.steel.dev",
         )
         if value
     )

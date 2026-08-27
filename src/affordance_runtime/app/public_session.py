@@ -19,7 +19,7 @@ from affordance_runtime.actions.reconciliation import (
     EffectRevisionDisposition,
     assess_effect_revision,
 )
-from affordance_runtime.agent.decisions import AskUser
+from affordance_runtime.agent.decisions import AskUser, FinalResponse
 from affordance_runtime.agent.observability import FanoutRunTraceSink, NullRunTraceSink
 from affordance_runtime.agent.run_control import (
     RunControlAdmissionKind,
@@ -2386,7 +2386,9 @@ def _completion(state: RunState | None, status: PublicSessionStatus) -> PublicCo
     evaluation = state.current_task_evaluation
     outcome = evaluation.outcome if evaluation is not None else None
     if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_SUCCESS:
-        return PublicCompletion("success", outcome.code, evaluation.reason, outcome.evidence_refs)
+        last_decision = state.last_step.decision if state.last_step is not None else None
+        message = last_decision.content if isinstance(last_decision, FinalResponse) else evaluation.reason
+        return PublicCompletion("success", outcome.code, message, outcome.evidence_refs)
     if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_FAILURE:
         return PublicCompletion("failure", outcome.code, evaluation.reason, outcome.evidence_refs)
     failure = state.runtime_failure

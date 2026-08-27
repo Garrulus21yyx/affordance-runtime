@@ -43,7 +43,7 @@ INTERACTION_SHELL_DEMO=true .venv/bin/uvicorn interaction_shell.api:app --host 1
 ```
 
 For a real session, the deployment composition supplies a per-session
-Runtime, ActionPolicy/history, BrowserGym environment, browser context,
+Runtime, ActionPolicy/history, open Playwright browser context,
 `RuntimeEnvironmentLease`, and opaque public handle. This is deliberately
 explicit: browser/provider credentials and the product's stable task boundary
 stay with the deployment, while the returned handle keeps `RunState` private.
@@ -69,12 +69,12 @@ projection stores no Runtime outcome, TaskGoal, GUI state, receipt, or model
 history, and is deleted with session revoke/expiry.
 
 Install the deployment profile alongside the Runtime worktree, then start its
-dedicated app (the example interpreter is the repository's pinned BrowserGym
-environment):
+dedicated app (the example interpreter already contains the repository's pinned
+Playwright installation):
 
 ```bash
 cd /path/to/affordance-runtime
-DEPLOYMENT_PYTHON=/path/to/browsergym-python
+DEPLOYMENT_PYTHON=/path/to/playwright-python
 uv pip install --python "$DEPLOYMENT_PYTHON" -e . \
   -e 'external/interaction-shell/backend[deployment]'
 
@@ -82,8 +82,7 @@ set -a
 source .env
 set +a
 export PYTHONPATH="$PWD/src:$PWD/external/interaction-shell/backend"
-export MINIWOB_URL=http://127.0.0.1:18888/miniwob/
-export INTERACTION_SHELL_BROWSERGYM_TASK_ID=browsergym/miniwob.click-test
+export INTERACTION_SHELL_BROWSER_INITIAL_URL=about:blank
 export INTERACTION_SHELL_CHECKPOINT_DB="$PWD/.runtime/interaction-shell-checkpoints.sqlite3"
 "$DEPLOYMENT_PYTHON" -m uvicorn interaction_shell.deployment_app:app \
   --host 127.0.0.1 --port 8200
@@ -91,23 +90,22 @@ export INTERACTION_SHELL_CHECKPOINT_DB="$PWD/.runtime/interaction-shell-checkpoi
 
 `/health` reports `runtime_execution`, `viewer`, `durable_pause`, and
 `durable_resume` independently. The safe default real profile uses local
-BrowserGym/Playwright and keeps Viewer typed unavailable. Runtime-private SQLite
+Playwright and keeps Viewer typed unavailable. Runtime-private SQLite
 WAL checkpoints make cooperative pause durable and provide the reconnectable-
 lease restart/resume contract; the local profile still cannot reconnect its
 Playwright context after process restart.
 
 For the protected Steel profile, keep the provider key in the server
-environment and point BrowserGym at a task host reachable from the cloud browser
-(a loopback/private URL is rejected):
+environment. Ordinary user tasks may navigate the leased cloud browser to any
+HTTP(S) URL allowed by the Runtime task boundary:
 
 ```bash
 export INTERACTION_SHELL_BROWSER_PROVIDER=steel
 export Viewer_API_KEY='<server-only Steel key>'  # STEEL_API_KEY is also accepted
-export MINIWOB_URL=https://tasks.example.test/miniwob/
 export INTERACTION_SHELL_SECURE_COOKIES=true      # when served over HTTPS
 ```
 
-BrowserGym executes through Playwright CDP in the exact Steel session whose Live
+Runtime executes through Playwright CDP in the exact Steel session whose Live
 View is exposed at the secret-free `/viewer/{session_id}` path. The backend uses
 HttpOnly same-session auth, removes provider locators and reusable credentials
 from Steel's document, and proxies its native WebRTC ICE/WHEP calls. The view is
@@ -122,6 +120,9 @@ when its WebSocket connected, under the same per-session lock as ReturnControl.
 Capture failure grants a new user lease, so an old socket cannot revive. Viewer loss remains fail-open for Runtime truth;
 no screenshot polling, custom media/input protocol, second browser, or second
 executor is added.
+
+BrowserGym benchmark cases remain available through Labs. They do not own or
+constrain the ordinary Console task session.
 
 Live verification (2026-08-27) is complete. The initial WHEP 400 in both the
 native page and proxy came from Playwright's bundled Linux Chromium lacking

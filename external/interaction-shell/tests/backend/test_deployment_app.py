@@ -31,17 +31,13 @@ class FakeWorld:
         raise AssertionError(request)
 
 
-class FakeSurface:
+class FakeBrowser:
     def __init__(self, identity: int) -> None:
         self.identity = identity
-        self.goal_instruction = "Click the button."
         self.close_count = 0
 
-    async def close(self):
+    def close(self):
         self.close_count += 1
-
-    def current_task_state(self):
-        raise AssertionError("unit composition does not evaluate a task")
 
 
 class FakeTrace:
@@ -102,11 +98,11 @@ def _patch_composition(
     trace_flush_fails: bool = False,
     role_calls: list[dict[str, object]] | None = None,
 ):
-    surfaces: list[FakeSurface] = []
+    surfaces: list[FakeBrowser] = []
     traces: list[FakeTrace] = []
 
-    def open_surface(*_args, **_kwargs):
-        surface = FakeSurface(len(surfaces) + 1)
+    async def open_surface(*_args, **_kwargs):
+        surface = FakeBrowser(len(surfaces) + 1)
         surfaces.append(surface)
         return surface
 
@@ -115,8 +111,9 @@ def _patch_composition(
         traces.append(trace)
         return trace
 
-    monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", open_surface)
+    monkeypatch.setattr(deployment_app, "_open_browser", open_surface)
     monkeypatch.setattr(deployment_app, "UnifiedWorldEnvironment", lambda _sources: FakeWorld())
+
     def open_roles(*_args, **kwargs):
         if role_calls is not None:
             role_calls.append(dict(kwargs))
@@ -146,9 +143,9 @@ def _patch_composition(
 @pytest.mark.asyncio
 async def test_deployment_session_close_releases_surface_and_trace_once(monkeypatch):
     surfaces, traces = _patch_composition(monkeypatch)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     session = await factory.open("session:close", datetime.now(UTC) + timedelta(minutes=5))
 
@@ -162,9 +159,9 @@ async def test_deployment_session_close_releases_surface_and_trace_once(monkeypa
 @pytest.mark.asyncio
 async def test_deployment_factory_opens_and_closes_disjoint_runtime_browser_sessions(monkeypatch):
     surfaces, traces = _patch_composition(monkeypatch)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     expiry = datetime.now(UTC) + timedelta(minutes=5)
     first, second = await asyncio.gather(
@@ -199,11 +196,9 @@ async def test_deployment_sessions_use_disjoint_step_stores_and_conversation_ids
         return store
 
     monkeypatch.setattr(deployment_app, "_model_step_store", open_step_store)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test", 7, 10, 90
-        ),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
         deployment_app.SQLiteRuntimeCheckpointStore(tmp_path / "checkpoints.sqlite3"),
     )
     expiry = datetime.now(UTC) + timedelta(minutes=5)
@@ -224,26 +219,21 @@ async def test_deployment_sessions_use_disjoint_step_stores_and_conversation_ids
 
 @pytest.mark.asyncio
 async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_once(monkeypatch):
-    surface_open_calls: list[dict[str, object]] = []
     surfaces, traces = _patch_composition(monkeypatch)
-    original_open = deployment_app.BrowserGymSurfaceAdapter.open
+    browser_open_calls: list[tuple[object, object]] = []
 
-    def record_open(*args, **kwargs):
-        surface_open_calls.append(dict(kwargs))
-        return original_open(*args, **kwargs)
+    async def record_open(_settings, gateway, lease):
+        browser_open_calls.append((gateway, lease))
+        browser = FakeBrowser(len(surfaces) + 1)
+        surfaces.append(browser)
+        return browser
 
-    monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", record_open)
+    monkeypatch.setattr(deployment_app, "_open_browser", record_open)
     transport = FakeSteelTransport()
     gateway = SteelViewerGateway("viewer-key", transport)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test",
-            7,
-            10,
-            90,
-            "steel",
-        ),
-        {"MINIWOB_URL": "https://tasks.example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90, "steel"),
+        {},
         viewer_gateway=gateway,
     )
 
@@ -251,7 +241,9 @@ async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_on
 
     assert gateway.project(session).kind == "available"
     assert gateway.project(session).protected_path == "/viewer/session:steel"
-    assert surface_open_calls[0]["gym_factory"] is not None
+    assert len(browser_open_calls) == 1
+    assert browser_open_calls[0][0] is gateway
+    assert browser_open_calls[0][1].provider_session_id == "provider-1"
     await session.close()
     await session.close()
     assert [surface.close_count for surface in surfaces] == [1]
@@ -265,15 +257,9 @@ async def test_steel_profile_composition_failure_releases_browser_and_trace(monk
     surfaces, traces = _patch_composition(monkeypatch, fail_composition=True)
     transport = FakeSteelTransport()
     gateway = SteelViewerGateway("viewer-key", transport)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test",
-            7,
-            10,
-            90,
-            "steel",
-        ),
-        {"MINIWOB_URL": "https://tasks.example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90, "steel"),
+        {},
         viewer_gateway=gateway,
     )
 
@@ -286,39 +272,20 @@ async def test_steel_profile_composition_failure_releases_browser_and_trace(monk
     assert transport.released == ["provider-1"]
 
 
-@pytest.mark.asyncio
-async def test_steel_profile_rejects_loopback_source_before_provider_creation(monkeypatch):
-    _surfaces, traces = _patch_composition(monkeypatch)
-    transport = FakeSteelTransport()
-    gateway = SteelViewerGateway("viewer-key", transport)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test",
-            7,
-            10,
-            90,
-            "steel",
-        ),
-        {"MINIWOB_URL": "http://127.0.0.1:18888/miniwob/"},
-        viewer_gateway=gateway,
-    )
+def test_open_browser_request_factory_accepts_free_user_goal_without_hidden_task_match():
+    create = deployment_app._request_factory(12)
 
-    with pytest.raises(PublicSessionOpenError) as raised:
-        await factory.open("session:steel:local", datetime.now(UTC) + timedelta(minutes=5))
+    request = create("session:free", "Open https://example.com and report its title")
 
-    assert raised.value.code == "environment_source_not_remote"
-    assert transport.created == []
-    assert [trace.flush_count for trace in traces] == [1]
+    assert request.instruction == "Open https://example.com and report its title"
+    assert request.boundary.loop_budget.max_turns == 12
+    assert request.source_ref == "interaction-shell:open-browser:goal"
 
 
 @pytest.mark.asyncio
 async def test_model_step_store_is_deterministic_and_isolated_per_session(tmp_path):
-    step_persistence = pytest.importorskip(
-        "pydantic_ai_harness.step_persistence"
-    )
-    checkpoint_store = deployment_app.SQLiteRuntimeCheckpointStore(
-        tmp_path / "checkpoints.sqlite3"
-    )
+    step_persistence = pytest.importorskip("pydantic_ai_harness.step_persistence")
+    checkpoint_store = deployment_app.SQLiteRuntimeCheckpointStore(tmp_path / "checkpoints.sqlite3")
     first = deployment_app._model_step_store(checkpoint_store, "session:first")
     second = deployment_app._model_step_store(checkpoint_store, "session:second")
     assert first is not None
@@ -350,13 +317,13 @@ async def test_model_step_store_is_deterministic_and_isolated_per_session(tmp_pa
 async def test_environment_open_failure_releases_created_trace(monkeypatch):
     surfaces, traces = _patch_composition(monkeypatch)
     monkeypatch.setattr(
-        deployment_app.BrowserGymSurfaceAdapter,
-        "open",
+        deployment_app,
+        "_open_browser",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("environment open failed")),
     )
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
 
     with pytest.raises(PublicSessionOpenError) as caught:
@@ -370,9 +337,9 @@ async def test_environment_open_failure_releases_created_trace(monkeypatch):
 @pytest.mark.asyncio
 async def test_deployment_factory_cleans_browser_when_later_composition_fails(monkeypatch):
     surfaces, traces = _patch_composition(monkeypatch, fail_composition=True)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     with pytest.raises(PublicSessionOpenError) as caught:
         await factory.open("session:failure", datetime.now(UTC) + timedelta(minutes=5))
@@ -385,9 +352,9 @@ async def test_deployment_factory_cleans_browser_when_later_composition_fails(mo
 @pytest.mark.asyncio
 async def test_trace_cleanup_failure_is_fail_open_for_surface_cleanup(monkeypatch):
     surfaces, traces = _patch_composition(monkeypatch, trace_flush_fails=True)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     session = await factory.open("session:trace-failure", datetime.now(UTC) + timedelta(minutes=5))
 
@@ -399,20 +366,22 @@ async def test_trace_cleanup_failure_is_fail_open_for_surface_cleanup(monkeypatc
 
 @pytest.mark.asyncio
 async def test_cancelled_session_open_recovers_and_closes_late_browser(monkeypatch):
+    original_open_browser = deployment_app._open_browser
     _surfaces, traces = _patch_composition(monkeypatch)
     started = threading.Event()
     release = threading.Event()
-    surface = FakeSurface(1)
+    surface = FakeBrowser(1)
 
     def blocked_open(*_args, **_kwargs):
         started.set()
         assert release.wait(timeout=2)
         return surface
 
-    monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", blocked_open)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    monkeypatch.setattr(deployment_app, "_open_browser", original_open_browser)
+    monkeypatch.setattr(deployment_app.ThreadBoundBrowserSession, "launch", blocked_open)
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     opening = asyncio.create_task(factory.open("session:cancelled", datetime.now(UTC) + timedelta(minutes=5)))
     assert await asyncio.to_thread(started.wait, 1)
@@ -429,7 +398,7 @@ async def test_cancelled_session_open_recovers_and_closes_late_browser(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_local_browsergym_recovery_refuses_replacement_environment(monkeypatch):
+async def test_local_browser_recovery_refuses_replacement_environment(monkeypatch):
     open_calls = 0
 
     async def forbidden_open(_settings):
@@ -437,12 +406,10 @@ async def test_local_browsergym_recovery_refuses_replacement_environment(monkeyp
         open_calls += 1
         raise AssertionError("restart recovery must not open a replacement browser")
 
-    monkeypatch.setattr(deployment_app, "_open_surface", forbidden_open)
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test", 7, 10, 90
-        ),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    monkeypatch.setattr(deployment_app, "_open_browser", forbidden_open)
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
 
     with pytest.raises(PublicSessionOpenError, match="environment_not_reconnectable"):
@@ -457,18 +424,9 @@ async def test_local_browsergym_recovery_refuses_replacement_environment(monkeyp
 
 def test_deployment_health_separates_runtime_viewer_and_durable_resume(monkeypatch):
     _patch_composition(monkeypatch)
-    monkeypatch.setattr(
-        deployment_app,
-        "browsergym_api_inventory",
-        lambda: SimpleNamespace(
-            available=True,
-            accepted=True,
-            registered_task_ids=("browsergym/miniwob.click-test",),
-        ),
-    )
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings("browsergym/miniwob.click-test", 7, 10, 90),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
     )
     health = factory.health()
     assert health["runtime_execution"]["status"] == "available"
@@ -479,20 +437,9 @@ def test_deployment_health_separates_runtime_viewer_and_durable_resume(monkeypat
 
 def test_deployment_health_advertises_configured_durable_pause_only(monkeypatch, tmp_path):
     _patch_composition(monkeypatch)
-    monkeypatch.setattr(
-        deployment_app,
-        "browsergym_api_inventory",
-        lambda: SimpleNamespace(
-            available=True,
-            accepted=True,
-            registered_task_ids=("browsergym/miniwob.click-test",),
-        ),
-    )
-    factory = deployment_app.BrowserGymDeploymentSessionFactory(
-        deployment_app.BrowserGymDeploymentSettings(
-            "browsergym/miniwob.click-test", 7, 10, 90
-        ),
-        {"MINIWOB_URL": "http://example.test/miniwob/"},
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings("about:blank", 10, 90),
+        {},
         deployment_app.SQLiteRuntimeCheckpointStore(tmp_path / "checkpoints.sqlite3"),
     )
 

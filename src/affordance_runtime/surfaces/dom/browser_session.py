@@ -10,6 +10,7 @@ import hashlib
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock
@@ -55,7 +56,14 @@ from affordance_runtime.world.observation import (
 
 
 class PageDriver(Protocol):
+    context: Any
+    url: str
+
     def goto(self, url: str, **kwargs: Any) -> Any: ...
+
+    def go_back(self, **kwargs: Any) -> Any: ...
+
+    def go_forward(self, **kwargs: Any) -> Any: ...
 
     def content(self) -> str: ...
 
@@ -68,6 +76,8 @@ class PageDriver(Protocol):
     def wait_for_load_state(self, state: str = "load", **kwargs: Any) -> Any: ...
 
     def locator(self, selector: str) -> Any: ...
+
+    def close(self) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -159,10 +169,7 @@ def _browser_source_coverage(
                         captured_item_count=counts[source],
                         capture_policy_id=f"browser-{source.value}-adapter-declared-exhaustive@v1",
                         observed_properties=(
-                            tuple(
-                                item.value
-                                for item in perception_requirements.required_properties
-                            )
+                            tuple(item.value for item in perception_requirements.required_properties)
                             if perception_requirements is not None
                             else ()
                         ),
@@ -188,7 +195,9 @@ def _browser_source_coverage(
                     completeness=CoverageCompleteness.BOUNDED,
                     status=CoverageStatus.ACQUISITION_TRUNCATED,
                     acquisition_epoch_ref=snapshot_id,
-                    source_scope="current-viewport" if source in {GroundingSource.VISUAL, GroundingSource.SOM} else "bounded-current-document",
+                    source_scope="current-viewport"
+                    if source in {GroundingSource.VISUAL, GroundingSource.SOM}
+                    else "bounded-current-document",
                     item_limit=limits.get(source),
                     acquisition_budget=budget,
                     adapter_version=f"{source.value}-adapter@v1",
@@ -408,15 +417,9 @@ def _source_assertions(
             ):
                 if property_key in affordance.state:
                     value = affordance.state[property_key]
-                    normalized_key = (
-                        "selected" if property_key == "aria_selected" else property_key
-                    )
+                    normalized_key = "selected" if property_key == "aria_selected" else property_key
                     value_type = (
-                        "boolean"
-                        if isinstance(value, bool)
-                        else "string"
-                        if isinstance(value, str)
-                        else "json"
+                        "boolean" if isinstance(value, bool) else "string" if isinstance(value, str) else "json"
                     )
                     values.append((normalized_key, value, value_type))
             bbox = affordance.locator.get("bbox")
@@ -497,14 +500,20 @@ class BrowserSession:
         dom_adapter: DomAdapter | None = None,
         perception_orchestrator: PerceptionOrchestratorPort | None = None,
         visual_executor: str = "visual",
+        environment_playwright_factory: Callable[[object], object] | None = None,
     ) -> "BrowserSession":
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
         except ImportError as exc:
             raise RuntimeError("Playwright is not installed; install affordance-runtime[web]") from exc
 
-        playwright = sync_playwright().start()
-        browser = playwright.chromium.launch(headless=headless)
+        owner_playwright = sync_playwright().start()
+        playwright = (
+            environment_playwright_factory(owner_playwright)
+            if environment_playwright_factory is not None
+            else owner_playwright
+        )
+        browser = cast(Any, playwright).chromium.launch(headless=headless)
         context = browser.new_context()
         page = context.new_page()
         page.set_default_timeout(action_timeout_ms)
@@ -521,12 +530,12 @@ class BrowserSession:
         if last_error is not None:
             context.close()
             browser.close()
-            playwright.stop()
+            owner_playwright.stop()
             raise last_error
         return cls(
             cast(PageDriver, page),
             initial_url=url,
-            owner=(playwright, browser, context),
+            owner=(owner_playwright, browser, context),
             lease_ttl_ms=lease_ttl_ms,
             dom_adapter=dom_adapter,
             perception_orchestrator=perception_orchestrator,
@@ -535,6 +544,72 @@ class BrowserSession:
 
     def open(self, url: str) -> None:
         self._page.goto(url)
+
+    def go_back(self) -> None:
+        self._page.go_back(wait_until="domcontentloaded")
+
+    def go_forward(self) -> None:
+        self._page.go_forward(wait_until="domcontentloaded")
+
+    def new_tab(self) -> None:
+        page = self._page.context.new_page()
+        self._activate_page(page)
+
+    def focus_tab(self, index: int) -> None:
+        pages = tuple(self._page.context.pages)
+        if type(index) is not int or not 0 <= index < len(pages):
+            raise ValueError("tab index is outside the current browser context")
+        self._activate_page(pages[index])
+
+    def close_tab(self) -> None:
+        context = self._page.context
+        pages = tuple(context.pages)
+        if len(pages) <= 1:
+            raise ValueError("the sole browser tab cannot be closed")
+        current_index = pages.index(self._page)
+        self._page.close()
+        remaining = tuple(page for page in context.pages if not page.is_closed())
+        self._activate_page(remaining[min(current_index, len(remaining) - 1)])
+
+    def browser_context_state(self) -> dict[str, object]:
+        context = getattr(self._page, "context", None)
+        pages = tuple(context.pages) if context is not None else (self._page,)
+        tabs = []
+        for index, page in enumerate(pages):
+            try:
+                title_fn = getattr(page, "title", None)
+                title = str(title_fn() or "") if callable(title_fn) else ""
+            except Exception:
+                title = ""
+            tabs.append(
+                {
+                    "index": index,
+                    "title": title,
+                    "url": str(page.url or ""),
+                    "active": page is self._page,
+                }
+            )
+        return {
+            "active_tab_index": next(
+                (index for index, page in enumerate(pages) if page is self._page),
+                0,
+            ),
+            "open_tabs": tuple(tabs),
+        }
+
+    def _activate_page(self, page: Any) -> None:
+        self._page = cast(PageDriver, page)
+        self._navigation_tracking_available = False
+        subscribe = getattr(self._page, "on", None)
+        if callable(subscribe):
+            try:
+                subscribe("framenavigated", self._on_frame_navigated)
+                self._navigation_tracking_available = True
+            except Exception:
+                self._navigation_tracking_available = False
+        bring_to_front = getattr(self._page, "bring_to_front", None)
+        if callable(bring_to_front):
+            bring_to_front()
 
     def reset(self) -> None:
         if self._initial_url:
@@ -550,9 +625,7 @@ class BrowserSession:
             "dom_adapter": type(self._dom).__module__ + "." + type(self._dom).__name__,
             "svg_observer": type(self._svg_observer).__module__ + "." + type(self._svg_observer).__name__,
             "perception_orchestrator": (
-                type(orchestrator).__module__ + "." + type(orchestrator).__name__
-                if orchestrator is not None
-                else ""
+                type(orchestrator).__module__ + "." + type(orchestrator).__name__ if orchestrator is not None else ""
             ),
             "dom_executor": self._dom_executor,
             "svg_executor": self._svg_executor,
@@ -615,11 +688,7 @@ class BrowserSession:
             return False
         live_bindings = [
             {
-                "key": str(
-                    affordance.locator.get("backend_handle")
-                    or affordance.locator.get("selector")
-                    or ""
-                ),
+                "key": str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or ""),
                 "selector": str(affordance.locator.get("selector") or ""),
             }
             for affordance in model.affordances
@@ -652,9 +721,7 @@ class BrowserSession:
             return f"unprobeable:{self._navigation_tracker_id}"
         with self._navigation_lock:
             generation = self._navigation_generation
-        return hashlib.sha256(
-            f"{self._navigation_tracker_id}\0{generation}\0{page_revision}".encode()
-        ).hexdigest()
+        return hashlib.sha256(f"{self._navigation_tracker_id}\0{generation}\0{page_revision}".encode()).hexdigest()
 
     def locator(self, selector: str) -> Any:
         """Expose the session-owned locator boundary for DOM gesture encoding."""
@@ -739,11 +806,7 @@ class BrowserSession:
         visible_text = ""
         live_bindings = [
             {
-                "key": str(
-                    affordance.locator.get("backend_handle")
-                    or affordance.locator.get("selector")
-                    or ""
-                ),
+                "key": str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or ""),
                 "selector": str(affordance.locator.get("selector") or ""),
             }
             for affordance in model.affordances
@@ -816,10 +879,9 @@ class BrowserSession:
             if final_url != url:
                 raise RuntimeError("coherent observation epoch drifted during multi-source capture")
             if final_model.page_revision != model.page_revision:
-                if (
-                    _stabilization_retries > 0
-                    and _semantic_affordance_inventory(final_model) == _semantic_affordance_inventory(model)
-                ):
+                if _stabilization_retries > 0 and _semantic_affordance_inventory(
+                    final_model
+                ) == _semantic_affordance_inventory(model):
                     return self.capture(
                         page_id=page_id,
                         ttl_ms=ttl_ms,
@@ -833,11 +895,7 @@ class BrowserSession:
         enriched_affordances = []
         grounding_candidates: list[GroundingCandidate] = []
         for affordance in model.affordances:
-            control_key = str(
-                affordance.locator.get("backend_handle")
-                or affordance.locator.get("selector")
-                or ""
-            )
+            control_key = str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or "")
             state = dict(affordance.state)
             context_text = state.get("context_text")
             if control_key and context_text is not None:
