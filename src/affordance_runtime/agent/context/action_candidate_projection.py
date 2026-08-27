@@ -293,6 +293,8 @@ class DeliveryObligation:
             or self.source_coverage not in {"complete", "partial", "unavailable"}
             or self.result_coverage not in {"complete", "partial", "empty"}
             or not 0 <= self.required_record_count <= len(records)
+            or not _is_target_atomic_prefix(records, self.required_record_count)
+            or not _route_targets_are_contiguous(records)
         ):
             raise ValueError("delivery obligation is invalid")
         object.__setattr__(self, "records", records)
@@ -301,6 +303,30 @@ class DeliveryObligation:
     @property
     def remaining(self) -> tuple[DeliveryAtomicRecord, ...]:
         return self.records
+
+    def next_atomic_prefix_count(self, admitted_count: int) -> int:
+        """Advance one complete current target, or one non-route record."""
+
+        if not 0 <= admitted_count <= len(self.records) or not _is_target_atomic_prefix(
+            self.records, admitted_count
+        ):
+            raise ValueError("admitted obligation prefix splits one current target")
+        return _next_target_atomic_prefix_count(self.records, admitted_count)
+
+    def bounded_atomic_prefix_count(self, record_limit: int) -> int:
+        """Return a bounded preview without publishing a partial target."""
+
+        if record_limit < 0:
+            raise ValueError("delivery preview bound is invalid")
+        admitted = 0
+        while admitted < len(self.records):
+            next_count = self.next_atomic_prefix_count(admitted)
+            if admitted and next_count > record_limit:
+                break
+            admitted = next_count
+            if admitted >= record_limit:
+                break
+        return admitted
 
 
 @dataclass(frozen=True)
@@ -351,7 +377,10 @@ class ActionDeliveryPlan:
         seen_routes: set[tuple[str, str, str]] = set()
         for obligation in self.obligations:
             count = counts.get(obligation.kind.value, len(obligation.remaining) if admitted is None else 0)
-            if not 0 <= count <= len(obligation.remaining):
+            if (
+                not 0 <= count <= len(obligation.remaining)
+                or not _is_target_atomic_prefix(obligation.remaining, count)
+            ):
                 raise ValueError("admitted obligation prefix is invalid")
             for record in obligation.remaining[:count]:
                 route_fragments = (record,) if isinstance(record, ActionRouteFragment) else ()
@@ -409,7 +438,10 @@ class ActionDeliveryPlan:
     def bounded_preview_counts(self) -> dict[str, int]:
         """Bounded non-authoritative preview for non-provider diagnostics."""
 
-        return {item.kind.value: min(len(item.remaining), 5) for item in self.obligations}
+        return {
+            item.kind.value: item.bounded_atomic_prefix_count(5)
+            for item in self.obligations
+        }
 
 
 def build_action_delivery_plan(
@@ -629,7 +661,8 @@ def build_action_delivery_plan(
         DeliveryObligationKind.ROUTE_ISSUES: "issues",
     }
     inventory_specs = []
-    for kind, records in groups.items():
+    for kind, unordered_records in groups.items():
+        records = _group_routes_by_target(tuple(unordered_records))
         if not records:
             continue
         order_digest = (
@@ -671,7 +704,13 @@ def build_action_delivery_plan(
                 else "complete",
                 "empty" if not inventory.records else "complete",
                 ("current_world", kind.value),
-                len(inventory.records) if kind is DeliveryObligationKind.BASE_ACTIONS else 0,
+                (
+                    len(inventory.records)
+                    if kind is DeliveryObligationKind.BASE_ACTIONS
+                    else _next_target_atomic_prefix_count(inventory.records, 0)
+                    if kind is DeliveryObligationKind.INTERACTION
+                    else 0
+                ),
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
@@ -831,6 +870,81 @@ def _public_option_view_order(option: AgentActionOptionView) -> tuple[object, ..
         tuple(item.grounding_ref for item in option.destinations.items),
         json.dumps(to_json_compatible(option.parameter_schema), sort_keys=True, ensure_ascii=False),
     )
+
+
+def _group_routes_by_target(
+    records: tuple[DeliveryAtomicRecord, ...],
+) -> tuple[DeliveryAtomicRecord, ...]:
+    """Keep each public target's exact routes in one contiguous delivery atom."""
+
+    if not records or not any(isinstance(item, ActionRouteFragment) for item in records):
+        return records
+    if any(not isinstance(item, ActionRouteFragment) for item in records):
+        raise ValueError("one delivery obligation cannot mix action routes and route issues")
+    target_order: list[str] = []
+    grouped: dict[str, list[ActionRouteFragment]] = {}
+    for item in records:
+        target_ref = item.candidate.target_ref
+        if target_ref not in grouped:
+            target_order.append(target_ref)
+            grouped[target_ref] = []
+        grouped[target_ref].append(item)
+    return tuple(item for target_ref in target_order for item in grouped[target_ref])
+
+
+def _route_targets_are_contiguous(records: tuple[DeliveryAtomicRecord, ...]) -> bool:
+    closed: set[str] = set()
+    current = ""
+    for item in records:
+        if not isinstance(item, ActionRouteFragment):
+            if current:
+                closed.add(current)
+            current = ""
+            continue
+        target_ref = item.candidate.target_ref
+        if target_ref == current:
+            continue
+        if target_ref in closed:
+            return False
+        if current:
+            closed.add(current)
+        current = target_ref
+    return True
+
+
+def _is_target_atomic_prefix(
+    records: tuple[DeliveryAtomicRecord, ...],
+    count: int,
+) -> bool:
+    if count <= 0 or count >= len(records):
+        return True
+    before = records[count - 1]
+    after = records[count]
+    return not (
+        isinstance(before, ActionRouteFragment)
+        and isinstance(after, ActionRouteFragment)
+        and before.candidate.target_ref == after.candidate.target_ref
+    )
+
+
+def _next_target_atomic_prefix_count(
+    records: tuple[DeliveryAtomicRecord, ...],
+    admitted_count: int,
+) -> int:
+    if admitted_count >= len(records):
+        return admitted_count
+    record = records[admitted_count]
+    if not isinstance(record, ActionRouteFragment):
+        return admitted_count + 1
+    target_ref = record.candidate.target_ref
+    end = admitted_count + 1
+    while (
+        end < len(records)
+        and isinstance(records[end], ActionRouteFragment)
+        and records[end].candidate.target_ref == target_ref
+    ):
+        end += 1
+    return end
 
 
 def merge_action_candidate_projections(

@@ -354,7 +354,14 @@ def render_compact_actor_world(
     """
 
     delivered = actor_world_for_delivery(snapshot, include_images=include_images)
-    verbs = {item.ref: item.verbs for item in grounding.entities}
+    # A model turn renders the exact delivered capability set, not every verb
+    # available somewhere in the complete ActionSpace.  The latter remains
+    # private discovery authority and may contain routes excluded by packing.
+    verbs = (
+        _projection_verbs(action_candidates)
+        if action_candidates is not None
+        else {item.ref: item.verbs for item in grounding.entities}
+    )
     if region_index is None or observation is None:
         return _render_full(
             delivered,
@@ -381,6 +388,24 @@ def render_compact_actor_world(
         evidence_index=evidence_index,
         limits=limits,
     )
+
+
+def _projection_verbs(
+    projection: ActionCandidateProjection,
+) -> Mapping[str, tuple[str, ...]]:
+    operations: dict[str, list[str]] = {}
+    if projection.route_fragments:
+        for fragment in projection.route_fragments:
+            candidate = fragment.candidate
+            target_operations = operations.setdefault(candidate.target_ref, [])
+            if candidate.operation not in target_operations:
+                target_operations.append(candidate.operation)
+    else:
+        for candidate in projection.candidates:
+            target_operations = operations.setdefault(candidate.target_ref, [])
+            if candidate.operation not in target_operations:
+                target_operations.append(candidate.operation)
+    return {target_ref: tuple(values) for target_ref, values in operations.items()}
 
 
 def _render_full(

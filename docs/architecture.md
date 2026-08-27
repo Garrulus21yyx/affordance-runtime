@@ -43,6 +43,25 @@ from a closed exchange once the ToolReturn's owner-produced before/after World m
 fresh World. The unresolved call and same-World read result remain exact. This uses the existing SDK history and
 `sanitize_history_value`; it creates neither a second history nor a memory/progress path.
 
+The first post-repair live rerun,
+[`delivery-manifest-run4`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-delivery-manifest-run4/run.json),
+falsified the remaining verb-level closure after 40.2 seconds. The fresh OSM World rendered focused `E2` with
+`press_key` and `type_text`, while request packing admitted only the first `INTERACTION` route and the exact manifest
+therefore published no `type_text` tool. DeepSeek returned the task-correct
+`type_text(target="E2", text="Shanksville")`; PydanticAI rejected the unoffered operation as `schema_error`. No stale
+E-ref was rebound and `tool_grounding_gap_count` remained zero. The prior catalog repair was correct, but it exposed
+that the delivery producer still treated one target's routes as separately truncatable while Renderer recovered all
+verbs from the private GroundingIndex.
+
+The owner-level contract is now target-atomic. Within each delivery obligation, routes are grouped by source E-ref;
+an admitted prefix may stop only between targets, never between two operations or destinations of one target. The
+focused hard minimum is the first complete target bundle, and optional breadth advances by another complete target.
+Renderer derives the displayed verbs from those admitted route fragments rather than `complete_actions` or the full
+GroundingIndex. Consequently every displayed `(E-ref, verb[, destination])` is present in the sibling manifest,
+compiled into the same Catalog, and backed by one current private resolver row. Split-target prefixes fail before
+provider invocation. This changes no World, history, cursor, ToolReturn, Monitor, Binder, Executor, or Runtime loop.
+The implementation is provider-free verified but remains live-open until the same Task426 witness crosses it.
+
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
 could not reach the current `Submit` link; Task556 read the exact `Christopher Nolan filmography` link text, then
@@ -63,10 +82,11 @@ its grounding. Treating eventual lexical recovery as equivalent to direct usabil
 The positive contract is now one observation/action alignment, not a new retrieval or state path:
 
 ```text
-fresh World -> complete current ActionSpace -> complete current Catalog resolver
+fresh World -> complete current ActionSpace (private legality/binding inventory)
             -> ActionPager-owned bounded current page
                + at most five non-authoritative task-ranked suggestions
-            -> one ActionDeliveryPlan capability set -> model
+            -> target-atomic ActionDeliveryPlan -> DeliveryManifest
+            -> exactly matching ToolCatalog/resolver rows -> model
 
 read_region/search_page_content -> bounded readable records
   returned target is current executable -> attach the same fresh E-ref + current verbs
@@ -75,7 +95,7 @@ read_region/search_page_content -> bounded readable records
 
 The bounded base capability set is hard-admitted as a set; the complete ActionSpace is no longer copied into the
 presentation plan as optional inventory. `find_controls` remains the literal bounded lookup over the complete current
-ActionSpace, and the unchanged catalog resolver remains the only authority that can accept an E-ref. Read/search do
+ActionSpace, and only routes in the current DeliveryManifest receive Catalog resolver rows. Read/search do
 not search all controls and do not manufacture executable identities; they only preserve the grounding of records
 they already returned. No delivery lens, synonym table, dense index, cursor, Store inventory, memory, Replanner,
 second Binder, or second loop was introduced.
@@ -1144,20 +1164,22 @@ The returned page and the next same-World catalog share one current-World contra
 ```text
 find_controls ToolReturn contains (verb, E-ref[, destination])
 -> registry-owned action tool accepts the stable E-ref argument shape
--> current complete ActionSpace resolver validates the exact operation/route/domain
+-> same-World route enters the current DeliveryManifest after exact ActionSpace intersection
+-> current Catalog resolver validates the exact operation/route/domain
 -> SelectAction carries the existing private action identity to Binder
 ```
 
-The soft packing target may reduce the visible candidate prefix, but it cannot change the action tool shape or current
-resolver membership. `ActionDeliveryPlan` and `DeliveryManifest` therefore describe what the model was shown; they are
-not a second action-authority or allowlist.
+The soft packing target may reduce breadth only at a complete target boundary; it cannot split the operations or
+destinations advertised for one E-ref. `ActionDeliveryPlan` and `DeliveryManifest` therefore describe exactly what the
+model may call while the current ActionSpace remains the private legality and binding inventory.
 
 ### GUI actions
 
 ```text
 current E-ref + semantic operation
 -> stable registry tool schema
--> complete current ActionSpace resolver
+-> current DeliveryManifest route
+-> exact current ActionSpace-backed resolver row
 -> Binder resolves private current BrowserGym binding
 -> Executor dispatches once
 -> stable post-action capture
@@ -1316,10 +1338,10 @@ that already parsed semantic mismatch to representation repair, which repeated t
 
 The repaired contract keeps one authority for each concern:
 
-- complete current `ActionSpace` plus the Catalog's private resolver table own all executable
-  `(operation, target[, destination])` routes;
-- `ActionDeliveryPlan` is presentation only. Every admitted prefix groups selected private routes by target and emits
-  one public target descriptor with the union of all current verbs. Focus and task-ranked minimum groups use distinct
+- complete current `ActionSpace` owns the private legal/binding inventory, while the current `DeliveryManifest` owns
+  the exact model-callable `(operation, target[, destination])` subset and Catalog resolver rows;
+- `ActionDeliveryPlan` is presentation only. Every admitted prefix stops at a complete target boundary and emits one
+  public target descriptor with exactly the manifest-backed verbs. Focus and task-ranked minimum groups use distinct
   target subjects, so a multi-verb focused target cannot consume both visibility anchors;
 - a wire/schema failure still receives the one bounded representation repair. A schema-valid registered operation
   rejected by the current resolver with `tool_grounding_gap` instead becomes the existing `ToolRejectedResult` under

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from itertools import product
 from pathlib import Path
@@ -139,6 +140,109 @@ def _binding(observation_id: str, target_id: str) -> ActionBinding:
         ("external_ui_interaction",),
         {"type": "object", "properties": {}, "additionalProperties": False},
         {"private_bid": target_id},
+    )
+
+
+def _multi_verb_context():
+    observation_id = "obs:multi-verb-focused-control"
+    search = SemanticTarget(
+        "target:search",
+        "textbox",
+        "Search",
+        {"focused": True, "value": ""},
+    )
+    bindings = (
+        ActionBinding(
+            "binding:search:type",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            "fingerprint:search",
+            search.target_id,
+            search.target_id,
+            "browser",
+            "browsergym",
+            "type_text",
+            "fill",
+            "local_reversible",
+            ("query_changed",),
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            {"private_bid": "search"},
+        ),
+        ActionBinding(
+            "binding:search:key",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            "fingerprint:search",
+            search.target_id,
+            search.target_id,
+            "browser",
+            "browsergym",
+            "press_key",
+            "press",
+            "local_reversible",
+            ("query_changed",),
+            {
+                "type": "object",
+                "properties": {"key": {"type": "string", "enum": ["Enter"]}},
+                "required": ["key"],
+                "additionalProperties": False,
+            },
+            {"private_bid": "search"},
+        ),
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "browser",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (search,),
+        bindings=bindings,
+        structure=(
+            ObservationStructureNode(
+                "root",
+                "document",
+                "Search page",
+                child_structure_ids=("search",),
+            ),
+            ObservationStructureNode(
+                "search",
+                "textbox",
+                "Search",
+                {"focused": True, "value": ""},
+                parent_structure_id="root",
+                semantic_target_id=search.target_id,
+            ),
+        ),
+        structure_total_count=2,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
+    task = TaskGoal(
+        "multi-verb-focused-control",
+        "Search for Shanksville",
+        allowed_effects=("query_changed",),
+        risk_profile=RiskProfile.LOW,
+    )
+    actions = ActionSpaceBuilder().build(task, world)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    return task, world, actions, evaluation, ContextBuilder().build(
+        task,
+        world,
+        actions,
+        evaluation,
     )
 
 
@@ -547,7 +651,7 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert before_action_space == actions.action_space_id
 
 
-def test_every_delivery_prefix_projects_one_subject_per_target_with_complete_current_verbs() -> None:
+def test_every_delivery_prefix_projects_one_subject_per_target_with_exact_manifest_verbs() -> None:
     _task, _world, _actions, _evaluation, context = _context()
     plan = context.action_delivery_plan
     assert plan is not None
@@ -559,9 +663,6 @@ def test_every_delivery_prefix_projects_one_subject_per_target_with_complete_cur
             scenarios.append(counts)
     scenarios.append({item.kind.value: len(item.records) for item in plan.obligations})
 
-    operations_by_target: dict[str, set[str]] = {}
-    for option in context.complete_actions:
-        operations_by_target.setdefault(option.target_ref, set()).add(option.operation)
     for counts in scenarios:
         projection = plan.projection(counts)
         refs = tuple(item.target_ref for item in projection.candidates)
@@ -571,11 +672,74 @@ def test_every_delivery_prefix_projects_one_subject_per_target_with_complete_cur
             include_images=False,
             admitted_records=counts,
         )
+        operations_by_target: dict[str, list[str]] = {}
+        for route in delivery.manifest.action_routes:
+            operations = operations_by_target.setdefault(route.source_ref, [])
+            if route.operation not in operations:
+                operations.append(route.operation)
         candidate_lines = tuple(line for line in delivery.view.text.splitlines() if line.lstrip().startswith("rank="))
         for candidate in projection.candidates:
             matching = tuple(line for line in candidate_lines if f"[{candidate.target_ref}]" in line)
             assert len(matching) == 1
-            assert all(f'"{operation}"' in matching[0] for operation in operations_by_target[candidate.target_ref])
+            rendered = re.search(r" verbs=(\[[^]]*\])", matching[0])
+            assert rendered is not None
+            assert json.loads(rendered.group(1)) == operations_by_target[candidate.target_ref]
+
+
+@settings(max_examples=12, deadline=None)
+@given(soft_target_tokens=st.integers(min_value=1, max_value=4_096))
+def test_focused_multi_verb_target_is_one_atomic_manifest_catalog_and_resolver_capability(
+    soft_target_tokens: int,
+) -> None:
+    _task, _world_value, _actions, _evaluation, context = _multi_verb_context()
+    plan = context.action_delivery_plan
+    assert plan is not None
+    interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+    assert interaction is not None
+    assert interaction.required_record_count == len(interaction.records) == 2
+    assert {item.public_route[0] for item in interaction.records} == {"press_key", "type_text"}
+
+    with pytest.raises(ValueError, match="prefix"):
+        build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records={interaction.kind.value: 1},
+        )
+
+    packed = _pack(
+        ModelDecisionRequest("request:multi-verb-focused-control", context),
+        binder=CanonicalProviderEnvelopeBinder(
+            request_budget=ModelRequestBudget(soft_target_tokens=soft_target_tokens),
+        ),
+    )
+    target_ref = next(iter(context.grounding.target_refs.values()))
+    routes = {
+        (route.operation, route.source_ref, route.destination_ref)
+        for route in packed.delivery.manifest.action_routes
+    }
+    assert routes == {
+        ("press_key", target_ref, ""),
+        ("type_text", target_ref, ""),
+    }
+    assert {item.name for item in packed.catalog.specs} >= {"press_key", "type_text"}
+    candidate_line = next(
+        line
+        for line in packed.delivery.view.text.splitlines()
+        if line.lstrip().startswith("rank=") and f"[{target_ref}]" in line
+    )
+    assert 'verbs=["press_key","type_text"]' in candidate_line
+    selected = resolve_grounded_tool_call(
+        packed.catalog,
+        ToolCall(
+            "type_text",
+            {"target": target_ref, "text": "Shanksville"},
+            "call:multi-verb-type",
+        ),
+        expected_context_id=context.context_id,
+        expected_delivery_id=packed.delivery.delivery_id,
+    ).decision
+    assert isinstance(selected, SelectAction)
+    assert selected.parameters == {"text": "Shanksville"}
 
 
 def test_destination_required_candidate_closes_destination_in_same_manifest_and_resolver() -> None:

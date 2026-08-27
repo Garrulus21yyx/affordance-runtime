@@ -133,9 +133,12 @@ class TurnPacker:
                 required[base.kind.value] = max(1, base.required_record_count)
             interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
             if interaction is not None and interaction.remaining:
-                required[interaction.kind.value] = 1
+                required[interaction.kind.value] = max(
+                    1,
+                    interaction.required_record_count,
+                )
             if not any(required.values()) and foreground is not None and foreground.remaining:
-                required[foreground.kind.value] = 1
+                required[foreground.kind.value] = foreground.next_atomic_prefix_count(0)
 
         required_kinds = {kind for kind, count in required.items() if count}
         if required_kinds:
@@ -174,7 +177,7 @@ class TurnPacker:
                 if kind in blocked or admitted_counts[kind] >= len(obligation.remaining):
                     continue
                 tentative = dict(admitted_counts)
-                tentative[kind] += 1
+                tentative[kind] = obligation.next_atomic_prefix_count(tentative[kind])
                 attempted_counts[kind] = max(attempted_counts[kind], tentative[kind])
                 try:
                     accepted = self._attempt(

@@ -26,6 +26,25 @@ is still required, so broader benchmark status remains non-closed. The fixed Bro
 1,827 passed and 19 skipped; its sole failure is the already tracked documentation-governance rejection of
 `docs/interaction-shell.md`, not a product or grounding failure.
 
+The authorized first rerun,
+[`delivery-manifest-run4`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-delivery-manifest-run4/run.json),
+is a new failed implementation witness, not a stale-reference recurrence. It ended after 40.2 seconds, six policy
+calls, four GUI executions, and five observations with `policy_failure_code=schema_error`. The final physical provider
+response was a syntactically and semantically valid
+`type_text(target="E2", text="Shanksville")`. The same request's fresh compact World advertised `E2` verbs
+`press_key/type_text`, but its DeliveryManifest contained only the first focused route, so the exact ToolCatalog did
+not offer `type_text`. This proves the old acceptance gate was too weak: it checked that a visible E-ref had a route,
+not that every displayed verb had the corresponding manifest/catalog/resolver route.
+
+The implemented convergence repair makes one target the route-packing atom. Production delivery groups all routes of
+one source E-ref contiguously, rejects prefixes that split that group, hard-admits the complete focused target bundle,
+and advances optional breadth target by target. Renderer now derives verbs only from admitted route fragments. The
+new vertical regression recreates a focused search textbox with `press_key/type_text`, forces the soft target to one
+token, and proves both operations still enter the manifest, ToolCatalog, and exact resolver; a one-route prefix fails
+closed. Focused route/BrowserGym/PydanticAI coverage reports 311 passed. The fixed BrowserGym Python full suite reports
+1,828 passed and 19 skipped; its sole failure remains the pre-existing `docs/interaction-shell.md` governance count.
+Live closure is still open pending the same Task426 rerun.
+
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:
 
@@ -46,7 +65,7 @@ drops the already-bounded current action page or splits readable text from its f
 The implemented owner repair consumes the existing `base_actions` argument, hard-admits that bounded capability set
 together with at most five task-ranked suggestions, and removes the duplicate complete-ActionSpace presentation
 inventory. Read/search results now attach the existing current E-ref and verbs only to interactive targets they
-actually return. The complete current Catalog resolver, `find_controls`, PydanticAI call/result history, cursor,
+actually return. The manifest-exact Catalog resolver, `find_controls`, PydanticAI call/result history, cursor,
 Monitor, Binder, Executor, and BrowserGym capture paths are unchanged. Focused property/vertical tests cover bounded
 base-set hard admission, hard-capacity failure, permutation, destination routes, duplicate readable labels, and
 same-World read-result E-ref execution. The live witness and fresh held-out results below validate the repaired
@@ -1016,8 +1035,8 @@ broader untouched-case campaign remains open.
 For an ordinary turn without an explicit discovery result, one vertical gate sets the soft target to the cost of only
 one visible route and proves that both the first task-ranked target and the direct fresh focused target enter the
 Manifest and resolve through the same Catalog. A property gate makes inability to fit both inside the hard capacity a
-typed capacity failure rather than a Runtime choice. A second gate gives the delivery zero visible routes and proves that its action schema is unchanged and
-that every exact current route remains resolvable through the same Catalog resolver. Monitor gates separately prove that
+typed capacity failure rather than a Runtime choice. A second gate gives the delivery zero visible routes and proves
+that no private current route bypasses that manifest. Monitor gates separately prove that
 control-discovery recovery and exact local-result replay publish producer-appropriate next routes; the latter points to
 same-tool `next_cursor`, a different relevant region, a current executable control, or browser navigation.
 
@@ -1171,8 +1190,8 @@ The first frozen Task267 execution is a failed pre-repair diagnostic:
 `press_key`), displaced a different control, and then treated the model's schema-valid `activate(textbox)` semantic
 rejection as JSON representation repair.
 
-The provider-free repair changes only the owners of those meanings. Delivery now emits one target subject per E-ref
-with complete current verbs while retaining every private route for Catalog resolution. A resolver-produced
+The provider-free repair changes only the owners of those meanings. Delivery emits one target subject per E-ref and
+keeps its admitted current verbs closed over the same manifest/Catalog routes. A resolver-produced
 `tool_grounding_gap` becomes the existing same-call `ToolRejectedResult` and reaches the next Recording FunctionModel
 turn without repair or GUI dispatch. Restricted `goto` rejection is now
 `NOT_SENT/destination_outside_environment`, distinct from malformed parameters. Prefix/property tests prove target
@@ -1593,8 +1612,8 @@ The final read-only review for this cutover must answer:
     while retaining model progress, ToolCall/ToolReturn pairing and semantic results, exact pending/tool-only thinking,
     and the unresolved suffix; deground only closed noncurrent exchanges; and supply exactly one fresh World with
     current media?
-31. Does every admitted action-delivery prefix render each E-ref once with the complete current verb set while leaving
-    the Catalog resolver with exactly the manifest's route set?
+31. Does every admitted action-delivery prefix stop only at a complete target boundary, render each E-ref once with
+    exactly its manifest verbs, and leave the Catalog/resolver with exactly the manifest's route set?
 32. Does a schema-valid operation/target mismatch return the existing `ToolRejectedResult` under the original call ID
     to the next ordinary PydanticAI turn, without representation repair, Binder/Executor dispatch, or terminal policy
     failure?

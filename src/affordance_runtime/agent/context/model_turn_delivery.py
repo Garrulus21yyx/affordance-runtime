@@ -156,6 +156,23 @@ class ModelTurnDelivery:
         }
         if set(self.manifest.executable_refs) != route_refs:
             raise ValueError("every delivered executable must participate in an exact action route")
+        projected_routes = {
+            fragment.public_route for fragment in self.action_candidates.route_fragments
+        }
+        manifested_routes = {
+            (route.operation, route.source_ref, route.destination_ref)
+            for route in self.manifest.action_routes
+        }
+        if not projected_routes.issubset(manifested_routes):
+            raise ValueError("every projected capability must enter the same DeliveryManifest")
+        projected_operations: dict[str, set[str]] = {}
+        for operation, source_ref, _destination_ref in projected_routes:
+            projected_operations.setdefault(source_ref, set()).add(operation)
+        if any(
+            candidate.operation not in projected_operations.get(candidate.target_ref, set())
+            for candidate in self.action_candidates.candidates
+        ):
+            raise ValueError("every action candidate requires one exact delivered operation")
         tool_result_value = self.tool_result.return_value if self.tool_result is not None else {}
         visible_refs = (
             set(re.findall(rf"\b{PublicRefCodec.token_pattern()}\b", self.view.text))
