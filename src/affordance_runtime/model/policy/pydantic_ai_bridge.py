@@ -452,13 +452,24 @@ class PydanticAIGroundedDecisionPort:
                         provider_error_type=ModelAPIError,
                     )
                 except UnexpectedModelBehavior:
+                    captured = tuple(captured_messages)
                     self._record_captured_output_validation_failure(
-                        tuple(captured_messages),
+                        captured,
                         phase,
                         current_envelope,
                         max_response_count=output_retry_budget + 1,
                         latency_ms=(time.perf_counter() - started) * 1000,
                     )
+                    if pending_call_parts:
+                        object.__setattr__(
+                            self,
+                            "message_history",
+                            _closed_history_after_failed_output(
+                                tuple(current_history),
+                                captured,
+                                pending_call_parts,
+                            ),
+                        )
                     raise
 
         delivery: ModelTurnDelivery | None = None
@@ -480,8 +491,6 @@ class PydanticAIGroundedDecisionPort:
             try:
                 pending_call_parts = _pending_tool_parts_from_history(history_messages)
                 pending_call = _pending_call_from_history(history_messages)
-                if pending_call is None:
-                    raise ValueError("model message history lost its pending call")
             except (TypeError, ValueError):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "model_message_history_unavailable"),
@@ -489,8 +498,12 @@ class PydanticAIGroundedDecisionPort:
                 )
             last_step = request.last_step
             if (
-                last_step is None
-                or str(getattr(getattr(last_step, "decision", None), "tool_call_id", "")) != pending_call.call_id
+                pending_call is not None
+                and (
+                    last_step is None
+                    or str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
+                    != pending_call.call_id
+                )
             ):
                 return self._invocation_failure(
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
@@ -1943,8 +1956,52 @@ def _accepted_model_response(
     return source_response
 
 
+def _closed_history_after_failed_output(
+    prior_history: tuple[object, ...],
+    captured: tuple[object, ...],
+    pending_calls: tuple[object, ...],
+) -> tuple[object, ...]:
+    """Close the prior deferred exchange without retaining rejected model output."""
+
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+    current_run_id = next(
+        (str(getattr(message, "run_id", "") or "") for message in reversed(captured) if getattr(message, "run_id", "")),
+        "",
+    )
+    if not current_run_id:
+        raise ValueError("captured PydanticAI invocation has no run identity")
+    current_requests = tuple(
+        message
+        for message in captured
+        if isinstance(message, ModelRequest) and str(getattr(message, "run_id", "") or "") == current_run_id
+    )
+    pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
+    closing_requests = tuple(
+        message
+        for message in current_requests
+        if any(isinstance(part, ToolReturnPart) for part in message.parts)
+    )
+    returned_identities = tuple(
+        (part.tool_name, part.tool_call_id)
+        for message in closing_requests
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    if (
+        len(closing_requests) != 1
+        or len(returned_identities) != len(pending_identities)
+        or len(set(returned_identities)) != len(returned_identities)
+        or set(returned_identities) != set(pending_identities)
+    ):
+        raise ValueError("failed PydanticAI run did not close every deferred tool proposal")
+    candidate = (*prior_history, *closing_requests)
+    _project_pydantic_history(candidate)
+    return candidate
+
+
 def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Return every unresolved proposal; the first is the sole executed call."""
+    """Return every unresolved proposal from either legal history frontier."""
 
     if not messages:
         return ()
@@ -1952,7 +2009,11 @@ def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[obje
 
     response = messages[-1]
     if not isinstance(response, ModelResponse):
-        raise ValueError("model message history must end with an accepted tool call")
+        # An exhausted output-validation run may leave the prior ToolCall
+        # closed by its exact SDK ToolReturn without accepting a replacement
+        # call.  The next fresh-World turn therefore has no deferred result.
+        _project_pydantic_history(messages)
+        return ()
     calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
     call_ids = tuple(call.tool_call_id for call in calls)
     if not calls or len(set(call_ids)) != len(call_ids) or any(not item for item in call_ids):
@@ -2387,11 +2448,11 @@ def _accepted_message_history(
     if not any(isinstance(part, UserPromptPart) for message in requests_tuple for part in message.parts):
         raise ValueError("PydanticAI current turn lost its fresh World prompt")
     if not pending_calls:
-        if prior_history:
-            raise ValueError("history without a pending call cannot accept a new exchange")
         if any(isinstance(part, ToolReturnPart) for message in requests_tuple for part in message.parts):
-            raise ValueError("initial PydanticAI turn cannot contain a deferred result")
-        return (*requests_tuple, accepted.response)
+            raise ValueError("PydanticAI turn without a pending call cannot contain a deferred result")
+        candidate = (*prior_history, *requests_tuple, accepted.response)
+        _project_pydantic_history(candidate)
+        return candidate
 
     pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
     matching_parts = tuple(
@@ -2818,22 +2879,27 @@ def _captured_invocation_messages(
     *,
     max_response_count: int,
 ) -> list[dict[str, object]]:
-    """Drop historical responses from one failed PydanticAI capture.
+    """Return only messages stamped by the failed PydanticAI run.
 
-    PydanticAI includes normalized supplied history in the captured list, but
-    UsageLimits bounds this invocation to ``max_response_count`` physical
-    responses.  The current responses are therefore the bounded response
-    suffix regardless of history merging or compaction shape.
+    ``capture_run_messages`` intentionally includes normalized supplied
+    history.  A response-count suffix is ambiguous whenever the current run
+    ends before using its retry budget, so the SDK-owned ``run_id`` is the
+    currentness authority.
     """
 
     if max_response_count <= 0:
         raise ValueError("captured invocation response bound must be positive")
-    response_indices = [index for index, message in enumerate(captured) if message.get("kind") == "response"]
-    if len(response_indices) <= max_response_count:
-        return captured
-    first_current_response = response_indices[-max_response_count]
-    first_current_request = max(0, first_current_response - 1)
-    return captured[first_current_request:]
+    current_run_id = next(
+        (str(message.get("run_id") or "") for message in reversed(captured) if message.get("run_id")),
+        "",
+    )
+    if not current_run_id:
+        raise ValueError("captured PydanticAI invocation has no run identity")
+    current = [message for message in captured if str(message.get("run_id") or "") == current_run_id]
+    response_count = sum(message.get("kind") == "response" for message in current)
+    if response_count > max_response_count:
+        raise ValueError("captured PydanticAI invocation exceeds its response bound")
+    return current
 
 
 def _latest_structured_output_failure(

@@ -50,7 +50,21 @@ tokens as thinking and returned no ToolCall. The following calls then failed bef
 PydanticAI history still ended in the last accepted pending call while the immediate Runtime step was the typed
 invalid response; the recorder also projected an historical response as a current attempt. These traces reopen the
 ActionPolicy/provider-history recovery and transcript-accounting lifecycle, not observation projection. No new
-production repair has been guessed from this single case.
+projection or task-specific repair was inferred from the case.
+
+The shared provider-history repair uses PydanticAI's own message and `run_id` identities. An accepted ActionPolicy
+call may remain pending until its exact Runtime result is delivered, or it may be closed by that exact SDK request
+when the following model output is rejected. In the latter state, the rejected response/retry prose is not retained,
+the already-delivered ToolReturn is not requested from a later Runtime step, and the next fresh-World call continues
+the same canonical SDK history. Failed-run transcript accounting filters by the current SDK `run_id` rather than
+assuming the response retry allowance was fully consumed. No CoreLoop fallback, Workspace lookup, Store, cursor,
+Monitor rule, or alternate retry path was added.
+
+The vertical regression reproduces the live shape—one historical accepted response plus one current thinking-only
+length response—then proves the next call succeeds with every earlier ToolCall paired to its exact ToolReturn. The
+PydanticAI/history/request-admission focused set reports 97 passed; the fixed BrowserGym Python full suite reports
+1,819 passed and 19 skipped, with only the pre-existing `docs/interaction-shell.md` governance failure. A Task426
+same-witness rerun and another fresh held-out case remain required before broader closure.
 
 The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
 task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,

@@ -70,6 +70,29 @@ messages as though it were a current physical attempt. These are ActionPolicy/pr
 observability lifecycle defects, not missing controls or grounds for another projection, ranker, cursor, Monitor, or
 World path. Broader closure remains explicitly open while that owner contract is reviewed.
 
+That owner review found one shared lifecycle gap rather than a need for another recovery path. The installed
+PydanticAI 2.31.1 `capture_run_messages` contract includes normalized supplied history as well as messages stamped by
+the current SDK `run_id`. The bridge had instead guessed the current physical response suffix from the maximum retry
+count; when a deliberate response terminated on length before consuming its retry allowance, one historical response
+was misclassified as current. After the typed failure, the bridge also retained the old pending-call frontier even
+though the captured current request had already delivered its ToolReturn, so the immediate failure step could not
+provide that same result again.
+
+The provider-history owner now supports exactly two canonical frontiers:
+
+```text
+pending frontier: accepted ToolCall awaits the next Runtime ToolReturn
+closed frontier:  the exact SDK request delivered that ToolReturn, but no replacement ToolCall was accepted
+```
+
+On exhausted output validation, the bridge uses the SDK `run_id` to record only current physical responses, retains
+the exact current request that closes every prior call/result pair, and drops rejected response/retry prose. The next
+fresh-World ActionPolicy call extends that same official history from the closed frontier. Canonical envelope
+validation accepts both frontiers and still rejects orphaned, duplicate, mismatched, or synthetic exchanges. No
+Workspace lookup, trace replay, CoreLoop fallback, pending-result store, retry state machine, or second history owner
+was added. A vertical test exercises `accepted call -> ToolReturn -> single truncated response -> typed failure ->
+next accepted call` and verifies exact call/result conservation plus one-response accounting.
+
 ### Local agent shell
 
 The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is

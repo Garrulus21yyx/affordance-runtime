@@ -49,7 +49,7 @@ from affordance_runtime.agent.decisions import (
     SelectAction,
     ToolRejectedResult,
 )
-from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -914,6 +914,99 @@ def test_exhausted_output_retry_trace_excludes_prior_official_history() -> None:
             )
             for item in second.attempts
         )
+
+    asyncio.run(scenario())
+
+
+def test_single_truncated_response_closes_pending_history_and_next_turn_recovers() -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[ThinkingPart("unfinished deliberate reasoning")],
+            usage=RequestUsage(input_tokens=10, output_tokens=2048),
+            finish_reason="length",
+            provider_response_id="recording-single-truncated",
+        )
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                truncated,
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("single-truncated-history-recovery", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(ModelDecisionRequest("request:single-truncated:first", first_context))
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=first_step,
+        )
+
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:single-truncated:second", second_context, last_step=first_step)
+        )
+
+        assert second.failure is not None
+        assert second.failure.reason == "output_budget_exhausted"
+        assert scripted.calls == 2
+        assert len(second.attempts) == 1
+        assert second.attempts[0].response_id == "recording-single-truncated"
+        assert second.attempts[0].output_failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        canonical_envelope_module._project_pydantic_history(policy.port.message_history)
+
+        failed_step = StepResult(
+            PolicyFailure(ModelFailureKind.INVALID_RESPONSE, "model decision response was invalid"),
+            world,
+            world,
+            evaluation,
+            feedback="policy_failure:invalid_response",
+        )
+        third_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=failed_step,
+        )
+        third = await policy.port.generate(
+            ModelDecisionRequest("request:single-truncated:third", third_context, last_step=failed_step)
+        )
+
+        assert third.failure is None and third.output is not None, json.dumps(third.diagnostics, default=str)
+        assert scripted.calls == 3
+        recorded = normalize_recorded_provider_input(scripted.records[2])
+        prior_calls = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "response"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-call"
+        }
+        prior_returns = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "request"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        }
+        assert prior_calls <= prior_returns
 
     asyncio.run(scenario())
 

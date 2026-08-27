@@ -485,7 +485,7 @@ def test_action_policy_envelope_rejects_ghost_instruction_and_history_algebra() 
 
         with pytest.raises(ValueError, match="exactly one instruction"):
             _replace_physical(base, instructions=(base.instructions[0], "second instruction"))
-        with pytest.raises(ValueError, match="deferred tool result requires"):
+        with pytest.raises(ValueError, match="canonical history requires the exact admitted PydanticAI messages"):
             _replace_physical(base, history_messages=({"kind": "request", "content": "ghost history"},))
 
     asyncio.run(scenario())

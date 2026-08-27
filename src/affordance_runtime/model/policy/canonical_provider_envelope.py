@@ -137,8 +137,6 @@ class CanonicalProviderEnvelope:
             raise ValueError("canonical provider envelope lineage is invalid")
         if len(self.instructions) != 1 or not self.instructions[0].strip():
             raise ValueError("ActionPolicy canonical envelope requires exactly one instruction")
-        if bool(self.history_messages) != bool(self.tool_result):
-            raise ValueError("deferred tool result requires its bounded call history")
         if bool(self.pydantic_history) != bool(self.history_messages):
             raise ValueError("canonical history requires the exact admitted PydanticAI messages")
         if self.history_messages:
@@ -146,19 +144,25 @@ class CanonicalProviderEnvelope:
                 if tuple(self.history_messages) != _project_pydantic_history(self.pydantic_history):
                     raise ValueError("canonical history projection differs from exact PydanticAI messages")
                 response_message = self.history_messages[-1]
-                prior_call = next(part for part in tuple(response_message["parts"]) if part["part_kind"] == "tool-call")
                 current_result = self.tool_result
-                assert current_result is not None
-                valid_exchange = (
-                    response_message["kind"] == "response"
-                    and prior_call["part_kind"] == "tool-call"
-                    and prior_call["tool_call_id"] == current_result["tool_call_id"]
-                    and prior_call["tool_name"] == current_result["tool_name"]
-                )
+                if response_message["kind"] == "response":
+                    prior_call = next(
+                        part for part in tuple(response_message["parts"]) if part["part_kind"] == "tool-call"
+                    )
+                    assert current_result is not None
+                    valid_exchange = (
+                        prior_call["part_kind"] == "tool-call"
+                        and prior_call["tool_call_id"] == current_result["tool_call_id"]
+                        and prior_call["tool_name"] == current_result["tool_name"]
+                    )
+                else:
+                    valid_exchange = current_result is None
             except (AssertionError, IndexError, KeyError, TypeError, ValueError):
                 valid_exchange = False
             if not valid_exchange:
-                raise ValueError("deferred tool result does not match its prior call")
+                raise ValueError("canonical history frontier and deferred result disagree")
+        elif self.tool_result is not None:
+            raise ValueError("deferred tool result requires its bounded call history")
         if not self.user_text:
             raise ValueError("canonical provider envelope user text is empty")
         if self.parallel_tool_calls or self.model_settings.get("parallel_tool_calls") is not False:
@@ -616,6 +620,7 @@ def _project_pydantic_history(
         raise ValueError("PydanticAI messages are unavailable") from exc
     projected: list[Mapping[str, object]] = []
     pending: tuple[tuple[str, str], ...] | None = None
+    completed_exchange_seen = False
     summary_seen = False
     task_anchor_seen = False
     for index, message in enumerate(messages):
@@ -701,6 +706,7 @@ def _project_pydantic_history(
             ):
                 raise ValueError("completed PydanticAI request must close every proposed tool call")
             pending = None
+            completed_exchange_seen = True
         else:
             if pending is not None:
                 raise ValueError("PydanticAI history request omitted a pending tool result")
@@ -762,8 +768,8 @@ def _project_pydantic_history(
                 "parts": tuple(request_parts),
             }
         )
-    if pending is None:
-        raise ValueError("compact PydanticAI history lost its unresolved suffix")
+    if pending is None and not completed_exchange_seen:
+        raise ValueError("compact PydanticAI history has neither a pending nor completed exchange")
     return tuple(projected)
 
 
