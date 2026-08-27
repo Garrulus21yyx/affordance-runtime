@@ -1386,6 +1386,13 @@ effect state or compensation logic. This is intentionally not a general effect l
 Saga, or proof that an incomplete revised goal is semantically compatible with a retained effect. No live browser
 compensation witness or benchmark was run for this implementation milestone.
 
+Post-push verification recorded `1830 passed / 25 skipped` across the whole provider-free repository. The only two
+failures are unchanged external baselines: documentation governance permits five maintained Markdown files and rejects
+this user-required sixth document, while one semantic-delivery test cannot open an absent historical live trace. The
+synthetic Demo Playwright E2E passed one Chromium test. Existing deployment tests may load the project `.env` through
+established startup behavior, but Phase 7 did not inspect, print, or use the Viewer credential and did not start
+Viewer, a live model/provider, a real compensation browser profile, or a benchmark.
+
 ### Phase 8 — optional user takeover and return
 
 Owner: Runtime control lease plus deployment viewer lease.

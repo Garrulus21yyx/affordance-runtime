@@ -566,8 +566,8 @@ Constraints:
       revision command identity stays on its unchanged durable payload version,
       so the additive snapshot upgrade cannot invalidate stored retries. Shell
       OpenAPI/generated TypeScript and the operator UI show the owner-produced
-      state but own no effect logic. Viewer remains typed unavailable and its
-      configured key was not read or used.
+      state but own no effect logic. Viewer remains typed unavailable; the
+      Phase 7 path neither inspects nor consumes its configured key.
     - Provider-free evidence: 42 focused checkpoint/reconciliation tests, 216
       owner/Runtime/architecture tests with 3 optional skips, and 64 external
       backend/architecture tests passed. Frontend unit/lint/typecheck/build,
@@ -577,6 +577,16 @@ Constraints:
       rejections, unavailable/unverified compensation, and public/private
       projection. No live browser compensation witness or benchmark was run;
       this does not claim a multi-effect ledger, rollback, or general Saga.
+    - Post-push full provider-free regression: 1830 passed and 25 skipped in
+      79.17 seconds. The only two failures are the unchanged baselines: the
+      five-document governance assertion rejects the user-required
+      `docs/interaction-shell.md`, and one semantic-delivery test fails while
+      opening an absent historical live trace before production code runs.
+      Synthetic Demo Playwright E2E also passed 1 Chromium test. Existing
+      deployment tests may load the project `.env` through the deployment
+      module's established startup behavior, but Phase 7 did not inspect,
+      print, or use the Viewer credential and did not start Viewer, a live
+      model/provider, a browser compensation profile, or a benchmark.
 
 ## Current-work produced files
 

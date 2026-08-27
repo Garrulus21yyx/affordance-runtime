@@ -50,6 +50,15 @@ Checkpoint v3 remains backward-readable for v2, and the additive public snapshot
 is v2 without changing historical revision-command digests. This evidence uses
 generic/provider-free fixtures and properties only; no browser compensation
 witness or benchmark case was run, so it does not change benchmark closure.
+The post-push whole provider-free suite recorded `1830 passed / 25 skipped` and
+only the two previously documented non-Phase-7 failures: the fixed
+five-document governance assertion rejects the required interaction-shell
+document, and one semantic-delivery witness cannot open its absent historical
+live trace. The synthetic Demo Playwright flow passed separately. Existing
+deployment tests may load the project `.env` through established deployment
+startup, but Phase 7 did not inspect, print, or use the Viewer credential and
+did not start Viewer, a live model/provider, a real compensation browser
+profile, or a benchmark.
 The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.
