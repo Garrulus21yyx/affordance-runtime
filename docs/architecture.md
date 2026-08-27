@@ -52,6 +52,24 @@ it merges an interactive element with same-label text while preserving the usefu
 choice to a Runtime lexical singleton ([ICLR 2025 paper](https://proceedings.iclr.cc/paper_files/paper/2025/file/f2c6e459b95694a24ac69c469a4ee746-Paper-Conference.pdf)).
 The local implementation keeps the same single ActionPolicy and mature BrowserGym/PydanticAI boundaries.
 
+Commit `52dd6171` has now crossed the original Postmill witness. Task681 completed native evaluation with
+`verified_success` after 28 ActionPolicy calls and 345,929 total tokens, compared with the pre-repair run's 60-call
+block and 1,187,000-token scale. It entered `/submit/technology`, filled the repository URL and post fields, and
+submitted with zero grounding gaps, waits, or fallbacks. Task672 also crossed its former create-post boundary, entered
+`/submit/gaming`, acquired the product page, and returned to the form with zero grounding gaps. It later failed for a
+different reason: the policy repeatedly reread the first page of a region instead of following the returned
+continuation, then exhausted a deliberate output response. This is not evidence for reopening the observation/action
+alignment owner.
+
+Fresh untouched Task426 did not support broader closure. The policy correctly identified Shanksville and executed the
+fresh Wikipedia search-box grounding, but selected `ArrowDown` repeatedly instead of the already offered `Enter` key.
+The first deliberate recovery then spent its entire 2,048-token response on thinking and produced no call. After that
+typed invalid response, the next loop could not pair the still-pending accepted call with the immediate failed step
+and failed before provider dispatch. The trace recorder also counted an historical response from the PydanticAI run
+messages as though it were a current physical attempt. These are ActionPolicy/provider-history recovery and
+observability lifecycle defects, not missing controls or grounds for another projection, ranker, cursor, Monitor, or
+World path. Broader closure remains explicitly open while that owner contract is reviewed.
+
 ### Local agent shell
 
 The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is

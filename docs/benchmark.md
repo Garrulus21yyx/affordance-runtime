@@ -25,8 +25,32 @@ inventory. Read/search results now attach the existing current E-ref and verbs o
 actually return. The complete current Catalog resolver, `find_controls`, PydanticAI call/result history, cursor,
 Monitor, Binder, Executor, and BrowserGym capture paths are unchanged. Focused property/vertical tests cover bounded
 base-set hard admission, hard-capacity failure, permutation, destination routes, duplicate readable labels, and
-same-World read-result E-ref execution. Live witness reruns and a fresh held-out case are still required; broader
-benchmark status therefore remains non-closed.
+same-World read-result E-ref execution. The live witness and fresh held-out results below validate the repaired
+grounding invariant but keep the broader benchmark status non-closed for a separate provider-history recovery gap.
+
+Post-repair Task681
+[`action-grounding-run1`](../evidence/live/w2-task-681-deepseek-v4-flash-20260827-action-grounding-run1/run.json)
+crosses the original witness and ends with native `verified_success`: 28 policy calls, 345,929 total tokens, zero
+grounding gaps, zero waits, zero fallbacks, one STOP, one post-STOP capture, and one native evaluation. The model used
+the current `Submit` action, filled the Postmill form, and published the requested technology post. The pre-repair run
+had blocked at 60 calls and about 1.187 million total tokens.
+
+Task672
+[`action-grounding-run1`](../evidence/live/w2-task-672-deepseek-v4-flash-20260827-action-grounding-run1/run.json)
+also crossed its old Postmill boundary, entered `/submit/gaming`, visited the required OneStopShop product, and
+returned to the create form with zero grounding gaps. It then blocked after repeatedly reading the same first region
+page instead of consuming the returned continuation; a deliberate policy response later exhausted its output budget.
+This is a failed independent strategy/provider-recovery witness, not a failure of the repaired grounding invariant.
+
+Fresh untouched Task426
+[`action-grounding-heldout1`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-action-grounding-heldout1/run.json)
+therefore keeps broader status non-closed. It correctly inferred Shanksville and executed the fresh Wikipedia search
+textbox, but repeated `ArrowDown` instead of the offered `Enter`. Its first deliberate recovery used all 2,048 output
+tokens as thinking and returned no ToolCall. The following calls then failed before provider dispatch because the
+PydanticAI history still ended in the last accepted pending call while the immediate Runtime step was the typed
+invalid response; the recorder also projected an historical response as a current attempt. These traces reopen the
+ActionPolicy/provider-history recovery and transcript-accounting lifecycle, not observation projection. No new
+production repair has been guessed from this single case.
 
 The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
 task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,
