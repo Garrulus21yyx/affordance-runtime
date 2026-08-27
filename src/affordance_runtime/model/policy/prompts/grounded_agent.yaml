@@ -1,4 +1,4 @@
-version: grounded-agent-context.v38
+version: grounded-agent-context.v39
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -31,7 +31,9 @@ actor: |-
     list_regions when a needed partial PageMap region is absent; and find_controls for current executable controls.
     search_page_content is only an exact-substring locator over current readable records, not semantic search or proof
     of exhaustive scope. A nonempty find_controls result is an executable capability set; use it unless no returned
-    control can advance the task. Follow next_cursor with the same read/search/list tool.
+    control can advance the task. An E ref with a supported verb is executable: active describes current/selected
+    state, not whether the control is enabled, while disabled=true means unavailable. Follow next_cursor with the same
+    read/search/list tool.
   - Completed tool results return unchanged under the same call ID. Apply semantic judgment to complete records: a
     clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. For a known
     collection, read its region and follow UI pagination. Partial source coverage, pagination controls, or a displayed total larger than the inspected records
@@ -48,6 +50,9 @@ actor: |-
     support the requested field.
   - Prefer the most specific current executable target. Do not navigate through an ancestor when the desired E target
     is offered. A matching label alone does not prove all constraints are satisfied.
+  - When entering an exact value into a GUI control, preserve its supported source ordering and representation unless
+    the task or fresh interface explicitly requires a conversion. A presumed backend or API convention does not define
+    the format of a GUI field merely because the page uses that service internally.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors, coordinates, IDs, URLs, service
     locations, or backend details. If evidence is insufficient, observe instead of guessing or waiting.
   - control_feedback is ephemeral recovery guidance. When it contains a prohibited signature, do not repeat that exact

@@ -1250,7 +1250,29 @@ from about 422,526 to 300,666 conservative tokens, another 121,860. These disjoi
 or a 43.4% lower bound against the old accumulated history count; earlier high-water compaction can reduce the live
 total further. The tab-domain schema change merges one of seven observed Catalog variants but does not remove other
 legitimate current-capability variants. This is offline replay, not a post-change live result, cost promise, or
-wall-time claim; a live benchmark still requires separate authorization.
+wall-time claim.
+
+The authorized post-change Task740
+[`run2`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run2/run.json), at commit `e758adf9`, is a failed
+correctness witness and a useful bounded-context measurement. It ended `blocked` after 44 policy turns, 18
+executions, seven page requests, five recovery turns, one wait, and zero STOP/native-evaluator calls. Despite 15 more
+policy turns than run1, formal prompt tokens were 629,414 rather than 702,419 and accumulated history tokens were
+663,642 rather than 772,712. The first identical World used 6,142 provider prompt tokens rather than 9,282. Unique
+ActionPolicy provider responses report about 378k cached and 252k uncached input tokens (60.0% cache hit), versus
+about 348k cached and 355k uncached (49.5%) in run1. Different semantic trajectories prevent treating those numbers
+as an aggregate-token closure.
+
+The trace rules out lost progress or compaction corruption. The compaction summary retained Carnegie Mellon
+University as `40.4425, -79.9433`, and the continuing ActionPolicy still stated both exact Wiki values. It nevertheless
+reordered them to `lon,lat` based on a presumed OSRM backend convention before filling OSM's GUI search fields. The
+route never appeared; later turns also treated `active=false` as non-executable despite current supported verbs. The
+general owner-level repair is prompt version `grounded-agent-context.v39`: preserve an exact source representation
+for GUI entry absent an explicit task/current-interface conversion contract, and use E-ref verbs as executability
+authority while reserving `disabled=true` for unavailability. No task/site/coordinate branch, new state, or alternate
+tool path was added. Focused prompt/PydanticAI integration tests pass; a fresh authorized live run remains required
+before restoring correctness acceptance for the optimized cutover. The post-repair focused suite passed 310 tests;
+the full suite passed 1,807 with 19 skips and only the pre-existing documentation-governance failure caused by the
+unmaintained `docs/interaction-shell.md` file outside the five-document allowlist.
 
 ## Live-run authorization and execution
 

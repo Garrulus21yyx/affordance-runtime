@@ -1369,7 +1369,26 @@ and uses the 50% high-water / 15% minimum-reclaim / 30% target schedule describe
 Task740 provider transcripts finds 100 stale historical World prompts (about 213k conservative tokens) and about 122k
 additional conservative tokens removable from repeated ToolReturn AX wrappers. These disjoint reductions are a
 43.4% lower bound against run1's 772,712 accumulated history tokens; they do not predict a live provider total or
-claim a wall-time improvement. No live post-optimization run has yet been authorized.
+claim a wall-time improvement.
+
+The authorized post-optimization Task740
+[`run2`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run2/run.json) at commit `e758adf9` confirms that the
+bounded representation is active but is not a correctness witness. Although it made 44 policy turns rather than
+run1's 29, formal prompt tokens fell from 702,419 to 629,414 and accumulated history tokens fell from 772,712 to
+663,642. Provider transcripts report a 60.0% ActionPolicy cache-hit ratio rather than 49.5%, with uncached
+ActionPolicy input falling from about 355k to 252k tokens. The identical initial World required 6,142 provider prompt
+tokens rather than 9,282. These are efficiency observations across different trajectories, not an aggregate closure
+or wall-time claim.
+
+Run2 ended `blocked` before STOP because ActionPolicy retained both exact Wiki coordinate pairs but replaced their
+source ordering with a presumed backend OSRM HTTP convention before entering them into the OSM GUI fields. No route
+result was therefore produced. It then interpreted `active=false` as disabled even though the current E ref's verbs
+and `find_controls` result made the control executable. Monitor emitted the expected control-stall recovery; the
+deliberate DeepSeek response exhausted its bounded reasoning output without a ToolCall, which was a downstream typed
+failure rather than the initiating cause. Prompt version `grounded-agent-context.v39` closes the two general
+ActionPolicy contract ambiguities: exact GUI values retain their supported representation unless the task or fresh UI
+requires conversion, and E-ref verbs—not `active`—own executability (`disabled=true` owns unavailability). This adds
+no formatter, site rule, memory, cursor, or recovery path. A fresh live correctness witness remains required.
 
 ## World, perception, and action boundaries
 

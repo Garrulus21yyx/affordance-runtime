@@ -142,6 +142,11 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "incidental keyword overlap does not" in system
     assert "Partial source coverage" in system
     assert "displayed total larger than the inspected records" in system
+    assert "An E ref with a supported verb is executable" in system
+    assert "active describes current/selected" in system
+    assert "disabled=true means unavailable" in system
+    assert "preserve its supported source ordering and representation" in system
+    assert "A presumed backend or API convention does not define" in system
     assert "earliest dependency-ready" not in system
     assert "visibly satisfied" not in system
     assert "exactly one" in system
