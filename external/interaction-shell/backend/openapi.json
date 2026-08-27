@@ -335,7 +335,17 @@
               "compensation_unverified",
               "compensation_resource_mismatch",
               "compensation_action_not_allowed",
-              "compensation_multiple_effects"
+              "compensation_multiple_effects",
+              "takeover_unavailable",
+              "takeover_persistence_failed",
+              "takeover_command_consumed",
+              "takeover_command_conflict",
+              "checkpoint_already_resumed",
+              "user_control_active",
+              "user_control_not_active",
+              "control_lease_mismatch",
+              "user_control_return_unavailable",
+              "user_control_currentness_unavailable"
             ],
             "title": "Code",
             "type": "string"
@@ -438,7 +448,9 @@
           "kind": {
             "enum": [
               "pause",
-              "revise"
+              "revise",
+              "take_over",
+              "return_control"
             ],
             "title": "Kind",
             "type": "string"
@@ -458,7 +470,9 @@
               "no_change",
               "new_task_suggested",
               "unsupported",
-              "effect_reconciliation_required"
+              "effect_reconciliation_required",
+              "user_control_granted",
+              "user_control_returned"
             ],
             "title": "Outcome",
             "type": "string"
@@ -472,6 +486,14 @@
         ],
         "title": "ControlOutcome",
         "type": "object"
+      },
+      "ControlOwner": {
+        "enum": [
+          "agent",
+          "user"
+        ],
+        "title": "ControlOwner",
+        "type": "string"
       },
       "ConversationTurn": {
         "additionalProperties": false,
@@ -796,9 +818,7 @@
             "enum": [
               "cancel_task",
               "pause_task",
-              "start_new_task",
-              "take_over",
-              "return_control"
+              "start_new_task"
             ],
             "title": "Kind",
             "type": "string"
@@ -1113,6 +1133,45 @@
         "title": "ResumeTask",
         "type": "object"
       },
+      "ReturnControl": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "control_lease_id": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Control Lease Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "return_control",
+            "default": "return_control",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "control_lease_id"
+        ],
+        "title": "ReturnControl",
+        "type": "object"
+      },
       "ReviseTask": {
         "additionalProperties": false,
         "properties": {
@@ -1247,6 +1306,23 @@
                 "type": "null"
               }
             ]
+          },
+          "control_lease_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Lease Id"
+          },
+          "control_owner": {
+            "$ref": "#/components/schemas/ControlOwner",
+            "default": "agent"
           },
           "effect_reconciliation": {
             "anyOf": [
@@ -1480,6 +1556,45 @@
           "task"
         ],
         "title": "StartTask",
+        "type": "object"
+      },
+      "TakeOver": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "take_over",
+            "default": "take_over",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "checkpoint_id"
+        ],
+        "title": "TakeOver",
         "type": "object"
       },
       "TraceStep": {
@@ -2558,6 +2673,94 @@
         "summary": "Resume"
       }
     },
+    "/sessions/{session_id}/commands/return-control": {
+      "post": {
+        "operationId": "return_control_sessions__session_id__commands_return_control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnControl"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Return Control Sessions  Session Id  Commands Return Control Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Return Control"
+      }
+    },
     "/sessions/{session_id}/commands/revise": {
       "post": {
         "operationId": "revise_sessions__session_id__commands_revise_post",
@@ -2644,6 +2847,94 @@
           }
         },
         "summary": "Revise"
+      }
+    },
+    "/sessions/{session_id}/commands/takeover": {
+      "post": {
+        "operationId": "take_over_sessions__session_id__commands_takeover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Session-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Session-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeOver"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "accepted": "#/components/schemas/Accepted",
+                      "conflict": "#/components/schemas/Conflict",
+                      "rejected": "#/components/schemas/Rejected",
+                      "unsupported": "#/components/schemas/Unsupported"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Accepted"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Conflict"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Unsupported"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Rejected"
+                    }
+                  ],
+                  "title": "Response Take Over Sessions  Session Id  Commands Takeover Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Over"
       }
     },
     "/sessions/{session_id}/events": {

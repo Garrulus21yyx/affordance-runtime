@@ -75,8 +75,8 @@ class FakeSteelTransport:
         assert api_key == "viewer-key"
         self.released.append(provider_session_id)
 
-    async def viewer_document(self, debug_url: str):
-        del debug_url
+    async def viewer_document(self, debug_url: str, *, interactive: bool):
+        del debug_url, interactive
         return ViewerHTTPResponse(500, b"", "text/plain")
 
     async def ice_servers(self, provider_session_id: str, rtc_token: str):

@@ -14,8 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
-
 from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
 from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
 from affordance_runtime.app.checkpoint import SQLiteRuntimeCheckpointStore
@@ -42,6 +40,7 @@ from affordance_runtime.task import (
     TaskBoundary,
 )
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from dotenv import load_dotenv
 
 from .api import create_app
 from .core_runtime_port import CoreRuntimeSessionPort, unavailable_viewer
@@ -189,7 +188,7 @@ class BrowserGymDeploymentSessionFactory:
                 viewer_lease = await self.viewer_gateway.open(session_id, expires_at)
                 try:
                     cleanup.attach_viewer(viewer_lease)
-                except BaseException:  # noqa: BLE001 - release a successfully opened lease
+                except BaseException:
                     await self.viewer_gateway.release(viewer_lease)
                     raise
             except PublicSessionOpenError:

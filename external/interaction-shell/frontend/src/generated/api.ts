@@ -212,6 +212,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/commands/return-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return Control */
+        post: operations["return_control_sessions__session_id__commands_return_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}/commands/revise": {
         parameters: {
             query?: never;
@@ -223,6 +240,23 @@ export interface paths {
         put?: never;
         /** Revise */
         post: operations["revise_sessions__session_id__commands_revise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/commands/takeover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take Over */
+        post: operations["take_over_sessions__session_id__commands_takeover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -404,7 +438,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "command_identity_reused" | "effect_reconciliation_required" | "effect_non_compensable" | "effect_reconciliation_unknown" | "effect_reconciliation_unsupported" | "compensation_unavailable" | "compensation_not_sent" | "compensation_effect_unknown" | "compensation_unverified" | "compensation_resource_mismatch" | "compensation_action_not_allowed" | "compensation_multiple_effects";
+            code: "duplicate_command" | "stale_command" | "pending_request_mismatch" | "session_closed" | "runtime_conflict" | "checkpoint_mismatch" | "run_not_revisable" | "control_request_conflict" | "control_boundary_failed" | "revision_pause_failed" | "revision_unavailable" | "checkpoint_not_found" | "revision_needs_input" | "revision_no_change" | "revision_new_task_suggested" | "revision_unsupported" | "revision_failed" | "revision_persistence_failed" | "revision_command_conflict" | "command_identity_reused" | "effect_reconciliation_required" | "effect_non_compensable" | "effect_reconciliation_unknown" | "effect_reconciliation_unsupported" | "compensation_unavailable" | "compensation_not_sent" | "compensation_effect_unknown" | "compensation_unverified" | "compensation_resource_mismatch" | "compensation_action_not_allowed" | "compensation_multiple_effects" | "takeover_unavailable" | "takeover_persistence_failed" | "takeover_command_consumed" | "takeover_command_conflict" | "checkpoint_already_resumed" | "user_control_active" | "user_control_not_active" | "control_lease_mismatch" | "user_control_return_unavailable" | "user_control_currentness_unavailable";
             /** Command Id */
             command_id: string;
             /**
@@ -445,7 +479,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "pause" | "revise";
+            kind: "pause" | "revise" | "take_over" | "return_control";
             /**
              * Message
              * @default
@@ -455,8 +489,13 @@ export interface components {
              * Outcome
              * @enum {string}
              */
-            outcome: "paused" | "failed" | "revised" | "needs_input" | "no_change" | "new_task_suggested" | "unsupported" | "effect_reconciliation_required";
+            outcome: "paused" | "failed" | "revised" | "needs_input" | "no_change" | "new_task_suggested" | "unsupported" | "effect_reconciliation_required" | "user_control_granted" | "user_control_returned";
         };
+        /**
+         * ControlOwner
+         * @enum {string}
+         */
+        ControlOwner: "agent" | "user";
         /** ConversationTurn */
         ConversationTurn: {
             /**
@@ -604,7 +643,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "cancel_task" | "pause_task" | "start_new_task" | "take_over" | "return_control";
+            kind: "cancel_task" | "pause_task" | "start_new_task";
             /** Message */
             message?: string | null;
         };
@@ -730,6 +769,22 @@ export interface components {
              */
             kind: "resume_task";
         };
+        /** ReturnControl */
+        ReturnControl: {
+            /** Command Id */
+            command_id: string;
+            /** Control Lease Id */
+            control_lease_id: string;
+            expected_run_status: components["schemas"]["RunStatus"];
+            /** Expected Task Revision */
+            expected_task_revision: number;
+            /**
+             * Kind
+             * @default return_control
+             * @constant
+             */
+            kind: "return_control";
+        };
         /** ReviseTask */
         ReviseTask: {
             /** Command Id */
@@ -768,6 +823,10 @@ export interface components {
             /** Checkpoint Id */
             checkpoint_id?: string | null;
             completion?: components["schemas"]["Completion"] | null;
+            /** Control Lease Id */
+            control_lease_id?: string | null;
+            /** @default agent */
+            control_owner: components["schemas"]["ControlOwner"];
             effect_reconciliation?: components["schemas"]["EffectReconciliation"] | null;
             /**
              * Event Cursor
@@ -877,6 +936,22 @@ export interface components {
             kind: "start_task";
             /** Task */
             task: string;
+        };
+        /** TakeOver */
+        TakeOver: {
+            /** Checkpoint Id */
+            checkpoint_id: string;
+            /** Command Id */
+            command_id: string;
+            expected_run_status: components["schemas"]["RunStatus"];
+            /** Expected Task Revision */
+            expected_task_revision: number;
+            /**
+             * Kind
+             * @default take_over
+             * @constant
+             */
+            kind: "take_over";
         };
         /** TraceStep */
         TraceStep: {
@@ -1447,6 +1522,43 @@ export interface operations {
             };
         };
     };
+    return_control_sessions__session_id__commands_return_control_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Session-Key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnControl"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"] | components["schemas"]["Conflict"] | components["schemas"]["Unsupported"] | components["schemas"]["Rejected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     revise_sessions__session_id__commands_revise_post: {
         parameters: {
             query?: never;
@@ -1461,6 +1573,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReviseTask"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"] | components["schemas"]["Conflict"] | components["schemas"]["Unsupported"] | components["schemas"]["Rejected"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_over_sessions__session_id__commands_takeover_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Session-Key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TakeOver"];
             };
         };
         responses: {

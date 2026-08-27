@@ -12,7 +12,7 @@ from typing import Annotated
 
 from ag_ui.core import CustomEvent
 from ag_ui.encoder import EventEncoder
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from .contracts import (
@@ -27,10 +27,12 @@ from .contracts import (
     RecoverSessionResponse,
     RejectAction,
     ResumeTask,
+    ReturnControl,
     ReviseTask,
     RuntimeSessionSnapshot,
     ShellEvent,
     StartTask,
+    TakeOver,
 )
 from .diagnosis import (
     BenchmarkResultExport,
@@ -94,12 +96,12 @@ def create_app(
             value = await value
         return dict(value)
 
-    async def authorize_viewer(request: Request, session_id: str) -> None:
+    async def authorize_viewer(request: Request | WebSocket, session_id: str) -> RuntimeSessionSnapshot:
         session_key = request.cookies.get(_viewer_cookie_name(session_id))
         if not session_key:
             raise HTTPException(401, "missing viewer session")
         try:
-            await shell.snapshot(session_id, session_key)
+            return await shell.snapshot(session_id, session_key)
         except (SessionNotFound, SessionUnauthorized) as exc:
             raise map_auth(exc) from exc
 
@@ -107,9 +109,16 @@ def create_app(
 
         @app.get("/viewer/{session_id}", response_class=HTMLResponse)
         async def viewer_document(request: Request, session_id: str) -> Response:
-            await authorize_viewer(request, session_id)
+            snapshot = await authorize_viewer(request, session_id)
             try:
-                document = await viewer_gateway.document(session_id)
+                document = await viewer_gateway.document(
+                    session_id,
+                    interactive=(
+                        snapshot.control_owner.value == "user"
+                        and snapshot.viewer.status == "available"
+                        and not snapshot.viewer.read_only
+                    ),
+                )
             except ViewerUnavailable as exc:
                 raise HTTPException(exc.status_code, exc.code) from exc
             return Response(
@@ -118,6 +127,86 @@ def create_app(
                 media_type=document.content_type,
                 headers=_viewer_security_headers(),
             )
+
+        @app.websocket("/viewer/{session_id}/input")
+        async def viewer_input(websocket: WebSocket, session_id: str) -> None:
+            try:
+                snapshot = await authorize_viewer(websocket, session_id)
+            except HTTPException as exc:
+                await websocket.close(code=4401 if exc.status_code == 401 else 4403)
+                return
+            if (
+                snapshot.control_owner.value != "user"
+                or snapshot.viewer.status != "available"
+                or snapshot.viewer.read_only
+            ):
+                await websocket.close(code=4409)
+                return
+            try:
+                upstream_url = viewer_gateway.input_websocket_url(session_id)
+            except ViewerUnavailable:
+                await websocket.close(code=4410)
+                return
+            await websocket.accept()
+            try:
+                from websockets.asyncio.client import connect
+                from websockets.typing import Origin
+
+                async with connect(
+                    upstream_url,
+                    origin=Origin("https://api.steel.dev"),
+                    open_timeout=10,
+                    close_timeout=5,
+                    max_size=2 * 1024 * 1024,
+                ) as upstream:
+
+                    async def client_to_provider() -> None:
+                        while True:
+                            message = await websocket.receive()
+                            if message["type"] == "websocket.disconnect":
+                                return
+                            try:
+                                current = await authorize_viewer(websocket, session_id)
+                            except HTTPException:
+                                await websocket.close(code=4403)
+                                return
+                            if (
+                                current.control_owner.value != "user"
+                                or current.viewer.status != "available"
+                                or current.viewer.read_only
+                            ):
+                                await websocket.close(code=4409)
+                                return
+                            if message.get("text") is not None:
+                                await upstream.send(message["text"])
+                            elif message.get("bytes") is not None:
+                                await upstream.send(message["bytes"])
+
+                    async def provider_to_client() -> None:
+                        async for message in upstream:
+                            if isinstance(message, str):
+                                await websocket.send_text(message)
+                            else:
+                                await websocket.send_bytes(message)
+
+                    tasks = {
+                        asyncio.create_task(client_to_provider()),
+                        asyncio.create_task(provider_to_client()),
+                    }
+                    done, pending = await asyncio.wait(
+                        tasks,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()
+            except Exception:  # noqa: BLE001 - never expose provider input locators
+                try:
+                    await websocket.close(code=1011)
+                except RuntimeError:
+                    pass
 
         @app.get("/viewer/{session_id}/steel/v1/rtc/ice-servers/{rtc_session_id}")
         async def viewer_ice_servers(
@@ -333,6 +422,18 @@ def create_app(
 
     @app.post("/sessions/{session_id}/commands/revise", response_model=CommandAdmission)
     async def revise(session_id: str, body: ReviseTask, session_key: str = Depends(key)):
+        return await command(session_id, session_key, body)
+
+    @app.post("/sessions/{session_id}/commands/takeover", response_model=CommandAdmission)
+    async def take_over(session_id: str, body: TakeOver, session_key: str = Depends(key)):
+        return await command(session_id, session_key, body)
+
+    @app.post("/sessions/{session_id}/commands/return-control", response_model=CommandAdmission)
+    async def return_control(
+        session_id: str,
+        body: ReturnControl,
+        session_key: str = Depends(key),
+    ):
         return await command(session_id, session_key, body)
 
     @app.post("/sessions/{session_id}/commands/close", response_model=CommandAdmission)

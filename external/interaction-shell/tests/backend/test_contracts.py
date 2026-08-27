@@ -44,10 +44,10 @@ def test_viewer_requires_secret_free_same_origin_read_only_route():
             provider="browserbase",
             protected_path="https://provider.test/live?secret=reusable",
         )
-    with pytest.raises(ValidationError):
-        ViewerState(
-            status="available",
-            provider="steel",
-            protected_path="/viewer/session-1",
-            read_only=False,
-        )
+    interactive = ViewerState(
+        status="available",
+        provider="steel",
+        protected_path="/viewer/session-1",
+        read_only=False,
+    )
+    assert interactive.read_only is False

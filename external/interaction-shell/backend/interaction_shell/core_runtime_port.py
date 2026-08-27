@@ -7,14 +7,15 @@ from datetime import datetime
 from typing import Protocol, cast, get_args
 
 from affordance_runtime.app.public_session import (
+    PublicRevisionConversationContext,
+    PublicRevisionConversationTurn,
     PublicRuntimeSessionEvent,
     PublicRuntimeSessionFactory,
     PublicRuntimeSessionHandle,
     PublicRuntimeSessionSnapshot,
-    PublicRevisionConversationContext,
-    PublicRevisionConversationTurn,
     PublicSessionCapability,
     PublicSessionConflict,
+    PublicSessionControlOwner,
     PublicSessionOpenError,
     PublicSessionStatus,
     PublicTaskRevisionCommand,
@@ -28,6 +29,7 @@ from .contracts import (
     Completion,
     Conflict,
     ConflictCode,
+    ControlOwner,
     ControlOutcome,
     EffectReconciliation,
     OptionalCommand,
@@ -36,12 +38,14 @@ from .contracts import (
     PublicStep,
     RejectAction,
     ResumeTask,
+    ReturnControl,
     ReviseTask,
     RunStatus,
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
     StartTask,
+    TakeOver,
     ViewerState,
 )
 from .port import RuntimeSessionUnavailable
@@ -77,6 +81,8 @@ class CoreRuntimeSessionPort:
                 Capability.PAUSE_TASK,
                 Capability.RESUME_TASK,
                 Capability.REVISE_TASK,
+                Capability.TAKE_OVER,
+                Capability.RETURN_CONTROL,
                 Capability.CLOSE_SESSION,
             }
         )
@@ -124,6 +130,13 @@ class CoreRuntimeSessionPort:
                 current = await handle.pause(command.command_id)
             elif isinstance(command, ResumeTask):
                 current = await handle.resume(command.command_id, command.checkpoint_id)
+            elif isinstance(command, TakeOver):
+                current = await handle.take_over(command.command_id, command.checkpoint_id)
+            elif isinstance(command, ReturnControl):
+                current = await handle.return_control(
+                    command.command_id,
+                    command.control_lease_id,
+                )
             elif isinstance(command, ReviseTask):
                 raise TypeError("ReviseTask must use RuntimeSessionPort.revise")
             else:
@@ -199,6 +212,16 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         for capability in source.capabilities
         if capability in _SUPPORTED_PUBLIC_CAPABILITIES
     )
+    if source.control_owner is PublicSessionControlOwner.AGENT:
+        capabilities -= {Capability.RETURN_CONTROL}
+        if viewer.status != "available":
+            capabilities -= {Capability.TAKE_OVER}
+        viewer = viewer.model_copy(update={"read_only": True})
+    else:
+        capabilities -= {Capability.TAKE_OVER}
+        viewer = viewer.model_copy(
+            update={"read_only": viewer.status != "available"}
+        )
     pending_question = (
         PendingQuestion(
             request_id=source.pending_question.interrupt_id, prompt=source.pending_question.prompt
@@ -276,6 +299,8 @@ def _snapshot(source: PublicRuntimeSessionSnapshot, viewer: ViewerState) -> Runt
         resume_eligible=source.resume_eligible,
         last_control_outcome=control_outcome,
         effect_reconciliation=effect_reconciliation,
+        control_owner=ControlOwner(source.control_owner.value),
+        control_lease_id=source.control_lease_id,
         expires_at=source.expires_at,
     )
 
@@ -302,6 +327,8 @@ _SUPPORTED_PUBLIC_CAPABILITIES = frozenset(
         PublicSessionCapability.PAUSE_TASK,
         PublicSessionCapability.RESUME_TASK,
         PublicSessionCapability.REVISE_TASK,
+        PublicSessionCapability.TAKE_OVER,
+        PublicSessionCapability.RETURN_CONTROL,
         PublicSessionCapability.CLOSE_SESSION,
     }
 )

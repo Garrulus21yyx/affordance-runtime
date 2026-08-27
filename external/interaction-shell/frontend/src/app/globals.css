@@ -45,6 +45,7 @@ button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline
 .chat-frame .copilotKitInput > textarea { font-family: "IBM Plex Sans Variable", sans-serif; }
 .chat-frame .poweredBy { font: 500 9px/1.2 "JetBrains Mono Variable", monospace !important; letter-spacing: .08em; color: #a2afb6 !important; }
 .surface iframe { flex: 1; width: 100%; border: 0; background: white; }
+.viewer-control-state { display: flex; justify-content: flex-end; padding: 6px 9px; border-bottom: 1px solid var(--line); background: #edf2f4; }
 .viewer-unavailable { flex: 1; position: relative; display: grid; place-content: center; justify-items: center; gap: 9px; color: var(--muted); background-color: #edf2f4; background-image: linear-gradient(rgba(166,183,192,.48) 1px, transparent 1px), linear-gradient(90deg, rgba(166,183,192,.48) 1px, transparent 1px); background-size: 28px 28px; overflow: hidden; }
 .viewer-unavailable::before, .viewer-unavailable::after { content: ""; position: absolute; background: var(--signal); opacity: .8; }
 .viewer-unavailable::before { width: 1px; height: 88%; left: 50%; top: 6%; }

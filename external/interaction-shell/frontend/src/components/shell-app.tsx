@@ -3,7 +3,18 @@
 import { CopilotChatView, CopilotKitProvider } from "@copilotkit/react-core/v2";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { Badge, Button, Card, Flex, Heading, Text, Theme } from "@radix-ui/themes";
-import { Activity, CircleOff, Eye, Pause, Play, Radio, ShieldCheck, Square } from "lucide-react";
+import {
+  Activity,
+  CircleOff,
+  Eye,
+  Hand,
+  Pause,
+  Play,
+  Radio,
+  RotateCcw,
+  ShieldCheck,
+  Square,
+} from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { useShellSession } from "@/hooks/use-shell-session";
 import type { Snapshot } from "@/lib/types";
@@ -75,6 +86,8 @@ function Conversation({ snapshot, submitMessage, confirm }: {
             textArea: {
               placeholder: snapshot?.run_status === "waiting_user"
                 ? "Answer the question…"
+                : snapshot?.control_owner === "user"
+                  ? "Manual browser control is active…"
                 : snapshot?.capabilities.includes("revise_task")
                   ? "Revise the current task…"
                   : "Describe a task…",
@@ -104,11 +117,24 @@ function Conversation({ snapshot, submitMessage, confirm }: {
 
 export function LiveView({ snapshot }: { snapshot: Snapshot | null }) {
   const viewer = snapshot?.viewer;
+  const interactive = snapshot?.control_owner === "user" && viewer?.read_only === false;
   return (
     <section className="panel surface" aria-label="Browser live view">
       <PanelHeader eyebrow="Browser session" title="Browser Live View" state={viewer?.status ?? "unavailable"} />
       {viewer?.status === "available" && viewer.protected_path ? (
-        <iframe title="Read-only browser live view" src={viewer.protected_path} sandbox="allow-scripts allow-same-origin" />
+        <>
+          <div className="viewer-control-state" data-testid="viewer-control-state">
+            <Badge color={interactive ? "orange" : "gray"}>
+              {interactive ? "user control" : "agent control · read-only"}
+            </Badge>
+          </div>
+          <iframe
+            key={`${viewer.protected_path}:${interactive ? "interactive" : "read-only"}`}
+            title={interactive ? "Interactive browser live view" : "Read-only browser live view"}
+            src={viewer.protected_path}
+            sandbox="allow-scripts allow-same-origin"
+          />
+        </>
       ) : (
         <div className="viewer-unavailable" data-testid="viewer-unavailable">
           <div className="viewer-reticle" aria-hidden="true"><CircleOff size={36} strokeWidth={1.3} /></div>
@@ -161,6 +187,17 @@ export function ShellApp() {
     && shell.snapshot.resume_eligible
     && shell.snapshot.checkpoint_id,
   );
+  const takeoverAvailable = Boolean(
+    shell.snapshot?.capabilities.includes("take_over")
+    && shell.snapshot.run_status === "paused"
+    && shell.snapshot.checkpoint_id
+    && shell.snapshot.viewer.status === "available",
+  );
+  const userControlled = Boolean(
+    shell.snapshot?.capabilities.includes("return_control")
+    && shell.snapshot.control_owner === "user"
+    && shell.snapshot.control_lease_id,
+  );
   return (
     <CopilotKitProvider runtimeUrl="/api/copilotkit">
       <Theme accentColor="orange" grayColor="slate" radius="small">
@@ -169,6 +206,16 @@ export function ShellApp() {
             <div className="wordmark"><Activity /><span>INTERACTION</span><strong>FLIGHT DECK</strong></div>
             <div className="topology"><span>CONVERSATION</span><i /><span>LIVE VIEW</span><i /><span>PROGRESS</span></div>
             <div className="connection">
+              {userControlled && (
+                <Button size="1" variant="solid" color="orange" onClick={shell.returnControl}>
+                  <RotateCcw size={11} /> Return to Agent
+                </Button>
+              )}
+              {takeoverAvailable && (
+                <Button size="1" variant="soft" color="orange" onClick={shell.takeOver}>
+                  <Hand size={11} /> Take control
+                </Button>
+              )}
               {resumable && (
                 <Button size="1" variant="soft" color="teal" onClick={shell.resume}>
                   <Play size={11} /> Resume task

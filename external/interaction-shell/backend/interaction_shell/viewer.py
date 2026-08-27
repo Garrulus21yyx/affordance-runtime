@@ -14,7 +14,14 @@ class ViewerHTTPResponse:
 
 
 class ViewerGateway(Protocol):
-    async def document(self, session_id: str) -> ViewerHTTPResponse: ...
+    async def document(
+        self,
+        session_id: str,
+        *,
+        interactive: bool = False,
+    ) -> ViewerHTTPResponse: ...
+
+    def input_websocket_url(self, session_id: str) -> str: ...
 
     async def ice_servers(self, session_id: str) -> ViewerHTTPResponse: ...
 

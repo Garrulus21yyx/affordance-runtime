@@ -22,6 +22,7 @@ deployment = [
   "pydantic-ai>=2,<3",
   "pydantic-ai-harness>=0.25,<0.26",
   "python-dotenv>=1,<2",
+  "websockets>=14,<17",
 ]
 test = [
   "httpx>=0.28,<1",

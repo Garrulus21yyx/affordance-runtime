@@ -45,6 +45,8 @@ const created = {
     },
     public_steps: [],
     resume_eligible: false,
+    control_owner: "agent",
+    control_lease_id: null,
     expires_at: "2026-08-26T13:00:00Z",
   },
 } as CreatedSession;
@@ -72,6 +74,16 @@ function ResumeProbe() {
 function ReviseProbe() {
   const shell = useShellSession();
   return <button onClick={() => shell.submitMessage("Inspect the account and its owner")}>revise</button>;
+}
+
+function TakeoverProbe() {
+  const shell = useShellSession();
+  return <button onClick={shell.takeOver}>take over</button>;
+}
+
+function ReturnControlProbe() {
+  const shell = useShellSession();
+  return <button onClick={shell.returnControl}>return control</button>;
 }
 
 describe("session acquisition", () => {
@@ -194,6 +206,78 @@ describe("session acquisition", () => {
         kind: "resume_task",
         checkpoint_id: checkpointId,
         expected_task_revision: 1,
+        expected_run_status: "paused",
+      }),
+    );
+  });
+
+  it("takes over and returns only with the exact projected identities", async () => {
+    const checkpointId = `runtime-checkpoint:${"f".repeat(64)}`;
+    const paused = {
+      ...created,
+      snapshot: {
+        ...created.snapshot,
+        task_id: "session:strict-mode",
+        task_revision: 1,
+        task_text: "Inspect the account",
+        run_status: "paused" as const,
+        capabilities: ["take_over", "close_session"] as const,
+        checkpoint_id: checkpointId,
+        viewer: {
+          status: "available" as const,
+          provider: "steel" as const,
+          protected_path: "/viewer/session:strict-mode",
+          reason_code: "",
+          read_only: true,
+        },
+      },
+    } as CreatedSession;
+    api.createSession.mockResolvedValue(paused);
+    api.postCommand.mockResolvedValue({
+      kind: "accepted",
+      command_id: "takeover",
+      snapshot: paused.snapshot,
+    });
+    const first = render(<TakeoverProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "take over" }));
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(1));
+    expect(api.postCommand).toHaveBeenLastCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/takeover",
+      expect.objectContaining({
+        kind: "take_over",
+        checkpoint_id: checkpointId,
+        expected_run_status: "paused",
+      }),
+    );
+    first.unmount();
+
+    api.createSession.mockReset();
+    const controlled = {
+      ...paused,
+      snapshot: {
+        ...paused.snapshot,
+        capabilities: ["return_control", "close_session"] as const,
+        resume_eligible: false,
+        control_owner: "user" as const,
+        control_lease_id: "user-control-lease:" + "u".repeat(32),
+        viewer: { ...paused.snapshot.viewer, read_only: false },
+      },
+    } as CreatedSession;
+    api.createSession.mockResolvedValue(controlled);
+    render(<ReturnControlProbe />);
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "return control" }));
+    await waitFor(() => expect(api.postCommand).toHaveBeenCalledTimes(2));
+    expect(api.postCommand).toHaveBeenLastCalledWith(
+      "session:strict-mode",
+      "session-key",
+      "commands/return-control",
+      expect.objectContaining({
+        kind: "return_control",
+        control_lease_id: "user-control-lease:" + "u".repeat(32),
         expected_run_status: "paused",
       }),
     );

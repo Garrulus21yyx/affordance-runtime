@@ -10,9 +10,11 @@ from interaction_shell.contracts import (
     Capability,
     OptionalCommand,
     ResumeTask,
+    ReturnControl,
     ReviseTask,
     RunStatus,
     StartTask,
+    TakeOver,
     ViewerState,
 )
 from interaction_shell.core_runtime_port import CoreRuntimeSessionPort
@@ -30,6 +32,7 @@ from affordance_runtime.app.public_session import (
     PublicRuntimeSessionSnapshot,
     PublicSessionCapability,
     PublicSessionConflict,
+    PublicSessionControlOwner,
     PublicSessionStatus,
     PublicTaskRevisionCommand,
 )
@@ -43,7 +46,12 @@ class FakePublicHandle:
             PublicSessionStatus.IDLE,
             "fake-public-event-epoch",
             0,
-            PUBLIC_SESSION_CAPABILITIES - {PublicSessionCapability.RESUME_TASK},
+            PUBLIC_SESSION_CAPABILITIES
+            - {
+                PublicSessionCapability.RESUME_TASK,
+                PublicSessionCapability.TAKE_OVER,
+                PublicSessionCapability.RETURN_CONTROL,
+            },
         )
         self.recorded: list[PublicRuntimeSessionEvent] = []
         self.release = asyncio.Event()
@@ -60,6 +68,8 @@ class FakePublicHandle:
             ]
         ] = []
         self.revision_digests: dict[str, str] = {}
+        self.takeover_calls: list[tuple[str, str]] = []
+        self.return_control_calls: list[tuple[str, str]] = []
 
     async def snapshot(self):
         return self.current
@@ -118,7 +128,11 @@ class FakePublicHandle:
                 status=PublicSessionStatus.PAUSED,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
-                capabilities=self.current.capabilities | {PublicSessionCapability.RESUME_TASK},
+                capabilities=self.current.capabilities
+                | {
+                    PublicSessionCapability.RESUME_TASK,
+                    PublicSessionCapability.TAKE_OVER,
+                },
                 last_control_outcome=PublicControlOutcome(
                     command_id,
                     "pause",
@@ -128,6 +142,68 @@ class FakePublicHandle:
                 ),
             ),
             "RUN_PAUSED",
+        )
+        return self.current
+
+    async def take_over(self, command_id: str, checkpoint_id: str):
+        assert checkpoint_id == self.current.checkpoint_id
+        self.takeover_calls.append((command_id, checkpoint_id))
+        lease_id = "user-control-lease:" + "u" * 32
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.PAUSED,
+                resume_eligible=False,
+                capabilities=frozenset(
+                    {
+                        PublicSessionCapability.CLOSE_SESSION,
+                        PublicSessionCapability.RETURN_CONTROL,
+                    }
+                ),
+                pending_question=None,
+                pending_confirmation=None,
+                control_owner=PublicSessionControlOwner.USER,
+                control_lease_id=lease_id,
+                last_control_outcome=PublicControlOutcome(
+                    command_id,
+                    "take_over",
+                    "user_control_granted",
+                    "user_control_granted",
+                    checkpoint_id,
+                ),
+            ),
+            "USER_CONTROL_GRANTED",
+        )
+        return self.current
+
+    async def return_control(self, command_id: str, control_lease_id: str):
+        assert control_lease_id == self.current.control_lease_id
+        self.return_control_calls.append((command_id, control_lease_id))
+        self._emit(
+            replace(
+                self.current,
+                status=PublicSessionStatus.WAITING_USER,
+                checkpoint_id=None,
+                capabilities=(
+                    self.current.capabilities
+                    | {
+                        PublicSessionCapability.ANSWER_QUESTION,
+                        PublicSessionCapability.PAUSE_TASK,
+                        PublicSessionCapability.REVISE_TASK,
+                    }
+                )
+                - {PublicSessionCapability.RETURN_CONTROL},
+                pending_question=PublicPendingQuestion("ask:fresh", "Which fresh option?"),
+                control_owner=PublicSessionControlOwner.AGENT,
+                control_lease_id=None,
+                last_control_outcome=PublicControlOutcome(
+                    command_id,
+                    "return_control",
+                    "user_control_returned",
+                    "user_control_currentness_refreshed",
+                ),
+            ),
+            "USER_CONTROL_RETURNED",
         )
         return self.current
 
@@ -179,7 +255,11 @@ class FakePublicHandle:
                 task_text=command.text,
                 checkpoint_id=checkpoint_id,
                 resume_eligible=True,
-                capabilities=self.current.capabilities | {PublicSessionCapability.RESUME_TASK},
+                capabilities=self.current.capabilities
+                | {
+                    PublicSessionCapability.RESUME_TASK,
+                    PublicSessionCapability.TAKE_OVER,
+                },
                 pending_question=None,
                 pending_confirmation=None,
                 last_control_outcome=PublicControlOutcome(
@@ -225,7 +305,11 @@ class FakePublicFactory:
             status=PublicSessionStatus.PAUSED,
             checkpoint_id=checkpoint_id,
             resume_eligible=True,
-            capabilities=self.handle.current.capabilities | {PublicSessionCapability.RESUME_TASK},
+            capabilities=self.handle.current.capabilities
+            | {
+                PublicSessionCapability.RESUME_TASK,
+                PublicSessionCapability.TAKE_OVER,
+            },
         )
         return self.handle
 
@@ -457,6 +541,129 @@ async def test_core_adapter_projects_durable_pause_without_terminal_cleanup() ->
     assert resumed.snapshot.run_status is RunStatus.WAITING_USER
     assert resumed.snapshot.resume_eligible is False
     assert Capability.RESUME_TASK not in resumed.snapshot.capabilities
+
+
+@pytest.mark.asyncio
+async def test_takeover_requires_viewer_and_return_projects_fresh_agent_control() -> None:
+    factory = FakePublicFactory()
+    port = CoreRuntimeSessionPort(
+        cast(Any, factory),
+        lambda _handle: ViewerState(
+            status="available",
+            provider="steel",
+            protected_path="/viewer/takeover-session",
+        ),
+    )
+    manager = RunSessionManager(port)
+    created = await manager.create()
+    started = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        StartTask(
+            command_id="start:takeover",
+            expected_task_revision=0,
+            expected_run_status=RunStatus.IDLE,
+            task="Inspect the account",
+        ),
+    )
+    paused = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        OptionalCommand(
+            kind="pause_task",
+            command_id="pause:takeover",
+            expected_task_revision=1,
+            expected_run_status=started.snapshot.run_status,
+        ),
+    )
+    assert paused.snapshot.checkpoint_id is not None
+    assert Capability.TAKE_OVER in paused.snapshot.capabilities
+    assert paused.snapshot.viewer.read_only is True
+
+    controlled = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        TakeOver(
+            command_id="takeover:one",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            checkpoint_id=paused.snapshot.checkpoint_id,
+        ),
+    )
+
+    assert controlled.kind == "accepted"
+    assert controlled.snapshot.control_owner.value == "user"
+    assert controlled.snapshot.control_lease_id is not None
+    assert controlled.snapshot.viewer.read_only is False
+    assert Capability.RETURN_CONTROL in controlled.snapshot.capabilities
+    assert Capability.RESUME_TASK not in controlled.snapshot.capabilities
+    assert Capability.REVISE_TASK not in controlled.snapshot.capabilities
+    assert factory.handle is not None
+    assert factory.handle.takeover_calls == [
+        ("takeover:one", paused.snapshot.checkpoint_id)
+    ]
+
+    returned = await manager.admit(
+        created.snapshot.session_id,
+        created.session_key,
+        ReturnControl(
+            command_id="return:one",
+            expected_task_revision=1,
+            expected_run_status=RunStatus.PAUSED,
+            control_lease_id=controlled.snapshot.control_lease_id,
+        ),
+    )
+
+    assert returned.kind == "accepted"
+    assert returned.snapshot.control_owner.value == "agent"
+    assert returned.snapshot.control_lease_id is None
+    assert returned.snapshot.viewer.read_only is True
+    assert returned.snapshot.pending_question is not None
+    assert returned.snapshot.pending_question.request_id == "ask:fresh"
+    assert Capability.RETURN_CONTROL not in returned.snapshot.capabilities
+    assert factory.handle.return_control_calls == [
+        ("return:one", "user-control-lease:" + "u" * 32)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_unavailable_viewer_hides_takeover_but_not_active_return() -> None:
+    factory = FakePublicFactory()
+    port = CoreRuntimeSessionPort(cast(Any, factory))
+    handle = await port.open("session:no-viewer", datetime.now().astimezone())
+    assert factory.handle is not None
+    checkpoint_id = "runtime-checkpoint:" + "c" * 64
+    factory.handle.current = replace(
+        factory.handle.current,
+        status=PublicSessionStatus.PAUSED,
+        task_id="session:no-viewer",
+        task_revision=1,
+        checkpoint_id=checkpoint_id,
+        capabilities=frozenset(
+            {
+                PublicSessionCapability.CLOSE_SESSION,
+                PublicSessionCapability.TAKE_OVER,
+            }
+        ),
+    )
+    paused = await port.snapshot(handle)
+    assert Capability.TAKE_OVER not in paused.capabilities
+
+    factory.handle.current = replace(
+        factory.handle.current,
+        capabilities=frozenset(
+            {
+                PublicSessionCapability.CLOSE_SESSION,
+                PublicSessionCapability.RETURN_CONTROL,
+            }
+        ),
+        control_owner=PublicSessionControlOwner.USER,
+        control_lease_id="user-control-lease:" + "x" * 32,
+    )
+    controlled = await port.snapshot(handle)
+    assert Capability.RETURN_CONTROL in controlled.capabilities
+    assert controlled.viewer.status == "unavailable"
+    assert controlled.viewer.read_only is True
 
 
 @pytest.mark.asyncio

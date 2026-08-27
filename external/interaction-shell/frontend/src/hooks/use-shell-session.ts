@@ -174,5 +174,40 @@ export function useShellSession() {
     });
   }, [commandBase, send, snapshot]);
 
-  return { snapshot, connection, notice, submitMessage, confirm, cancel, pause, resume };
+  const takeOver = useCallback(async () => {
+    if (
+      !snapshot?.capabilities.includes("take_over")
+      || snapshot.run_status !== "paused"
+      || !snapshot.checkpoint_id
+    ) return;
+    await send("commands/takeover", {
+      ...commandBase("take_over"),
+      checkpoint_id: snapshot.checkpoint_id,
+    });
+  }, [commandBase, send, snapshot]);
+
+  const returnControl = useCallback(async () => {
+    if (
+      !snapshot?.capabilities.includes("return_control")
+      || snapshot.control_owner !== "user"
+      || !snapshot.control_lease_id
+    ) return;
+    await send("commands/return-control", {
+      ...commandBase("return_control"),
+      control_lease_id: snapshot.control_lease_id,
+    });
+  }, [commandBase, send, snapshot]);
+
+  return {
+    snapshot,
+    connection,
+    notice,
+    submitMessage,
+    confirm,
+    cancel,
+    pause,
+    resume,
+    takeOver,
+    returnControl,
+  };
 }

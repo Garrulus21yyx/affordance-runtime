@@ -54,6 +54,11 @@ class RunStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class ControlOwner(StrEnum):
+    AGENT = "agent"
+    USER = "user"
+
+
 class Capability(StrEnum):
     START_TASK = "start_task"
     ANSWER_QUESTION = "answer_question"
@@ -105,8 +110,8 @@ class ViewerState(StrictModel):
                 raise ValueError("viewer must use a secret-free same-origin protected path")
         elif self.provider is not None or self.protected_path is not None:
             raise ValueError("unavailable viewer cannot publish provider routing")
-        if not self.read_only:
-            raise ValueError("v0 viewer must remain read-only")
+        if self.status == "unavailable" and not self.read_only:
+            raise ValueError("an unavailable viewer cannot accept user input")
         return self
 
 
@@ -132,7 +137,7 @@ class PublicStep(StrictModel):
 
 class ControlOutcome(StrictModel):
     command_id: str = Field(min_length=1, max_length=128)
-    kind: Literal["pause", "revise"]
+    kind: Literal["pause", "revise", "take_over", "return_control"]
     outcome: Literal[
         "paused",
         "failed",
@@ -142,6 +147,8 @@ class ControlOutcome(StrictModel):
         "new_task_suggested",
         "unsupported",
         "effect_reconciliation_required",
+        "user_control_granted",
+        "user_control_returned",
     ]
     code: str = Field(min_length=1, max_length=128)
     checkpoint_id: str | None = Field(default=None, max_length=200)
@@ -178,7 +185,22 @@ class RuntimeSessionSnapshot(StrictModel):
     resume_eligible: bool = False
     last_control_outcome: ControlOutcome | None = None
     effect_reconciliation: EffectReconciliation | None = None
+    control_owner: ControlOwner = ControlOwner.AGENT
+    control_lease_id: str | None = Field(default=None, min_length=16, max_length=128)
     expires_at: datetime
+
+    @model_validator(mode="after")
+    def require_exclusive_control_projection(self):
+        if self.control_owner is ControlOwner.AGENT and self.control_lease_id is not None:
+            raise ValueError("Agent control cannot retain a user lease")
+        if self.control_owner is ControlOwner.AGENT and not self.viewer.read_only:
+            raise ValueError("Agent-owned viewer must remain read-only")
+        if self.control_owner is ControlOwner.USER:
+            if self.control_lease_id is None or self.run_status is not RunStatus.PAUSED:
+                raise ValueError("user control requires one paused opaque lease")
+            if (self.viewer.status == "available") == self.viewer.read_only:
+                raise ValueError("user-owned viewer input must match provider availability")
+        return self
 
     @field_validator("expires_at")
     @classmethod
@@ -267,8 +289,6 @@ class OptionalCommand(CommandBase):
         "cancel_task",
         "pause_task",
         "start_new_task",
-        "take_over",
-        "return_control",
     ]
     message: str | None = Field(default=None, max_length=8000)
 
@@ -276,6 +296,16 @@ class OptionalCommand(CommandBase):
 class ResumeTask(CommandBase):
     kind: Literal["resume_task"] = "resume_task"
     checkpoint_id: str = Field(min_length=1, max_length=200)
+
+
+class TakeOver(CommandBase):
+    kind: Literal["take_over"] = "take_over"
+    checkpoint_id: str = Field(min_length=1, max_length=200)
+
+
+class ReturnControl(CommandBase):
+    kind: Literal["return_control"] = "return_control"
+    control_lease_id: str = Field(min_length=16, max_length=128)
 
 
 class ReviseTask(CommandBase):
@@ -301,6 +331,8 @@ ShellCommand = Annotated[
     | RejectAction
     | CloseSession
     | ResumeTask
+    | TakeOver
+    | ReturnControl
     | ReviseTask
     | OptionalCommand,
     Field(discriminator="kind"),
@@ -346,6 +378,16 @@ ConflictCode = Literal[
     "compensation_resource_mismatch",
     "compensation_action_not_allowed",
     "compensation_multiple_effects",
+    "takeover_unavailable",
+    "takeover_persistence_failed",
+    "takeover_command_consumed",
+    "takeover_command_conflict",
+    "checkpoint_already_resumed",
+    "user_control_active",
+    "user_control_not_active",
+    "control_lease_mismatch",
+    "user_control_return_unavailable",
+    "user_control_currentness_unavailable",
 ]
 
 

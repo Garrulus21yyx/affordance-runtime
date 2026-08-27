@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { EffectReconciliationNotice, LiveView, Progress } from "./shell-app";
 import type { Snapshot } from "@/lib/types";
@@ -19,6 +19,7 @@ describe("public fact renderers", () => {
         reason_code: "",
         read_only: true,
       },
+      control_owner: "agent",
     } as unknown as Snapshot;
 
     render(<LiveView snapshot={snapshot} />);
@@ -27,6 +28,30 @@ describe("public fact renderers", () => {
     expect(frame).toHaveAttribute("src", "/viewer/shell-session");
     expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
     expect(frame).not.toHaveAttribute("allow");
+    expect(screen.getByTestId("viewer-control-state")).toHaveTextContent("agent control");
+  });
+
+  it("reloads the same protected viewer path as interactive only for user ownership", () => {
+    const snapshot = {
+      viewer: {
+        status: "available",
+        provider: "steel",
+        protected_path: "/viewer/shell-session",
+        reason_code: "",
+        read_only: false,
+      },
+      control_owner: "user",
+      control_lease_id: "user-control-lease:" + "u".repeat(32),
+    } as unknown as Snapshot;
+
+    const view = render(<LiveView snapshot={snapshot} />);
+
+    const interactiveView = within(view.container);
+    expect(interactiveView.getByTitle("Interactive browser live view")).toHaveAttribute(
+      "src",
+      "/viewer/shell-session",
+    );
+    expect(interactiveView.getByTestId("viewer-control-state")).toHaveTextContent("user control");
   });
 
   it("renders only owner-projected operator progress", () => {

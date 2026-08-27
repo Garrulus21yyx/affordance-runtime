@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from interaction_shell.api import create_app
-from interaction_shell.contracts import Capability, RunStatus
+from interaction_shell.contracts import Capability, ControlOwner, RunStatus, ViewerState
 from interaction_shell.demo_port import ContractDemoPort
 from interaction_shell.manager import RunSessionManager
 from interaction_shell.port import RuntimeSessionUnavailable
 from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 from interaction_shell.viewer import ViewerHTTPResponse
+from starlette.websockets import WebSocketDisconnect
 
 
 @pytest.mark.asyncio
@@ -84,16 +88,57 @@ async def test_http_revision_uses_dedicated_typed_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_http_takeover_commands_use_dedicated_typed_endpoints():
+    app = create_app(RunSessionManager(ContractDemoPort()))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = (await client.post("/sessions", json={})).json()
+        session_id = created["snapshot"]["session_id"]
+        headers = {"X-Session-Key": created["session_key"]}
+        takeover = await client.post(
+            f"/sessions/{session_id}/commands/takeover",
+            headers=headers,
+            json={
+                "kind": "take_over",
+                "command_id": "takeover:http",
+                "expected_task_revision": 0,
+                "expected_run_status": "idle",
+                "checkpoint_id": "runtime-checkpoint:" + "a" * 64,
+            },
+        )
+        returned = await client.post(
+            f"/sessions/{session_id}/commands/return-control",
+            headers=headers,
+            json={
+                "kind": "return_control",
+                "command_id": "return:http",
+                "expected_task_revision": 0,
+                "expected_run_status": "idle",
+                "control_lease_id": "user-control-lease:" + "u" * 32,
+            },
+        )
+
+    assert takeover.status_code == 200
+    assert takeover.json()["kind"] == "unsupported"
+    assert takeover.json()["capability"] == "take_over"
+    assert returned.status_code == 200
+    assert returned.json()["kind"] == "unsupported"
+    assert returned.json()["capability"] == "return_control"
+
+
+@pytest.mark.asyncio
 async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_proxy():
     class FakeViewerGateway:
         def __init__(self) -> None:
-            self.documents: list[str] = []
+            self.documents: list[tuple[str, bool]] = []
             self.ice: list[str] = []
             self.offers: list[tuple[str, bytes, str, str]] = []
 
-        async def document(self, session_id: str):
-            self.documents.append(session_id)
+        async def document(self, session_id: str, *, interactive: bool = False):
+            self.documents.append((session_id, interactive))
             return ViewerHTTPResponse(200, b"<html>viewer</html>", "text/html")
+
+        def input_websocket_url(self, session_id: str) -> str:
+            return f"ws://provider.invalid/{session_id}"
 
         async def ice_servers(self, session_id: str):
             self.ice.append(session_id)
@@ -140,9 +185,117 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
     async with AsyncClient(transport=transport, base_url="http://test") as outsider:
         unauthorized = await outsider.get(f"/viewer/{session_id}")
     assert unauthorized.status_code == 401
-    assert gateway.documents == [session_id]
+    assert gateway.documents == [(session_id, False)]
     assert gateway.ice == [session_id]
     assert gateway.offers == [(session_id, b"offer", "application/sdp", "iad")]
+
+
+def test_viewer_input_websocket_requires_user_control_and_stops_after_return(monkeypatch):
+    class FakeViewerGateway:
+        def __init__(self) -> None:
+            self.document_modes: list[bool] = []
+
+        async def document(self, session_id: str, *, interactive: bool = False):
+            del session_id
+            self.document_modes.append(interactive)
+            return ViewerHTTPResponse(200, b"<html>viewer</html>", "text/html")
+
+        def input_websocket_url(self, session_id: str) -> str:
+            return f"wss://connect.steel.dev/v1/sessions/{session_id}/input?token=private"
+
+        async def ice_servers(self, session_id: str):
+            del session_id
+            return ViewerHTTPResponse(200, b'{}', "application/json")
+
+        async def whep(self, session_id: str, body: bytes, content_type: str, region: str):
+            del session_id, body, content_type, region
+            return ViewerHTTPResponse(201, b"answer", "application/sdp")
+
+    class FakeUpstream:
+        def __init__(self) -> None:
+            self.sent: list[str | bytes] = []
+            self._replied = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def send(self, message):
+            self.sent.append(message)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            while not self.sent:
+                await asyncio.sleep(0)
+            if not self._replied:
+                self._replied = True
+                return "provider-ack"
+            await asyncio.Future()
+
+    upstream = FakeUpstream()
+    connected_urls: list[str] = []
+
+    def fake_connect(url: str, **_kwargs):
+        connected_urls.append(url)
+        return upstream
+
+    monkeypatch.setattr("websockets.asyncio.client.connect", fake_connect)
+    gateway = FakeViewerGateway()
+    manager = RunSessionManager(ContractDemoPort())
+    app = create_app(manager, viewer_gateway=gateway)
+    with TestClient(app) as client:
+        created = client.post("/sessions", json={}).json()
+        session_id = created["snapshot"]["session_id"]
+        managed = manager.authenticate(session_id, created["session_key"])
+        managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
+            update={
+                "task_id": session_id,
+                "task_revision": 1,
+                "run_status": RunStatus.PAUSED,
+                "capabilities": frozenset(
+                    {Capability.RETURN_CONTROL, Capability.CLOSE_SESSION}
+                ),
+                "viewer": ViewerState(
+                    status="available",
+                    provider="steel",
+                    protected_path=f"/viewer/{session_id}",
+                    reason_code="",
+                    read_only=False,
+                ),
+                "control_owner": ControlOwner.USER,
+                "control_lease_id": "user-control-lease:" + "u" * 32,
+            }
+        )
+        document = client.get(f"/viewer/{session_id}")
+        assert document.status_code == 200
+        assert gateway.document_modes == [True]
+
+        with client.websocket_connect(f"/viewer/{session_id}/input") as websocket:
+            websocket.send_text('{"type":"mousemove"}')
+            assert websocket.receive_text() == "provider-ack"
+            managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
+                update={
+                    "capabilities": frozenset({Capability.CLOSE_SESSION}),
+                    "viewer": managed.runtime_handle.snapshot.viewer.model_copy(
+                        update={"read_only": True}
+                    ),
+                    "control_owner": ControlOwner.AGENT,
+                    "control_lease_id": None,
+                }
+            )
+            websocket.send_text('{"type":"keydown"}')
+            with pytest.raises(WebSocketDisconnect) as closed:
+                websocket.receive_text()
+            assert closed.value.code == 4409
+
+    assert connected_urls == [
+        f"wss://connect.steel.dev/v1/sessions/{session_id}/input?token=private"
+    ]
+    assert upstream.sent == ['{"type":"mousemove"}']
 
 
 @pytest.mark.asyncio

@@ -10,9 +10,9 @@ from interaction_shell.contracts import (
     ApproveAction,
     Capability,
     CloseSession,
-    OptionalCommand,
     RunStatus,
     StartTask,
+    TakeOver,
 )
 from interaction_shell.demo_port import ContractDemoPort
 from interaction_shell.manager import RunSessionManager, SessionUnauthorized
@@ -49,11 +49,12 @@ async def test_command_idempotency_stale_conflict_and_unsupported_capability():
     unsupported = await manager.admit(
         snapshot.session_id,
         created.session_key,
-        OptionalCommand(
+        TakeOver(
             command_id="takeover-1",
             kind="take_over",
             expected_task_revision=current.task_revision,
             expected_run_status=current.run_status,
+            checkpoint_id="runtime-checkpoint:" + "a" * 64,
         ),
     )
     assert unsupported.kind == "unsupported"

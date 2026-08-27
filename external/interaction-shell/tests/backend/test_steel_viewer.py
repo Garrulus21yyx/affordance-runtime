@@ -19,6 +19,7 @@ class FakeSteelTransport:
         self.whep_calls: list[tuple[str, str, bytes, str, str]] = []
         self.document_status = 200
         self.ice_status = 200
+        self.document_modes: list[bool] = []
 
     async def create_session(self, api_key: str, *, timeout_ms: int):
         assert api_key == "viewer-key"
@@ -34,17 +35,24 @@ class FakeSteelTransport:
         assert api_key == "viewer-key"
         self.released.append(provider_session_id)
 
-    async def viewer_document(self, debug_url: str) -> ViewerHTTPResponse:
+    async def viewer_document(
+        self,
+        debug_url: str,
+        *,
+        interactive: bool,
+    ) -> ViewerHTTPResponse:
+        self.document_modes.append(interactive)
         provider_session_id = debug_url.split("/")[-2]
         token = f"rtc-token-for-{provider_session_id}"
+        input_token = f"input-token-for-{provider_session_id}"
         document = f"""
         <!doctype html><script src="https://js.sentry-cdn.com/probe.js"></script>
         <script>
         const sessionId = '{provider_session_id}';
         const apiBaseUrl = 'https://api.steel.dev';
         const rtcToken = '{token}';
-        const wsUrl = 'wss://api.steel.dev/input/{provider_session_id}';
-        const interactive = 'false' === 'true';
+        const wsUrl = 'wss://connect.steel.dev/v1/sessions/{provider_session_id}/input?token={input_token}';
+        const interactive = '{str(interactive).lower()}' === 'true';
         fetch(`${{apiBaseUrl}}/v1/rtc/ice-servers/${{sessionId}}`);
         </script>
         """
@@ -95,6 +103,17 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     assert "const interactive = false;" in decoded
     assert "const wsUrl = null;" in decoded
     assert "window.location.origin" in decoded
+    assert transport.document_modes == [False]
+
+    interactive_document = await gateway.document("shell-session", interactive=True)
+    interactive_decoded = interactive_document.content.decode()
+    assert "const interactive = true;" in interactive_decoded
+    assert "/viewer/shell-session/input" in interactive_decoded
+    assert "input-token-for-provider-1" not in interactive_decoded
+    assert gateway.input_websocket_url("shell-session") == (
+        "wss://connect.steel.dev/v1/sessions/provider-1/input?token=input-token-for-provider-1"
+    )
+    assert transport.document_modes == [False, True]
 
     ice = await gateway.ice_servers("shell-session")
     whep = await gateway.whep("shell-session", b"offer", "application/sdp", "iad")
@@ -112,6 +131,26 @@ async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc(
     await gateway.release(lease)
     assert transport.released == ["provider-1"]
     assert gateway.project(handle).status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_read_only_document_revokes_the_cached_provider_input_locator() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    lease = await gateway.open(
+        "shell-session",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    handle = SimpleNamespace()
+    gateway.attach(handle, lease)
+
+    await gateway.document("shell-session", interactive=True)
+    assert gateway.input_websocket_url("shell-session")
+    await gateway.document("shell-session", interactive=False)
+
+    with pytest.raises(ViewerUnavailable, match="viewer_input_not_initialized"):
+        gateway.input_websocket_url("shell-session")
+    await gateway.release(lease)
 
 
 @pytest.mark.asyncio

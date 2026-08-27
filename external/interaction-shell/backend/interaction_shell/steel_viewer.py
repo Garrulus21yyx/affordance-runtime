@@ -13,7 +13,6 @@ from typing import Any, Protocol, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
-
 from affordance_runtime.app.public_session import PublicRuntimeSessionHandle
 
 from .contracts import ViewerState
@@ -54,6 +53,7 @@ class SteelBrowserLease:
     debug_url: str
     expires_at: datetime
     rtc_token: str = ""
+    input_websocket_url: str = ""
     unavailable_reason: str = ""
     released: bool = False
 
@@ -68,7 +68,12 @@ class SteelViewerTransport(Protocol):
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None: ...
 
-    async def viewer_document(self, debug_url: str) -> ViewerHTTPResponse: ...
+    async def viewer_document(
+        self,
+        debug_url: str,
+        *,
+        interactive: bool,
+    ) -> ViewerHTTPResponse: ...
 
     async def ice_servers(
         self,
@@ -103,7 +108,7 @@ class HTTPXSteelViewerTransport:
             f"{_STEEL_API_ORIGIN}/v1/sessions",
             headers={"steel-api-key": api_key},
             json={
-                "debugConfig": {"interactive": False, "systemCursor": False},
+                "debugConfig": {"interactive": True, "systemCursor": False},
                 "timeout": timeout_ms,
                 "inactivityTimeout": min(timeout_ms, 300_000),
             },
@@ -136,11 +141,16 @@ class HTTPXSteelViewerTransport:
         if response.status_code not in {200, 404, 410}:
             raise SteelViewerUnavailable("viewer_provider_session_release_failed")
 
-    async def viewer_document(self, debug_url: str) -> ViewerHTTPResponse:
+    async def viewer_document(
+        self,
+        debug_url: str,
+        *,
+        interactive: bool,
+    ) -> ViewerHTTPResponse:
         separator = "&" if "?" in debug_url else "?"
         response = await self._request(
             "GET",
-            f"{debug_url}{separator}interactive=false",
+            f"{debug_url}{separator}{urlencode({'interactive': str(interactive).lower()})}",
             follow_redirects=True,
         )
         return _bounded_response(response, _MAX_VIEWER_DOCUMENT_BYTES)
@@ -281,9 +291,17 @@ class SteelViewerGateway:
 
         return create
 
-    async def document(self, session_id: str) -> ViewerHTTPResponse:
+    async def document(
+        self,
+        session_id: str,
+        *,
+        interactive: bool = False,
+    ) -> ViewerHTTPResponse:
         lease = self._active_lease(session_id)
-        response = await self._transport.viewer_document(lease.debug_url)
+        response = await self._transport.viewer_document(
+            lease.debug_url,
+            interactive=interactive,
+        )
         if response.status_code != 200:
             self._record_provider_failure(lease, response.status_code)
             raise SteelViewerUnavailable(lease.unavailable_reason)
@@ -292,16 +310,24 @@ class SteelViewerGateway:
             raise SteelViewerUnavailable(lease.unavailable_reason)
         try:
             source = response.content.decode("utf-8")
-            document, rtc_token = _protect_steel_document(
+            document, rtc_token, input_websocket_url = _protect_steel_document(
                 source,
                 session_id,
                 lease.provider_session_id,
+                interactive=interactive,
             )
         except (UnicodeDecodeError, ValueError) as exc:
             lease.unavailable_reason = "viewer_provider_document_invalid"
             raise SteelViewerUnavailable(lease.unavailable_reason) from exc
         lease.rtc_token = rtc_token
+        lease.input_websocket_url = input_websocket_url
         return ViewerHTTPResponse(200, document.encode("utf-8"), "text/html; charset=utf-8")
+
+    def input_websocket_url(self, session_id: str) -> str:
+        lease = self._active_lease(session_id)
+        if not lease.input_websocket_url:
+            raise SteelViewerUnavailable("viewer_input_not_initialized", 409)
+        return lease.input_websocket_url
 
     async def ice_servers(self, session_id: str) -> ViewerHTTPResponse:
         lease = self._lease_with_rtc_token(session_id)
@@ -484,7 +510,9 @@ def _protect_steel_document(
     source: str,
     shell_session_id: str,
     provider_session_id: str,
-) -> tuple[str, str]:
+    *,
+    interactive: bool,
+) -> tuple[str, str, str]:
     assignments = {
         "session": re.compile(r"const\s+sessionId\s*=\s*(['\"])(?P<value>.*?)\1\s*;"),
         "api": re.compile(r"const\s+apiBaseUrl\s*=\s*(['\"])(?P<value>.*?)\1\s*;"),
@@ -501,6 +529,12 @@ def _protect_steel_document(
     if not rtc_token or len(rtc_token) > 8192:
         raise ValueError("Steel viewer document omitted its RTC token")
 
+    upstream_input_url = matches["websocket"][0].group("value")
+    input_websocket_url = (
+        _validated_input_websocket(upstream_input_url, provider_session_id)
+        if interactive
+        else ""
+    )
     document = assignments["session"].sub(
         f"const sessionId = {json.dumps(shell_session_id)};",
         source,
@@ -511,15 +545,56 @@ def _protect_steel_document(
         document,
     )
     document = assignments["rtc"].sub("const rtcToken = '';", document)
-    document = assignments["websocket"].sub("const wsUrl = null;", document)
-    document = assignments["interactive"].sub("const interactive = false;", document)
+    websocket_assignment = "const wsUrl = null;"
+    if interactive:
+        input_path = f"/viewer/{shell_session_id}/input"
+        websocket_assignment = (
+            "const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') "
+            f"+ window.location.host + {json.dumps(input_path)};"
+        )
+    document = assignments["websocket"].sub(websocket_assignment, document)
+    document = assignments["interactive"].sub(
+        f"const interactive = {str(interactive).lower()};",
+        document,
+    )
     document = re.sub(
         r"<script\b[^>]*\bsrc=(['\"])[^'\"]+\1[^>]*>\s*</script>",
         "",
         document,
         flags=re.IGNORECASE,
     )
-    forbidden = (provider_session_id, rtc_token, "api.steel.dev", "connect.steel.dev", "app.steel.dev")
+    forbidden = tuple(
+        value
+        for value in (
+        provider_session_id,
+        rtc_token,
+        input_websocket_url,
+        "api.steel.dev",
+        "connect.steel.dev",
+        "app.steel.dev",
+        )
+        if value
+    )
     if any(value in document for value in forbidden):
         raise ValueError("Steel viewer document retained a private provider locator")
-    return document, rtc_token
+    return document, rtc_token, input_websocket_url
+
+
+def _validated_input_websocket(value: str, provider_session_id: str) -> str:
+    parsed = urlparse(value)
+    expected_path = f"/v1/sessions/{provider_session_id}/input"
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    if (
+        parsed.scheme != "wss"
+        or parsed.hostname != _STEEL_CDP_HOST
+        or parsed.username
+        or parsed.password
+        or parsed.path != expected_path
+        or len(query) != 1
+        or query[0][0] != "token"
+        or not query[0][1]
+        or len(query[0][1]) > 8192
+        or parsed.fragment
+    ):
+        raise ValueError("Steel viewer input WebSocket contract changed")
+    return value

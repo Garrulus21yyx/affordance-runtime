@@ -726,6 +726,21 @@ Constraints:
       retains user ownership and Agent dispatch stays disabled; recovery of the
       consumed pre-takeover checkpoint fails closed. The focused Runtime/session
       slice passes 47 tests; Shell/Steel/UI wiring remains in progress.
+    - Shell/Steel/UI milestone implemented: dedicated typed TakeOver and
+      ReturnControl endpoints carry the exact checkpoint/lease identities; the
+      adapter advertises takeover only when the same-session Viewer is available
+      and preserves ReturnControl even after provider loss. Steel sessions are
+      created input-capable, but the protected document remains read-only until
+      Runtime projects user ownership. Interactive documents replace the private
+      provider locator with one authenticated same-origin WebSocket; every input
+      frame rechecks current Runtime ownership before native forwarding, and a
+      return closes later input with 4409. The UI exposes only capability-gated
+      Take control / Return to Agent controls and reloads the same protected
+      iframe mode. Evidence: 64 external backend/architecture tests, 14
+      deployment tests, 135 Core/architecture tests, 12 frontend tests plus
+      lint/typecheck/build, touched backend Pyright, Ruff, OpenAPI generation,
+      and diff checks pass. A no-model live Steel input/return witness and final
+      documentation closure remain.
 24. **pending — Phase 9 release-profile closure review.**
     - Begin only after Step 23 passes its owner/property/integration gates.
       Reconcile implementation, generated contracts, UI, documentation, and the
