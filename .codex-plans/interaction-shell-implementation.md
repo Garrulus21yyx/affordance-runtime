@@ -739,8 +739,17 @@ Constraints:
       iframe mode. Evidence: 64 external backend/architecture tests, 14
       deployment tests, 135 Core/architecture tests, 12 frontend tests plus
       lint/typecheck/build, touched backend Pyright, Ruff, OpenAPI generation,
-      and diff checks pass. A no-model live Steel input/return witness and final
-      documentation closure remain.
+      and diff checks pass. Final authoritative documentation closure remains.
+    - Live witness passed through the protected product API and native Steel
+      input channel without a model or benchmark: the Runtime reached
+      `waiting_user`, committed one durable pause, granted the exact user lease,
+      and forwarded one click only after Steel's input-ready status. That input
+      changed the same CDP-owned page. `ReturnControl` then captured exactly one
+      fresh World, evaluated the task `DONE` before a second policy call, and
+      restored Agent ownership. The ActionPolicy call count remained one, the
+      paused checkpoint was consumed by takeover, cleanup ran once, the exact
+      provider lease was released, and no provider locator entered the public
+      document. Final authoritative documentation closure remains.
 24. **pending — Phase 9 release-profile closure review.**
     - Begin only after Step 23 passes its owner/property/integration gates.
       Reconcile implementation, generated contracts, UI, documentation, and the
@@ -770,6 +779,9 @@ Constraints:
 - `external/interaction-shell/backend/interaction_shell/session_registry.py` —
   salted same-session restart authentication and original TTL, without Runtime
   state or reusable key persistence.
+- `scripts/phase8_steel_takeover_witness.py` — opt-in no-model live Steel
+  takeover/return witness; it emits only bounded status/boolean evidence and
+  releases its one short-lived provider lease.
 
 ## Phase 2 final verification
 
