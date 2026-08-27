@@ -99,6 +99,7 @@ from affordance_runtime.model.policy.request_admission import (
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
+from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 
 _MAX_PROVIDER_RETRIES = 1
@@ -2058,7 +2059,7 @@ def pydantic_ai_model_from_environment(
         profile,
         model_id,
         _endpoint_host(base_url),
-        profile == "zhipu" and _zhipu_supports_multimodal(model_id),
+        model_supports_multimodal(profile, model_id),
     )
 
 
@@ -3645,10 +3646,6 @@ def _required(environment: Mapping[str, str], name: str) -> str:
 
 def _enabled(value: str) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
-
-
-def _zhipu_supports_multimodal(model_id: str) -> bool:
-    return "v" in model_id.casefold().split("-", 2)[-1]
 
 
 __all__ = [

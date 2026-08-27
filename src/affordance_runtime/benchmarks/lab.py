@@ -23,12 +23,19 @@ from affordance_runtime.benchmarks.external_breadth.manifest import (
 from affordance_runtime.benchmarks.external_breadth.registry import load_registry_census
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.model.policy.wire_capability import ActionPolicyWireCapability
+from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 _PROFILE_ID = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
-_DEFAULT_ACTION_MODELS = ("glm-4.6", "glm-4.1v-thinking-flashx")
-_DEFAULT_GOAL_MODELS = ("glm-4.7-flash", "glm-4.6")
 _IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+_PROVIDER_PREFIXES = {
+    "aliyun": "LLM_ALIYUN",
+    "deepseek": "LLM_DEEPSEEK",
+    "gemini": "LLM_GEMINI",
+    "local": "LLM_LOCAL",
+    "mistral": "LLM_MISTRAL",
+    "zhipu": "LLM_ZHIPU",
+}
 
 
 class BenchmarkLabRunSpec(BaseModel):
@@ -46,9 +53,7 @@ class BenchmarkLabRunSpec(BaseModel):
     def validate_contract(self) -> BenchmarkLabRunSpec:
         if _MODEL_ID.fullmatch(self.action_model) is None:
             raise ValueError("action_model is invalid")
-        if self.goal_compiler_mode == "model" and _MODEL_ID.fullmatch(
-            self.goal_compiler_model
-        ) is None:
+        if self.goal_compiler_mode == "model" and _MODEL_ID.fullmatch(self.goal_compiler_model) is None:
             raise ValueError("goal_compiler_model is invalid")
         if self.goal_compiler_mode == "disabled" and self.goal_compiler_model:
             raise ValueError("disabled GoalCompiler cannot select a model")
@@ -194,36 +199,28 @@ class BenchmarkLabManager:
         self._runs: dict[str, BenchmarkLabRun] = {}
         self._active_id = ""
         self._lock = threading.Lock()
-        self._frame_cache: dict[
-            str, tuple[int, int, BenchmarkLabBrowserFrame | None]
-        ] = {}
+        self._frame_cache: dict[str, tuple[int, int, BenchmarkLabBrowserFrame | None]] = {}
 
     def configuration(self) -> BenchmarkLabConfiguration:
-        action_models = _model_choices(
-            _DEFAULT_ACTION_MODELS,
-            self.environment.get("LLM_ZHIPU_MODEL", ""),
-        )
+        provider = self.environment.get("LLM_ACTIVE_PROFILE", "local").strip().casefold()
+        action_model = _configured_action_model(self.environment, provider)
+        action_models = (action_model,) if _valid_model_id(action_model) else ()
         goal_models = _model_choices(
-            _DEFAULT_GOAL_MODELS,
+            action_models,
             self.environment.get("LLM_GOAL_COMPILER_MODEL", ""),
         )
         return BenchmarkLabConfiguration(
             manifest=self.manifest.campaign_id,
-            provider="zhipu",
-            provider_ready=all(
-                self.environment.get(name, "").strip()
-                for name in ("LLM_ZHIPU_BASE_URL", "LLM_ZHIPU_API_KEY")
-            ),
+            provider=provider,
+            provider_ready=_provider_ready(self.environment, provider),
             action_models=tuple(
                 BenchmarkLabModel(
                     id=model,
-                    multimodal=model.casefold() == "glm-4.1v-thinking-flashx",
+                    multimodal=model_supports_multimodal(provider, model),
                 )
                 for model in action_models
             ),
-            action_wire_capabilities=tuple(
-                item.value for item in ActionPolicyWireCapability
-            ),
+            action_wire_capabilities=tuple(item.value for item in ActionPolicyWireCapability),
             goal_models=tuple(goal_models),
             perception_profiles=tuple(item.value for item in DecisionPerceptionProfile),
             cases=tuple(
@@ -242,6 +239,7 @@ class BenchmarkLabManager:
         case = self._cases.get(spec.case_id)
         if case is None:
             raise ValueError("case_id is not in the frozen manifest")
+        self._validate_spec(spec)
         with self._lock:
             active = self._runs.get(self._active_id)
             if active is not None and active.process.poll() is None:
@@ -295,9 +293,7 @@ class BenchmarkLabManager:
 
     def list_runs(self) -> BenchmarkLabRunList:
         runs = sorted(self._runs.values(), key=lambda item: item.started_at, reverse=True)
-        return BenchmarkLabRunList(
-            runs=tuple(item.public_summary() for item in runs[:100])
-        )
+        return BenchmarkLabRunList(runs=tuple(item.public_summary() for item in runs[:100]))
 
     def events(self, run_id: str, after: int = 0) -> BenchmarkLabEventPage:
         if after < 0:
@@ -307,9 +303,7 @@ class BenchmarkLabManager:
         events: list[dict[str, Any]] = []
         next_cursor = after
         if trace_path.is_file():
-            for index, line in enumerate(
-                trace_path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
+            for index, line in enumerate(trace_path.read_text(encoding="utf-8").splitlines(), start=1):
                 if index <= after:
                     continue
                 try:
@@ -327,9 +321,7 @@ class BenchmarkLabManager:
 
     def activity(self, run_id: str, after: int = 0) -> BenchmarkLabEventPage:
         payload = self.events(run_id, after)
-        return payload.model_copy(
-            update={"events": tuple(_public_activity_event(item) for item in payload.events)}
-        )
+        return payload.model_copy(update={"events": tuple(_public_activity_event(item) for item in payload.events)})
 
     def browser_frame(self, run_id: str) -> BenchmarkLabBrowserFrame | None:
         run = self._get_run(run_id)
@@ -360,17 +352,17 @@ class BenchmarkLabManager:
 
     def _run_environment(self, spec: BenchmarkLabRunSpec) -> dict[str, str]:
         env = dict(self.environment)
+        provider = env.get("LLM_ACTIVE_PROFILE", "local").strip().casefold()
+        model_key = _provider_model_key(provider, env)
         env.update(
             {
-                "LLM_ACTIVE_PROFILE": "zhipu",
-                "LLM_ZHIPU_MODEL": spec.action_model,
+                "LLM_ACTIVE_PROFILE": provider,
+                model_key: spec.action_model,
                 "LLM_ACTION_POLICY_WIRE_CAPABILITY": spec.action_wire_capability,
                 "LLM_DECISION_PERCEPTION": spec.perception_profile,
                 "LLM_GOAL_COMPILER_MODE": spec.goal_compiler_mode,
                 "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
-                "MINIWOB_URL": env.get(
-                    "MINIWOB_URL", "http://127.0.0.1:18888/miniwob/"
-                ),
+                "MINIWOB_URL": env.get("MINIWOB_URL", "http://127.0.0.1:18888/miniwob/"),
             }
         )
         if spec.goal_compiler_mode == "model":
@@ -378,6 +370,19 @@ class BenchmarkLabManager:
         else:
             env.pop("LLM_GOAL_COMPILER_MODEL", None)
         return env
+
+    def _validate_spec(self, spec: BenchmarkLabRunSpec) -> None:
+        configuration = self.configuration()
+        if not configuration.provider_ready:
+            raise ValueError(f"active model provider {configuration.provider!r} is not configured")
+        action_models = {item.id: item for item in configuration.action_models}
+        selected = action_models.get(spec.action_model)
+        if selected is None:
+            raise ValueError("action_model is not configured for the active provider")
+        if spec.goal_compiler_mode == "model" and spec.goal_compiler_model not in configuration.goal_models:
+            raise ValueError("goal_compiler_model is not configured for the active provider")
+        if spec.perception_profile == DecisionPerceptionProfile.SCREENSHOT_AX.value and not selected.multimodal:
+            raise ValueError("screenshot-ax perception requires a configured multimodal action model")
 
     @staticmethod
     def _drain_output(run: BenchmarkLabRun) -> None:
@@ -390,13 +395,38 @@ class BenchmarkLabManager:
 
 def _model_choices(defaults: tuple[str, ...], configured: str) -> list[str]:
     values = [*defaults]
-    if (
-        configured.strip()
-        and _MODEL_ID.fullmatch(configured.strip())
-        and configured.strip() not in values
-    ):
+    if configured.strip() and _MODEL_ID.fullmatch(configured.strip()) and configured.strip() not in values:
         values.append(configured.strip())
     return values
+
+
+def _valid_model_id(model: str) -> bool:
+    return bool(model and _MODEL_ID.fullmatch(model))
+
+
+def _configured_action_model(environment: dict[str, str], provider: str) -> str:
+    if provider == "local":
+        return (environment.get("LLM_LOCAL_MODEL_ID") or environment.get("LLM_LOCAL_MODEL") or "qwen2.5:7b").strip()
+    prefix = _PROVIDER_PREFIXES.get(provider)
+    return "" if prefix is None else environment.get(f"{prefix}_MODEL", "").strip()
+
+
+def _provider_model_key(provider: str, environment: dict[str, str]) -> str:
+    if provider == "local":
+        return "LLM_LOCAL_MODEL_ID" if environment.get("LLM_LOCAL_MODEL_ID", "").strip() else "LLM_LOCAL_MODEL"
+    prefix = _PROVIDER_PREFIXES.get(provider)
+    if prefix is None:
+        raise ValueError(f"unsupported LLM_ACTIVE_PROFILE: {provider}")
+    return f"{prefix}_MODEL"
+
+
+def _provider_ready(environment: dict[str, str], provider: str) -> bool:
+    if provider == "local":
+        return _valid_model_id(_configured_action_model(environment, provider))
+    prefix = _PROVIDER_PREFIXES.get(provider)
+    if prefix is None:
+        return False
+    return all(environment.get(f"{prefix}_{suffix}", "").strip() for suffix in ("BASE_URL", "API_KEY", "MODEL"))
 
 
 def _run_id(case_id: str) -> str:
@@ -427,36 +457,24 @@ def _public_activity_event(event: dict[str, Any]) -> dict[str, Any]:
             max_steps=int(event.get("max_steps") or 0),
         )
     elif kind == "goal_compiler_completed":
-        diagnostic = (
-            event.get("diagnostic") if isinstance(event.get("diagnostic"), dict) else {}
-        )
+        diagnostic = event.get("diagnostic") if isinstance(event.get("diagnostic"), dict) else {}
         public.update(
             disposition=str(diagnostic.get("final_disposition") or "unknown"),
             provider_attempt_count=int(diagnostic.get("provider_attempt_count") or 0),
         )
     elif kind == "model_turn":
-        attempts = (
-            event.get("generation_attempts")
-            if isinstance(event.get("generation_attempts"), list)
-            else []
-        )
+        attempts = event.get("generation_attempts") if isinstance(event.get("generation_attempts"), list) else []
         public.update(
             outcome=str(event.get("outcome") or "unknown"),
             attempt_count=len(attempts),
             latency_ms=round(
-                sum(
-                    float(item.get("latency_ms") or 0)
-                    for item in attempts
-                    if isinstance(item, dict)
-                ),
+                sum(float(item.get("latency_ms") or 0) for item in attempts if isinstance(item, dict)),
                 3,
             ),
         )
     elif kind == "step_completed":
         result = event.get("result") if isinstance(event.get("result"), dict) else {}
-        execution = (
-            result.get("execution") if isinstance(result.get("execution"), dict) else None
-        )
+        execution = result.get("execution") if isinstance(result.get("execution"), dict) else None
         request = (
             execution.get("request")
             if isinstance(execution, dict) and isinstance(execution.get("request"), dict)
@@ -464,15 +482,9 @@ def _public_activity_event(event: dict[str, Any]) -> dict[str, Any]:
         )
         intent = request.get("intent") if isinstance(request.get("intent"), dict) else {}
         receipt = (
-            execution.get("result")
-            if isinstance(execution, dict) and isinstance(execution.get("result"), dict)
-            else {}
+            execution.get("result") if isinstance(execution, dict) and isinstance(execution.get("result"), dict) else {}
         )
-        evaluation = (
-            result.get("task_evaluation")
-            if isinstance(result.get("task_evaluation"), dict)
-            else {}
-        )
+        evaluation = result.get("task_evaluation") if isinstance(result.get("task_evaluation"), dict) else {}
         public.update(
             step=int(event.get("step") or 0),
             status_after=str(result.get("status_after") or "running"),
@@ -485,7 +497,7 @@ def _public_activity_event(event: dict[str, Any]) -> dict[str, Any]:
     elif kind == "observation":
         public.update(
             observation_id=str(event.get("observation_id") or ""),
-            browser_frame_available=bool(event.get("image_inputs")),
+            browser_frame_available=bool(_observation_screenshot_media(event)),
         )
     elif kind == "run_finished":
         public.update(
@@ -497,9 +509,7 @@ def _public_activity_event(event: dict[str, Any]) -> dict[str, Any]:
     elif kind == "run_paused":
         public["status"] = str(event.get("status") or "waiting_user")
     elif kind == "run_error":
-        public["exception_class"] = str(
-            event.get("exception_class") or "RuntimeError"
-        )
+        public["exception_class"] = str(event.get("exception_class") or "RuntimeError")
     return public
 
 
@@ -517,18 +527,11 @@ def _latest_browser_frame(trace_path: Path) -> BenchmarkLabBrowserFrame | None:
             break
         if event.get("event") != "observation":
             continue
-        image_inputs = event.get("image_inputs")
-        if not isinstance(image_inputs, list):
-            continue
-        for image in image_inputs:
-            if not isinstance(image, dict) or image.get("mime_type") not in _IMAGE_TYPES:
-                continue
-            data_value = image.get("data")
-            artifact = (
-                data_value.get("artifact", {}) if isinstance(data_value, dict) else {}
-            )
+        for media in _observation_screenshot_media(event):
+            data_value = media.get("data")
+            artifact = data_value.get("artifact", {}) if isinstance(data_value, dict) else {}
             relative = artifact.get("path") if isinstance(artifact, dict) else None
-            digest = str(image.get("sha256") or artifact.get("sha256") or "")
+            digest = str(media.get("sha256") or artifact.get("sha256") or "")
             if not isinstance(relative, str) or not relative or not digest:
                 continue
             candidate = (trace_root / relative).resolve()
@@ -537,10 +540,24 @@ def _latest_browser_frame(trace_path: Path) -> BenchmarkLabBrowserFrame | None:
             try:
                 latest = BenchmarkLabBrowserFrame(
                     data=candidate.read_bytes(),
-                    media_type=str(image["mime_type"]),
+                    media_type=str(media["mime_type"]),
                     sha256=digest,
                     observation_id=str(event.get("observation_id") or ""),
                 )
             except (OSError, TypeError, ValueError):
                 continue
     return latest
+
+
+def _observation_screenshot_media(event: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    """Read screenshot media from the trace's authoritative World observation."""
+
+    observation = event.get("observation")
+    if not isinstance(observation, dict) or not isinstance(observation.get("media"), list):
+        return ()
+    screenshots: list[dict[str, Any]] = []
+    for item in observation["media"]:
+        media = item.get("media") if isinstance(item, dict) else None
+        if isinstance(media, dict) and media.get("kind") == "screenshot" and media.get("mime_type") in _IMAGE_TYPES:
+            screenshots.append(media)
+    return tuple(screenshots)

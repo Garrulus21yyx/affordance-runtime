@@ -17,6 +17,7 @@ from typing import Any, Literal, Mapping, Protocol, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 from affordance_runtime.model.providers.capture import (
     PrivateModelCapture,
     private_capture_from_environment,
@@ -945,13 +946,6 @@ def _serialize_openai_compatible_messages(
     return serialized
 
 
-def _zhipu_model_supports_multimodal(model: str) -> bool:
-    """Recognize the declared GLM visual-model naming families fail-closed."""
-
-    normalized = model.strip().casefold()
-    return re.match(r"^glm-\d+(?:\.\d+)?v(?:-|$)", normalized) is not None
-
-
 def model_port_from_environment(environment: Mapping[str, str] | None = None) -> ModelPort:
     """Build the selected model profile, optionally falling back to local.
 
@@ -986,7 +980,7 @@ def model_port_from_environment(environment: Mapping[str, str] | None = None) ->
         )
     elif active_profile == "zhipu":
         model = _required_env(env, "LLM_ZHIPU_MODEL")
-        supports_multimodal = _zhipu_model_supports_multimodal(model)
+        supports_multimodal = model_supports_multimodal(active_profile, model)
         remote = OpenAICompatibleModelPort(
             base_url=_required_env(env, "LLM_ZHIPU_BASE_URL"),
             api_key=_required_env(env, "LLM_ZHIPU_API_KEY"),

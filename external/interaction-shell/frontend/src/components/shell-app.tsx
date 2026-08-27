@@ -202,7 +202,10 @@ function Composer({ view, submitMessage, revise }: {
   );
 }
 
-function LabExperiment({ labs, close }: { labs: ReturnType<typeof useBenchmarkLabs>; close: () => void }) {
+function LabExperiment({ labs, showRun }: {
+  labs: ReturnType<typeof useBenchmarkLabs>;
+  showRun: (run: BenchmarkLabRunSummary) => void;
+}) {
   const config = labs.configuration;
   const [goalMode, setGoalMode] = useState<"model" | "disabled">("model");
   const [formError, setFormError] = useState("");
@@ -219,7 +222,12 @@ function LabExperiment({ labs, close }: { labs: ReturnType<typeof useBenchmarkLa
       perception_profile: String(data.get("perception_profile") || "structure-first.v1"),
       profile: String(data.get("profile") || "CONSOLE_EXPERIMENT"),
     };
-    try { await labs.start(spec); close(); } catch (reason) { setFormError(reason instanceof Error ? reason.message : "无法启动任务"); }
+    try {
+      const run = await labs.start(spec);
+      showRun(run);
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : "无法启动任务");
+    }
   };
   if (labs.state === "loading") return <div className="evidence-empty">正在读取 frozen manifest…</div>;
   if (!config) return <div className="evidence-empty">Labs 当前不可用。{labs.error}</div>;
@@ -247,12 +255,13 @@ function LabExperiment({ labs, close }: { labs: ReturnType<typeof useBenchmarkLa
   );
 }
 
-function LabsDrawer({ open, tab, setTab, close, labs }: {
+function LabsDrawer({ open, tab, setTab, close, labs, showRun }: {
   open: boolean;
   tab: LabsTab;
   setTab: (tab: LabsTab) => void;
   close: () => void;
   labs: ReturnType<typeof useBenchmarkLabs>;
+  showRun: (run: BenchmarkLabRunSummary) => void;
 }) {
   const failed = labs.runs.filter((run) => run.status === "failed");
   const [selectedRaw, setSelectedRaw] = useState<LabEvent | null>(null);
@@ -264,7 +273,7 @@ function LabsDrawer({ open, tab, setTab, close, labs }: {
         <div className="labs-tabs" role="tablist"><button className={tab === "experiment" ? "active" : ""} onClick={() => setTab("experiment")}>实验</button><button className={tab === "bad-cases" ? "active" : ""} onClick={() => setTab("bad-cases")}>Bad cases <span>{failed.length}</span></button><button className={tab === "evidence" ? "active" : ""} onClick={() => setTab("evidence")}>证据</button></div>
         <div className="labs-content">
           <section className="labs-view active">
-            {tab === "experiment" && <LabExperiment labs={labs} close={close} />}
+            {tab === "experiment" && <LabExperiment labs={labs} showRun={showRun} />}
             {tab === "bad-cases" && <><div className="labs-intro"><h3>Bad cases</h3><p>失败状态只来自正式 runner 或已完成 benchmark 的权威结果。</p></div><div className="bad-case-list">{failed.map((run) => <button className="bad-case" type="button" key={run.run_id} onClick={() => { labs.selectRun(run); setTab("evidence"); }}><span className="bad-case-copy"><b>{humanize(run.spec.case_id)}</b><small>{run.run_id}</small></span><span>failed</span></button>)}{labs.completedRuns.filter((run) => run.status !== "done").map((run) => <div className="bad-case" key={run.locator_id}><span className="bad-case-copy"><b>{run.case_id}</b><small>{run.run_attempt_id}</small></span><span>{run.status}</span></div>)}{!failed.length && !labs.completedRuns.some((run) => run.status !== "done") && <div className="bad-case-empty"><b>暂时没有 Bad case</b><span>失败运行会自动进入这里，不需要手动标记。</span></div>}</div></>}
             {tab === "evidence" && <><div className="evidence-head"><div><span>当前运行</span><b>{labs.selectedRun?.run_id ?? "尚未选择"}</b></div><button type="button" disabled={!selectedRaw} onClick={() => selectedRaw && navigator.clipboard.writeText(JSON.stringify(selectedRaw, null, 2))}>复制 JSON</button></div><div className="metric-strip"><div><span>Events</span><b>{labs.rawEvents.length}</b></div><div><span>Policy</span><b>{labs.rawEvents.filter((item) => eventText(item, "event") === "model_turn").length}</b></div><div><span>Actions</span><b>{labs.rawEvents.filter((item) => eventText(item, "event") === "step_completed").length}</b></div><div><span>Status</span><b>{statusLabel(labs.selectedRun?.status ?? "idle")}</b></div></div><div className="trace-list">{labs.rawEvents.map((event, index) => <button className={`trace-event ${selectedRaw === event ? "selected" : ""}`} type="button" key={`${eventNumber(event, "sequence")}-${index}`} onClick={() => setSelectedRaw(event)}><span>{String(eventNumber(event, "sequence") || index + 1).padStart(3, "0")}</span><span><b>{eventText(event, "event") || "Trace event"}</b><small>{eventText(event, "observation_id") || eventText(event, "outcome") || "recorded"}</small></span><em>TRACE</em></button>)}{!labs.rawEvents.length && <div className="evidence-empty">选择或启动一次运行后，原始事件会出现在这里。</div>}</div><div className="trace-inspector"><div className="trace-summary"><b>{selectedRaw ? eventText(selectedRaw, "event") : "选择一个事件"}</b><span>查看原始本地证据</span></div><pre id="jsonInspector" tabIndex={0}>{JSON.stringify(selectedRaw ?? {}, null, 2)}</pre></div><details className="stdout-drawer"><summary>Runner output</summary><pre id="stdoutOutput">{labs.selectedRun?.stdout_tail?.join("\n") || "No runner output yet."}</pre></details><p className="evidence-path">{labs.selectedRun?.evidence_dir ?? "No evidence directory"}</p></>}
           </section>
@@ -312,7 +321,14 @@ export function ShellApp() {
         {activeLab ? <div className="composer-wrap"><div className="composer-hint">正式 benchmark 由 Labs 管理；普通用户会话仍保留在左侧。</div><div className="composer disabled"><FlaskConical className="composer-tool" size={18} /><textarea rows={1} readOnly value="" placeholder="Labs 运行中…" /><button className="send" type="button" onClick={() => openLabs("evidence")}><FlaskConical size={16} /></button></div></div> : <Composer view={view} submitMessage={shell.submitMessage} revise={shell.revise} />}
       </section>
       <LiveView view={view} labFrameUrl={labs.frameUrl} labRun={activeLab} />
-      <LabsDrawer open={labsOpen} tab={labsTab} setTab={setLabsTab} close={() => { setLabsOpen(false); if (labs.selectedRun) setShowLabRun(true); }} labs={labs} />
+      <LabsDrawer
+        open={labsOpen}
+        tab={labsTab}
+        setTab={setLabsTab}
+        close={() => setLabsOpen(false)}
+        labs={labs}
+        showRun={() => { setLabsOpen(false); setShowLabRun(true); }}
+      />
       {shell.notice && <div className="toast" role="status">{shell.notice}</div>}
       <AlertDialog.Root open={Boolean(view.confirmation)}><AlertDialog.Portal><AlertDialog.Overlay className="dialog-overlay" /><AlertDialog.Content className="dialog-content" data-testid="confirmation-dialog"><AlertDialog.Title>Runtime 请求确认</AlertDialog.Title><AlertDialog.Description>{view.confirmation?.summary}<br />风险：{view.confirmation?.risk}</AlertDialog.Description><div className="dialog-actions"><AlertDialog.Cancel asChild><button type="button" onClick={() => shell.confirm(false)}>拒绝操作</button></AlertDialog.Cancel><AlertDialog.Action asChild><button className="approve" type="button" onClick={() => shell.confirm(true)}>批准操作</button></AlertDialog.Action></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>
     </main>

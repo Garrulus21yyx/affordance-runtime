@@ -5519,6 +5519,22 @@ def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:
         )
 
 
+def test_zhipu_visual_model_capability_matches_provider_transport() -> None:
+    policy = zhipu_pydantic_ai_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "zhipu",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_ZHIPU_BASE_URL": "https://example.invalid/v1",
+            "LLM_ZHIPU_API_KEY": "fixture-secret",
+            "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+            "LLM_DECISION_PERCEPTION": "screenshot-ax.v1",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert policy.port.supports_multimodal is True
+
+
 def test_compaction_and_provider_recovery_fit_one_policy_deadline() -> None:
     compaction, retry, transport = pydantic_bridge._provider_time_budgets(90.0)
 

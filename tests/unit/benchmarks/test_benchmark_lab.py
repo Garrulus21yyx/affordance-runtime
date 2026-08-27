@@ -64,6 +64,7 @@ def _manager(tmp_path: Path, manifest: MiniWobBreadthManifest) -> BenchmarkLabMa
         tmp_path,
         python_executable="/fixed/python",
         environment={
+            "LLM_ACTIVE_PROFILE": "zhipu",
             "LLM_ZHIPU_BASE_URL": "https://provider.invalid",
             "LLM_ZHIPU_API_KEY": "top-secret",
             "LLM_ZHIPU_MODEL": "configured-action",
@@ -77,9 +78,17 @@ def test_run_spec_rejects_unbounded_or_conflicting_inputs() -> None:
     with pytest.raises(ValueError, match="action_model"):
         BenchmarkLabRunSpec(case_id="case", action_model="model id with spaces", goal_compiler_mode="disabled")
     with pytest.raises(ValueError, match="cannot select"):
-        BenchmarkLabRunSpec(case_id="case", action_model="glm-4.6", goal_compiler_mode="disabled", goal_compiler_model="glm-4.7-flash")
+        BenchmarkLabRunSpec(
+            case_id="case", action_model="glm-4.6", goal_compiler_mode="disabled", goal_compiler_model="glm-4.7-flash"
+        )
     with pytest.raises(ValueError, match="uppercase"):
-        BenchmarkLabRunSpec(case_id="case", action_model="glm-4.6", goal_compiler_mode="model", goal_compiler_model="glm-4.7-flash", profile="shell;run")
+        BenchmarkLabRunSpec(
+            case_id="case",
+            action_model="glm-4.6",
+            goal_compiler_mode="model",
+            goal_compiler_model="glm-4.7-flash",
+            profile="shell;run",
+        )
     with pytest.raises(ValueError, match="not a valid ActionPolicyWireCapability"):
         BenchmarkLabRunSpec(
             case_id="case",
@@ -96,17 +105,83 @@ def test_configuration_exposes_manifest_choices_without_secrets(
     payload = _manager(tmp_path, manifest).configuration()
 
     assert payload.provider_ready is True
-    assert [item.model_dump() for item in payload.cases] == [{
-        "case_id": "miniwob-60-17",
-        "task_id": "social-media-all",
-        "seed": 7,
-        "max_turns": 10,
-        "timeout_s": 180.0,
-    }]
+    assert payload.provider == "zhipu"
+    assert [item.model_dump() for item in payload.cases] == [
+        {
+            "case_id": "miniwob-60-17",
+            "task_id": "social-media-all",
+            "seed": 7,
+            "max_turns": 10,
+            "timeout_s": 180.0,
+        }
+    ]
     assert "configured-action" in {item.id for item in payload.action_models}
     assert payload.action_wire_capabilities == ("native_single_tool",)
     assert "configured-goal" in payload.goal_models
     assert "top-secret" not in payload.model_dump_json()
+
+
+def test_configuration_uses_active_provider_without_overriding_it(
+    tmp_path: Path,
+    manifest: MiniWobBreadthManifest,
+) -> None:
+    manager = BenchmarkLabManager(
+        tmp_path,
+        environment={
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_DEEPSEEK_BASE_URL": "https://provider.invalid",
+            "LLM_DEEPSEEK_API_KEY": "deepseek-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+        },
+        manifest=manifest,
+    )
+
+    payload = manager.configuration()
+    run_environment = manager._run_environment(
+        BenchmarkLabRunSpec(
+            case_id="miniwob-60-17",
+            action_model="deepseek-v4-flash",
+            goal_compiler_mode="disabled",
+        )
+    )
+
+    assert payload.provider == "deepseek"
+    assert payload.provider_ready is True
+    assert [item.model_dump() for item in payload.action_models] == [{"id": "deepseek-v4-flash", "multimodal": False}]
+    assert payload.goal_models == ("deepseek-v4-flash",)
+    assert run_environment["LLM_ACTIVE_PROFILE"] == "deepseek"
+    assert run_environment["LLM_DEEPSEEK_MODEL"] == "deepseek-v4-flash"
+    assert "LLM_ZHIPU_MODEL" not in run_environment
+
+
+def test_start_rejects_unadvertised_model_or_incompatible_perception(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    manifest: MiniWobBreadthManifest,
+) -> None:
+    manager = _manager(tmp_path, manifest)
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.lab.subprocess.Popen",
+        lambda *_args, **_kwargs: pytest.fail("invalid spec must fail before spawn"),
+    )
+
+    with pytest.raises(ValueError, match="not configured"):
+        manager.start(
+            BenchmarkLabRunSpec(
+                case_id="miniwob-60-17",
+                action_model="invented-model",
+                goal_compiler_mode="disabled",
+            )
+        )
+    with pytest.raises(ValueError, match="multimodal"):
+        manager.start(
+            BenchmarkLabRunSpec(
+                case_id="miniwob-60-17",
+                action_model="configured-action",
+                goal_compiler_mode="disabled",
+                perception_profile="screenshot-ax.v1",
+            )
+        )
 
 
 def test_role_selection_only_changes_owned_environment(
@@ -114,18 +189,22 @@ def test_role_selection_only_changes_owned_environment(
     manifest: MiniWobBreadthManifest,
 ) -> None:
     manager = _manager(tmp_path, manifest)
-    enabled = manager._run_environment(BenchmarkLabRunSpec(
-        case_id="miniwob-60-17",
-        action_model="glm-4.6",
-        goal_compiler_mode="model",
-        goal_compiler_model="glm-4.7-flash",
-    ))
-    disabled = manager._run_environment(BenchmarkLabRunSpec(
-        case_id="miniwob-60-17",
-        action_model="glm-4.1v-thinking-flashx",
-        goal_compiler_mode="disabled",
-        action_wire_capability="native_single_tool",
-    ))
+    enabled = manager._run_environment(
+        BenchmarkLabRunSpec(
+            case_id="miniwob-60-17",
+            action_model="glm-4.6",
+            goal_compiler_mode="model",
+            goal_compiler_model="glm-4.7-flash",
+        )
+    )
+    disabled = manager._run_environment(
+        BenchmarkLabRunSpec(
+            case_id="miniwob-60-17",
+            action_model="glm-4.1v-thinking-flashx",
+            goal_compiler_mode="disabled",
+            action_wire_capability="native_single_tool",
+        )
+    )
 
     assert enabled["LLM_ZHIPU_MODEL"] == "glm-4.6"
     assert enabled["LLM_ACTION_POLICY_WIRE_CAPABILITY"] == "native_single_tool"
@@ -148,12 +227,14 @@ def test_start_invokes_formal_case_runner_with_argv(
 
     monkeypatch.setattr("affordance_runtime.benchmarks.lab.subprocess.Popen", fake_popen)
     manager = _manager(tmp_path, manifest)
-    run = manager.start(BenchmarkLabRunSpec(
-        case_id="miniwob-60-17",
-        action_model="glm-4.6",
-        goal_compiler_mode="disabled",
-        profile="CONSOLE_TEST",
-    ))
+    run = manager.start(
+        BenchmarkLabRunSpec(
+            case_id="miniwob-60-17",
+            action_model="configured-action",
+            goal_compiler_mode="disabled",
+            profile="CONSOLE_TEST",
+        )
+    )
 
     command = captured["command"]
     assert command[:4] == (
@@ -166,7 +247,11 @@ def test_start_invokes_formal_case_runner_with_argv(
     assert str(run.evidence_dir) in command
     assert "shell" not in captured["kwargs"]
     with pytest.raises(RuntimeError, match="active"):
-        manager.start(BenchmarkLabRunSpec(case_id="miniwob-60-17", action_model="glm-4.6", goal_compiler_mode="disabled"))
+        manager.start(
+            BenchmarkLabRunSpec(
+                case_id="miniwob-60-17", action_model="configured-action", goal_compiler_mode="disabled"
+            )
+        )
 
 
 def test_events_are_read_incrementally_from_append_only_trace(
@@ -179,9 +264,7 @@ def test_events_are_read_incrementally_from_append_only_trace(
     trace_dir = evidence_dir / "traces" / spec.case_id
     trace_dir.mkdir(parents=True)
     (trace_dir / "trace.jsonl").write_text(
-        '{"event":"run_started","sequence":1}\n'
-        '{"event":"model_turn","sequence":2}\n'
-        '{"event":',
+        '{"event":"run_started","sequence":1}\n{"event":"model_turn","sequence":2}\n{"event":',
         encoding="utf-8",
     )
     run = BenchmarkLabRun("run-1", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
@@ -293,28 +376,51 @@ def test_browser_frame_uses_latest_digest_verified_trace_artifact(
     (artifact_dir / "first.bin").write_bytes(first)
     (artifact_dir / "latest.bin").write_bytes(latest)
     (trace_dir / "trace.jsonl").write_text(
-        "\n".join((
-            json.dumps({
-                "event": "observation",
-                "sequence": 1,
-                "observation_id": "world:1",
-                "image_inputs": [{
-                    "mime_type": "image/png",
-                    "sha256": hashlib.sha256(first).hexdigest(),
-                    "data": {"artifact": {"path": "artifacts/first.bin"}},
-                }],
-            }),
-            json.dumps({
-                "event": "observation",
-                "sequence": 2,
-                "observation_id": "world:2",
-                "image_inputs": [{
-                    "mime_type": "image/png",
-                    "sha256": hashlib.sha256(latest).hexdigest(),
-                    "data": {"artifact": {"path": "artifacts/latest.bin"}},
-                }],
-            }),
-        )) + "\n",
+        "\n".join(
+            (
+                json.dumps(
+                    {
+                        "event": "observation",
+                        "sequence": 1,
+                        "observation_id": "world:1",
+                        "observation": {
+                            "media": [
+                                {
+                                    "source_observation_id": "source:1",
+                                    "media": {
+                                        "kind": "screenshot",
+                                        "mime_type": "image/png",
+                                        "sha256": hashlib.sha256(first).hexdigest(),
+                                        "data": {"artifact": {"path": "artifacts/first.bin"}},
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "observation",
+                        "sequence": 2,
+                        "observation_id": "world:2",
+                        "observation": {
+                            "media": [
+                                {
+                                    "source_observation_id": "source:2",
+                                    "media": {
+                                        "kind": "screenshot",
+                                        "mime_type": "image/png",
+                                        "sha256": hashlib.sha256(latest).hexdigest(),
+                                        "data": {"artifact": {"path": "artifacts/latest.bin"}},
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ),
+            )
+        )
+        + "\n",
         encoding="utf-8",
     )
     run = BenchmarkLabRun("run-frame", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))
@@ -327,6 +433,10 @@ def test_browser_frame_uses_latest_digest_verified_trace_artifact(
     assert frame.media_type == "image/png"
     assert frame.observation_id == "world:2"
     assert frame.sha256 == hashlib.sha256(latest).hexdigest()
+    assert [event["browser_frame_available"] for event in manager.activity(run.run_id).events] == [
+        True,
+        True,
+    ]
 
 
 def test_browser_frame_rejects_artifacts_outside_trace_directory(
@@ -341,16 +451,27 @@ def test_browser_frame_rejects_artifacts_outside_trace_directory(
     secret = evidence_dir / "secret.bin"
     secret.write_bytes(b"secret")
     (trace_dir / "trace.jsonl").write_text(
-        json.dumps({
-            "event": "observation",
-            "sequence": 1,
-            "observation_id": "world:private",
-            "image_inputs": [{
-                "mime_type": "image/png",
-                "sha256": hashlib.sha256(secret.read_bytes()).hexdigest(),
-                "data": {"artifact": {"path": "../../secret.bin"}},
-            }],
-        }) + "\n",
+        json.dumps(
+            {
+                "event": "observation",
+                "sequence": 1,
+                "observation_id": "world:private",
+                "observation": {
+                    "media": [
+                        {
+                            "source_observation_id": "source:private",
+                            "media": {
+                                "kind": "screenshot",
+                                "mime_type": "image/png",
+                                "sha256": hashlib.sha256(secret.read_bytes()).hexdigest(),
+                                "data": {"artifact": {"path": "../../secret.bin"}},
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     run = BenchmarkLabRun("run-private", spec, evidence_dir, ("formal",), "2026-08-17T00:00:00+00:00", _Process(0))

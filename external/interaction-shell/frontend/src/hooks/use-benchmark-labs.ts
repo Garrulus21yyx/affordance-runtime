@@ -162,12 +162,14 @@ export function useBenchmarkLabs(enabled: boolean) {
   }, [refreshCollections, refreshFrame]);
 
   useEffect(() => {
-    if (!enabled || !selectedRun) return;
+    const runId = selectedRun?.run_id ?? "";
+    const runStatus = selectedRun?.status ?? "";
+    if (!enabled || !runId) return;
     void poll();
-    if (selectedRun.status !== "running") return;
+    if (runStatus !== "running") return;
     const interval = window.setInterval(() => void poll(), 700);
     return () => window.clearInterval(interval);
-  }, [enabled, poll, selectedRun]);
+  }, [enabled, poll, selectedRun?.run_id, selectedRun?.status]);
 
   useEffect(() => () => {
     if (frameObjectUrl.current) URL.revokeObjectURL(frameObjectUrl.current);
