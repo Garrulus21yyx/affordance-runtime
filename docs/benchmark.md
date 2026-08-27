@@ -88,9 +88,9 @@ The cause was one schema-authority split: the tool binding treated empty cursor 
 the empty string, the repair guard treated every declared optional value as semantic, and the typed public validator
 did not enforce string length/pattern constraints.
 
-The owner repair makes cursor uniformly absent-or-nonempty, brings the typed public validator to parity with exact
-finite-schema validation, and permits repair to prune only schema-invalid optional fields. Valid optional values,
-required fields, operation, semantic leaf values, call identity, and one-call selection remain protected. Focused
+The first owner repair made the admitted semantic cursor absent-or-nonempty, brought the typed public validator to
+parity with exact finite-schema validation, and permitted repair to prune only schema-invalid optional fields. Valid
+optional values, required fields, operation, semantic leaf values, call identity, and one-call selection remain protected. Focused
 coverage reports 200 passed; full fixed-BrowserGym verification reports 1,841 passed and 19 skipped plus only the known
 documentation-governance failure.
 
@@ -129,6 +129,22 @@ primitive three times through fresh Worlds and reaches native completion with no
 still prove repeated no-effect Enter dispatches recover and block, identity-only rekeys do not hide a stall, and
 closed routes/cycles remain detected. The focused cross-owner set reports 215 passed and 3 skipped. Run9 is failed
 pre-repair evidence; another Task426 rerun and one held-out long case remain required.
+
+[`logical-turn-run10`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run10/run.json)
+verified the Monitor repair by executing the consecutive autocomplete ArrowDown sequence and continuing through OSM
+search. It ended failed after 191.3 seconds, 30 policy calls, 18 executions, 19 observations, 36 provider attempts,
+339,706 total tokens, zero grounding gaps, and one invalid-tool-argument terminal. The final ordinary response and its
+representation repair both returned `read_region` for current `R11` with `cursor=""`. Resolver semantics already
+treated that wire value as first-page absence, but schema admission rejected it before resolution and needlessly
+depended on the model deleting the optional field.
+
+The existing Catalog-aware normalizer now omits a schema-invalid optional field deterministically before exact
+admission—the same representation-only transformation the repair guard already authorized. Empty cursor therefore
+becomes absent in the accepted call and result, a valid non-empty cursor remains exact, and invalid required values
+still request repair. No cursor inventory, continuation capability, provider retry, or benchmark-specific rule was
+added. Focused normalizer and full PydanticAI vertical coverage, together with Monitor/CoreLoop regression coverage,
+reports 217 passed and 3 skipped. Run10 is failed pre-repair evidence; another Task426 rerun and one held-out long case
+remain required.
 
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:

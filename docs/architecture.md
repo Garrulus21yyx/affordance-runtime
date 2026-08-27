@@ -104,10 +104,10 @@ but the bridge rejected it because the schema declared cursor optional while the
 cursor as absent. The shared public issue validator also omitted the string `pattern/minLength/maxLength` checks
 already enforced by the exact value validator, so adding a non-empty cursor schema alone could not close the gap.
 
-The positive contract is now uniform across schema, reconciliation, repair, and binding: an opaque cursor is absent or
-a non-empty bounded token; public typed validation enforces the complete supported string algebra; representation
-repair may delete an undeclared field or a schema-invalid optional field, but never a required field or a valid
-optional operand. The repair still cannot change operation, effect-bearing values, or call multiplicity. Focused
+The first owner repair made the admitted semantic cursor absent or a non-empty bounded token; public typed validation
+enforces the complete supported string algebra; representation repair may delete an undeclared field or a
+schema-invalid optional field, but never a required field or a valid optional operand. The repair still cannot change
+operation, effect-bearing values, or call multiplicity. Focused
 schema/Catalog/PydanticAI coverage reports 200 passed. The fixed BrowserGym full suite reports 1,841 passed and 19
 skipped, with only the same pre-existing documentation-governance failure.
 
@@ -148,6 +148,24 @@ routes and multi-action cycles before this reset. No operation allowlist, page h
 new Monitor state was added. Unit and CoreLoop autocomplete regressions prove identical action signatures across
 changing Worlds remain dispatchable while unchanged Enter replay and route/cycle protections remain closed. The
 focused Monitor/CoreLoop/reasoning/PydanticAI set reports 215 passed and 3 skipped. Live acceptance remains open.
+
+[`logical-turn-run10`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run10/run.json)
+crossed the run9 keyboard boundary, dispatched 18 GUI actions through 19 fresh observations with zero grounding gaps,
+and reached expanded OSM results. It then failed after 30 policy calls when the model returned
+`read_region({"region_ref":"R11","cursor":""})`. The provider repeated the same call during representation repair.
+The semantic tool binding had always canonicalized empty cursor to first-page absence, but the stricter Catalog schema
+forced a provider repair before that owner could run. This was the remaining representation/semantic admission split,
+not a continuation-state failure.
+
+The Catalog-aware `ProviderCallNormalizer` now performs the same schema-derived pruning already permitted by the
+representation-repair conservation rule: a schema-invalid optional operand is omitted before exact semantic
+validation. Required operands and every valid optional value remain byte-for-byte conserved; unknown fields still
+require bounded representation repair. Consequently provider wire `cursor=""` canonicalizes to an admitted call with
+cursor absent, while a non-empty opaque cursor is retained and validated. The existing `_WorldReadBinding` remains the
+only read owner and still emits absent cursor for the first page or the actual non-empty continuation token. No new
+cursor state, resolver, retry, or ToolReturn projection was introduced. Normalizer and PydanticAI vertical tests cover
+empty optional pruning in one physical call, valid cursor retention, invalid required rejection, and unknown-field
+repair. The focused cross-owner set reports 217 passed and 3 skipped; live acceptance remains open.
 
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet

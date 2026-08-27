@@ -4517,6 +4517,45 @@ def test_representation_repair_prunes_invalid_empty_optional_cursor() -> None:
     asyncio.run(scenario())
 
 
+def test_empty_first_page_cursor_is_accepted_once_and_canonicalized_by_the_tool_owner() -> None:
+    async def scenario() -> None:
+        task = shared_task()
+        world = shared_world("empty-first-page-cursor", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+        region = context.region_index.regions[0]
+        region_ref = context.canonical_world.region_refs[region.key]
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "read_region",
+                            {"region_ref": region_ref, "cursor": ""},
+                            "provider-call:empty-first-page",
+                        )
+                    ]
+                )
+            ]
+        )
+        policy = _policy(scripted.build())
+
+        result = await policy.port.generate(ModelDecisionRequest("request:empty-first-page-cursor", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, ReadRegionResult)
+        assert result.output.decision.arguments == {"region_ref": region_ref}
+        assert scripted.calls == 1
+        assert [attempt.phase for attempt in result.attempts] == ["ordinary"]
+
+    asyncio.run(scenario())
+
+
 def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_content() -> None:
     async def scenario() -> None:
         call_id = "recording-call:final-with-stale-ref"

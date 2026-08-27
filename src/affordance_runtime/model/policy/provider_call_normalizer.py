@@ -107,6 +107,7 @@ class ProviderCallNormalizer:
             )
         selected_spec = catalog.specs[selected_index]
         call = _normalize_nested_parameters(call, selected_spec.input_schema)
+        call = _prune_invalid_optional_arguments(call, selected_spec.input_schema)
         selected_issue = validate_value_issue(
             call.arguments,
             selected_spec.input_schema,
@@ -136,6 +137,37 @@ def _normalize_nested_parameters(
     ):
         return ToolCall(call.name, dict(arguments["parameters"]), call.call_id)
     return call
+
+
+def _prune_invalid_optional_arguments(
+    call: ToolCall,
+    input_schema: Mapping[str, object],
+) -> ToolCall:
+    """Omit malformed optional operands before exact schema admission.
+
+    Representation repair already permits this schema-derived pruning. Doing
+    the same deterministic normalization here avoids spending a provider
+    repair merely to remove an empty optional cursor or another invalid
+    optional representation. Required and valid optional values remain exact.
+    """
+
+    properties = input_schema.get("properties")
+    required_value = input_schema.get("required", ())
+    if not isinstance(properties, Mapping) or not isinstance(required_value, (list, tuple)):
+        return call
+    required = frozenset(required_value)
+    arguments = dict(call.arguments)
+    normalized = {
+        key: value
+        for key, value in arguments.items()
+        if key not in properties
+        or key in required
+        or not isinstance(properties[key], Mapping)
+        or validate_value_issue(value, properties[key]) is None
+    }
+    if normalized == arguments:
+        return call
+    return ToolCall(call.name, normalized, call.call_id)
 
 
 def _catalog_is_current(catalog: GroundedToolCatalog) -> bool:

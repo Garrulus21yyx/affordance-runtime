@@ -1456,6 +1456,51 @@ def test_provider_normalizer_unwraps_only_unambiguous_nested_parameters() -> Non
     assert conflicting.field_paths == ("arguments.parameters",)
 
 
+def test_provider_normalizer_prunes_only_schema_invalid_optional_arguments() -> None:
+    catalog = _compile_catalog(_context(), GroundedToolPhase.ACTION_SELECTION)
+    normalizer = ProviderCallNormalizer()
+
+    empty_optional = normalizer.normalize(
+        ToolCall(
+            "search_page_content",
+            {"query": "Shanksville", "cursor": ""},
+            "call:empty-optional",
+        ),
+        catalog,
+    )
+    valid_optional = normalizer.normalize(
+        ToolCall(
+            "search_page_content",
+            {"query": "Shanksville", "cursor": "opaque-page-2"},
+            "call:valid-optional",
+        ),
+        catalog,
+    )
+    invalid_required = normalizer.normalize(
+        ToolCall(
+            "search_page_content",
+            {"query": "", "cursor": "opaque-page-2"},
+            "call:invalid-required",
+        ),
+        catalog,
+    )
+
+    assert empty_optional.status is ToolCallReconciliationStatus.EXACT
+    assert empty_optional.exact_call == ToolCall(
+        "search_page_content",
+        {"query": "Shanksville"},
+        "call:empty-optional",
+    )
+    assert valid_optional.status is ToolCallReconciliationStatus.EXACT
+    assert valid_optional.exact_call == ToolCall(
+        "search_page_content",
+        {"query": "Shanksville", "cursor": "opaque-page-2"},
+        "call:valid-optional",
+    )
+    assert invalid_required.status is ToolCallReconciliationStatus.REPAIR_REQUIRED
+    assert invalid_required.field_paths == ("arguments.query",)
+
+
 def test_shared_target_semantics_are_hoisted_and_inconsistent_actor_refs_fail_closed() -> None:
     context = _context()
     selected = []
