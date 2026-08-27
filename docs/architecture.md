@@ -1323,6 +1323,20 @@ those two units had been conflated. The implementation changes only the existing
 prompt, and Harness schedule; it adds no Replanner, progress store, mutable plan, second evaluator, or Runtime branch.
 Provider-free owner tests pass; Task268 remains empirically open pending a separately authorized fresh run.
 
+Task268 run2 failed before any browser execution and exposes an independent representation-repair lineage defect.
+The first real DeepSeek response called `search_page_content` with the valid `query`/`cursor` operands plus an
+unsupported `region_ref`. The existing bounded repair correctly removed only `region_ref`, but—as every separate
+provider response normally does—returned a new ToolCall ID. `_repair_preserves_rejected_semantics` incorrectly required
+the repair response to reuse the rejected response's call ID, a behavior only the scripted test double provided. The
+Runtime therefore reported `invalid_tool_arguments` after two accepted physical provider calls, one observation, zero
+executions, and zero valid ToolCalls.
+
+Call ID is wire lineage, not a semantic operand. The positive contract now preserves operation and every
+schema-declared argument across representation repair, accepts the repair response's own provider-generated call ID,
+and uses that same new ID for the pending PydanticAI exchange and subsequent ToolReturn. A vertical test uses distinct
+initial and repaired IDs and verifies the accepted local-tool decision plus pending SDK history. No normalizer,
+Catalog, resolver, ToolReturn projection, CoreLoop, or provider-specific branch changed.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1464,6 +1478,8 @@ This cutover is implementation-complete only when all of the following agree:
 25. Exact values that directly fill requested final-answer fields outrank transient execution setup in Harness
     compaction, ActionPolicy submits rather than re-verifying when all requested fields are supported, and the
     expired-prose input-batch threshold is independent of the summary output cap.
+26. A separate representation-repair provider response may own a new call ID while preserving the rejected operation
+    and every schema-declared semantic operand; the accepted response and subsequent ToolReturn pair under that new ID.
 
 These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
 paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark

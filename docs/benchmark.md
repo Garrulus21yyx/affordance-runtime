@@ -1191,6 +1191,21 @@ reusing the output cap. No Replanner, mutable progress state, Monitor semantic r
 ToolReturn path, or Runtime branch was added. Provider-free focused tests pass. This repair is implementation-complete
 but not live-accepted; Task268 requires a separately authorized fresh witness.
 
+Task268
+[`run2`](../evidence/live/w2-task-268-deepseek-v4-flash-20260827-run2/run.json) failed immediately after one
+observation, one ordinary ActionPolicy call, and one representation-repair call, with zero executions and zero valid
+ToolCalls. The ordinary DeepSeek response proposed `search_page_content(query="Vinalhaven", cursor="",
+region_ref="R3")`; the repair response correctly pruned only the unsupported `region_ref` and returned
+`search_page_content(query="Vinalhaven", cursor="")`. It was nevertheless rejected as `invalid_tool_arguments`.
+
+The defect was the representation-repair semantic guard requiring the second physical provider response to reuse the
+first response's call ID. Real providers generate a new ID for the new response; the prior Recording model's
+`repeat_last_gui_call` fixture reused the old ID and hid the gap. The owner repair treats call ID as wire lineage while
+requiring operation and every schema-declared argument to remain unchanged. The accepted repaired response and its
+future ToolReturn use the new ID. A provider-free vertical test covers distinct initial/repair IDs through local-tool
+resolution and pending PydanticAI history. No search, normalizer, Catalog, resolver, ToolReturn, or CoreLoop behavior
+changed. Run2 is a failed pre-repair witness, not evidence about the Task268 semantic-completion repair.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1288,6 +1303,8 @@ The final read-only review for this cutover must answer:
     source solely for formatting or confirmation; does Harness retain those values ahead of transient execution setup;
     and can expired-prose compaction trigger only after one complete recent-suffix input budget rather than the summary
     output cap?
+36. Can representation repair keep the operation and every schema-declared operand unchanged while accepting the new
+    provider-generated call ID of its own physical response, with the later ToolReturn paired under that same new ID?
 
 ## Exit statement
 

@@ -2537,7 +2537,12 @@ def _repair_preserves_rejected_semantics(
     if len(rejected_calls) != 1:
         return False
     rejected = rejected_calls[0]
-    if repaired_call.name != rejected.name or repaired_call.call_id != rejected.call_id:
+    # A repair is a separate physical provider response, so its ToolCall owns
+    # a new provider-generated call ID.  That wire identity is not a semantic
+    # operand.  The accepted repair response and its eventual ToolReturn use
+    # the new ID; operation and every schema-declared argument remain fixed by
+    # the pruning check below.
+    if repaired_call.name != rejected.name:
         return False
     spec = next((item for item in specs if getattr(item, "name", None) == rejected.name), None)
     if spec is None:

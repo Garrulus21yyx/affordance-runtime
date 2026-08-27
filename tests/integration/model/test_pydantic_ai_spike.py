@@ -2977,6 +2977,103 @@ def test_pydantic_ai_repairs_invalid_representation_without_changing_target() ->
     asyncio.run(scenario())
 
 
+def test_representation_repair_accepts_new_provider_call_id_and_pairs_that_identity() -> None:
+    async def scenario() -> None:
+        initial_call_id = "provider-call:initial-invalid"
+        repaired_call_id = "provider-call:representation-repair"
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {
+                                "query": "Vinalhaven",
+                                "cursor": "",
+                                "region_ref": "R3",
+                            },
+                            initial_call_id,
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "search_page_content",
+                            {"query": "Vinalhaven", "cursor": ""},
+                            repaired_call_id,
+                        )
+                    ]
+                ),
+                ModelResponse(
+                    parts=[ToolCallPart("list_regions", {}, "provider-call:next-turn")]
+                ),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("repair-new-provider-call-id", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:repair-new-call-id", context))
+
+        assert result.failure is None
+        assert result.output is not None
+        assert isinstance(result.output.decision, SearchPageContentResult)
+        assert result.output.decision.tool_call_id == repaired_call_id
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "ordinary",
+            "representation_repair",
+        ]
+        pending = pydantic_bridge._pending_call_from_history(policy.port.message_history)
+        assert pending == ToolCall(
+            "search_page_content",
+            {"query": "Vinalhaven", "cursor": ""},
+            repaired_call_id,
+        )
+
+        step = StepResult(
+            result.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        next_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=step,
+        )
+        next_result = await policy.port.generate(
+            ModelDecisionRequest("request:after-repaired-call", next_context, last_step=step)
+        )
+
+        assert next_result.failure is None
+        recorded = normalize_recorded_provider_input(scripted.records[2])
+        returned_ids = {
+            part["tool_call_id"]
+            for message in recorded["messages"]
+            if message["kind"] == "request"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        }
+        assert repaired_call_id in returned_ids
+        assert initial_call_id not in returned_ids
+
+    asyncio.run(scenario())
+
+
 def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_content() -> None:
     async def scenario() -> None:
         call_id = "recording-call:final-with-stale-ref"
