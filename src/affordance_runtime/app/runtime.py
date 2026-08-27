@@ -320,6 +320,20 @@ class TargetRuntime:
             )
         return state
 
+    async def refresh_after_user_control(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Capture and evaluate the only authoritative post-user-control World."""
+
+        return await self.build_loop().refresh_after_user_control(
+            environment,
+            task,
+            state,
+        )
+
     async def restore_paused_checkpoint(
         self,
         environment: WorldEnvironment,

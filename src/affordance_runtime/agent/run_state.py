@@ -639,6 +639,21 @@ class RunState:
             self.paused_from_status = None
         self.control_boundary = None
 
+    def begin_external_currentness_refresh(self) -> None:
+        """Invalidate an old waiting boundary before observing external user effects."""
+
+        if self.control_boundary is not None or self.durable_checkpoint_id:
+            raise ValueError("external currentness refresh requires a consumed pause")
+        if self.status not in {
+            RunStatus.RUNNING,
+            RunStatus.WAITING_USER,
+            RunStatus.WAITING_CONFIRMATION,
+        }:
+            raise ValueError("external currentness refresh requires a resumable run")
+        self.status = RunStatus.RUNNING
+        self.action_page = None
+        self.action_discovery = None
+
     def commit_durable_pause(self, checkpoint_id: str) -> None:
         boundary = self.control_boundary
         if (

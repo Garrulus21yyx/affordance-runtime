@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded compensation and protected Steel Viewer verified complete; takeover unavailable
+Status: Phase 7 bounded compensation and protected Steel Viewer verified complete; Phase 8 takeover in progress
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -682,6 +682,55 @@ Constraints:
       `unsafe-eval`; the final witness used Python-side polling without weakening
       CSP. No alternate media path, second Runtime browser, model call, GUI
       action, compensation action, input WebSocket, takeover, or benchmark ran.
+23. **in progress — Phase 8 exclusive user takeover and return.**
+    - Authority: `TargetRuntimeSession` owns one ephemeral control owner and
+      opaque lease identity. The deployment Viewer consumes that public
+      projection but never infers ownership from iframe focus, socket state, or
+      input traffic. Shell serializes and forwards typed commands only.
+    - Positive command contract: `TakeOver` is admitted only against the exact
+      durable PAUSED checkpoint while the Agent owns control and an interactive
+      Viewer lease is available. It atomically consumes that checkpoint for
+      recovery, creates one process-local user-control lease, disables ordinary
+      Resume/Revise, and leaves the single Core loop stopped. `ReturnControl`
+      requires the exact lease, disables Viewer input, captures fresh World,
+      evaluates it, invalidates stale action/binding/confirmation material, and
+      returns the existing Agent loop only from that owner-produced fresh
+      snapshot. A terminal fresh evaluation ends the run instead of dispatching.
+    - Provider boundary: create the same Steel browser lease with provider-side
+      interactive capability available, but keep the delivered document
+      read-only while the Agent owns control. Only a valid Runtime user-control
+      projection may rewrite the current player to the same-origin native Steel
+      input WebSocket proxy. Provider URL, token, session identity, and reusable
+      key remain server-private. No custom mouse/keyboard protocol or second
+      browser is introduced.
+    - Failure contract: stale checkpoint, stale lease, unavailable Viewer,
+      active/non-paused run, duplicate/reused identity, provider input loss, and
+      fresh-World failure are typed. Return capture failure retains user
+      ownership and cannot unblock Agent dispatch. Process restart revokes the
+      ephemeral user lease; the consumed pre-takeover checkpoint cannot be
+      replayed as if manual effects had not happened.
+    - Verification: cover command/state properties, stale orderings, two-session
+      isolation, crash/recovery fail-closed behavior, Viewer read-only/interactive
+      rewrite and WebSocket auth, provider loss independence, return fresh-World
+      lineage, stale pending-material invalidation, frontend projection, OpenAPI
+      generation, existing Phase 0-7 gates, and one no-model
+      live Steel takeover/return witness. Do not run a benchmark without separate
+      authorization.
+    - Runtime authority milestone implemented: one public `agent|user` owner and
+      opaque process-local lease now gate the existing session handle. Takeover
+      consumes the exact durable pause through the existing one-shot checkpoint
+      outcome before exposing user ownership. Return clears the pause, captures
+      and evaluates a fresh World through the existing Core loop owners, commits
+      a non-budget-consuming `RequestObservation`, invalidates stale pending
+      action material, and only then restarts the ActionPolicy. Failed currentness
+      retains user ownership and Agent dispatch stays disabled; recovery of the
+      consumed pre-takeover checkpoint fails closed. The focused Runtime/session
+      slice passes 47 tests; Shell/Steel/UI wiring remains in progress.
+24. **pending — Phase 9 release-profile closure review.**
+    - Begin only after Step 23 passes its owner/property/integration gates.
+      Reconcile implementation, generated contracts, UI, documentation, and the
+      declared profile evidence without treating Viewer/takeover evidence as a
+      benchmark result.
 
 ## Current-work produced files
 

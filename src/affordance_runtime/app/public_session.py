@@ -154,6 +154,8 @@ class PublicSessionCapability(StrEnum):
     PAUSE_TASK = "pause_task"
     RESUME_TASK = "resume_task"
     REVISE_TASK = "revise_task"
+    TAKE_OVER = "take_over"
+    RETURN_CONTROL = "return_control"
     CLOSE_SESSION = "close_session"
 
 
@@ -162,7 +164,14 @@ BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
     PublicSessionCapability.PAUSE_TASK,
     PublicSessionCapability.RESUME_TASK,
     PublicSessionCapability.REVISE_TASK,
+    PublicSessionCapability.TAKE_OVER,
+    PublicSessionCapability.RETURN_CONTROL,
 }
+
+
+class PublicSessionControlOwner(StrEnum):
+    AGENT = "agent"
+    USER = "user"
 
 
 @dataclass(frozen=True)
@@ -197,7 +206,7 @@ class PublicProgressStep:
 @dataclass(frozen=True)
 class PublicControlOutcome:
     command_id: str
-    kind: Literal["pause", "revise"]
+    kind: Literal["pause", "revise", "take_over", "return_control"]
     outcome: Literal[
         "paused",
         "failed",
@@ -207,6 +216,8 @@ class PublicControlOutcome:
         "new_task_suggested",
         "unsupported",
         "effect_reconciliation_required",
+        "user_control_granted",
+        "user_control_returned",
     ]
     code: str
     checkpoint_id: str | None = None
@@ -243,6 +254,8 @@ class PublicRuntimeSessionSnapshot:
     resume_eligible: bool = False
     last_control_outcome: PublicControlOutcome | None = None
     effect_reconciliation: PublicEffectReconciliation | None = None
+    control_owner: PublicSessionControlOwner = PublicSessionControlOwner.AGENT
+    control_lease_id: str | None = None
     schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
 
 
@@ -318,6 +331,8 @@ class PublicRuntimeSessionHandle(Protocol):
     async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def resume(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot: ...
+    async def take_over(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def return_control(self, command_id: str, control_lease_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def close(self) -> None: ...
 
 
@@ -348,6 +363,12 @@ class TargetRuntimeSession:
     _checkpoint_id: str | None = field(default=None, init=False, repr=False)
     _resume_eligible: bool = field(default=False, init=False, repr=False)
     _last_control_outcome: PublicControlOutcome | None = field(default=None, init=False, repr=False)
+    _control_owner: PublicSessionControlOwner = field(
+        default=PublicSessionControlOwner.AGENT,
+        init=False,
+        repr=False,
+    )
+    _control_lease_id: str | None = field(default=None, init=False, repr=False)
     _progress: list[PublicProgressStep] = field(default_factory=list, init=False, repr=False)
     _events: list[PublicRuntimeSessionEvent] = field(default_factory=list, init=False, repr=False)
     _active: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -393,6 +414,7 @@ class TargetRuntimeSession:
 
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             self._require_open()
             pending = self._project().pending_question
             if pending is None or pending.interrupt_id != interrupt_id:
@@ -417,6 +439,7 @@ class TargetRuntimeSession:
 
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             self._require_open()
             pending = self._project().pending_confirmation
             if pending is None or pending.interrupt_id != interrupt_id:
@@ -432,6 +455,7 @@ class TargetRuntimeSession:
 
     async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             if self._closed:
                 raise PublicSessionConflict("session_closed", self._project())
             state = self._state
@@ -456,6 +480,7 @@ class TargetRuntimeSession:
 
     async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             if self._closed:
                 raise PublicSessionConflict("session_closed", self._project())
             if self.checkpoint_store is None:
@@ -490,6 +515,7 @@ class TargetRuntimeSession:
         checkpoint_id: str,
     ) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             self._require_open()
             store = self.checkpoint_store
             if store is None:
@@ -544,8 +570,120 @@ class TargetRuntimeSession:
                 )
             return self._project()
 
+    async def take_over(
+        self,
+        command_id: str,
+        checkpoint_id: str,
+    ) -> PublicRuntimeSessionSnapshot:
+        """Consume one durable pause and grant one process-local user control lease."""
+
+        async with self._lock:
+            self._require_agent_control()
+            self._require_open()
+            store = self.checkpoint_store
+            if store is None:
+                raise PublicSessionConflict("takeover_unavailable", self._project())
+            try:
+                existing = await store.resume_outcome(self.session_id, command_id)
+            except Exception as exc:
+                raise PublicSessionConflict("takeover_persistence_failed", self._project()) from exc
+            if existing is not None:
+                if existing.checkpoint_id == checkpoint_id:
+                    raise PublicSessionConflict("takeover_command_consumed", self._project())
+                raise PublicSessionConflict("takeover_command_conflict", self._project())
+            state = self._state
+            if (
+                state is None
+                or state.status is not RunStatus.PAUSED
+                or self._checkpoint_id != checkpoint_id
+                or state.durable_checkpoint_id != checkpoint_id
+            ):
+                raise PublicSessionConflict("checkpoint_mismatch", self._project())
+            try:
+                await store.commit_resume(
+                    RuntimeCheckpointResumeOutcome(
+                        self.session_id,
+                        command_id,
+                        checkpoint_id,
+                    )
+                )
+            except RuntimeCheckpointError as exc:
+                raise PublicSessionConflict(exc.code, self._project()) from exc
+            self._control_owner = PublicSessionControlOwner.USER
+            self._control_lease_id = secrets.token_urlsafe(24)
+            self._resume_eligible = False
+            self._last_control_outcome = PublicControlOutcome(
+                command_id,
+                "take_over",
+                "user_control_granted",
+                "user_control_granted",
+                checkpoint_id,
+            )
+            self._emit("USER_CONTROL_GRANTED")
+            return self._project()
+
+    async def return_control(
+        self,
+        command_id: str,
+        control_lease_id: str,
+    ) -> PublicRuntimeSessionSnapshot:
+        """Revoke user input and resume only after a fresh owner-produced World."""
+
+        async with self._lock:
+            if self._closed:
+                raise PublicSessionConflict("session_closed", self._project())
+            if self._control_owner is not PublicSessionControlOwner.USER:
+                raise PublicSessionConflict("user_control_not_active", self._project())
+            if (
+                self._control_lease_id is None
+                or not secrets.compare_digest(self._control_lease_id, control_lease_id)
+            ):
+                raise PublicSessionConflict("control_lease_mismatch", self._project())
+            if self._active is not None or self._admitted is None or self._state is None:
+                raise PublicSessionConflict("user_control_return_unavailable", self._project())
+            runtime = self._runtime_with_projection()
+            state = self._state
+            try:
+                if state.status is RunStatus.PAUSED:
+                    runtime.resume_control(state, command_id)
+                self._state = await runtime.refresh_after_user_control(
+                    self.lease.environment,
+                    self._admitted.task,
+                    state,
+                )
+            except Exception as exc:
+                code = str(getattr(exc, "reason_code", "")) or "user_control_currentness_unavailable"
+                self._last_control_outcome = PublicControlOutcome(
+                    command_id,
+                    "return_control",
+                    "failed",
+                    code,
+                    message="Agent control remains disabled until fresh currentness is available.",
+                )
+                self._emit("USER_CONTROL_RETURN_FAILED")
+                raise PublicSessionConflict(code, self._project()) from exc
+            self._control_owner = PublicSessionControlOwner.AGENT
+            self._control_lease_id = None
+            self._checkpoint_id = None
+            self._resume_eligible = False
+            self._status = _public_status(state.status)
+            self._last_control_outcome = PublicControlOutcome(
+                command_id,
+                "return_control",
+                "user_control_returned",
+                "user_control_currentness_refreshed",
+            )
+            self._emit("USER_CONTROL_RETURNED")
+            if state.status is RunStatus.RUNNING:
+                self._active = asyncio.create_task(
+                    self._run_continue(),
+                    name=f"runtime-user-control-return:{self.session_id}",
+                )
+            return self._project()
+
     async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
+            self._require_agent_control()
             if self._closed:
                 raise PublicSessionConflict("session_closed", self._project())
             store = self.checkpoint_store
@@ -1144,16 +1282,26 @@ class TargetRuntimeSession:
     def _project(self, *, event_cursor: int | None = None) -> PublicRuntimeSessionSnapshot:
         state = self._state
         status = self._status if self._active is not None or state is None else _public_status(state.status)
+        if self._control_owner is PublicSessionControlOwner.USER:
+            status = PublicSessionStatus.PAUSED
         pending_question = self._intake_question
         pending_confirmation = None
         if state is not None and state.last_step is not None:
-            if status is PublicSessionStatus.WAITING_USER and isinstance(state.last_step.decision, AskUser):
+            if (
+                self._control_owner is PublicSessionControlOwner.AGENT
+                and status is PublicSessionStatus.WAITING_USER
+                and isinstance(state.last_step.decision, AskUser)
+            ):
                 decision = state.last_step.decision
                 identity = decision.tool_call_id or decision.context_id
                 pending_question = PublicPendingQuestion(
                     f"ask:{identity}", decision.question, decision.requested_fields
                 )
-            if status is PublicSessionStatus.WAITING_CONFIRMATION and state.last_step.confirmation is not None:
+            if (
+                self._control_owner is PublicSessionControlOwner.AGENT
+                and status is PublicSessionStatus.WAITING_CONFIRMATION
+                and state.last_step.confirmation is not None
+            ):
                 risk = state.last_step.confirmation
                 pending_confirmation = PublicPendingConfirmation(
                     f"confirmation:{risk.subject_id}", risk.reason, str(risk.risk)
@@ -1172,21 +1320,20 @@ class TargetRuntimeSession:
         public_resume_eligible = self._resume_eligible and (
             reconciliation is None or reconciliation.status != "needs_input"
         )
-        return PublicRuntimeSessionSnapshot(
-            self.session_id,
-            self.expires_at,
-            status,
-            self._event_epoch,
-            len(self._events) if event_cursor is None else event_cursor,
-            capabilities=(
+        capabilities = (
+            frozenset(
+                {
+                    PublicSessionCapability.CLOSE_SESSION,
+                    PublicSessionCapability.RETURN_CONTROL,
+                }
+            )
+            if self._control_owner is PublicSessionControlOwner.USER
+            else (
                 BASE_PUBLIC_SESSION_CAPABILITIES
                 | ({PublicSessionCapability.PAUSE_TASK} if self.checkpoint_store is not None else set())
                 | (
                     {PublicSessionCapability.RESUME_TASK}
-                    if (
-                        status is PublicSessionStatus.PAUSED
-                        and public_resume_eligible
-                    )
+                    if status is PublicSessionStatus.PAUSED and public_resume_eligible
                     else set()
                 )
                 | (
@@ -1202,7 +1349,24 @@ class TargetRuntimeSession:
                     }
                     else set()
                 )
-            ),
+                | (
+                    {PublicSessionCapability.TAKE_OVER}
+                    if (
+                        self.checkpoint_store is not None
+                        and status is PublicSessionStatus.PAUSED
+                        and self._checkpoint_id is not None
+                    )
+                    else set()
+                )
+            )
+        )
+        return PublicRuntimeSessionSnapshot(
+            self.session_id,
+            self.expires_at,
+            status,
+            self._event_epoch,
+            len(self._events) if event_cursor is None else event_cursor,
+            capabilities=capabilities,
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
             task_text=task.instruction if task is not None else (request.instruction if request else None),
@@ -1214,7 +1378,13 @@ class TargetRuntimeSession:
             resume_eligible=public_resume_eligible,
             last_control_outcome=self._last_control_outcome,
             effect_reconciliation=reconciliation,
+            control_owner=self._control_owner,
+            control_lease_id=self._control_lease_id,
         )
+
+    def _require_agent_control(self) -> None:
+        if self._control_owner is not PublicSessionControlOwner.AGENT:
+            raise PublicSessionConflict("user_control_active", self._project())
 
     def _require_open(self) -> None:
         if self._closed:

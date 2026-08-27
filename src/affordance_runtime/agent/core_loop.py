@@ -555,6 +555,62 @@ class CoreAgentLoop:
         )
         return state
 
+    async def refresh_after_user_control(
+        self,
+        environment: WorldEnvironment,
+        task: TaskGoal,
+        state: RunState,
+    ) -> RunState:
+        """Re-establish Runtime currentness after an exclusive external control lease."""
+
+        state.begin_external_currentness_refresh()
+        acquisition = await environment.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.CURRENTNESS_REFRESH,
+                "fresh currentness after user control",
+            )
+        )
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            raise CoreLoopStartError("user_control_currentness_unavailable")
+        after = acquisition.observation
+        delta = WorldTransitionProjector().project(state.current_world, after)
+        after_projection, _after_index = self._canonical_world_for(
+            task,
+            after,
+            previous_index=state.delivery_index,
+            delta=delta,
+        )
+        evaluation = await self._validated_task_evaluation(task, after, after_projection)
+        decision = RequestObservation(
+            "context:runtime:user-control-return",
+            ObservationPurpose.CRITERION_VERIFICATION.value,
+            task.task_id,
+            "",
+            "refresh currentness after user control",
+        )
+        result = StepResult(
+            decision,
+            state.current_world,
+            after,
+            evaluation,
+            self._status_for_task(task, evaluation),
+            feedback="user_control_currentness_refreshed",
+            public_world_delta=delta,
+            before_public_world=state.canonical_world,
+            after_public_world=after_projection,
+        )
+        result = self._attach_canonical_worlds(task, state, result)
+        delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count))
+        self._commit_step(
+            state,
+            result,
+            consume_step=False,
+            delivery_transition=delivery,
+        )
+        if state.terminal:
+            self.trace_sink.run_finished(state)
+        return state
+
     async def _run_until_pause(
         self,
         environment: WorldEnvironment,

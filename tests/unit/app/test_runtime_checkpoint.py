@@ -24,6 +24,7 @@ from affordance_runtime.app.checkpoint import (
 from affordance_runtime.app.public_session import (
     PublicSessionCapability,
     PublicSessionConflict,
+    PublicSessionControlOwner,
     PublicSessionOpenError,
     PublicSessionStatus,
     PublicTaskRevisionCommand,
@@ -631,6 +632,34 @@ async def _waiting_checkpoint_session(tmp_path, *, store=None):
     raise AssertionError("fixture did not reach waiting boundary")
 
 
+async def _takeover_checkpoint_session(tmp_path, *, environment=None):
+    checkpoint_store = SQLiteRuntimeCheckpointStore(tmp_path / "takeover-checkpoints.sqlite3")
+    policy = RecoverableAskPolicy()
+    owned_environment = environment or ScriptedEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(policy),
+        lambda _session_id: RuntimeEnvironmentLease(owned_environment),
+        checkpoint_store=checkpoint_store,
+    )
+    handle = await factory.open(
+        "session:takeover",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    for _ in range(100):
+        if (await handle.snapshot()).status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("takeover fixture did not reach waiting boundary")
+    paused = await handle.pause("pause:takeover")
+    assert paused.checkpoint_id is not None
+    return handle, checkpoint_store, policy, owned_environment, paused.checkpoint_id
+
+
 @pytest.mark.asyncio
 async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(tmp_path) -> None:
     handle, store = await _waiting_checkpoint_session(tmp_path)
@@ -671,6 +700,133 @@ async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(
     assert restored_facts.status_before_pause.value == "waiting_user"
     assert restored_facts.last_decision is not None
     assert restored_facts.last_decision.question == "Which account should I use?"
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_takeover_consumes_checkpoint_and_return_refreshes_before_policy(tmp_path) -> None:
+    handle, store, policy, environment, checkpoint_id = await _takeover_checkpoint_session(
+        tmp_path
+    )
+
+    controlled = await handle.take_over("takeover:one", checkpoint_id)
+
+    assert controlled.status is PublicSessionStatus.PAUSED
+    assert controlled.control_owner is PublicSessionControlOwner.USER
+    assert controlled.control_lease_id is not None
+    assert controlled.pending_question is None
+    assert controlled.resume_eligible is False
+    assert controlled.capabilities == frozenset(
+        {
+            PublicSessionCapability.CLOSE_SESSION,
+            PublicSessionCapability.RETURN_CONTROL,
+        }
+    )
+    assert await store.checkpoint_resume_outcome("session:takeover", checkpoint_id) == (
+        RuntimeCheckpointResumeOutcome(
+            "session:takeover",
+            "takeover:one",
+            checkpoint_id,
+        )
+    )
+    with pytest.raises(PublicSessionConflict, match="user_control_active"):
+        await handle.resume("resume:while-user", checkpoint_id)
+    with pytest.raises(PublicSessionConflict, match="control_lease_mismatch"):
+        await handle.return_control("return:stale", "wrong-lease")
+
+    returned = await handle.return_control(
+        "return:one",
+        controlled.control_lease_id,
+    )
+
+    assert returned.control_owner is PublicSessionControlOwner.AGENT
+    assert returned.control_lease_id is None
+    assert returned.checkpoint_id is None
+    assert environment.capture_calls == 1
+    assert policy.calls == 1
+    assert returned.pending_question is None
+    for _ in range(100):
+        current = await handle.snapshot()
+        if current.status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("Agent policy did not continue after fresh user-control World")
+    assert policy.calls == 2
+    assert any(
+        event.type == "USER_CONTROL_GRANTED"
+        for event in await handle.events(0)
+    )
+    assert any(
+        event.type == "USER_CONTROL_RETURNED"
+        for event in await handle.events(0)
+    )
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_takeover_consumption_blocks_checkpoint_recovery(tmp_path) -> None:
+    handle, store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
+        tmp_path
+    )
+    await handle.take_over("takeover:crash", checkpoint_id)
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(RecoverableAskPolicy()),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
+        checkpoint_store=store,
+    )
+
+    with pytest.raises(PublicSessionOpenError, match="checkpoint_already_resumed"):
+        await factory.recover(
+            "session:takeover",
+            checkpoint_id,
+            datetime.now(UTC) + timedelta(minutes=5),
+        )
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_return_currentness_failure_retains_exclusive_user_control(tmp_path) -> None:
+    @dataclass
+    class FailingReturnEnvironment(ScriptedEnvironment):
+        fail_return_capture: bool = True
+        return_capture_attempts: int = 0
+
+        async def capture(self, request):
+            self.return_capture_attempts += 1
+            if self.fail_return_capture:
+                raise OSError("injected user-control capture failure")
+            return await super().capture(request)
+
+    environment = FailingReturnEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    handle, _store, policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
+        tmp_path,
+        environment=environment,
+    )
+    controlled = await handle.take_over("takeover:failure", checkpoint_id)
+    assert controlled.control_lease_id is not None
+
+    with pytest.raises(PublicSessionConflict, match="user_control_currentness_unavailable"):
+        await handle.return_control("return:failure", controlled.control_lease_id)
+
+    failed = await handle.snapshot()
+    assert failed.status is PublicSessionStatus.PAUSED
+    assert failed.control_owner is PublicSessionControlOwner.USER
+    assert failed.control_lease_id == controlled.control_lease_id
+    assert failed.capabilities == frozenset(
+        {
+            PublicSessionCapability.CLOSE_SESSION,
+            PublicSessionCapability.RETURN_CONTROL,
+        }
+    )
+    assert policy.calls == 1
+
+    environment.fail_return_capture = False
+    await handle.return_control("return:retry", controlled.control_lease_id)
+    assert environment.return_capture_attempts == 2
     await handle.close()
 
 
