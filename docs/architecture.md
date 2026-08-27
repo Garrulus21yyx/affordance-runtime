@@ -60,7 +60,41 @@ Renderer derives the displayed verbs from those admitted route fragments rather 
 GroundingIndex. Consequently every displayed `(E-ref, verb[, destination])` is present in the sibling manifest,
 compiled into the same Catalog, and backed by one current private resolver row. Split-target prefixes fail before
 provider invocation. This changes no World, history, cursor, ToolReturn, Monitor, Binder, Executor, or Runtime loop.
-The implementation is provider-free verified but remains live-open until the same Task426 witness crosses it.
+Task426
+[`target-atomic-run5`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-target-atomic-run5/run.json)
+crossed that target-atomic boundary: the policy executed `type_text(E2, "Shanksville, Pennsylvania")`, `Enter`, the
+current OSM result, and `More results(E6)` with zero grounding gaps and zero invalid arguments. It later blocked for a
+different, already-reopened provider-output defect. After three repeated reads, Monitor correctly emitted
+`control_stall`; both subsequent deliberate responses used all 2,048 output tokens as `ThinkingPart`, returned
+`finish_reason=length`, and contained no final ToolCall.
+
+The provider owner now defines one logical ActionPolicy turn over one immutable canonical envelope. Its initial
+physical request keeps the selected reasoning profile and `tool_choice=auto`. A complete text-only response continues
+to use PydanticAI's output-validator retry. Because the supported PydanticAI 2.33 graph terminates thinking-only
+`length` before output validation, the adapter maps exactly that one-response outcome into
+the same already-bounded final-action retry: identical instructions, current World, official history, deferred
+ToolReturn, media, and ToolCatalog; `thinking=false`; `tool_choice=required`; no nested output retry. If that fallback
+also fails, the logical turn returns one typed `output_budget_exhausted` and closes any previously pending same-ID
+ToolReturn exactly once in official history. OpenAI-compatible requests are stateless, so every physical request
+replays that immutable context and contains the pending ToolReturn once; this is wire retransmission, not a second
+history commitment. Rejected reasoning and retry prompts remain transcript-only; only the accepted response can enter
+official PydanticAI history. CoreLoop, Monitor, World, delivery, E-ref allocation, Catalog, Binder, Executor,
+compaction, and evaluator paths are unchanged.
+
+Generated transition tests cover text-only versus thinking-length first outputs, with and without a pending
+ToolReturn, and prove one current envelope/World/Catalog, exact current E-ref resolution, one accepted pending call,
+pair-safe official history, and transcript-only rejected output. A real OpenAI-compatible DeepSeek wire test proves
+the two physical requests carry identical messages and change only `auto + medium thinking` to
+`required + no thinking`. A combined transport-failure/output-truncation regression proves one canonical envelope
+shares one transport-retry allowance and captures the final SDK run rather than a stale failed attempt. The declared
+Web and fixed BrowserGym profiles now both resolve to only `pydantic-ai-slim==2.33.0` and
+`pydantic-ai-harness==0.25.0`; the undeclared `pydantic-ai` and `pydantic-evals` meta packages are absent. BrowserGym
+keeps its required `playwright==1.44.0`, while the default Web profile keeps 1.61.0; the Pydantic pin is likewise owned
+by each profile because WebArena Verified requires 2.12.0. Both output-owner integration runs report 93 passed; both
+profile resolutions and the fixed-environment `uv pip check` are clean. The cross-owner invariant matrix reports 331 passed. The fixed
+BrowserGym full suite reports 1,837 passed and 19 skipped; its sole failure remains the
+pre-existing `docs/interaction-shell.md` governance count. The provider-output repair remains live-open pending the
+same witness and one fresh held-out long task.
 
 The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
 556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
@@ -127,8 +161,8 @@ messages as though it were a current physical attempt. These are ActionPolicy/pr
 observability lifecycle defects, not missing controls or grounds for another projection, ranker, cursor, Monitor, or
 World path. Broader closure remains explicitly open while that owner contract is reviewed.
 
-That owner review found one shared lifecycle gap rather than a need for another recovery path. The installed
-PydanticAI 2.31.1 `capture_run_messages` contract includes normalized supplied history as well as messages stamped by
+That owner review found one shared lifecycle gap rather than a need for another recovery path. PydanticAI's
+`capture_run_messages` contract includes normalized supplied history as well as messages stamped by
 the current SDK `run_id`. The bridge had instead guessed the current physical response suffix from the maximum retry
 count; when a deliberate response terminated on length before consuming its retry allowance, one historical response
 was misclassified as current. After the typed failure, the bridge also retained the old pending-call frontier even
@@ -147,8 +181,10 @@ the exact current request that closes every prior call/result pair, and drops re
 fresh-World ActionPolicy call extends that same official history from the closed frontier. Canonical envelope
 validation accepts both frontiers and still rejects orphaned, duplicate, mismatched, or synthetic exchanges. No
 Workspace lookup, trace replay, CoreLoop fallback, pending-result store, retry state machine, or second history owner
-was added. A vertical test exercises `accepted call -> ToolReturn -> single truncated response -> typed failure ->
-next accepted call` and verifies exact call/result conservation plus one-response accounting.
+was added. At that stage, a vertical test exercised
+`accepted call -> ToolReturn -> single truncated response -> typed failure -> next accepted call` to verify exact
+call/result conservation. The current logical-turn repair above replaces that permissive success criterion: one
+available output retry must be spent before the typed failure can escape the provider boundary.
 
 Task426
 [`history-recovery-run2`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-history-recovery-run2/run.json)
@@ -609,10 +645,17 @@ The positive owner contract is now:
   only that one bounded retry to `thinking=false + tool_choice=required`, because DeepSeek rejects required tool choice
   with thinking enabled. The SDK still owns `DeferredToolRequests`, argument validation, call IDs, reasoning/tool
   history, and retry history;
-- the existing ActionPolicy Agent uses a PydanticAI output validator: a text-only response receives one same-context
-  SDK output retry, while an exhausted pair returns typed `no_tool_call` or `output_budget_exhausted`. A pre-existing
-  representation-repair request gets no nested output retry, so the output-validation sequence is bounded to two
-  model responses. The existing transport retry remains independently bounded by the same absolute policy deadline.
+- the existing ActionPolicy Agent uses a PydanticAI output validator: a complete text-only response receives one
+  same-context SDK output retry. A thinking-only or incomplete-tool `finish_reason=length` terminates before that
+  validator in every supported PydanticAI line, so the same provider adapter spends the still-unused logical retry on
+  one identical-context `thinking=false + tool_choice=required` request. The two mechanisms share one logical
+  response budget; they cannot produce a third output request. An exhausted pair returns typed `no_tool_call` or
+  `output_budget_exhausted`. A pre-existing representation-repair request gets no nested output retry. The existing
+  transport retry is independent of output validation but its one allowance is shared by both physical output
+  requests under the same absolute policy deadline. Each SDK `Agent.run` owns its own message-capture context, so a
+  transport retry followed by output truncation is classified from the latest response rather than stale capture. If
+  the final-action fallback terminates at the provider boundary after the first request delivered a pending result,
+  that first capture closes the prior same-ID pair before the typed provider failure or cancellation propagates.
 
 Rejected prose and its SDK retry prompt remain in the exact provider transcript but do not enter accepted canonical
 history. CoreLoop, Monitor, World authority, execution, compaction, and evaluator behavior are unchanged; there is no
@@ -1804,8 +1847,9 @@ This cutover is implementation-complete only when all of the following agree:
     do not stale the binding, and navigation allowlists are not duplicated in the public World.
 21. DeepSeek receives the declared output budget through its supported wire parameter, disabled thinking for
     ordinary/representation-repair calls, and enabled thinking for the existing deliberate recovery profile. The
-    initial request uses `tool_choice=auto` so exact model text/reasoning can accompany one ToolCall, while only a
-    text-only output retry uses `thinking=false + required`. A repeated provider violation still ends in a typed
+    initial request uses `tool_choice=auto` so exact model text/reasoning can accompany one ToolCall. A complete
+    text-only response or a pre-validator thinking-only/incomplete-tool length response can consume the same single
+    `thinking=false + required` final-action retry, never both. A repeated provider violation still ends in a typed
     terminal failure, with no nested representation retry or historical response miscount, and Trace records the
     physical settings and returned reasoning observation of both requests.
 22. GoalCompiler thinking control follows the selected provider capability, and ActionPolicy and Harness compaction

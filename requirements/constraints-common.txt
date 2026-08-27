@@ -4,7 +4,11 @@
 # that otherwise use compatible-version ranges in pyproject.toml.  They are
 # intentionally shared by the mutually incompatible web and BrowserGym
 # profiles; install one of the profile-specific files as well.
-pydantic==2.13.4
+# Keep the installed policy SDK aligned with the pydantic-ai optional extra.
+# The project uses the slim package directly; the pydantic-ai and
+# pydantic-evals meta packages are intentionally not part of this profile.
+pydantic-ai-slim[openai]==2.33.0
+pydantic-ai-harness==0.25.0
 langgraph==1.2.9
 Pillow==12.3.0
 build==1.5.0

@@ -43,7 +43,41 @@ new vertical regression recreates a focused search textbox with `press_key/type_
 token, and proves both operations still enter the manifest, ToolCatalog, and exact resolver; a one-route prefix fails
 closed. Focused route/BrowserGym/PydanticAI coverage reports 311 passed. The fixed BrowserGym Python full suite reports
 1,828 passed and 19 skipped; its sole failure remains the pre-existing `docs/interaction-shell.md` governance count.
-Live closure is still open pending the same Task426 rerun.
+
+The authorized
+[`target-atomic-run5`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-target-atomic-run5/run.json)
+crossed the exact run4 failure: `type_text(E2, "Shanksville, Pennsylvania")`, `Enter`, the OSM result, and current
+`More results(E6)` all executed with zero grounding gaps and zero invalid arguments. It blocked after 29 policy calls,
+14 executions, 15 observations, and ten recovery calls for a separate provider-output failure. The final two
+`control_stall` deliberate calls each returned 2,048 reasoning tokens, zero final-content tokens, no ToolCall, and
+`finish_reason=length`.
+
+The provider repair closes that repeatedly reopened logical-turn algebra without changing GUI state. PydanticAI still
+owns normal output validation, DeferredToolRequests, call IDs, and official history. When its graph terminates a
+single thinking-only or incomplete-tool length response before the validator can spend the configured retry, the
+existing adapter reuses that one retry as an identical-context `thinking=false + tool_choice=required` physical
+request. A second failure returns one typed `output_budget_exhausted`; rejected outputs stay transcript-only and a
+pending same-ID ToolReturn is committed exactly once in official history. Because the provider API is stateless, both
+physical requests replay the same context and each contains that return once; no request or accepted history contains
+a duplicate. The two output requests also share one transport-retry allowance, and every actual SDK run has its own
+capture context so transport recovery cannot leave output classification pointed at the failed attempt.
+Representation repair remains single-shot, and CoreLoop,
+Monitor, World, target-atomic delivery, Catalog, Binder, Executor, cursor, compaction, and evaluator behavior are
+unchanged.
+
+The output-owner integration suite reports 93 passed in both the current test and fixed BrowserGym interpreters. The
+declared Web and BrowserGym profiles both resolve to only `pydantic-ai-slim==2.33.0` and
+`pydantic-ai-harness==0.25.0`. BrowserGym retains its
+required `playwright==1.44.0`; the default Web profile retains 1.61.0. Profile-local Pydantic constraints preserve
+WebArena Verified's 2.12.0 requirement without weakening the default Web pin. The fixed-environment `uv pip check` and
+clean resolution of both project profiles pass. Generated cases cover both supported first-output failure shapes with and
+without a pending result; wire-level DeepSeek coverage proves identical messages and one physical settings change;
+the combined transport/output regressions prove the logical retry bounds compose without multiplying dispatches and
+that fallback provider exhaustion or cancellation closes an already-delivered pending result before the next fresh
+turn. The cross-owner invariant matrix reports 331 passed. The complete fixed-BrowserGym suite reports 1,837
+passed and 19 skipped, with only the pre-existing
+`docs/interaction-shell.md` governance count failing. Live closure remains open for a Task426 rerun and one untouched
+long task.
 
 The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
 batch:
@@ -103,11 +137,13 @@ the same canonical SDK history. Failed-run transcript accounting filters by the 
 assuming the response retry allowance was fully consumed. No CoreLoop fallback, Workspace lookup, Store, cursor,
 Monitor rule, or alternate retry path was added.
 
-The vertical regression reproduces the live shape—one historical accepted response plus one current thinking-only
-length response—then proves the next call succeeds with every earlier ToolCall paired to its exact ToolReturn. The
-PydanticAI/history/request-admission focused set reports 97 passed; the fixed BrowserGym Python full suite reports
-1,819 passed and 19 skipped, with only the pre-existing `docs/interaction-shell.md` governance failure. A Task426
-same-witness rerun and another fresh held-out case remained required before broader closure.
+The historical vertical regression reproduced the live shape—one accepted response plus one current thinking-only
+length response—then proved a later logical turn could continue with every earlier ToolCall paired to its exact
+ToolReturn. That was sufficient for history recovery but not for ActionPolicy availability. The current output-owner
+regression above replaces this permissive gate: the same logical turn must spend its one remaining output retry before
+a typed failure can escape. The earlier PydanticAI/history/request-admission focused set reported 97 passed; the fixed
+BrowserGym Python full suite then reported 1,819 passed and 19 skipped, with only the pre-existing
+`docs/interaction-shell.md` governance failure.
 
 Task426
 [`history-recovery-run2`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-history-recovery-run2/run.json)
@@ -229,9 +265,10 @@ period-2/3 cycles and cleared its active cycle identity on an incomplete longer 
 
 The converged ActionPolicy request now starts with `tool_choice=auto` and `parallel_tool_calls=false`, so one accepted
 response can contain both exact model text/reasoning and one ToolCall. Its existing PydanticAI output validator still
-rejects text-only output; the SDK's dynamic per-request settings use `RunContext.retry` to set only that one retry to
-`tool_choice=required`. The actual setting of each physical request is recorded in its provider transcript. No
-progress store, separate checkpoint, second policy, or custom retry loop was added. The ActionPolicy prompt asks for
+rejects complete text-only output; the SDK's dynamic per-request settings use `RunContext.retry` to set only that one
+retry to `tool_choice=required`. A pre-validator length termination now spends the same retry at the provider adapter,
+not in CoreLoop. The actual setting of each physical request is recorded in its provider transcript. No progress
+store, separate checkpoint, second policy, Runtime fallback, or second history was added. The ActionPolicy prompt asks for
 no per-step progress artifact; provider-native optional text remains ordinary recent trajectory input, while the
 existing Harness compactor alone produces a low-frequency cumulative replacement for an expired pair-safe prefix.
 The same `EpisodeMonitor` now
@@ -552,11 +589,13 @@ The current repair pairs BrowserGym `open_pages_urls` and `open_pages_titles` by
 subject. It retains bounded title plus sanitized route and removes the duplicated navigation allowlist from public
 World state and Catalog; the private BrowserGym binding remains the environment-authorization owner. DeepSeek's
 existing output budget is sent through `max_tokens`. Ordinary and representation-repair ActionPolicy requests use
-disabled thinking; the existing deliberate recovery profile uses enabled thinking. Every invocation starts with
-`tool_choice=auto`, and PydanticAI's output validator changes only its one text-only retry to `required` without
-changing the initial thought+text+action response. On that bounded retry it disables thinking because DeepSeek rejects
-`tool_choice=required` with thinking enabled. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
-rejected prose does not enter canonical history. Representation repair is not nested with this retry. Focused tests
+disabled thinking; the existing deliberate recovery profile uses enabled thinking. Every logical invocation starts
+with `tool_choice=auto`. A complete text-only response uses PydanticAI's output-validator retry; a single
+thinking-only or incomplete-tool `finish_reason=length` that terminates before validation uses the same one-response
+budget in the adapter. Either route changes the final-action request to `thinking=false + required`, because DeepSeek
+rejects required tool choice with thinking enabled; neither can create a third output request. Exhaustion is typed as
+`no_tool_call` or `output_budget_exhausted`; rejected output does not enter canonical history. Representation repair
+is not nested with this retry. Focused tests
 cover title/URL
 pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
 typed exhaustion, exact retry history, and the DeepSeek model profile. Run31 below supplies the live witness.
@@ -1598,10 +1637,11 @@ The final read-only review for this cutover must answer:
     identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
 27. Does DeepSeek receive the declared output limit as `max_tokens`, map ordinary/repair calls to disabled thinking and
     the existing deliberate recovery profile to enabled thinking, allow exact model text/reasoning with a ToolCall on
-    the initial `auto` request, and change only a text-only PydanticAI retry to `thinking=false + required`; and does
-    current pending reasoning/tool history round-trip while closed private reasoning expires only behind a retained
-    public conclusion, retry exhaustion remains a typed bounded failure without polluting accepted history,
-    miscounting historical responses, or nesting a representation-repair retry?
+    the initial `auto` request, and spend at most one shared `thinking=false + required` final-action retry for either
+    complete text-only output or a pre-validator thinking-only/incomplete-tool length response; and does current
+    pending reasoning/tool history round-trip while closed private reasoning expires only behind a retained public
+    conclusion, retry exhaustion remains a typed bounded failure without polluting accepted history, miscounting
+    historical responses, or nesting a representation-repair retry?
 28. When a query token is both one control's exact label and another control's operation, does `find_controls`
     preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
     genuine current match?

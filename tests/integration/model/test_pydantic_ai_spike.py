@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from collections.abc import Mapping
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -400,6 +401,113 @@ def test_deepseek_deliberate_output_retry_disables_thinking_before_requiring_a_t
     assert requests[0]["reasoning_effort"] == "medium"
     assert requests[1]["tool_choice"] == "required"
     assert requests[1].get("reasoning_effort") == "none"
+
+
+def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_wire() -> None:
+    responses = (
+        {
+            "id": "deepseek-response:length",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-v4-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "length",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": "The stalled route needs a different current action.",
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 2048,
+                "total_tokens": 2058,
+                "completion_tokens_details": {"reasoning_tokens": 2048},
+            },
+        },
+        {
+            **_deepseek_tool_response(2, reasoning=""),
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "deepseek-call:length-fallback",
+                                "type": "function",
+                                "function": {"name": "list_regions", "arguments": "{}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    server, thread, requests = _serve_openai_chat_responses(responses)
+
+    async def scenario() -> None:
+        policy = model_policy_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+                "LLM_DEEPSEEK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "LLM_DEEPSEEK_API_KEY": "test-secret",
+                "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+                "LLM_DECISION_PERCEPTION": "text-only.v1",
+            },
+            call_timeout_s=10.0,
+        )
+        task = shared_task()
+        world = shared_world("deepseek-deliberate-length-wire", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "deepseek:length:wire",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:deepseek-length-wire", context))
+
+        assert result.failure is None and result.output is not None
+        assert result.output.decision.tool_call_id == "deepseek-call:length-fallback"
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert [attempt.output_failure_kind for attempt in result.attempts] == [
+            StructuredOutputFailureKind.OUTPUT_TRUNCATED,
+            None,
+        ]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
+        assert [attempt.final_tool_call_present for attempt in result.attempts] == [False, True]
+        assert len(policy.port.last_admitted_envelopes) == 1
+        assert policy.port.last_model_delivery.action_candidates.world_observation_id == world.observation_id
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert len(requests) == 2
+    assert requests[0]["tool_choice"] == "auto"
+    assert requests[0]["reasoning_effort"] == "medium"
+    assert requests[1]["tool_choice"] == "required"
+    assert requests[1].get("reasoning_effort") == "none"
+    assert requests[0]["messages"] == requests[1]["messages"]
 
 
 async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
@@ -908,7 +1016,7 @@ def test_exhausted_output_retry_trace_excludes_prior_official_history() -> None:
     asyncio.run(scenario())
 
 
-def test_single_truncated_response_closes_pending_history_and_next_turn_recovers() -> None:
+def test_single_truncated_response_closes_pending_history_in_same_turn_fallback() -> None:
     async def scenario() -> None:
         truncated = ModelResponse(
             parts=[ThinkingPart("unfinished deliberate reasoning")],
@@ -952,35 +1060,18 @@ def test_single_truncated_response_closes_pending_history_and_next_turn_recovers
             ModelDecisionRequest("request:single-truncated:second", second_context, last_step=first_step)
         )
 
-        assert second.failure is not None
-        assert second.failure.reason == "output_budget_exhausted"
-        assert scripted.calls == 2
-        assert len(second.attempts) == 1
+        assert second.failure is None and second.output is not None
+        assert scripted.calls == 3
+        assert len(second.attempts) == 2
         assert second.attempts[0].response_id == "recording-single-truncated"
         assert second.attempts[0].output_failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
-        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        assert [attempt.status for attempt in second.attempts] == ["invalid", "accepted"]
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) == ToolCall(
+            "list_regions",
+            {},
+            "recording-call:3",
+        )
         canonical_envelope_module._project_pydantic_history(policy.port.message_history)
-
-        failed_step = StepResult(
-            PolicyFailure(ModelFailureKind.INVALID_RESPONSE, "model decision response was invalid"),
-            world,
-            world,
-            evaluation,
-            feedback="policy_failure:invalid_response",
-        )
-        third_context = builder.build(
-            task,
-            world,
-            actions,
-            evaluation,
-            last_step=failed_step,
-        )
-        third = await policy.port.generate(
-            ModelDecisionRequest("request:single-truncated:third", third_context, last_step=failed_step)
-        )
-
-        assert third.failure is None and third.output is not None, json.dumps(third.diagnostics, default=str)
-        assert scripted.calls == 3
         recorded = normalize_recorded_provider_input(scripted.records[2])
         prior_calls = {
             (part["tool_name"], part["tool_call_id"])
@@ -997,6 +1088,375 @@ def test_single_truncated_response_closes_pending_history_and_next_turn_recovers
             if part["part_kind"] == "tool-return"
         }
         assert prior_calls <= prior_returns
+
+    asyncio.run(scenario())
+
+
+def test_exhausted_length_fallback_closes_pending_history_and_next_fresh_turn_recovers() -> None:
+    async def scenario() -> None:
+        first_truncated = ModelResponse(
+            parts=[ThinkingPart("unfinished first deliberate reasoning")],
+            usage=RequestUsage(
+                input_tokens=10,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-first-truncated",
+        )
+        fallback_truncated = ModelResponse(
+            parts=[TextPart("unfinished required action envelope")],
+            usage=RequestUsage(input_tokens=10, output_tokens=2048),
+            finish_reason="length",
+            provider_response_id="recording-fallback-truncated",
+        )
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                first_truncated,
+                fallback_truncated,
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("exhausted-length-fallback-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(ModelDecisionRequest("request:exhausted-length:first", first_context))
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            last_step=first_step,
+        )
+
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:exhausted-length:second", second_context, last_step=first_step)
+        )
+
+        assert second.failure is not None
+        assert second.failure.reason == "output_budget_exhausted"
+        assert scripted.calls == 3
+        assert [attempt.status for attempt in second.attempts] == ["invalid", "failed"]
+        assert [attempt.output_failure_kind for attempt in second.attempts] == [
+            StructuredOutputFailureKind.OUTPUT_TRUNCATED,
+            StructuredOutputFailureKind.OUTPUT_TRUNCATED,
+        ]
+        assert [attempt.thinking_effective for attempt in second.attempts] == ["disabled", "disabled"]
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        canonical_envelope_module._project_pydantic_history(policy.port.message_history)
+        failed_step = StepResult(
+            PolicyFailure(ModelFailureKind.INVALID_RESPONSE, "model decision response was invalid"),
+            world,
+            world,
+            evaluation,
+            feedback="policy_failure:invalid_response",
+        )
+        third_context = builder.build(task, world, actions, evaluation, last_step=failed_step)
+
+        third = await policy.port.generate(
+            ModelDecisionRequest("request:exhausted-length:third", third_context, last_step=failed_step)
+        )
+
+        assert third.failure is None and third.output is not None
+        assert scripted.calls == 4
+        recorded = normalize_recorded_provider_input(scripted.records[3])
+        prior_calls = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "response"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-call"
+        }
+        prior_returns = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "request"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        }
+        assert prior_calls <= prior_returns
+
+    asyncio.run(scenario())
+
+
+def test_provider_failed_length_fallback_closes_pending_history_and_next_fresh_turn_recovers(
+    monkeypatch,
+) -> None:
+    async def scenario() -> None:
+        async def no_delay(_delay: float) -> None:
+            return None
+
+        monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", no_delay)
+        truncated = ModelResponse(
+            parts=[ThinkingPart("unfinished action selection")],
+            usage=RequestUsage(
+                input_tokens=10,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-provider-fallback-truncated",
+        )
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                truncated,
+                ModelHTTPError(503, "fallback transient"),
+                ModelHTTPError(503, "fallback exhausted"),
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("provider-failed-length-fallback-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+
+        first = await policy.port.generate(ModelDecisionRequest("request:provider-fallback:first", first_context))
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(task, world, actions, evaluation, last_step=first_step)
+
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:provider-fallback:second", second_context, last_step=first_step)
+        )
+
+        assert second.failure is not None
+        assert second.failure.reason == "model provider is unavailable"
+        assert scripted.calls == 4
+        assert policy.port.last_provider_retry_count == 1
+        assert [attempt.status for attempt in second.attempts] == ["invalid", "failed", "failed"]
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        canonical_envelope_module._project_pydantic_history(policy.port.message_history)
+        official_returns = tuple(
+            part
+            for message in policy.port.message_history
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        official_calls = tuple(
+            part
+            for message in policy.port.message_history
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+            if isinstance(part, ToolCallPart)
+        )
+        assert [(part.tool_name, part.tool_call_id) for part in official_calls] == [
+            ("list_regions", "recording-call:1")
+        ]
+        assert [(part.tool_name, part.tool_call_id) for part in official_returns] == [
+            ("list_regions", "recording-call:1")
+        ]
+        assert "unfinished action selection" not in json.dumps(policy.port.message_history, default=str)
+
+        failed_step = StepResult(
+            PolicyFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "model provider is unavailable"),
+            world,
+            world,
+            evaluation,
+            feedback="policy_failure:provider_unavailable",
+        )
+        third_context = builder.build(task, world, actions, evaluation, last_step=failed_step)
+        third = await policy.port.generate(
+            ModelDecisionRequest("request:provider-fallback:third", third_context, last_step=failed_step)
+        )
+
+        assert third.failure is None and third.output is not None
+        assert scripted.calls == 5
+        recorded = normalize_recorded_provider_input(scripted.records[4])
+        prior_calls = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "response"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-call"
+        }
+        prior_returns = {
+            (part["tool_name"], part["tool_call_id"])
+            for message in recorded["messages"]
+            if message["kind"] == "request"
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        }
+        assert prior_calls <= prior_returns
+
+    asyncio.run(scenario())
+
+
+def test_initial_provider_failure_closes_dispatched_pending_history(monkeypatch) -> None:
+    async def scenario() -> None:
+        async def no_delay(_delay: float) -> None:
+            return None
+
+        monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", no_delay)
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                ModelHTTPError(503, "initial transient"),
+                ModelHTTPError(503, "initial exhausted"),
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("initial-provider-failed-pending-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+
+        first = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:initial-provider-failed:first",
+                builder.build(task, world, actions, evaluation),
+            )
+        )
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(task, world, actions, evaluation, last_step=first_step)
+
+        second = await policy.port.generate(
+            ModelDecisionRequest("request:initial-provider-failed:second", second_context, last_step=first_step)
+        )
+
+        assert second.failure is not None
+        assert second.failure.reason == "model provider is unavailable"
+        assert scripted.calls == 3
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        canonical_envelope_module._project_pydantic_history(policy.port.message_history)
+        official_pairs = [
+            (part.tool_name, part.tool_call_id, type(part).__name__)
+            for message in policy.port.message_history
+            for part in message.parts
+            if isinstance(part, (ToolCallPart, ToolReturnPart))
+        ]
+        assert official_pairs == [
+            ("list_regions", "recording-call:1", "ToolCallPart"),
+            ("list_regions", "recording-call:1", "ToolReturnPart"),
+        ]
+
+        failed_step = StepResult(
+            PolicyFailure(ModelFailureKind.PROVIDER_UNAVAILABLE, "model provider is unavailable"),
+            world,
+            world,
+            evaluation,
+            feedback="policy_failure:provider_unavailable",
+        )
+        third = await policy.port.generate(
+            ModelDecisionRequest(
+                "request:initial-provider-failed:third",
+                builder.build(task, world, actions, evaluation, last_step=failed_step),
+                last_step=failed_step,
+            )
+        )
+        assert third.failure is None and third.output is not None
+        assert scripted.calls == 4
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_length_fallback_closes_pending_history_without_rejected_output(monkeypatch) -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[ThinkingPart("cancelled fallback rejected marker")],
+            usage=RequestUsage(
+                input_tokens=10,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-cancelled-fallback-truncated",
+        )
+        scripted = ScriptedModel([("list_regions", {}), truncated])
+        policy = _policy(scripted.build())
+        original_run_provider_call = PydanticAIGroundedDecisionPort._run_provider_call
+
+        async def cancel_required_fallback(self, call, **kwargs):
+            settings = kwargs.get("physical_settings")
+            if isinstance(settings, Mapping) and settings.get("tool_choice") == "required":
+                async def cancelled_call():
+                    raise asyncio.CancelledError
+
+                return await original_run_provider_call(self, cancelled_call, **kwargs)
+            return await original_run_provider_call(self, call, **kwargs)
+
+        monkeypatch.setattr(PydanticAIGroundedDecisionPort, "_run_provider_call", cancel_required_fallback)
+        task = shared_task()
+        world = shared_world("cancelled-length-fallback-history", False)
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(task, world, actions, evaluation)
+        first = await policy.port.generate(ModelDecisionRequest("request:cancelled-fallback:first", first_context))
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(task, world, actions, evaluation, last_step=first_step)
+
+        with pytest.raises(asyncio.CancelledError):
+            await policy.port.generate(
+                ModelDecisionRequest("request:cancelled-fallback:second", second_context, last_step=first_step)
+            )
+
+        assert policy.port.last_invocation_result is not None
+        assert policy.port.last_invocation_result.failure is not None
+        assert policy.port.last_invocation_result.failure.reason == "model invocation was cancelled"
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) is None
+        canonical_envelope_module._project_pydantic_history(policy.port.message_history)
+        official_calls = tuple(
+            part
+            for message in policy.port.message_history
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+            if isinstance(part, ToolCallPart)
+        )
+        official_returns = tuple(
+            part
+            for message in policy.port.message_history
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        assert [(part.tool_name, part.tool_call_id) for part in official_calls] == [
+            ("list_regions", "recording-call:1")
+        ]
+        assert [(part.tool_name, part.tool_call_id) for part in official_returns] == [
+            ("list_regions", "recording-call:1")
+        ]
+        assert "cancelled fallback rejected marker" not in json.dumps(policy.port.message_history, default=str)
 
     asyncio.run(scenario())
 
@@ -3364,6 +3824,379 @@ def test_deepseek_deliberate_output_retry_records_each_reasoning_response() -> N
             True,
             False,
         ]
+
+    asyncio.run(scenario())
+
+
+def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action() -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[ThinkingPart("The stalled route needs a different current action.")],
+            usage=RequestUsage(
+                input_tokens=20,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-response:deliberate-length",
+        )
+        scripted = ScriptedModel(
+            [
+                truncated,
+                ("list_regions", {}),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("deepseek-reasoning-length-retry", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "deepseek:reasoning:length-retry",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:deepseek-reasoning-length-retry", context))
+
+        assert result.failure is None and result.output is not None
+        assert result.output.decision.tool_call_id == "recording-call:2"
+        assert scripted.calls == 2
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert [attempt.phase for attempt in result.attempts] == [
+            "deliberate",
+            "deliberate_output_retry",
+        ]
+        assert [attempt.output_failure_kind for attempt in result.attempts] == [
+            StructuredOutputFailureKind.OUTPUT_TRUNCATED,
+            None,
+        ]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
+        assert [attempt.final_tool_call_present for attempt in result.attempts] == [False, True]
+        assert [record.model_settings["tool_choice"] for record in scripted.records] == ["auto", "required"]
+        assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
+            "list_regions",
+            {},
+            "recording-call:2",
+        )
+        assert "The stalled route needs a different current action." not in json.dumps(
+            port.message_history,
+            default=str,
+        )
+
+    asyncio.run(scenario())
+
+
+def test_length_fallback_shares_one_transport_retry_budget(monkeypatch) -> None:
+    async def scenario() -> None:
+        delays: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            delays.append(delay)
+
+        monkeypatch.setattr(pydantic_bridge.asyncio, "sleep", fake_sleep)
+        truncated = ModelResponse(
+            parts=[ThinkingPart("The current route needs one complete action.")],
+            usage=RequestUsage(
+                input_tokens=20,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-response:shared-retry-length",
+        )
+        scripted = ScriptedModel(
+            [
+                ModelHTTPError(503, "initial transient"),
+                truncated,
+                ModelHTTPError(503, "fallback transient"),
+                ("list_regions", {}),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+            provider_retry_backoff_s=0.25,
+            max_provider_retry_delay_s=1.0,
+        )
+        task = shared_task()
+        world = shared_world("shared-output-transport-retry", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "shared:output:transport:retry",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:shared-output-transport-retry", context))
+
+        assert result.failure is not None
+        assert result.failure.reason == "model provider is unavailable"
+        assert scripted.calls == 3
+        assert len(scripted.decisions) == 1
+        assert delays == [0.25]
+        assert port.last_provider_retry_count == 1
+        assert [attempt.status for attempt in result.attempts] == ["failed", "invalid", "failed"]
+        assert [attempt.phase for attempt in result.attempts] == [
+            "deliberate",
+            "deliberate_provider_retry",
+            "deliberate_output_retry",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_pending_tool_return_is_delivered_once_when_deliberate_length_fallback_succeeds() -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[ThinkingPart("Reconsider the route before choosing the next tool.")],
+            usage=RequestUsage(
+                input_tokens=20,
+                output_tokens=2048,
+                details={"reasoning_tokens": 2048},
+            ),
+            finish_reason="length",
+            provider_response_id="recording-response:pending-deliberate-length",
+        )
+        scripted = ScriptedModel(
+            [
+                ("list_regions", {}),
+                truncated,
+                ("list_regions", {}),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("pending-deliberate-length", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        builder = ContextBuilder()
+        first_context = builder.build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        first = await port.generate(ModelDecisionRequest("request:pending-deliberate-length:first", first_context))
+        assert first.failure is None and first.output is not None
+        first_step = StepResult(
+            first.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        second_context = builder.build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+            last_step=first_step,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "pending:deliberate:length-retry",
+                "recovery_attempt": 1,
+            },
+        )
+
+        second = await port.generate(
+            ModelDecisionRequest("request:pending-deliberate-length:second", second_context, first_step)
+        )
+
+        assert second.failure is None and second.output is not None
+        assert second.output.decision.tool_call_id == "recording-call:3"
+        assert [attempt.status for attempt in second.attempts] == ["invalid", "accepted"]
+        assert [attempt.thinking_effective for attempt in second.attempts] == ["enabled", "disabled"]
+        assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
+            "list_regions",
+            {},
+            "recording-call:3",
+        )
+        # OpenAI-compatible requests are stateless: both physical requests
+        # replay the same logical context.  Each payload therefore contains
+        # the pending return once, while official accepted history commits it
+        # only once.
+        for record in scripted.records[1:3]:
+            provider_input = normalize_recorded_provider_input(record)
+            returned = tuple(
+                part
+                for message in provider_input["messages"]
+                for part in message["parts"]
+                if part["part_kind"] == "tool-return"
+            )
+            assert len(returned) == 1
+            assert returned[0]["tool_call_id"] == "recording-call:1"
+        official_returns = tuple(
+            part
+            for message in port.message_history
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        assert [(part.tool_name, part.tool_call_id) for part in official_returns] == [
+            ("list_regions", "recording-call:1")
+        ]
+        canonical_envelope_module._project_pydantic_history(port.message_history)
+        assert "Reconsider the route before choosing the next tool." not in json.dumps(
+            port.message_history,
+            default=str,
+        )
+
+    asyncio.run(scenario())
+
+
+@given(
+    pending_result=st.booleans(),
+    first_output=st.sampled_from(("text_only", "thinking_length")),
+)
+@settings(max_examples=4, deadline=None)
+def test_logical_action_turn_generated_conserves_world_catalog_and_history(
+    pending_result: bool,
+    first_output: str,
+) -> None:
+    async def scenario() -> None:
+        marker = f"rejected-{first_output}-must-remain-transcript-only"
+        if first_output == "thinking_length":
+            rejected = ModelResponse(
+                parts=[ThinkingPart(marker)],
+                usage=RequestUsage(
+                    input_tokens=20,
+                    output_tokens=2048,
+                    details={"reasoning_tokens": 2048},
+                ),
+                finish_reason="length",
+                provider_response_id=f"recording-response:{first_output}",
+            )
+        else:
+            rejected = ModelResponse(
+                parts=[ThinkingPart("bounded reasoning"), TextPart(marker)],
+                usage=RequestUsage(
+                    input_tokens=20,
+                    output_tokens=8,
+                    details={"reasoning_tokens": 2},
+                ),
+                finish_reason="stop",
+                provider_response_id=f"recording-response:{first_output}",
+            )
+        decisions = [rejected, "first_gui_action"]
+        if pending_result:
+            decisions.insert(0, ("list_regions", {}))
+        scripted = ScriptedModel(decisions)
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world(f"logical-turn-{pending_result}-{first_output}", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        actions = ActionSpaceBuilder().build(task, world)
+        builder = ContextBuilder()
+        context = builder.build(task, world, actions, evaluation)
+        last_step = None
+        if pending_result:
+            first = await port.generate(ModelDecisionRequest("request:logical-turn:pending", context))
+            assert first.failure is None and first.output is not None
+            last_step = StepResult(
+                first.output.decision,
+                world,
+                world,
+                evaluation,
+                feedback="local_tool_result",
+            )
+            context = builder.build(task, world, actions, evaluation, last_step=last_step)
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": f"logical-turn:{pending_result}:{first_output}",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:logical-turn:action", context, last_step))
+
+        assert result.failure is None and result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert result.output.decision.context_id == context.context_id
+        assert len(port.last_admitted_envelopes) == 1
+        envelope = port.last_admitted_envelopes[0]
+        assert envelope.context_id == context.context_id
+        assert envelope.delivery_id == port.last_model_delivery.delivery_id
+        assert port.last_model_delivery.action_candidates.world_observation_id == world.observation_id
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
+        pending = pydantic_bridge._pending_call_from_history(port.message_history)
+        assert pending is not None
+        resolved = resolve_grounded_action_call(
+            envelope.catalog,
+            pending,
+            expected_context_id=context.context_id,
+            expected_delivery_id=envelope.delivery_id,
+            expected_catalog_id=envelope.catalog.catalog_id,
+        )
+        assert resolved.decision.action_id == result.output.decision.action_id
+        assert marker not in json.dumps(port.message_history, default=str)
+        canonical_envelope_module._project_pydantic_history(port.message_history)
+        for record in scripted.records[-2:]:
+            returned = tuple(
+                part
+                for message in record.messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            )
+            assert len(returned) == int(pending_result)
+        official_returns = tuple(
+            part
+            for message in port.message_history
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        assert len(official_returns) == int(pending_result)
 
     asyncio.run(scenario())
 

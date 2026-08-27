@@ -381,7 +381,11 @@ class PydanticAIGroundedDecisionPort:
             agent_name: str,
             phase: str,
         ):
-            output_retry_budget = 0 if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value else 1
+            # One semantic envelope owns one transport-retry allowance.  The
+            # output fallback below is a second physical request for that same
+            # envelope, not a new opportunity to reset network recovery.
+            transport_retries_remaining = _MAX_PROVIDER_RETRIES
+            pending_delivery_capture: tuple[object, ...] = ()
             (
                 current_instructions,
                 current_prompt,
@@ -397,82 +401,163 @@ class PydanticAIGroundedDecisionPort:
                 ToolReturn,
                 ToolDefinition,
             )
-            current_agent = Agent(
-                self.model,
-                name=agent_name,
-                instructions=current_instructions,
-                output_type=[str, DeferredToolRequests],
-                retries={"tools": 0, "output": output_retry_budget},
-            )
 
-            @current_agent.output_validator
-            def require_action_policy_tool_call(output: str | DeferredToolRequests):
-                if isinstance(output, str):
-                    raise ModelRetry("Return one offered tool call for the current World; text-only output is invalid.")
-                return output
+            def close_dispatched_pending_history() -> None:
+                if not pending_call_parts or not pending_delivery_capture:
+                    return
+                object.__setattr__(
+                    self,
+                    "message_history",
+                    _closed_history_after_failed_output(
+                        tuple(current_history),
+                        pending_delivery_capture,
+                        pending_call_parts,
+                    ),
+                )
 
-            def action_policy_model_settings(context):
-                # Preserve the policy's native thought+action response on the
-                # ordinary request.  If output validation rejects text-only
-                # output, PydanticAI increments ``RunContext.retry`` before
-                # the next physical request; only that bounded retry forces a
-                # function call.  This preserves provider-native optional
-                # text without assigning per-step memory/progress work to the
-                # ActionPolicy response.
-                settings = dict(current_envelope.model_settings)
-                if context.retry:
-                    # DeepSeek's thinking mode rejects ``tool_choice=required``.
-                    # The initial request remains the policy's native
-                    # thought+text+action turn; only PydanticAI's bounded
-                    # output-validation retry trades further deliberation for
-                    # a guaranteed call envelope.
-                    settings["thinking"] = False
-                    settings["tool_choice"] = "required"
-                else:
-                    settings["tool_choice"] = "auto"
-                return settings
+            async def run_output_sequence(
+                *,
+                force_required_action: bool,
+                attempt_phase: str,
+                output_retry_budget: int,
+            ):
+                nonlocal transport_retries_remaining
+                current_agent = Agent(
+                    self.model,
+                    name=agent_name,
+                    instructions=current_instructions,
+                    output_type=[str, DeferredToolRequests],
+                    retries={"tools": 0, "output": output_retry_budget},
+                )
 
-            # PydanticAI owns the one bounded output-validation retry. Capture
-            # its exact messages so an exhausted retry remains a typed,
-            # observable provider-boundary failure rather than generic schema
-            # fallout in the Runtime.
-            started = time.perf_counter()
-            with capture_run_messages() as captured_messages:
+                @current_agent.output_validator
+                def require_action_policy_tool_call(output: str | DeferredToolRequests):
+                    if isinstance(output, str):
+                        raise ModelRetry("Return one offered tool call for the current World; text-only output is invalid.")
+                    return output
+
+                def action_policy_model_settings(context):
+                    # The first physical request preserves the selected reasoning
+                    # profile.  PydanticAI's ordinary output retry and the explicit
+                    # length fallback below both use the same provider-compatible
+                    # final-action profile.
+                    return _action_policy_physical_settings(
+                        current_envelope,
+                        require_action=force_required_action or bool(context.retry),
+                    )
+
+                physical_settings = _action_policy_physical_settings(
+                    current_envelope,
+                    require_action=force_required_action,
+                )
+                started = time.perf_counter()
+                provider_retries_before = self.last_provider_retry_count
+                captured_messages: tuple[object, ...] = ()
+
+                async def invoke_current_agent():
+                    nonlocal captured_messages, pending_delivery_capture
+                    # PydanticAI captures only the first Agent.run in one
+                    # capture context.  Transport recovery invokes Agent.run
+                    # again, so each physical SDK run needs its own context and
+                    # the latest run is the authoritative output-classification
+                    # source.
+                    with capture_run_messages() as current_messages:
+                        try:
+                            return await current_agent.run(
+                                current_prompt,
+                                toolsets=[current_toolset],
+                                usage=RunUsage(),
+                                usage_limits=UsageLimits(request_limit=output_retry_budget + 1),
+                                model_settings=action_policy_model_settings,
+                                message_history=current_history,
+                                deferred_tool_results=current_deferred_results,
+                            )
+                        finally:
+                            captured_messages = tuple(current_messages)
+                            if captured_messages:
+                                pending_delivery_capture = captured_messages
+
                 try:
-                    return await self._run_provider_call(
-                        lambda: current_agent.run(
-                            current_prompt,
-                            toolsets=[current_toolset],
-                            usage=RunUsage(),
-                            usage_limits=UsageLimits(request_limit=output_retry_budget + 1),
-                            model_settings=action_policy_model_settings,
-                            message_history=current_history,
-                            deferred_tool_results=current_deferred_results,
-                        ),
-                        phase=phase,
+                    result = await self._run_provider_call(
+                        invoke_current_agent,
+                        phase=attempt_phase,
                         envelope=current_envelope,
                         provider_error_type=ModelAPIError,
+                        physical_settings=physical_settings,
+                        provider_retry_budget=transport_retries_remaining,
                     )
-                except UnexpectedModelBehavior:
-                    captured = tuple(captured_messages)
-                    self._record_captured_output_validation_failure(
-                        captured,
-                        phase,
-                        current_envelope,
+                    return result, None, (), False
+                except UnexpectedModelBehavior as error:
+                    serialized = _serialized_current_pydantic_invocation(
+                        captured_messages,
                         max_response_count=output_retry_budget + 1,
+                    )
+                    response_count, failure_kind = _captured_output_failure(serialized)
+                    can_retry_length = (
+                        not force_required_action
+                        and phase != ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
+                        and response_count == 1
+                        and failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                    )
+                    physical_attempt_phase = (
+                        self.last_generation_attempts[-1].phase
+                        if self.last_generation_attempts
+                        and self.last_generation_attempts[-1].status == "started"
+                        else attempt_phase
+                    )
+                    self._record_output_validation_exchanges(
+                        serialized,
+                        physical_attempt_phase,
+                        current_envelope,
+                        accepted=False,
+                        terminal_failure=not can_retry_length,
+                        physical_settings=physical_settings,
                         latency_ms=(time.perf_counter() - started) * 1000,
                     )
-                    if pending_call_parts:
-                        object.__setattr__(
-                            self,
-                            "message_history",
-                            _closed_history_after_failed_output(
-                                tuple(current_history),
-                                captured,
-                                pending_call_parts,
-                            ),
-                        )
+                    return None, error, captured_messages, can_retry_length
+                finally:
+                    transport_retries_remaining = max(
+                        0,
+                        transport_retries_remaining
+                        - (self.last_provider_retry_count - provider_retries_before),
+                    )
+
+            output_retry_budget = 0 if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value else 1
+            try:
+                result, error, captured, can_retry_length = await run_output_sequence(
+                    force_required_action=False,
+                    attempt_phase=phase,
+                    output_retry_budget=output_retry_budget,
+                )
+            except (asyncio.CancelledError, Exception):
+                close_dispatched_pending_history()
+                raise
+            if result is not None:
+                return result
+            if can_retry_length:
+                try:
+                    result, error, captured, _unused = await run_output_sequence(
+                        force_required_action=True,
+                        attempt_phase=f"{phase}_output_retry",
+                        output_retry_budget=0,
+                    )
+                except (asyncio.CancelledError, Exception):
+                    close_dispatched_pending_history()
                     raise
+                if result is not None:
+                    return result
+            if pending_call_parts:
+                object.__setattr__(
+                    self,
+                    "message_history",
+                    _closed_history_after_failed_output(
+                        tuple(current_history),
+                        captured,
+                        pending_call_parts,
+                    ),
+                )
+            assert error is not None
+            raise error
 
         delivery: ModelTurnDelivery | None = None
         catalog: GroundedToolCatalog | None = None
@@ -1078,8 +1163,12 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         provider_error_type: type[Exception],
+        physical_settings: Mapping[str, object] | None = None,
+        provider_retry_budget: int = _MAX_PROVIDER_RETRIES,
     ) -> object:
-        for retry_index in range(_MAX_PROVIDER_RETRIES + 1):
+        if not 0 <= provider_retry_budget <= _MAX_PROVIDER_RETRIES:
+            raise ValueError("provider retry budget is outside the supported logical-turn bound")
+        for retry_index in range(provider_retry_budget + 1):
             attempt_phase = phase if retry_index == 0 else f"{phase}_provider_retry"
             if retry_index:
                 object.__setattr__(
@@ -1088,7 +1177,7 @@ class PydanticAIGroundedDecisionPort:
                     self.last_provider_retry_count + 1,
                 )
             started = time.perf_counter()
-            self._record_attempt_started(envelope, attempt_phase)
+            self._record_attempt_started(envelope, attempt_phase, physical_settings=physical_settings)
             object.__setattr__(self, "last_model_call_count", self.last_model_call_count + 1)
             try:
                 result = await call()
@@ -1096,6 +1185,7 @@ class PydanticAIGroundedDecisionPort:
                 self._record_cancelled_attempt(
                     attempt_phase,
                     envelope,
+                    physical_settings=physical_settings,
                     latency_ms=(time.perf_counter() - started) * 1000,
                 )
                 raise
@@ -1105,9 +1195,10 @@ class PydanticAIGroundedDecisionPort:
                     detail,
                     attempt_phase,
                     envelope,
+                    physical_settings=physical_settings,
                     latency_ms=(time.perf_counter() - started) * 1000,
                 )
-                if retry_index >= _MAX_PROVIDER_RETRIES or not detail.retryable:
+                if retry_index >= provider_retry_budget or not detail.retryable:
                     raise _ProviderCallExhausted(detail) from error
                 delay_s = min(
                     detail.retry_after_s
@@ -1122,12 +1213,20 @@ class PydanticAIGroundedDecisionPort:
                 result,
                 attempt_phase,
                 envelope,
+                physical_settings=physical_settings,
                 latency_ms=(time.perf_counter() - started) * 1000,
             )
             return result
         raise AssertionError("bounded provider retry loop did not resolve")
 
-    def _record_attempt_started(self, envelope: CanonicalProviderEnvelope, phase: str) -> None:
+    def _record_attempt_started(
+        self,
+        envelope: CanonicalProviderEnvelope,
+        phase: str,
+        *,
+        physical_settings: Mapping[str, object] | None = None,
+    ) -> None:
+        actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
@@ -1135,6 +1234,7 @@ class PydanticAIGroundedDecisionPort:
             "llm.configured_endpoint_host": self.endpoint_host,
             "canonical_provider_envelope": envelope.model_boundary_projection(),
             "envelope_id": envelope.envelope_id,
+            "llm.model_settings": to_json_compatible(actual_settings),
             "status": "started",
             "network_dispatched": False,
         }
@@ -1145,7 +1245,7 @@ class PydanticAIGroundedDecisionPort:
             status="started",
             envelope_id=envelope.envelope_id,
             envelope_projection=envelope.model_boundary_projection(),
-            **self._attempt_role_fields(envelope),
+            **self._attempt_role_fields(envelope, physical_settings=actual_settings),
             transcript=transcript,
         )
         object.__setattr__(self, "last_generation_attempts", (*self.last_generation_attempts, attempt))
@@ -1156,8 +1256,10 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         *,
+        physical_settings: Mapping[str, object] | None = None,
         latency_ms: float = 0.0,
     ) -> None:
+        actual_settings = dict(physical_settings or envelope.model_settings)
         messages = json.loads(result.new_messages_json())
         requests = [message for message in messages if message.get("kind") == "request"]
         responses = [message for message in messages if message.get("kind") == "response"]
@@ -1167,6 +1269,7 @@ class PydanticAIGroundedDecisionPort:
                 phase,
                 envelope,
                 accepted=True,
+                physical_settings=actual_settings,
                 latency_ms=latency_ms,
             )
             return
@@ -1203,7 +1306,7 @@ class PydanticAIGroundedDecisionPort:
                 }
                 for spec in envelope.function_tools
             ],
-            "llm.model_settings": to_json_compatible(envelope.model_settings),
+            "llm.model_settings": to_json_compatible(actual_settings),
             "llm.token_count.prompt": attempt_prompt_tokens,
             "llm.token_count.completion": attempt_completion_tokens,
             "llm.token_count.total": attempt_prompt_tokens + attempt_completion_tokens,
@@ -1230,14 +1333,14 @@ class PydanticAIGroundedDecisionPort:
             completion_tokens=attempt_completion_tokens,
             total_tokens=attempt_prompt_tokens + attempt_completion_tokens,
             finish_reason=str(response.get("finish_reason") or "")[:80],
-            max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
+            max_output_tokens=int(actual_settings.get("max_tokens", 0)),
             final_content_present=bool(getattr(result.output, "calls", ())),
             reasoning_content_present=reasoning_content_present,
             role="action_policy",
             mode="single_action",
             schema_version=GROUNDED_TOOLS_PROTOCOL,
             thinking_requested=envelope.thinking_requested,
-            thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
+            thinking_effective=("enabled" if actual_settings.get("thinking") is True else "disabled"),
             trigger=envelope.attempt_trigger,
             reasoning_tokens=reasoning_tokens,
             final_content_tokens=final_content_tokens,
@@ -1248,33 +1351,6 @@ class PydanticAIGroundedDecisionPort:
         )
         self._replace_active_attempt(attempt)
 
-    def _record_captured_output_validation_failure(
-        self,
-        messages: tuple[object, ...],
-        phase: str,
-        envelope: CanonicalProviderEnvelope,
-        *,
-        max_response_count: int,
-        latency_ms: float,
-    ) -> None:
-        """Close one failed PydanticAI output-retry run from SDK-captured messages."""
-
-        if not messages:
-            return
-        from pydantic_ai.messages import ModelMessagesTypeAdapter
-
-        serialized = json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
-        serialized = _captured_invocation_messages(serialized, max_response_count=max_response_count)
-        if not any(message.get("kind") == "response" for message in serialized):
-            return
-        self._record_output_validation_exchanges(
-            serialized,
-            phase,
-            envelope,
-            accepted=False,
-            latency_ms=latency_ms,
-        )
-
     def _record_output_validation_exchanges(
         self,
         messages: list[dict[str, object]],
@@ -1282,6 +1358,8 @@ class PydanticAIGroundedDecisionPort:
         envelope: CanonicalProviderEnvelope,
         *,
         accepted: bool,
+        terminal_failure: bool = True,
+        physical_settings: Mapping[str, object] | None = None,
         latency_ms: float,
     ) -> None:
         """Record each physical SDK output-validation exchange exactly once."""
@@ -1318,11 +1396,16 @@ class PydanticAIGroundedDecisionPort:
                 if accepted and is_final and has_tool_call
                 else _structured_output_failure_for_response(response, has_tool_call=has_tool_call)
             )
-            status = "accepted" if accepted and is_final else ("failed" if is_final else "invalid")
-            physical_settings = dict(envelope.model_settings)
+            status = (
+                "accepted"
+                if accepted and is_final
+                else "failed"
+                if is_final and terminal_failure
+                else "invalid"
+            )
+            response_settings = dict(physical_settings or envelope.model_settings)
             if ordinal:
-                physical_settings["thinking"] = False
-                physical_settings["tool_choice"] = "required"
+                response_settings = _action_policy_physical_settings(envelope, require_action=True)
             transcript = {
                 "openinference.span.kind": "LLM",
                 "llm.system": self.provider_id,
@@ -1332,7 +1415,7 @@ class PydanticAIGroundedDecisionPort:
                 "llm.actual_messages": messages[:response_index],
                 "llm.output_messages": [response],
                 "llm.tools": tools,
-                "llm.model_settings": to_json_compatible(physical_settings),
+                "llm.model_settings": to_json_compatible(response_settings),
                 "llm.token_count.prompt": prompt_tokens,
                 "llm.token_count.completion": completion_tokens,
                 "llm.token_count.total": prompt_tokens + completion_tokens,
@@ -1360,14 +1443,14 @@ class PydanticAIGroundedDecisionPort:
                     total_tokens=prompt_tokens + completion_tokens,
                     output_failure_kind=output_failure_kind,
                     finish_reason=str(response.get("finish_reason") or "")[:80],
-                    max_output_tokens=int(envelope.model_settings.get("max_tokens", 0)),
+                    max_output_tokens=int(response_settings.get("max_tokens", 0)),
                     final_content_present=has_text or has_tool_call,
                     reasoning_content_present=reasoning_content_present,
                     role="action_policy",
                     mode="single_action",
                     schema_version=GROUNDED_TOOLS_PROTOCOL,
                     thinking_requested=envelope.thinking_requested,
-                    thinking_effective=("enabled" if physical_settings.get("thinking") is True else "disabled"),
+                    thinking_effective=("enabled" if response_settings.get("thinking") is True else "disabled"),
                     trigger=envelope.attempt_trigger,
                     reasoning_tokens=reasoning_tokens,
                     final_content_tokens=final_content_tokens,
@@ -1393,8 +1476,10 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         *,
+        physical_settings: Mapping[str, object] | None = None,
         latency_ms: float,
     ) -> None:
+        actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
@@ -1403,6 +1488,7 @@ class PydanticAIGroundedDecisionPort:
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(envelope.function_tools),
+            "llm.model_settings": to_json_compatible(actual_settings),
             "status": "cancelled",
             "network_dispatched": True,
             "error.code": "cancelled",
@@ -1417,7 +1503,7 @@ class PydanticAIGroundedDecisionPort:
             exception_class="CancelledError",
             envelope_id=envelope.envelope_id,
             envelope_projection=envelope.model_boundary_projection(),
-            **self._attempt_role_fields(envelope),
+            **self._attempt_role_fields(envelope, physical_settings=actual_settings),
             transcript=transcript,
         )
         self._replace_active_attempt(attempt)
@@ -1428,8 +1514,10 @@ class PydanticAIGroundedDecisionPort:
         phase: str,
         envelope: CanonicalProviderEnvelope,
         *,
+        physical_settings: Mapping[str, object] | None = None,
         latency_ms: float,
     ) -> None:
+        actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
             "llm.system": self.provider_id,
@@ -1438,6 +1526,7 @@ class PydanticAIGroundedDecisionPort:
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(envelope.function_tools),
+            "llm.model_settings": to_json_compatible(actual_settings),
             "status": "failed",
             "error.code": detail.code.value,
             "error.reason": detail.reason,
@@ -1455,7 +1544,7 @@ class PydanticAIGroundedDecisionPort:
             exception_class=detail.exception_class,
             envelope_id=envelope.envelope_id,
             envelope_projection=envelope.model_boundary_projection(),
-            **self._attempt_role_fields(envelope),
+            **self._attempt_role_fields(envelope, physical_settings=actual_settings),
             transcript=transcript,
         )
         self._replace_active_attempt(attempt)
@@ -1469,14 +1558,20 @@ class PydanticAIGroundedDecisionPort:
             (*self.last_generation_attempts[:-1], attempt),
         )
 
-    def _attempt_role_fields(self, envelope: CanonicalProviderEnvelope) -> dict[str, object]:
+    def _attempt_role_fields(
+        self,
+        envelope: CanonicalProviderEnvelope,
+        *,
+        physical_settings: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        actual_settings = dict(physical_settings or envelope.model_settings)
         return {
-            "max_output_tokens": int(envelope.model_settings.get("max_tokens", 0)),
+            "max_output_tokens": int(actual_settings.get("max_tokens", 0)),
             "role": "action_policy",
             "mode": "single_action",
             "schema_version": GROUNDED_TOOLS_PROTOCOL,
             "thinking_requested": envelope.thinking_requested,
-            "thinking_effective": "enabled" if envelope.model_settings.get("thinking") is True else "disabled",
+            "thinking_effective": "enabled" if actual_settings.get("thinking") is True else "disabled",
             "trigger": envelope.attempt_trigger,
         }
 
@@ -2956,6 +3051,60 @@ def _response_reasoning_observation(response: Mapping[str, object]) -> tuple[boo
     value = details.get("reasoning_tokens") if isinstance(details, Mapping) else None
     reasoning_tokens = value if type(value) is int and value >= 0 else 0
     return reasoning_content_present, reasoning_tokens
+
+
+def _action_policy_physical_settings(
+    envelope: CanonicalProviderEnvelope,
+    *,
+    require_action: bool,
+) -> dict[str, object]:
+    """Return the one provider-compatible physical profile for this logical turn."""
+
+    settings = dict(envelope.model_settings)
+    if require_action:
+        # DeepSeek rejects required tool choice while thinking is enabled.
+        # The fallback preserves the same semantic envelope and current World,
+        # but trades further reasoning for one complete action envelope.
+        settings["thinking"] = False
+        settings["tool_choice"] = "required"
+    else:
+        settings["tool_choice"] = "auto"
+    return settings
+
+
+def _serialized_current_pydantic_invocation(
+    messages: tuple[object, ...],
+    *,
+    max_response_count: int,
+) -> list[dict[str, object]]:
+    """Project only the SDK messages produced by one physical run identity."""
+
+    if not messages:
+        return []
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+    serialized = json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
+    return _captured_invocation_messages(serialized, max_response_count=max_response_count)
+
+
+def _captured_output_failure(
+    messages: list[dict[str, object]],
+) -> tuple[int, StructuredOutputFailureKind | None]:
+    """Classify the final physical output without reinterpreting its semantics."""
+
+    responses = tuple(message for message in messages if message.get("kind") == "response")
+    if not responses:
+        return 0, None
+    parts = responses[-1].get("parts")
+    parts = parts if isinstance(parts, list) else []
+    has_tool_call = any(
+        isinstance(part, Mapping) and part.get("part_kind") == "tool-call"
+        for part in parts
+    )
+    return len(responses), _structured_output_failure_for_response(
+        responses[-1],
+        has_tool_call=has_tool_call,
+    )
 
 
 def _structured_output_failure_for_response(
