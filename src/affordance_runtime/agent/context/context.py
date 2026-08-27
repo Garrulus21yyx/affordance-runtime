@@ -17,6 +17,7 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.world.finalization import FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
@@ -254,7 +255,7 @@ class AgentContext:
         if self.last_step is not None and type(self.last_step).__name__ != "StepResult":
             raise TypeError("AgentContext last step must be committed Runtime truth")
         guidance = " ".join(self.final_response_guidance.split())
-        if len(guidance) > 380:
+        if len(guidance) > FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS:
             raise ValueError("AgentContext final response guidance exceeds its bound")
         object.__setattr__(self, "final_response_guidance", guidance)
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))

@@ -22,9 +22,12 @@ existing complete current `ActionSpace` resolver performs exact route/domain val
 The post-Task740 efficiency repair changes no control path: repeated read records fold adjacent AX text fragments at
 their producer, browser-context tools expose the registry's stable parameter family while private current bindings
 validate exact domains, and PydanticAI history removes every historical World before supplying the one fresh current
-World. Harness now uses an 80% complete-request capacity arm plus a 50% history high-water arm gated by a 15%
-minimum-reclaim batch; accepted compaction targets 30% history and retains a 12% exact pair-safe suffix. No memory,
-replanner, result-specific scheduler, or second current-state channel was added.
+World. Closed private reasoning expires only behind its own retained public conclusion; pending/tool-only reasoning,
+public progress, and every ToolCall/ToolReturn remain exact. Harness uses an 80% complete-request capacity arm plus a
+50% history high-water arm gated by a 15% minimum-reclaim batch; accepted compaction targets 30% history and retains a
+12% exact pair-safe suffix. Initial ActionPolicy requests remain `tool_choice=auto`; only the bounded PydanticAI
+output retry uses `thinking=false + required`. No memory, replanner, result-specific scheduler, or second
+current-state channel was added.
 Task266 run6 crossed the run5 failure and exposed the remaining browser-profile selector mismatch. Browser-level
 primitives now follow BrowserGym's target-less public shape and bind the unique fresh `browser_context` privately;
 page-control primitives still require current `E-ref` grounding. Explicit `find_controls` recall is limited to literal
@@ -37,11 +40,10 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1813 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1817 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed; every other collected test passed. The current focused
-BrowserGym/Agent/Evaluation owner surface reports `551 passed / 3 skipped`; Ruff, compileall, and
-`git diff --check` pass.
+modified or removed; every other collected test passed. The current final-response/history owner surface reports
+`426 passed`; the PydanticAI integration file reports `80 passed`. Ruff, compileall, and `git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -422,7 +424,8 @@ World state and Catalog; the private BrowserGym binding remains the environment-
 existing output budget is sent through `max_tokens`. Ordinary and representation-repair ActionPolicy requests use
 disabled thinking; the existing deliberate recovery profile uses enabled thinking. Every invocation starts with
 `tool_choice=auto`, and PydanticAI's output validator changes only its one text-only retry to `required` without
-changing that invocation's reasoning profile. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
+changing the initial thought+text+action response. On that bounded retry it disables thinking because DeepSeek rejects
+`tool_choice=required` with thinking enabled. Exhaustion is typed as `no_tool_call` or `output_budget_exhausted`;
 rejected prose does not enter canonical history. Representation repair is not nested with this retry. Focused tests
 cover title/URL
 pairing and sanitization, title-independent binding currentness, private navigation authorization, accepted retry,
@@ -839,14 +842,17 @@ without changing the completed pairs, and the physical request supplies exactly 
 response clears the bridge history. The Store contains only bounded digest receipts and no result body/inventory.
 
 A second Recording PydanticAI gate emits `ThinkingPart + N ToolCallPart`. Exactly the first current call is resolved;
-later calls are not executed, queued, or used as fallback. Canonical history preserves the exact response, including
-thinking and every proposal. The next physical input pairs the first with its owner result and the rest with same-ID
-native failed returns. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
+later calls are not executed, queued, or used as fallback. Canonical history first preserves the exact response,
+including thinking and every proposal. The next physical input pairs the first with its owner result and the rest with
+same-ID native failed returns. After that exchange is closed and a newer response is pending, private thinking may
+expire only if its own public text conclusion remains; calls, returns, text, tool-only reasoning, and the unresolved
+response remain exact. A generated 1..8-call property verifies complete call/result conservation, a longitudinal gate
 verifies reissue, and an invalid first call cannot fall through to a valid later call.
 
 Before semantic compaction, generated 5..12-turn properties verify one task/plan anchor, no historical World prompts,
-exact model conclusions/reasoning and call/result pairs, bounded equivalent repeated prose, and canonical provider
-projection. The same final `RequestAdmission` breakdown counts history, pending ToolReturn, the one fresh World,
+exact model conclusions and call/result pairs, exact pending and tool-only reasoning, expiry only of closed private
+reasoning with its own public conclusion, bounded equivalent repeated prose, and canonical provider projection. The
+same final `RequestAdmission` breakdown counts history, pending ToolReturn, the one fresh World,
 tools, and overhead. PydanticAI Harness pair-safe compaction runs at 80% complete-request pressure, or at 50% history
 pressure only when at least 15% of history capacity is reclaimable outside the exact suffix. It targets 30% history
 and retains the newest pair-safe 12% suffix. The task anchor and unresolved call remain byte-for-byte unchanged.
@@ -1292,16 +1298,16 @@ output cap. It reopens the existing GoalCompiler/ActionPolicy finalization contr
 be compiled as a user outcome, and advisory GoalPlan prose cannot override TaskGoal classification or requested final
 payload. No task-specific repair is authorized by this witness.
 
-The corresponding owner repair is now implemented locally and is not yet a live acceptance claim. The
+At that checkpoint the corresponding owner repair was implemented locally but was not yet a live acceptance claim. The
 WebArena-Verified response codec removes the exact upstream response-schema suffix before BrowserGym publishes the
 public task instruction, so GoalCompiler and ActionPolicy receive the original semantic intent rather than a mixture
-of task and provider envelope. The codec's concise `FinalAgentResponse` guidance is delivered through the existing
-`submit_final_response` ToolSpec and included in its Context/ToolCatalog identity; it does not enter TaskGoal,
-GoalPlan, history summary, or a separate finalizer episode. Prompt `grounded-agent-context.v40` makes the remaining
+of task and provider envelope. The codec's bounded, upstream-schema-derived `FinalAgentResponse` guidance is delivered
+through the existing `submit_final_response` ToolSpec and included in its Context/ToolCatalog identity; it does not
+enter TaskGoal, GoalPlan, history summary, or a separate finalizer episode. Prompt `grounded-agent-context.v40` makes the remaining
 authority explicit: response protocol controls representation, while TaskGoal alone determines task type and
 requested payload. Focused tests pass 440/440 with 11 skips. The full suite has 1,809 passes and 19 skips with only
-the previously recorded unrelated `docs/interaction-shell.md` governance failure. A fresh Task740 live run is still
-required to verify that the final call is the bounded `NAVIGATE/SUCCESS` response and reaches native evaluation.
+the previously recorded unrelated `docs/interaction-shell.md` governance failure. Task740 run6 below subsequently
+supplied the required bounded `NAVIGATE/SUCCESS` native-evaluation witness.
 
 Task740 `run4` was an invalid launch attempt: Python multiprocessing could not spawn the BrowserGym child from a
 `<stdin>` main module, so no benchmark case began and it supplies no behavioral evidence. The file-backed `run5` did
@@ -1339,6 +1345,45 @@ typed final response. Native evaluation is `terminal_success / verified_success`
 acceptance is true with no errors. This is fresh closure evidence for the repaired effect/Monitor invariant, not an
 efficiency claim: the run still used 896,290 total model tokens (873,335 prompt and 22,955 completion), including
 572,288 prompt-cache-hit tokens recorded in the provider transcripts.
+
+Run6 is the frozen pre-repair witness for the provider/history efficiency defect. Four deliberate responses
+generated long private reasoning while retaining short public text conclusions; replay of the surviving reasoning
+accounts for roughly 120k conservative prompt tokens. Six ordinary text-only output truncations also entered the
+existing PydanticAI retry, while a deliberate retry with `thinking=true + tool_choice=required` is rejected by the
+DeepSeek wire contract. The owner repair keeps every initial request at `auto`, changes only an output-validation retry
+to `thinking=false + required`, and expires private reasoning only after its response has a same-ID ToolReturn and its
+own public text conclusion. The pending exchange, public progress text, calls, returns, raw Trace, and existing Harness
+50%/15%/30%/12% schedule are unchanged. A real OpenAI-compatible wire test and generated 2--12 turn history properties
+exercise these invariants.
+
+The authorized Task740
+[`run7`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run7/run.json) is the first fresh live witness. It
+completed native evaluation as `terminal_success / verified_success` in 28 policy calls, 11 executions, 13
+observations, and about 221.4 seconds, with zero waits and zero output retries. Total model use fell from run6's 896,290
+tokens to 403,528. Its deliberate response retained private thinking through the immediate same-ID ToolReturn delivery;
+the following request omitted only that closed thinking while retaining its public text, call, and return. This verifies
+the temporal history contract without forcing the initial call or deleting progress.
+
+Task759
+[`run1`](../evidence/live/w2-task-759-deepseek-v4-flash-20260827-run1/run.json) then supplied a genuinely held-out
+failure witness at another existing owner. The Agent completed the requested Boston-to-NYC map route but classified
+the overall work as `MUTATE`; the pinned `webarena_verified.types.FinalAgentResponse` schema defines showing a
+page/location as `NAVIGATE`. The codec had reduced that upstream definition to enum names, leaving the model to infer
+meaning from unrelated allowed effects. `WebArenaVerifiedFinalResponseCodec` now derives its bounded ToolSpec guidance
+from the installed upstream Pydantic schema itself; TaskGoal, GoalPlan, Runtime, evaluator, and control flow are
+unchanged. The first rerun (`run2`) failed locally before a provider call because the real composed ToolSpec exceeded
+the former 500-character generic description bound. The description remains bounded at 1,024 characters, and a new
+codec-to-Context-to-Catalog integration test compiles the real `submit_final_response` ToolSpec so this cross-owner
+composition cannot regress silently.
+
+Task759
+[`run3`](../evidence/live/w2-task-759-deepseek-v4-flash-20260827-run3/run.json) completed the same held-out task as
+`NAVIGATE/SUCCESS`, with native `verified_success`: 29 policy calls, 12 executions, 14 observations, about 146.0
+seconds, and 272,963 total model tokens. A final Task740
+[`run8`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run8/run.json) after that schema-owner repair also
+completed `NAVIGATE/SUCCESS` with native `verified_success`, 43 policy calls, zero waits, zero fallbacks, and zero
+grounding gaps. Its 713,559 total tokens are below run6 but above run7, so correctness/history closure is supported
+while per-run efficiency variance remains real; no stronger universal token-reduction claim is made.
 
 ## Live-run authorization and execution
 
@@ -1384,9 +1429,10 @@ The final read-only review for this cutover must answer:
 15. Are browser-global actions selected explicitly by the environment profile and executed through BrowserGym's
     existing ActionSpace/Binder/Executor path, with unrestricted generic navigation and WebArena's configured netlocs
     preserved identically through World, ActionBinding, Catalog, and resolver?
-16. Does SDK history preserve exact recent thinking/calls/results, use the complete RequestAdmission capacity arm plus
-    the declared history high-water/minimum-reclaim arm for Harness pair-safe compaction, retain an exact pair-safe
-    suffix, and restore raw history on summary failure?
+16. Does SDK history preserve exact pending/tool-only thinking and all calls/results, expire closed private thinking
+    only behind its own retained public conclusion, use the complete RequestAdmission capacity arm plus the declared
+    history high-water/minimum-reclaim arm for Harness pair-safe compaction, retain an exact pair-safe suffix, and
+    restore raw projected history on summary failure?
 17. Can a large PageMap report honest partial coverage within one aggregate bound while the existing `list_regions`
     tool recovers the complete current region index?
 18. Does every current non-entity `InteractionSubjectKind` already present in Actor World reach the same compact
@@ -1413,8 +1459,9 @@ The final read-only review for this cutover must answer:
     identity retained, title-only drift excluded from binding identity, and navigation legality owned only by Catalog?
 27. Does DeepSeek receive the declared output limit as `max_tokens`, map ordinary/repair calls to disabled thinking and
     the existing deliberate recovery profile to enabled thinking, allow exact model text/reasoning with a ToolCall on
-    the initial `auto` request, and change only a text-only PydanticAI retry to `required`; and does reasoning/tool
-    history round-trip while retry exhaustion remains a typed bounded failure without polluting accepted history,
+    the initial `auto` request, and change only a text-only PydanticAI retry to `thinking=false + required`; and does
+    current pending reasoning/tool history round-trip while closed private reasoning expires only behind a retained
+    public conclusion, retry exhaustion remains a typed bounded failure without polluting accepted history,
     miscounting historical responses, or nesting a representation-repair retry?
 28. When a query token is both one control's exact label and another control's operation, does `find_controls`
     preserve the exact-label match while still enforcing explicit role/operation constraints and returning every
@@ -1423,8 +1470,9 @@ The final read-only review for this cutover must answer:
     summary prose into claim state, and does GoalCompiler disable thinking only through the selected provider's
     declared wire capability?
 30. Does physical SDK history contain exactly one current task/plan anchor and no historical World/media prompts,
-    while retaining exact model progress, thinking, ToolCall/ToolReturn pairing, and the unresolved suffix; and does
-    the physical request contain exactly one fresh World with current media?
+    while retaining exact model progress, ToolCall/ToolReturn pairing, pending/tool-only thinking, and the unresolved
+    suffix, with closed private thinking expiring only behind its own public conclusion; and does the physical request
+    contain exactly one fresh World with current media?
 31. Does every admitted action-delivery prefix render each E-ref once with the complete current verb set while leaving
     the Catalog resolver's complete route set unchanged?
 32. Does a schema-valid operation/target mismatch return the existing `ToolRejectedResult` under the original call ID

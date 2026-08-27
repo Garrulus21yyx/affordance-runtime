@@ -174,6 +174,36 @@ def _deepseek_tool_response(
     }
 
 
+def _deepseek_text_response(
+    ordinal: int,
+    *,
+    reasoning: str,
+    content: str,
+) -> dict[str, object]:
+    return {
+        "id": f"deepseek-response:{ordinal}",
+        "object": "chat.completion",
+        "created": ordinal,
+        "model": "deepseek-v4-flash",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                    "reasoning_content": reasoning,
+                },
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 8 + 2 * ordinal,
+            "completion_tokens": 4,
+            "total_tokens": 12 + 2 * ordinal,
+        },
+    }
+
+
 def _progress_text(
     *,
     verified_facts: tuple[str, ...] = (),
@@ -292,6 +322,86 @@ def test_deepseek_deliberate_thinking_uses_official_wire_and_roundtrips_tool_rea
         "tool_call_id": "deepseek-call:1",
         "content": '{"status":"complete"}',
     }
+
+
+def test_deepseek_deliberate_output_retry_disables_thinking_before_requiring_a_tool() -> None:
+    responses = (
+        _deepseek_text_response(
+            1,
+            reasoning="The stalled route needs reconsideration.",
+            content="I should act on the current World.",
+        ),
+        {
+            **_deepseek_tool_response(2, reasoning=""),
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "deepseek-call:2",
+                                "type": "function",
+                                "function": {"name": "list_regions", "arguments": "{}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    server, thread, requests = _serve_openai_chat_responses(responses)
+
+    async def scenario() -> None:
+        policy = model_policy_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "deepseek",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+                "LLM_DEEPSEEK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "LLM_DEEPSEEK_API_KEY": "test-secret",
+                "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+                "LLM_DECISION_PERCEPTION": "text-only.v1",
+            },
+            call_timeout_s=10.0,
+        )
+        task = shared_task()
+        world = shared_world("deepseek-deliberate-retry-wire", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        context = replace(
+            context,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "deepseek:retry:wire",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:deepseek-retry-wire", context))
+
+        assert result.failure is None and result.output is not None
+        assert result.output.decision.tool_call_id == "deepseek-call:2"
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert len(requests) == 2
+    assert requests[0]["tool_choice"] == "auto"
+    assert requests[0]["reasoning_effort"] == "medium"
+    assert requests[1]["tool_choice"] == "required"
+    assert requests[1].get("reasoning_effort") == "none"
 
 
 async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
@@ -1697,6 +1807,101 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
     canonical_envelope_module._project_pydantic_history(projected)
 
 
+@given(turns=st.integers(min_value=2, max_value=12))
+@settings(max_examples=12)
+def test_history_projection_expires_only_closed_private_reasoning_with_public_conclusions(
+    turns: int,
+) -> None:
+    original = _official_history_with_pending_actions(turns)
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=1,
+    )
+
+    original_calls = tuple(
+        part
+        for message in original
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+    projected_calls = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    )
+    original_returns = tuple(
+        part
+        for message in original
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    projected_returns = tuple(
+        part
+        for message in projected
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    projected_text = tuple(
+        part.content
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, TextPart)
+    )
+    projected_thinking = tuple(
+        part.content
+        for message in projected
+        if isinstance(message, ModelResponse)
+        for part in message.parts
+        if isinstance(part, ThinkingPart)
+    )
+
+    assert projected_calls == original_calls
+    assert projected_returns == original_returns
+    assert projected_text == tuple(f"conclusion {index}: continue toward Acadia" for index in range(turns))
+    assert projected_thinking == (f"step {turns - 1}: inspect the fresh World",)
+    assert projected[-1] == original[-1]
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "activate",
+        {"target": f"E{turns - 1}"},
+        f"call:{turns - 1}",
+    )
+    canonical_envelope_module._project_pydantic_history(projected)
+
+
+def test_history_projection_keeps_closed_tool_only_reasoning_until_semantic_compaction() -> None:
+    original = list(_official_history_with_pending_actions(3))
+    first_response = original[1]
+    assert isinstance(first_response, ModelResponse)
+    original[1] = replace(
+        first_response,
+        parts=tuple(part for part in first_response.parts if not isinstance(part, TextPart)),
+    )
+
+    projected = pydantic_bridge._project_expired_history(
+        tuple(original),
+        max_estimated_tokens=1,
+    )
+
+    first_projected = next(
+        message
+        for message in projected
+        if isinstance(message, ModelResponse)
+        and any(
+            isinstance(part, ToolCallPart) and part.tool_call_id == "call:0"
+            for part in message.parts
+        )
+    )
+    assert any(isinstance(part, ThinkingPart) for part in first_projected.parts)
+    canonical_envelope_module._project_pydantic_history(projected)
+
+
 def test_harness_summarizes_only_a_pressured_expired_trajectory_prefix() -> None:
     history = _official_history_with_pending_actions(7)
     scripted = ScriptedModel([ModelResponse(parts=[TextPart("Verified Portland facts; next open Acadia.")])])
@@ -2794,13 +2999,11 @@ def test_deepseek_deliberate_output_retry_records_each_reasoning_response() -> N
                 ),
                 ModelResponse(
                     parts=[
-                        ThinkingPart("Inspect the current regions instead."),
                         ToolCallPart("list_regions", {}, "recording-call:deliberate-retry"),
                     ],
                     usage=RequestUsage(
                         input_tokens=24,
-                        output_tokens=9,
-                        details={"reasoning_tokens": 4},
+                        output_tokens=5,
                     ),
                     provider_response_id="recording-response:deliberate-accepted",
                 ),
@@ -2841,10 +3044,18 @@ def test_deepseek_deliberate_output_retry_records_each_reasoning_response() -> N
             "deliberate",
             "deliberate_output_retry",
         ]
-        assert [attempt.reasoning_content_present for attempt in result.attempts] == [True, True]
-        assert [attempt.reasoning_tokens for attempt in result.attempts] == [2, 4]
+        assert [record.model_settings["tool_choice"] for record in scripted.records] == [
+            "auto",
+            "required",
+        ]
+        assert [attempt.reasoning_content_present for attempt in result.attempts] == [True, False]
+        assert [attempt.reasoning_tokens for attempt in result.attempts] == [2, 0]
         assert [attempt.final_content_tokens for attempt in result.attempts] == [5, 5]
-        assert all(attempt.thinking_effective == "enabled" for attempt in result.attempts)
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
+        assert [attempt.transcript["llm.model_settings"]["thinking"] for attempt in result.attempts] == [
+            True,
+            False,
+        ]
 
     asyncio.run(scenario())
 

@@ -418,7 +418,16 @@ class PydanticAIGroundedDecisionPort:
                 # text without assigning per-step memory/progress work to the
                 # ActionPolicy response.
                 settings = dict(current_envelope.model_settings)
-                settings["tool_choice"] = "required" if context.retry else "auto"
+                if context.retry:
+                    # DeepSeek's thinking mode rejects ``tool_choice=required``.
+                    # The initial request remains the policy's native
+                    # thought+text+action turn; only PydanticAI's bounded
+                    # output-validation retry trades further deliberation for
+                    # a guaranteed call envelope.
+                    settings["thinking"] = False
+                    settings["tool_choice"] = "required"
+                else:
+                    settings["tool_choice"] = "auto"
                 return settings
 
             # PydanticAI owns the one bounded output-validation retry. Capture
@@ -1299,6 +1308,7 @@ class PydanticAIGroundedDecisionPort:
             status = "accepted" if accepted and is_final else ("failed" if is_final else "invalid")
             physical_settings = dict(envelope.model_settings)
             if ordinal:
+                physical_settings["thinking"] = False
                 physical_settings["tool_choice"] = "required"
             transcript = {
                 "openinference.span.kind": "LLM",
@@ -1344,7 +1354,7 @@ class PydanticAIGroundedDecisionPort:
                     mode="single_action",
                     schema_version=GROUNDED_TOOLS_PROTOCOL,
                     thinking_requested=envelope.thinking_requested,
-                    thinking_effective=("enabled" if envelope.model_settings.get("thinking") is True else "disabled"),
+                    thinking_effective=("enabled" if physical_settings.get("thinking") is True else "disabled"),
                     trigger=envelope.attempt_trigger,
                     reasoning_tokens=reasoning_tokens,
                     final_content_tokens=final_content_tokens,
@@ -2116,21 +2126,58 @@ def _project_expired_history(
     """Project bounded exact history without changing history facts.
 
     Historical World prompts are temporal observations and are removed because
-    TurnPacker supplies exactly one fresh World. Completed ToolCall/ToolReturn parts and unique model
-    conclusions remain exact.  Outside the same recent token window, only
-    equivalent repeated model prose is removed, retaining its newest instance.
-    This is deterministic structural history processing; semantic replacement
-    remains exclusively owned by Harness compaction under its typed schedule.
+    TurnPacker supplies exactly one fresh World.  A completed response may drop
+    its private ``ThinkingPart`` only when the same response already carries a
+    public ``TextPart`` conclusion; its ToolCall/ToolReturn pair remains exact.
+    The unresolved response is never changed.  Outside the same recent token
+    window, only equivalent repeated model prose is removed, retaining its
+    newest instance.  This is deterministic structural history processing;
+    semantic replacement remains exclusively owned by Harness compaction under
+    its typed schedule.
     """
 
     folded = _fold_expired_world_prompts(
         messages,
         max_estimated_tokens=max_estimated_tokens,
     )
+    projected = _strip_completed_private_reasoning(folded)
     return _deduplicate_expired_model_prose(
-        folded,
+        projected,
         max_estimated_tokens=max_estimated_tokens,
     )
+
+
+def _strip_completed_private_reasoning(
+    messages: tuple[object, ...],
+) -> tuple[object, ...]:
+    """Keep public conclusions while expiring private reasoning from closed exchanges.
+
+    The response whose ToolReturn will be delivered on the next physical call
+    remains byte-for-byte exact.  Older responses are eligible only after a
+    same-ID ToolReturn has closed their tool exchange, and only when their own
+    public text already carries the model-visible conclusion.  Tool-only
+    reasoning therefore remains available until Harness can summarize it.
+    """
+
+    if not messages:
+        return messages
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
+
+    completed_response_ids = {
+        id(response) for response, _returns in _completed_tool_exchanges(messages)
+    }
+    if not completed_response_ids:
+        return messages
+    projected = list(messages)
+    for index, message in enumerate(messages):
+        if not isinstance(message, ModelResponse) or id(message) not in completed_response_ids:
+            continue
+        if not any(isinstance(part, TextPart) and part.content.strip() for part in message.parts):
+            continue
+        parts = tuple(part for part in message.parts if not isinstance(part, ThinkingPart))
+        if parts != tuple(message.parts):
+            projected[index] = replace(message, parts=parts)
+    return tuple(projected)
 
 
 def _deduplicate_expired_model_prose(

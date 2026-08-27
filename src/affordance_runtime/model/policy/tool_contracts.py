@@ -12,6 +12,7 @@ from affordance_runtime.model.policy.strict_json import validate_json_tree
 
 _TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
+_TOOL_DESCRIPTION_MAX_CHARS = 1024
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class ToolSpec:
     def __post_init__(self) -> None:
         if _TOOL_NAME.fullmatch(self.name) is None:
             raise ValueError("tool name is outside the bounded transport vocabulary")
-        if not self.description.strip() or len(self.description) > 500:
+        if not self.description.strip() or len(self.description) > _TOOL_DESCRIPTION_MAX_CHARS:
             raise ValueError("tool description must be bounded public text")
         validate_json_tree(self.input_schema)
         validate_parameter_schema_contract(self.input_schema)

@@ -49,6 +49,7 @@ from affordance_runtime.benchmarks.target_loop.instrumentation import (
     CountingPolicy,
     _policy_trace_event,
 )
+from affordance_runtime.benchmarks.webarena_verified import WebArenaVerifiedFinalResponseCodec
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelGenerationAttempt
@@ -1056,6 +1057,19 @@ def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_pr
     assert guidance in spec.description
     assert not hasattr(context.task, "final_response_guidance")
     assert guidance not in context.task.instruction
+
+
+def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() -> None:
+    pytest.importorskip("webarena_verified")
+    guidance = WebArenaVerifiedFinalResponseCodec().model_guidance
+    context = replace(_context(), final_response_guidance=guidance)
+
+    catalog = _compile_catalog(context)
+
+    spec = next(item for item in catalog.specs if item.name == "submit_final_response")
+    assert guidance in spec.description
+    assert "MUTATE: Use when creating, updating, or deleting data or state" in spec.description
+    assert "NAVIGATE: Use when navigating or browsing to show a specific page or location" in spec.description
 
 
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:

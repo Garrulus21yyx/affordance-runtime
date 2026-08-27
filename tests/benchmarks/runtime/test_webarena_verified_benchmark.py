@@ -38,6 +38,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluationStatus,
 )
 from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.world.finalization import FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS
 from tests.support.agent.core_loop_support import (
     SharedActionOutcomeProjector,
     SharedTaskEvaluator,
@@ -168,6 +169,12 @@ def test_webarena_final_response_codec_delegates_to_pinned_upstream_model() -> N
         "retrieved_data": [{"airport": "PIT"}],
         "error_details": None,
     }
+
+    guidance = codec.model_guidance
+    assert "MUTATE: Use when creating, updating, or deleting data or state" in guidance
+    assert "NAVIGATE: Use when navigating or browsing to show a specific page or location" in guidance
+    assert "never goal_plan or allowed effects" in guidance
+    assert len(guidance) <= FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS
 
 
 def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:

@@ -8,6 +8,8 @@ from typing import Protocol
 from affordance_runtime.execution.contracts import ActionResult
 from affordance_runtime.world.acquisition import ObservationAcquisition
 
+FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS = 700
+
 
 class FinalResponseCodec(Protocol):
     """Environment-owned representation adapter applied before one STOP."""
@@ -22,7 +24,7 @@ def final_response_model_guidance(codec: FinalResponseCodec) -> str:
     if not isinstance(guidance, str):
         raise TypeError("final response model guidance must be text")
     guidance = " ".join(guidance.split())
-    if len(guidance) > 380:
+    if len(guidance) > FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS:
         raise ValueError("final response model guidance exceeds its tool-contract bound")
     return guidance
 

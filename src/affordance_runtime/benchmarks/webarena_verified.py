@@ -136,12 +136,6 @@ WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v2"
-WA_FINAL_RESPONSE_MODEL_GUIDANCE = (
-    "JSON object: task_type RETRIEVE|MUTATE|NAVIGATE; status SUCCESS|ACTION_NOT_ALLOWED_ERROR|"
-    "PERMISSION_DENIED_ERROR|NOT_FOUND_ERROR|DATA_VALIDATION_ERROR|UNKNOWN_ERROR; retrieved_data; error_details. "
-    "Derive task_type and payload from task, never goal_plan. NAVIGATE/MUTATE: retrieved_data=null. SUCCESS: "
-    "error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
-)
 _W1B_PRIVATE_MARKERS = (
     "browsergym_id",
     "private_bid",
@@ -437,7 +431,33 @@ class WebArenaVerifiedFinalResponseCodec:
 
     @property
     def model_guidance(self) -> str:
-        return WA_FINAL_RESPONSE_MODEL_GUIDANCE
+        schema = self._upstream_response_schema()
+        definitions = schema.get("$defs")
+        if not isinstance(definitions, Mapping):
+            raise ValueError("WebArena final-response schema is missing definitions")
+        objective = definitions.get("MainObjectiveType")
+        status = definitions.get("Status")
+        if not isinstance(objective, Mapping) or not isinstance(status, Mapping):
+            raise ValueError("WebArena final-response schema is missing response enums")
+        objective_description = objective.get("description")
+        status_values = status.get("enum")
+        if not isinstance(objective_description, str) or not isinstance(status_values, list):
+            raise ValueError("WebArena final-response enum contract is malformed")
+        objective_rules = "; ".join(
+            line.strip()
+            for line in objective_description.splitlines()
+            if line.strip().startswith(("RETRIEVE:", "MUTATE:", "NAVIGATE:"))
+        )
+        if not all(f"{name}:" in objective_rules for name in ("RETRIEVE", "MUTATE", "NAVIGATE")):
+            raise ValueError("WebArena task-type definitions are incomplete")
+        if any(not isinstance(value, str) or not value for value in status_values):
+            raise ValueError("WebArena status definitions are malformed")
+        return (
+            f"JSON FinalAgentResponse. task_type is overall work: {objective_rules}. "
+            "Derive it from task, never goal_plan or allowed effects. "
+            f"status={'|'.join(status_values)}. NAVIGATE/MUTATE: retrieved_data=null. "
+            "SUCCESS: error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
+        )
 
     def semantic_instruction(self, goal_instruction: str) -> str:
         """Remove only the pinned upstream response envelope from its intent."""
@@ -455,8 +475,7 @@ class WebArenaVerifiedFinalResponseCodec:
 
     @staticmethod
     def _upstream_instruction_suffix() -> str:
-        final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
-        response_schema = final_agent_response.model_json_schema()
+        response_schema = WebArenaVerifiedFinalResponseCodec._upstream_response_schema()
         return f"""
 
 ---
@@ -466,6 +485,14 @@ Final response format: When you send your final answer to the user with `send_ms
 ```
 Your message in `send_msg_to_user` will be validated against this schema.
 """
+
+    @staticmethod
+    def _upstream_response_schema() -> dict[str, object]:
+        final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
+        response_schema = final_agent_response.model_json_schema()
+        if not isinstance(response_schema, dict):
+            raise ValueError("WebArena final-response schema is malformed")
+        return response_schema
 
     def normalize(self, content: str) -> str:
         final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
