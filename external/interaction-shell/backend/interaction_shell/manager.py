@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -50,6 +51,10 @@ class SessionNotFound(KeyError):
 
 class SessionUnauthorized(PermissionError):
     pass
+
+
+class ViewerInputRejected(PermissionError):
+    """The connected Viewer input lease is no longer authoritative."""
 
 
 class RunSessionManager:
@@ -167,6 +172,36 @@ class RunSessionManager:
         events = await self._port.events(managed.runtime_handle, after)
         await self._cleanup_if_terminal(managed, await self._snapshot(managed))
         return events
+
+    async def forward_viewer_input(
+        self,
+        session_id: str,
+        session_key: str,
+        control_lease_id: str,
+        forward: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Fence one provider input frame against the current Runtime lease.
+
+        The existing per-session command lock is the linearization boundary for
+        both this check-and-forward operation and ReturnControl admission.  The
+        Shell reads Runtime ownership but does not copy or mutate it.
+        """
+
+        managed = self.authenticate(session_id, session_key)
+        async with managed.lock:
+            if await self._expire_if_needed(managed) or managed.closed:
+                raise SessionNotFound(session_id)
+            snapshot = await self._snapshot(managed)
+            current_lease_id = snapshot.control_lease_id
+            if (
+                snapshot.control_owner.value != "user"
+                or snapshot.viewer.status != "available"
+                or snapshot.viewer.read_only
+                or current_lease_id is None
+                or not secrets.compare_digest(current_lease_id, control_lease_id)
+            ):
+                raise ViewerInputRejected(session_id)
+            await forward()
 
     async def admit(
         self, session_id: str, session_key: str, command: ShellCommand

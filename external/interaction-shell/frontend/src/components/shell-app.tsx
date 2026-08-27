@@ -129,7 +129,7 @@ export function LiveView({ snapshot }: { snapshot: Snapshot | null }) {
             </Badge>
           </div>
           <iframe
-            key={`${viewer.protected_path}:${interactive ? "interactive" : "read-only"}`}
+            key={`${viewer.protected_path}:${interactive ? "interactive" : "read-only"}:${snapshot?.control_lease_id ?? "no-lease"}`}
             title={interactive ? "Interactive browser live view" : "Read-only browser live view"}
             src={viewer.protected_path}
             sandbox="allow-scripts allow-same-origin"

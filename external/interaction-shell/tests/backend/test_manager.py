@@ -10,12 +10,18 @@ from interaction_shell.contracts import (
     ApproveAction,
     Capability,
     CloseSession,
+    ControlOwner,
     RunStatus,
     StartTask,
     TakeOver,
+    ViewerState,
 )
 from interaction_shell.demo_port import ContractDemoPort
-from interaction_shell.manager import RunSessionManager, SessionUnauthorized
+from interaction_shell.manager import (
+    RunSessionManager,
+    SessionUnauthorized,
+    ViewerInputRejected,
+)
 from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 
 
@@ -85,6 +91,72 @@ async def test_snapshot_event_consistency_and_reconnect_cursor():
     assert snapshot.event_cursor == events[-1].cursor
     assert await manager.events(session_id, created.session_key, events[-2].cursor) == (events[-1],)
     assert events[-1].data["snapshot"]["run_status"] == snapshot.run_status.value
+
+
+@pytest.mark.asyncio
+async def test_viewer_input_cannot_cross_return_control_linearization_boundary():
+    manager = RunSessionManager(ContractDemoPort())
+    created = await manager.create()
+    managed = manager.authenticate(created.snapshot.session_id, created.session_key)
+    old_lease = "user-control-lease:" + "a" * 32
+    managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
+        update={
+            "run_status": RunStatus.PAUSED,
+            "capabilities": frozenset(
+                {Capability.RETURN_CONTROL, Capability.CLOSE_SESSION}
+            ),
+            "viewer": ViewerState(
+                status="available",
+                provider="steel",
+                protected_path=f"/viewer/{managed.session_id}",
+                reason_code="",
+                read_only=False,
+            ),
+            "control_owner": ControlOwner.USER,
+            "control_lease_id": old_lease,
+        }
+    )
+    return_admitted = asyncio.Event()
+    allow_capture_to_finish = asyncio.Event()
+    forwarded: list[str] = []
+
+    async def blocked_return() -> None:
+        async with managed.lock:
+            managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
+                update={
+                    "capabilities": frozenset({Capability.CLOSE_SESSION}),
+                    "viewer": managed.runtime_handle.snapshot.viewer.model_copy(
+                        update={"read_only": True}
+                    ),
+                    "control_owner": ControlOwner.AGENT,
+                    "control_lease_id": None,
+                }
+            )
+            return_admitted.set()
+            await allow_capture_to_finish.wait()
+
+    async def forward() -> None:
+        forwarded.append("stale-frame")
+
+    returning = asyncio.create_task(blocked_return())
+    await asyncio.wait_for(return_admitted.wait(), timeout=1)
+    input_frame = asyncio.create_task(
+        manager.forward_viewer_input(
+            managed.session_id,
+            managed.session_key,
+            old_lease,
+            forward,
+        )
+    )
+    await asyncio.sleep(0)
+    assert forwarded == []
+    assert not input_frame.done()
+
+    allow_capture_to_finish.set()
+    await asyncio.wait_for(returning, timeout=1)
+    with pytest.raises(ViewerInputRejected):
+        await asyncio.wait_for(input_frame, timeout=1)
+    assert forwarded == []
 
 
 @pytest.mark.asyncio

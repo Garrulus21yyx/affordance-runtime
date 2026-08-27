@@ -10,11 +10,12 @@ CORE_DOCS = {
     DOCS / "architecture.md",
     DOCS / "benchmark.md",
     DOCS / "extending.md",
+    DOCS / "interaction-shell.md",
     DOCS / "single-action-policy-convergence.md",
 }
 
 
-def test_project_has_five_maintained_markdown_documents() -> None:
+def test_project_has_declared_maintained_markdown_documents() -> None:
     markdown = {README, *DOCS.rglob("*.md")}
     historical = {path for path in markdown if DOCS / "history" in path.parents}
 

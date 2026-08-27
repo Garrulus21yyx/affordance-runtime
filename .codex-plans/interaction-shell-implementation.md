@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Full Web control release profile verified through Phase 9; no live benchmark run
+Status: Phase 8 reopened for verified control-lease/input fencing race; Phase 9 blocked; no live benchmark run
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -682,7 +682,7 @@ Constraints:
       `unsafe-eval`; the final witness used Python-side polling without weakening
       CSP. No alternate media path, second Runtime browser, model call, GUI
       action, compensation action, input WebSocket, takeover, or benchmark ran.
-23. **done — Phase 8 exclusive user takeover and return.**
+23. **in progress — Phase 8 exclusive user takeover and return.**
     - Authority: `TargetRuntimeSession` owns one ephemeral control owner and
       opaque lease identity. The deployment Viewer consumes that public
       projection but never infers ownership from iframe focus, socket state, or
@@ -752,7 +752,7 @@ Constraints:
       document. Authoritative architecture/benchmark/interaction-shell docs,
       standalone contracts, and the external README now agree with that bounded
       release profile.
-24. **done — Phase 9 release-profile closure review.**
+24. **blocked — Phase 9 release-profile closure review.**
     - Begin only after Step 23 passes its owner/property/integration gates.
       Reconcile implementation, generated contracts, UI, documentation, and the
       declared profile evidence without treating Viewer/takeover evidence as a

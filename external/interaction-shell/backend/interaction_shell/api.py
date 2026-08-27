@@ -40,7 +40,12 @@ from .diagnosis import (
     CaseDiagnosisProjector,
     PublicTraceExport,
 )
-from .manager import RunSessionManager, SessionNotFound, SessionUnauthorized
+from .manager import (
+    RunSessionManager,
+    SessionNotFound,
+    SessionUnauthorized,
+    ViewerInputRejected,
+)
 from .port import RuntimeSessionUnavailable
 from .unavailable_port import UnavailableRuntimeSessionPort
 from .viewer import ViewerGateway, ViewerUnavailable
@@ -130,6 +135,7 @@ def create_app(
 
         @app.websocket("/viewer/{session_id}/input")
         async def viewer_input(websocket: WebSocket, session_id: str) -> None:
+            session_key = websocket.cookies.get(_viewer_cookie_name(session_id))
             try:
                 snapshot = await authorize_viewer(websocket, session_id)
             except HTTPException as exc:
@@ -139,9 +145,12 @@ def create_app(
                 snapshot.control_owner.value != "user"
                 or snapshot.viewer.status != "available"
                 or snapshot.viewer.read_only
+                or snapshot.control_lease_id is None
+                or session_key is None
             ):
                 await websocket.close(code=4409)
                 return
+            connected_lease_id = snapshot.control_lease_id
             try:
                 upstream_url = viewer_gateway.input_websocket_url(session_id)
             except ViewerUnavailable:
@@ -165,22 +174,26 @@ def create_app(
                             message = await websocket.receive()
                             if message["type"] == "websocket.disconnect":
                                 return
+
+                            async def forward(frame=message) -> None:
+                                if frame.get("text") is not None:
+                                    await upstream.send(frame["text"])
+                                elif frame.get("bytes") is not None:
+                                    await upstream.send(frame["bytes"])
+
                             try:
-                                current = await authorize_viewer(websocket, session_id)
-                            except HTTPException:
+                                await shell.forward_viewer_input(
+                                    session_id,
+                                    session_key,
+                                    connected_lease_id,
+                                    forward,
+                                )
+                            except (SessionNotFound, SessionUnauthorized):
                                 await websocket.close(code=4403)
                                 return
-                            if (
-                                current.control_owner.value != "user"
-                                or current.viewer.status != "available"
-                                or current.viewer.read_only
-                            ):
+                            except ViewerInputRejected:
                                 await websocket.close(code=4409)
                                 return
-                            if message.get("text") is not None:
-                                await upstream.send(message["text"])
-                            elif message.get("bytes") is not None:
-                                await upstream.send(message["bytes"])
 
                     async def provider_to_client() -> None:
                         async for message in upstream:

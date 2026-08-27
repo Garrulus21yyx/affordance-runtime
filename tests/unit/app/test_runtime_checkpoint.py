@@ -765,6 +765,50 @@ async def test_takeover_consumes_checkpoint_and_return_refreshes_before_policy(t
 
 
 @pytest.mark.asyncio
+async def test_return_revokes_input_lease_before_blocking_fresh_world_capture(tmp_path) -> None:
+    @dataclass
+    class BlockingReturnEnvironment(ScriptedEnvironment):
+        capture_started: asyncio.Event = field(default_factory=asyncio.Event)
+        capture_allowed: asyncio.Event = field(default_factory=asyncio.Event)
+
+        async def capture(self, request):
+            self.capture_started.set()
+            await self.capture_allowed.wait()
+            return await super().capture(request)
+
+    environment = BlockingReturnEnvironment(
+        initial_observation=_world(),
+        independent_observations=(_world(),),
+    )
+    handle, _store, _policy, _environment, checkpoint_id = (
+        await _takeover_checkpoint_session(tmp_path, environment=environment)
+    )
+    controlled = await handle.take_over("takeover:blocking", checkpoint_id)
+    assert controlled.control_lease_id is not None
+
+    returning = asyncio.create_task(
+        handle.return_control("return:blocking", controlled.control_lease_id)
+    )
+    await asyncio.wait_for(environment.capture_started.wait(), timeout=1)
+
+    fenced = await handle.snapshot()
+    assert fenced.status is PublicSessionStatus.PAUSED
+    assert fenced.control_owner is PublicSessionControlOwner.AGENT
+    assert fenced.control_lease_id is None
+    assert fenced.capabilities == frozenset({PublicSessionCapability.CLOSE_SESSION})
+    assert any(
+        event.type == "USER_CONTROL_REVOKED"
+        for event in await handle.events(0)
+    )
+
+    environment.capture_allowed.set()
+    returned = await asyncio.wait_for(returning, timeout=1)
+    assert returned.control_owner is PublicSessionControlOwner.AGENT
+    assert returned.control_lease_id is None
+    await handle.close()
+
+
+@pytest.mark.asyncio
 async def test_takeover_consumption_blocks_checkpoint_recovery(tmp_path) -> None:
     handle, store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
         tmp_path
@@ -815,7 +859,8 @@ async def test_return_currentness_failure_retains_exclusive_user_control(tmp_pat
     failed = await handle.snapshot()
     assert failed.status is PublicSessionStatus.PAUSED
     assert failed.control_owner is PublicSessionControlOwner.USER
-    assert failed.control_lease_id == controlled.control_lease_id
+    assert failed.control_lease_id is not None
+    assert failed.control_lease_id != controlled.control_lease_id
     assert failed.capabilities == frozenset(
         {
             PublicSessionCapability.CLOSE_SESSION,
@@ -824,8 +869,11 @@ async def test_return_currentness_failure_retains_exclusive_user_control(tmp_pat
     )
     assert policy.calls == 1
 
+    with pytest.raises(PublicSessionConflict, match="control_lease_mismatch"):
+        await handle.return_control("return:revoked-lease", controlled.control_lease_id)
+
     environment.fail_return_capture = False
-    await handle.return_control("return:retry", controlled.control_lease_id)
+    await handle.return_control("return:retry", failed.control_lease_id)
     assert environment.return_capture_attempts == 2
     await handle.close()
 

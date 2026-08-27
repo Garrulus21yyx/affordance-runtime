@@ -190,7 +190,7 @@ async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_pr
     assert gateway.offers == [(session_id, b"offer", "application/sdp", "iad")]
 
 
-def test_viewer_input_websocket_requires_user_control_and_stops_after_return(monkeypatch):
+def test_viewer_input_websocket_rejects_old_socket_after_new_takeover_lease(monkeypatch):
     class FakeViewerGateway:
         def __init__(self) -> None:
             self.document_modes: list[bool] = []
@@ -279,12 +279,11 @@ def test_viewer_input_websocket_requires_user_control_and_stops_after_return(mon
             assert websocket.receive_text() == "provider-ack"
             managed.runtime_handle.snapshot = managed.runtime_handle.snapshot.model_copy(
                 update={
-                    "capabilities": frozenset({Capability.CLOSE_SESSION}),
-                    "viewer": managed.runtime_handle.snapshot.viewer.model_copy(
-                        update={"read_only": True}
+                    "capabilities": frozenset(
+                        {Capability.RETURN_CONTROL, Capability.CLOSE_SESSION}
                     ),
-                    "control_owner": ControlOwner.AGENT,
-                    "control_lease_id": None,
+                    "control_owner": ControlOwner.USER,
+                    "control_lease_id": "user-control-lease:" + "v" * 32,
                 }
             )
             websocket.send_text('{"type":"keydown"}')

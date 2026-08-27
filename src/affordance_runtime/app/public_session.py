@@ -369,6 +369,7 @@ class TargetRuntimeSession:
         repr=False,
     )
     _control_lease_id: str | None = field(default=None, init=False, repr=False)
+    _control_return_in_progress: bool = field(default=False, init=False, repr=False)
     _progress: list[PublicProgressStep] = field(default_factory=list, init=False, repr=False)
     _events: list[PublicRuntimeSessionEvent] = field(default_factory=list, init=False, repr=False)
     _active: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -643,6 +644,12 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("user_control_return_unavailable", self._project())
             runtime = self._runtime_with_projection()
             state = self._state
+            # Revoke the user-input lease before producing the fresh World that
+            # will become authoritative for Agent continuation.
+            self._control_owner = PublicSessionControlOwner.AGENT
+            self._control_lease_id = None
+            self._control_return_in_progress = True
+            self._emit("USER_CONTROL_REVOKED")
             try:
                 if state.status is RunStatus.PAUSED:
                     runtime.resume_control(state, command_id)
@@ -651,7 +658,12 @@ class TargetRuntimeSession:
                     self._admitted.task,
                     state,
                 )
-            except Exception as exc:
+            except BaseException as exc:
+                self._control_return_in_progress = False
+                self._control_owner = PublicSessionControlOwner.USER
+                # Capture failure restores manual control with a new epoch;
+                # the revoked input lease can never become valid again.
+                self._control_lease_id = secrets.token_urlsafe(24)
                 code = str(getattr(exc, "reason_code", "")) or "user_control_currentness_unavailable"
                 self._last_control_outcome = PublicControlOutcome(
                     command_id,
@@ -661,9 +673,10 @@ class TargetRuntimeSession:
                     message="Agent control remains disabled until fresh currentness is available.",
                 )
                 self._emit("USER_CONTROL_RETURN_FAILED")
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 raise PublicSessionConflict(code, self._project()) from exc
-            self._control_owner = PublicSessionControlOwner.AGENT
-            self._control_lease_id = None
+            self._control_return_in_progress = False
             self._checkpoint_id = None
             self._resume_eligible = False
             self._status = _public_status(state.status)
@@ -1282,7 +1295,10 @@ class TargetRuntimeSession:
     def _project(self, *, event_cursor: int | None = None) -> PublicRuntimeSessionSnapshot:
         state = self._state
         status = self._status if self._active is not None or state is None else _public_status(state.status)
-        if self._control_owner is PublicSessionControlOwner.USER:
+        if (
+            self._control_owner is PublicSessionControlOwner.USER
+            or self._control_return_in_progress
+        ):
             status = PublicSessionStatus.PAUSED
         pending_question = self._intake_question
         pending_confirmation = None
@@ -1321,7 +1337,9 @@ class TargetRuntimeSession:
             reconciliation is None or reconciliation.status != "needs_input"
         )
         capabilities = (
-            frozenset(
+            frozenset({PublicSessionCapability.CLOSE_SESSION})
+            if self._control_return_in_progress
+            else frozenset(
                 {
                     PublicSessionCapability.CLOSE_SESSION,
                     PublicSessionCapability.RETURN_CONTROL,

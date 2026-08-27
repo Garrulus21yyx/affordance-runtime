@@ -52,6 +52,17 @@ describe("public fact renderers", () => {
       "/viewer/shell-session",
     );
     expect(interactiveView.getByTestId("viewer-control-state")).toHaveTextContent("user control");
+
+    const firstLeaseFrame = interactiveView.getByTitle("Interactive browser live view");
+    view.rerender(
+      <LiveView
+        snapshot={{
+          ...snapshot,
+          control_lease_id: "user-control-lease:" + "v".repeat(32),
+        } as Snapshot}
+      />,
+    );
+    expect(view.getByTitle("Interactive browser live view")).not.toBe(firstLeaseFrame);
   });
 
   it("renders only owner-projected operator progress", () => {
