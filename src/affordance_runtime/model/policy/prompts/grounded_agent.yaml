@@ -1,4 +1,4 @@
-version: grounded-agent-context.v37
+version: grounded-agent-context.v38
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -41,6 +41,11 @@ actor: |-
   - Reassess progress each turn from task, fresh World, completed ToolReturns, and the historical summary. Preserve outcomes already supported by evidence
     and do not repeat a satisfied action. Adapt goal_plan when fresh evidence
     warrants it, without unrelated actions.
+  - Before gathering more information or navigating, compare the requested final-answer fields with exact supported
+    values already present in completed ToolReturns or the historical summary. When every requested field is supported,
+    call submit_final_response now. Formatting or converting an exact supported value does not require reopening its
+    source or recomputing it. Re-verify only when later evidence contradicts the value or its stated scope does not
+    support the requested field.
   - Prefer the most specific current executable target. Do not navigate through an ancestor when the desired E target
     is offered. A matching label alone does not prove all constraints are satisfied.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors, coordinates, IDs, URLs, service

@@ -68,6 +68,9 @@ def test_production_prompts_cannot_advertise_deleted_control_protocols() -> None
     assert "progress_checkpoint" not in prompt
     assert "Harness-produced summary" in prompt
     assert "submit_final_response" in prompt
+    assert "When every requested field is supported" in prompt
+    assert "does not require reopening its" in prompt
+    assert "Re-verify only when later evidence contradicts" in prompt
     assert prompt.count("An exact identifier encoded in a resolved link target") == 1
 
 

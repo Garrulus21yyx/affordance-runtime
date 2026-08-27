@@ -1302,6 +1302,27 @@ and output-retry tests close the implementation contract. Task265 remains empiri
 authorized fresh live witness; Planner, Monitor, progress/history compaction, World, BrowserGym, and CoreLoop are
 unchanged.
 
+Task268 run1 is the fresh post-thinking witness and fails for a different, bounded contract gap. All twenty traced
+deliberate physical ActionPolicy calls requested and received enabled thinking with reasoning content, so the prior
+DeepSeek wire defect is closed on this path. The Agent followed its recovered OSRM strategy, obtained the exact biking
+time `10:57`, obtained relation ID `2176999`, and in policy turn 77 explicitly converted the requested duration to
+`10:57:00`. In that same response it nevertheless selected navigation back to an empty directions form merely to
+re-verify the already supported value. The remaining 23 turns rebuilt the same route; turn 100 returned `Time: 10:57`
+again, but the outer turn budget ended before another policy call could submit. Formal acceptance is false with 100
+valid single-call policy turns, 22 executions, 23 observations, zero grounding gaps, zero representation repairs, zero
+waits, zero fallbacks, no STOP/native evaluation, and 1,753,888 aggregate tokens.
+
+This is not a missing-World, missing-ToolReturn, Monitor, cursor, or execution-path defect, and a second Replanner would
+only repeat a conclusion the ActionPolicy already produced. The positive owner contract is instead: before further
+observation or navigation, ActionPolicy submits when every requested output field has an exact supported value;
+format conversion alone is not a reason to reopen a source. Harness compaction remains the only expired-history
+semantic projection, but direct final-output values outrank transient controls, form contents, selected modes,
+locations, and service restrictions in its bounded fact quota. Finally, expired-prose batching uses the recent raw
+suffix input budget, independently of the 1,024-token summary output cap. Run1 made seventeen compactor calls because
+those two units had been conflated. The implementation changes only the existing ActionPolicy prompt, Harness summary
+prompt, and Harness schedule; it adds no Replanner, progress store, mutable plan, second evaluator, or Runtime branch.
+Provider-free owner tests pass; Task268 remains empirically open pending a separately authorized fresh run.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1440,6 +1461,9 @@ This cutover is implementation-complete only when all of the following agree:
 24. SDK history exposes the current task/plan exactly once, retains an admission-token-bounded recent raw World tail
     with media intact, and expires older World prompts without altering model progress, thinking, calls, returns, or
     the unresolved suffix; only the remaining request can trigger Harness semantic compaction.
+25. Exact values that directly fill requested final-answer fields outrank transient execution setup in Harness
+    compaction, ActionPolicy submits rather than re-verifying when all requested fields are supported, and the
+    expired-prose input-batch threshold is independent of the summary output cap.
 
 These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
 paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark

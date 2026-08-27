@@ -114,6 +114,10 @@ taken, current stage, or a future plan.
 ## Verified facts
 At most eight exact facts necessary for unfinished requirements or the final answer. Include a
 short public document or tool-call source when present. Never promote an ambiguity or hypothesis.
+Exact values that directly fill requested final-answer fields have highest priority and must be
+retained before prerequisite or operational facts. Never omit such an output value in order to
+retain current controls, form contents, selected modes, current locations, service restrictions,
+or other execution setup.
 Completed ToolReturns below are exact, bounded results that were visible to the ActionPolicy.
 When a later ActionPolicy response explicitly concludes a task fact from a completed result,
 preserve that latest conclusion unless a still-later result or response contradicts or retracts
@@ -2216,8 +2220,12 @@ def _expired_model_prose_compaction_required(
         for part in message.parts
         if isinstance(part, (TextPart, ThinkingPart))
     )
-    batch_tokens = min(max_estimated_tokens, _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS)
-    return bool(expired_prose and estimate_token_count(expired_prose) >= batch_tokens)
+    # This is an input-batch schedule, not a summary-output budget.  Reusing
+    # the 1,024-token output cap here caused a new provider call after only a
+    # few ordinary responses and repeatedly re-summarized essentially the
+    # same prefix.  Compact after one complete raw-suffix budget of prose has
+    # expired; whole-request pressure remains the independent capacity arm.
+    return bool(expired_prose and estimate_token_count(expired_prose) >= max_estimated_tokens)
 
 
 def _prompt_json_object(prompt: object) -> dict[str, object] | None:

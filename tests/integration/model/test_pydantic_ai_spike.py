@@ -1741,6 +1741,9 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "At most three stable user-requirement outcomes" in prompt
     assert "## Verified facts" in prompt
     assert "At most eight exact facts" in prompt
+    assert "directly fill requested final-answer fields have highest priority" in prompt
+    assert "Never omit such an output value" in prompt
+    assert "current controls, form contents, selected modes" in prompt
     assert "## Failed strategies" in prompt
     assert "At most two terse strategy-level failures" in prompt
     assert "## Remaining questions" not in prompt
@@ -1751,6 +1754,8 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "Never enumerate attempted URLs" in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
+    assert "When every requested field is supported" in MODEL_POLICY_INSTRUCTIONS
+    assert "does not require reopening its" in MODEL_POLICY_INSTRUCTIONS
     assert "destination is unavailable" in MODEL_POLICY_EVIDENCE_STATUS
     assert "must not also appear unresolved" in MODEL_POLICY_EVIDENCE_STATUS
     assert pydantic_bridge._HISTORY_RECENT_EXACT_TOKENS_RATIO == 0.12
@@ -2010,6 +2015,32 @@ def test_expired_model_prose_uses_recent_tail_budget_without_semantic_matching()
     assert not pydantic_bridge._expired_model_prose_compaction_required(
         history_tuple,
         max_estimated_tokens=100_000,
+    )
+    assert pydantic_bridge._expired_model_prose_compaction_required(
+        history_tuple,
+        max_estimated_tokens=500,
+    )
+
+
+def test_expired_model_prose_batch_is_independent_of_summary_output_cap() -> None:
+    history = list(_official_history_with_pending_actions(8))
+    for index, message in enumerate(tuple(history)):
+        if not isinstance(message, ModelResponse):
+            continue
+        calls = tuple(part for part in message.parts if isinstance(part, ToolCallPart))
+        history[index] = replace(
+            message,
+            parts=(
+                TextPart(f"step-{index}: " + "ordinary policy narration " * 30),
+                *calls,
+            ),
+        )
+    history_tuple = tuple(history)
+
+    assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
+    assert not pydantic_bridge._expired_model_prose_compaction_required(
+        history_tuple,
+        max_estimated_tokens=8_000,
     )
     assert pydantic_bridge._expired_model_prose_compaction_required(
         history_tuple,

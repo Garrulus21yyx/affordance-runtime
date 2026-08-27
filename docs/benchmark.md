@@ -1161,6 +1161,36 @@ history-roundtrip, profile-algebra, accepted-response, and retry-response tests 
 Task265-specific code, Replanner, Runtime branch, new state, or history/World/Monitor change was introduced. Task265
 remains open pending separately authorized live validation.
 
+Task268
+[`run1`](../evidence/live/w2-task-268-deepseek-v4-flash-20260827-run1/run.json) is a failed fresh long-horizon witness
+at commit `3a2820c8`. Formal acceptance is false and the case ended `blocked / incomplete` at the 100-turn budget. It
+recorded 100 valid single ToolCalls, 22 executions, 23 observations, 40 no-progress increments, zero invalid tool
+arguments, zero grounding gaps, zero representation repairs, zero waits, zero fallbacks, and zero context-capacity
+rejections. There was no STOP, post-STOP capture, or native evaluator call. The 117 provider attempts comprise 100
+ActionPolicy calls and seventeen Harness compactor calls. Aggregate total tokens were 1,753,888, including 1,654,113
+history tokens, and wall time was about 585 seconds.
+
+The trace separates this failure from the earlier DeepSeek wire defect. Twenty deliberate physical ActionPolicy calls
+all recorded enabled thinking and returned reasoning content. The Agent recovered from the unavailable external OSRM
+route, used the provided OpenStreetMap directions UI, and obtained `Distance: 169km. Time: 10:57`. It later resolved
+the Acadia result link to `/relation/2176999`. Policy turn 77 explicitly stated both final values and converted the
+duration to `10:57:00`, but then navigated back to a fresh empty directions form solely to verify the exact duration
+again. It rebuilt the route and received `Time: 10:57` once more on turn 100, when the task turn budget terminated the
+run before a subsequent submission call.
+
+The same trace exposes an independent efficiency defect in the existing history owner. Its seventeen
+`expired_model_prose` compactor calls compared expired input prose against the 1,024-token summary *output* cap, so a
+few ordinary responses retriggered a provider summary of nearly the same prefix. Several summaries used their
+eight-fact quota for current controls, form state, and environment restrictions while omitting the exact requested
+duration even though the compactor input contained `Time: 10:57`.
+
+The bounded repair stays inside the existing owners. ActionPolicy now gives supported finalization priority over
+uncontradicted re-verification. Harness compaction now prioritizes exact values that fill final-answer fields over
+transient execution setup, and its expired-prose arm waits for one complete recent-suffix input budget rather than
+reusing the output cap. No Replanner, mutable progress state, Monitor semantic rule, World projection, cursor,
+ToolReturn path, or Runtime branch was added. Provider-free focused tests pass. This repair is implementation-complete
+but not live-accepted; Task268 requires a separately authorized fresh witness.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1254,6 +1284,10 @@ The final read-only review for this cutover must answer:
     `NOT_SENT/destination_outside_environment`, preserve zero dispatch, and allow the same policy to reselect?
 34. Can every record in an accepted finite current World receive one generation-local E/N/F/R ordinal without an
     independent smaller codec capacity, while an unknown well-shaped ref still fails at the current Catalog resolver?
+35. When exact supported values fill every requested final-answer field, does ActionPolicy submit without reopening a
+    source solely for formatting or confirmation; does Harness retain those values ahead of transient execution setup;
+    and can expired-prose compaction trigger only after one complete recent-suffix input budget rather than the summary
+    output cap?
 
 ## Exit statement
 
