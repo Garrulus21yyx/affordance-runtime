@@ -104,7 +104,7 @@ The following states must not be collapsed into one label such as "implemented":
 
 | Layer | Current state | Meaning |
 |---|---|---|
-| Shell contracts, API, frontend, demo, and provider-free tests | v3 implemented and provider-free verified | FastAPI/Pydantic is the only public operation/schema authority. One generated DTO/strict-validator/named-SDK/event chain feeds one exhaustive command builder, controller, view-model and React surface; the synthetic API/SSE/Playwright flow passes and all v2/manual transport paths are deleted. Final fresh-context review and commit attest the governance closure separately from implementation. |
+| Shell contracts, API, frontend, demo, and provider-free tests | v3 verified closure | FastAPI/Pydantic is the only public operation/schema authority. One generated DTO/strict-validator/named-SDK/event chain feeds one exhaustive command builder, controller, view-model and React surface; the synthetic API/SSE/Playwright flow passes and all v2/manual transport paths are deleted. Independent fresh-context review returned APPROVE, and the post-commit regenerate-and-diff gate passed without artifact drift. |
 | Default `interaction_shell.api:app` | Intentionally unavailable | Real task commands return typed `Unsupported`; this is fail-closed behavior, not a deadlock. |
 | `INTERACTION_SHELL_DEMO=true` | Synthetic only | It demonstrates the UI/contract but never controls a real page. |
 | Core public session adapter | Implemented with durable pause/recovery/revision | It wraps start, answer, confirmation, cooperative pause/cancel, exact checkpoint recovery/resume, bounded task revision/effect reconciliation, snapshot/event, and close; SQLite remains private to Runtime. |

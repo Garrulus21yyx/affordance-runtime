@@ -1,6 +1,6 @@
 # Interaction Shell 前端合同治理与详细设计
 
-> 状态：Phase 0–3 已作为一个不可拆分的 `interaction-shell.v3` 单元实施，provider-free Runtime/backend/frontend/Playwright 证据已通过，独立fresh-context架构复核结论为APPROVE；最终提交与提交后 regenerate-and-diff 尚待完成，因此此处记录 implementation complete + review approved，但暂不宣称最终verified closure。Phase 4 仍 dependency-blocked且不属于本次批准范围。
+> 状态：Phase 0–3 已作为一个不可拆分的 `interaction-shell.v3` 单元实施并达到 verified closure。Provider-free Runtime/backend/frontend/Playwright 证据已通过，独立fresh-context架构复核结论为APPROVE，coherent implementation commit为 `a6aa19be`，提交后 OpenAPI/Hey API regenerate-and-diff 无差异。Phase 4 仍 dependency-blocked且不属于本次批准范围。
 > 日期：2026-08-27。
 > 适用工作树：`/home/yang/projects/affordance-runtime-interaction-shell`，审查基线 `codex/external-interaction-shell@7af330c7`，并包含该工作树当前未提交改动。
 > 范围：`external/interaction-shell/backend`、`external/interaction-shell/frontend` 与 Runtime `public_session` 边界。
