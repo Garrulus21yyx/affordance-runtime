@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded provider-free implementation complete; live compensation/browser witness not run
+Status: Phase 7 bounded provider-free implementation complete; read-only Viewer deployment in progress
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -587,6 +587,59 @@ Constraints:
       module's established startup behavior, but Phase 7 did not inspect,
       print, or use the Viewer credential and did not start Viewer, a live
       model/provider, a browser compensation profile, or a benchmark.
+22. **in progress — protected read-only Viewer deployment.**
+    - Owner model: the deployment browser/environment lease owns the provider
+      session locator and cleanup; a deployment-private viewer registry/proxy
+      owns authenticated short-lived resolution; the Runtime public session
+      projects only readiness and a secret-free same-origin `/viewer/{session}`
+      path; Shell/UI remain read-only consumers.
+    - First establish the configured provider from environment variable names
+      only and inspect the existing BrowserGym lease/viewer extension points.
+      Never print, serialize, log, or send `VIEWER_API_KEY` or an upstream viewer
+      URL to the frontend.
+    - Positive contract: Viewer and Runtime refer to the same browser session;
+      session authentication, expiry, wrong-session access, and cleanup are
+      enforced at the same-origin backend boundary; Viewer loss is fail-open for
+      Runtime task truth; unavailable provider/session state stays typed.
+    - Keep takeover out of scope. Do not add screenshot polling, custom media
+      transport, remote input, a second browser, Runtime state, checkpoint
+      fields, or provider credentials to Shell recovery.
+    - Provider finding: the configured key is explicitly labelled Steel.
+      Steel returns one session-scoped CDP endpoint and one unauthenticated
+      debug document. The pinned BrowserGym owner currently launches Chromium
+      locally, so the coherent profile must replace that surface-owned launch
+      with `connect_over_cdp` to the same Steel lease; key-only iframe wiring
+      against the local browser would be a false second-session projection.
+    - Read-only proxy finding: Steel `interactive=false` does not open its input
+      WebSocket. Its headful viewer uses only the provider document plus the
+      `ice-servers` and `whep` WebRTC endpoints. The deployment can therefore
+      authenticate a same-origin `/viewer/{session}` route, rewrite the
+      provider document to that origin, and proxy only those two bounded media
+      calls. The reusable API key, provider debug/CDP URLs, provider session ID,
+      and RTC bearer remain server-private; native short-lived ICE credentials
+      remain the provider media transport rather than a Shell media protocol.
+    - Profile boundary: remote Steel execution is explicit because a cloud
+      browser cannot reach a loopback MiniWoB source. The existing local
+      BrowserGym profile remains the safe default and keeps Viewer typed
+      unavailable; the Steel profile requires a remotely reachable task source
+      and never silently opens a second browser as a fallback.
+    - First live CDP/reset probe exposed one pinned-provider lifecycle rule:
+      Steel's single initial page keeps the remote context alive, so closing it
+      before `new_page()` terminates the provider session. The surface-owned
+      conversion now claims that exact initial page and applies BrowserGym's
+      viewport to it. The failed probe released its provider lease; a repeated
+      no-model/no-action probe was then repeated against an in-process
+      BrowserGym smoke task: reset and initial World acquisition succeeded with
+      the Steel browser connected and page open, followed by successful release.
+      A separate live provider-document probe confirmed server-side locator
+      removal and a 200 ICE proxy response. The public raw-githack MiniWoB URL
+      returned its CDN notice to the cloud browser and is explicitly not counted
+      as a product/task-chain witness; no model, GUI action, or benchmark ran.
+    - Verify authorized/unauthorized/wrong-session/expired access, provider
+      disconnect, exactly-once cleanup, two-session isolation, no-secret public
+      projection, Viewer-failure independence, frontend rendering, OpenAPI, and
+      existing Runtime/Phase 7 regression gates. Commit and push each coherent
+      milestone; no live benchmark without separate authorization.
 
 ## Current-work produced files
 

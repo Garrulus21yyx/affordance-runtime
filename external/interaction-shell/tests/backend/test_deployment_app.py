@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 from interaction_shell import deployment_app
+from interaction_shell.steel_viewer import SteelViewerGateway
+from interaction_shell.viewer import ViewerHTTPResponse
 
 from affordance_runtime.app.public_session import PublicSessionOpenError, PublicSessionOpenStage
 from tests.unit.agent.test_target_runtime_facade import _runtime
@@ -52,6 +54,38 @@ class FakeTrace:
         self.flush_count += 1
         if self.flush_fails:
             raise RuntimeError("trace flush failed")
+
+
+class FakeSteelTransport:
+    def __init__(self) -> None:
+        self.created: list[int] = []
+        self.released: list[str] = []
+
+    async def create_session(self, api_key: str, *, timeout_ms: int):
+        assert api_key == "viewer-key"
+        self.created.append(timeout_ms)
+        serial = len(self.created)
+        return (
+            f"provider-{serial}",
+            f"wss://connect.steel.dev?sessionId=provider-{serial}",
+            f"https://api.steel.dev/v1/sessions/provider-{serial}/debug",
+        )
+
+    async def release_session(self, api_key: str, provider_session_id: str) -> None:
+        assert api_key == "viewer-key"
+        self.released.append(provider_session_id)
+
+    async def viewer_document(self, debug_url: str):
+        del debug_url
+        return ViewerHTTPResponse(500, b"", "text/plain")
+
+    async def ice_servers(self, provider_session_id: str, rtc_token: str):
+        del provider_session_id, rtc_token
+        return ViewerHTTPResponse(500, b"", "text/plain")
+
+    async def whep(self, provider_session_id: str, rtc_token: str, body: bytes, content_type: str):
+        del provider_session_id, rtc_token, body, content_type
+        return ViewerHTTPResponse(500, b"", "text/plain")
 
 
 def _patch_composition(
@@ -179,6 +213,95 @@ async def test_deployment_sessions_use_disjoint_step_stores_and_conversation_ids
     assert [call["action_step_store"] for call in role_calls] == stores
     assert stores[0] is not stores[1]
     await asyncio.gather(first.close(), second.close())
+
+
+@pytest.mark.asyncio
+async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_once(monkeypatch):
+    surface_open_calls: list[dict[str, object]] = []
+    surfaces, traces = _patch_composition(monkeypatch)
+    original_open = deployment_app.BrowserGymSurfaceAdapter.open
+
+    def record_open(*args, **kwargs):
+        surface_open_calls.append(dict(kwargs))
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(deployment_app.BrowserGymSurfaceAdapter, "open", record_open)
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test",
+            7,
+            10,
+            90,
+            "steel",
+        ),
+        {"MINIWOB_URL": "https://tasks.example.test/miniwob/"},
+        viewer_gateway=gateway,
+    )
+
+    session = await factory.open("session:steel", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert gateway.project(session).status == "available"
+    assert gateway.project(session).protected_path == "/viewer/session:steel"
+    assert surface_open_calls[0]["gym_factory"] is not None
+    await session.close()
+    await session.close()
+    assert [surface.close_count for surface in surfaces] == [1]
+    assert [trace.flush_count for trace in traces] == [1]
+    assert transport.released == ["provider-1"]
+    assert gateway.project(session).status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_steel_profile_composition_failure_releases_browser_and_trace(monkeypatch):
+    surfaces, traces = _patch_composition(monkeypatch, fail_composition=True)
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test",
+            7,
+            10,
+            90,
+            "steel",
+        ),
+        {"MINIWOB_URL": "https://tasks.example.test/miniwob/"},
+        viewer_gateway=gateway,
+    )
+
+    with pytest.raises(PublicSessionOpenError) as raised:
+        await factory.open("session:steel:failed", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert raised.value.stage is PublicSessionOpenStage.SESSION
+    assert [surface.close_count for surface in surfaces] == [1]
+    assert [trace.flush_count for trace in traces] == [1]
+    assert transport.released == ["provider-1"]
+
+
+@pytest.mark.asyncio
+async def test_steel_profile_rejects_loopback_source_before_provider_creation(monkeypatch):
+    _surfaces, traces = _patch_composition(monkeypatch)
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    factory = deployment_app.BrowserGymDeploymentSessionFactory(
+        deployment_app.BrowserGymDeploymentSettings(
+            "browsergym/miniwob.click-test",
+            7,
+            10,
+            90,
+            "steel",
+        ),
+        {"MINIWOB_URL": "http://127.0.0.1:18888/miniwob/"},
+        viewer_gateway=gateway,
+    )
+
+    with pytest.raises(PublicSessionOpenError) as raised:
+        await factory.open("session:steel:local", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert raised.value.code == "environment_source_not_remote"
+    assert transport.created == []
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 @pytest.mark.asyncio

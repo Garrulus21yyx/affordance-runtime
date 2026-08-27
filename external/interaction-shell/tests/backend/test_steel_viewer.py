@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+from interaction_shell.steel_viewer import (
+    SteelBrowserLease,
+    SteelViewerGateway,
+)
+from interaction_shell.viewer import ViewerHTTPResponse
+
+
+class FakeSteelTransport:
+    def __init__(self) -> None:
+        self.created: list[int] = []
+        self.released: list[str] = []
+        self.ice_calls: list[tuple[str, str]] = []
+        self.whep_calls: list[tuple[str, str, bytes, str]] = []
+        self.document_status = 200
+        self.ice_status = 200
+
+    async def create_session(self, api_key: str, *, timeout_ms: int):
+        assert api_key == "viewer-key"
+        self.created.append(timeout_ms)
+        serial = len(self.created)
+        return (
+            f"provider-{serial}",
+            f"wss://connect.steel.dev?sessionId=provider-{serial}",
+            f"https://api.steel.dev/v1/sessions/provider-{serial}/debug",
+        )
+
+    async def release_session(self, api_key: str, provider_session_id: str) -> None:
+        assert api_key == "viewer-key"
+        self.released.append(provider_session_id)
+
+    async def viewer_document(self, debug_url: str) -> ViewerHTTPResponse:
+        provider_session_id = debug_url.split("/")[-2]
+        token = f"rtc-token-for-{provider_session_id}"
+        document = f"""
+        <!doctype html><script src="https://js.sentry-cdn.com/probe.js"></script>
+        <script>
+        const sessionId = '{provider_session_id}';
+        const apiBaseUrl = 'https://api.steel.dev';
+        const rtcToken = '{token}';
+        const wsUrl = 'wss://api.steel.dev/input/{provider_session_id}';
+        const interactive = 'false' === 'true';
+        fetch(`${{apiBaseUrl}}/v1/rtc/ice-servers/${{sessionId}}`);
+        </script>
+        """
+        return ViewerHTTPResponse(self.document_status, document.encode(), "text/html")
+
+    async def ice_servers(self, provider_session_id: str, rtc_token: str):
+        self.ice_calls.append((provider_session_id, rtc_token))
+        return ViewerHTTPResponse(self.ice_status, b'{"iceServers":[]}', "application/json")
+
+    async def whep(
+        self,
+        provider_session_id: str,
+        rtc_token: str,
+        body: bytes,
+        content_type: str,
+    ):
+        self.whep_calls.append((provider_session_id, rtc_token, body, content_type))
+        return ViewerHTTPResponse(201, b"answer", "application/sdp")
+
+
+@pytest.mark.asyncio
+async def test_gateway_projects_one_secret_free_read_only_route_and_proxies_rtc() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    lease = await gateway.open("shell-session", expires_at)
+    handle = SimpleNamespace()
+    gateway.attach(handle, lease)
+
+    state = gateway.project(handle)
+    assert state.status == "available"
+    assert state.provider == "steel"
+    assert state.protected_path == "/viewer/shell-session"
+    assert state.read_only is True
+
+    document = await gateway.document("shell-session")
+    decoded = document.content.decode()
+    assert "shell-session" in decoded
+    for private in (
+        "provider-1",
+        "rtc-token-for-provider-1",
+        "api.steel.dev",
+        "connect.steel.dev",
+        "viewer-key",
+    ):
+        assert private not in decoded
+    assert "const interactive = false;" in decoded
+    assert "const wsUrl = null;" in decoded
+    assert "window.location.origin" in decoded
+
+    ice = await gateway.ice_servers("shell-session")
+    whep = await gateway.whep("shell-session", b"offer", "application/sdp")
+    assert ice.status_code == 200
+    assert whep.status_code == 201
+    assert transport.ice_calls == [("provider-1", "rtc-token-for-provider-1")]
+    assert transport.whep_calls == [
+        ("provider-1", "rtc-token-for-provider-1", b"offer", "application/sdp")
+    ]
+
+    await gateway.release(lease)
+    await gateway.release(lease)
+    assert transport.released == ["provider-1"]
+    assert gateway.project(handle).status == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_gateway_keeps_two_browser_and_viewer_leases_isolated() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    expiry = datetime.now(UTC) + timedelta(minutes=5)
+    first = await gateway.open("shell:first", expiry)
+    second = await gateway.open("shell:second", expiry)
+    first_handle, second_handle = SimpleNamespace(), SimpleNamespace()
+    gateway.attach(first_handle, first)
+    gateway.attach(second_handle, second)
+
+    await gateway.document("shell:first")
+    await gateway.document("shell:second")
+    await gateway.release(first)
+
+    assert gateway.project(first_handle).status == "unavailable"
+    assert gateway.project(second_handle).status == "available"
+    await gateway.ice_servers("shell:second")
+    assert transport.ice_calls[-1] == ("provider-2", "rtc-token-for-provider-2")
+    await gateway.release(second)
+    assert transport.released == ["provider-1", "provider-2"]
+
+
+@pytest.mark.asyncio
+async def test_provider_viewer_loss_does_not_release_the_runtime_browser_lease() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway("viewer-key", transport)
+    lease = await gateway.open("shell-session", datetime.now(UTC) + timedelta(minutes=5))
+    handle = SimpleNamespace()
+    gateway.attach(handle, lease)
+    await gateway.document("shell-session")
+    transport.ice_status = 410
+
+    response = await gateway.ice_servers("shell-session")
+
+    assert response.status_code == 410
+    assert gateway.project(handle).reason_code == "viewer_session_lost"
+    assert transport.released == []
+    await gateway.release(lease)
+
+
+def test_steel_playwright_facade_reuses_exact_remote_context() -> None:
+    pages = [FakePage()]
+    context = FakeContext(pages)
+    browser = FakeBrowser(context)
+    chromium = FakeChromium(browser)
+    owner = SimpleNamespace(selectors=object(), chromium=chromium)
+    lease = SteelBrowserLease(
+        "shell-session",
+        "provider-session",
+        "wss://connect.steel.dev?sessionId=provider-session",
+        "https://api.steel.dev/v1/sessions/provider-session/debug",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    gateway = SteelViewerGateway("viewer-key", FakeSteelTransport())
+
+    facade = gateway.environment_playwright_factory(lease)(owner)
+    connected = facade.chromium.launch(headless=True)
+    claimed = connected.new_context(viewport={"width": 332, "height": 214})
+    page = claimed.new_page()
+
+    assert chromium.endpoint.startswith("wss://connect.steel.dev?")
+    assert "sessionId=provider-session" in chromium.endpoint
+    assert "apiKey=viewer-key" in chromium.endpoint
+    assert pages[0].close_count == 0
+    assert page is pages[0]
+    assert page.viewport == {"width": 332, "height": 214}
+    assert connected._browser is browser  # noqa: SLF001 - identity witness
+
+
+class FakePage:
+    def __init__(self) -> None:
+        self.close_count = 0
+        self.viewport = None
+
+    def close(self) -> None:
+        self.close_count += 1
+
+    def set_viewport_size(self, viewport) -> None:
+        self.viewport = viewport
+
+
+class FakeContext:
+    def __init__(self, pages: list[FakePage]) -> None:
+        self.pages = pages
+
+    def new_page(self) -> FakePage:
+        page = FakePage()
+        self.pages.append(page)
+        return page
+
+
+class FakeBrowser:
+    def __init__(self, context: FakeContext) -> None:
+        self.contexts = [context]
+
+    def close(self) -> None:
+        return None
+
+
+class FakeChromium:
+    def __init__(self, browser: FakeBrowser) -> None:
+        self.browser = browser
+        self.endpoint = ""
+
+    def connect_over_cdp(self, endpoint: str) -> FakeBrowser:
+        self.endpoint = endpoint
+        return self.browser

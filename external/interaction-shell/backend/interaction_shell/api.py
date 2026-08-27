@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import os
+import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 
 from ag_ui.core import CustomEvent
 from ag_ui.encoder import EventEncoder
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from .contracts import (
     AnswerQuestion,
@@ -38,6 +41,7 @@ from .diagnosis import (
 from .manager import RunSessionManager, SessionNotFound, SessionUnauthorized
 from .port import RuntimeSessionUnavailable
 from .unavailable_port import UnavailableRuntimeSessionPort
+from .viewer import ViewerGateway, ViewerUnavailable
 
 
 class DiagnosisRequest(BenchmarkResultExport):
@@ -60,6 +64,7 @@ def create_app(
     manager: RunSessionManager | None = None,
     *,
     health_provider: HealthProvider | None = None,
+    viewer_gateway: ViewerGateway | None = None,
 ) -> FastAPI:
     shell = manager or RunSessionManager(UnavailableRuntimeSessionPort())
 
@@ -89,6 +94,78 @@ def create_app(
             value = await value
         return dict(value)
 
+    async def authorize_viewer(request: Request, session_id: str) -> None:
+        session_key = request.cookies.get(_viewer_cookie_name(session_id))
+        if not session_key:
+            raise HTTPException(401, "missing viewer session")
+        try:
+            await shell.snapshot(session_id, session_key)
+        except (SessionNotFound, SessionUnauthorized) as exc:
+            raise map_auth(exc) from exc
+
+    if viewer_gateway is not None:
+
+        @app.get("/viewer/{session_id}", response_class=HTMLResponse)
+        async def viewer_document(request: Request, session_id: str) -> Response:
+            await authorize_viewer(request, session_id)
+            try:
+                document = await viewer_gateway.document(session_id)
+            except ViewerUnavailable as exc:
+                raise HTTPException(exc.status_code, exc.code) from exc
+            return Response(
+                content=document.content,
+                status_code=document.status_code,
+                media_type=document.content_type,
+                headers=_viewer_security_headers(),
+            )
+
+        @app.get("/viewer/{session_id}/steel/v1/rtc/ice-servers/{rtc_session_id}")
+        async def viewer_ice_servers(
+            request: Request,
+            session_id: str,
+            rtc_session_id: str,
+        ) -> Response:
+            await authorize_viewer(request, session_id)
+            _require_same_viewer_session(session_id, rtc_session_id)
+            try:
+                upstream = await viewer_gateway.ice_servers(session_id)
+            except ViewerUnavailable as exc:
+                raise HTTPException(exc.status_code, exc.code) from exc
+            if upstream.status_code != 200:
+                raise HTTPException(502, "viewer_provider_unavailable")
+            return Response(
+                upstream.content,
+                media_type=upstream.content_type,
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+            )
+
+        @app.post("/viewer/{session_id}/steel/v1/rtc/whep/{rtc_session_id}")
+        async def viewer_whep(
+            request: Request,
+            session_id: str,
+            rtc_session_id: str,
+        ) -> Response:
+            await authorize_viewer(request, session_id)
+            _require_same_viewer_session(session_id, rtc_session_id)
+            content_type = request.headers.get("content-type", "")
+            if not content_type.lower().startswith("application/sdp"):
+                raise HTTPException(415, "viewer_whep_requires_sdp")
+            body = await request.body()
+            if len(body) > 2 * 1024 * 1024:
+                raise HTTPException(413, "viewer_request_too_large")
+            try:
+                upstream = await viewer_gateway.whep(session_id, body, content_type)
+            except ViewerUnavailable as exc:
+                raise HTTPException(exc.status_code, exc.code) from exc
+            if upstream.status_code not in {200, 201}:
+                raise HTTPException(502, "viewer_provider_unavailable")
+            return Response(
+                upstream.content,
+                status_code=upstream.status_code,
+                media_type=upstream.content_type,
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+            )
+
     @app.get("/schemas/shell-event", response_model=ShellEvent)
     async def shell_event_schema() -> ShellEvent:
         """Concrete versioned schema anchor used by OpenAPI TypeScript generation."""
@@ -117,11 +194,14 @@ def create_app(
         return diagnosis
 
     @app.post("/sessions", response_model=CreateSessionResponse, status_code=201)
-    async def create_session(body: CreateSessionRequest) -> CreateSessionResponse:
+    async def create_session(body: CreateSessionRequest, response: Response) -> CreateSessionResponse:
         try:
-            return await shell.create(body.ttl_seconds)
+            created = await shell.create(body.ttl_seconds)
         except RuntimeSessionUnavailable as exc:
             raise HTTPException(503, exc.code) from exc
+        if viewer_gateway is not None:
+            _set_viewer_cookie(response, created)
+        return created
 
     @app.post(
         "/sessions/{session_id}/recover",
@@ -130,10 +210,11 @@ def create_app(
     async def recover_session(
         session_id: str,
         body: RecoverSessionRequest,
+        response: Response,
         session_key: str = Depends(key),
     ) -> RecoverSessionResponse:
         try:
-            return await shell.recover(
+            recovered = await shell.recover(
                 session_id,
                 session_key,
                 body.checkpoint_id,
@@ -146,6 +227,14 @@ def create_app(
                 "checkpoint_mismatch",
             } else 503
             raise HTTPException(status, exc.code) from exc
+        if viewer_gateway is not None:
+            _set_viewer_cookie_from_values(
+                response,
+                session_id,
+                session_key,
+                recovered.snapshot.expires_at,
+            )
+        return recovered
 
     @app.get("/sessions/{session_id}", response_model=RuntimeSessionSnapshot)
     async def get_snapshot(session_id: str, session_key: str = Depends(key)):
@@ -249,6 +338,59 @@ def create_app(
         return await command(session_id, session_key, body)
 
     return app
+
+
+def _viewer_cookie_name(session_id: str) -> str:
+    digest = hashlib.sha256(session_id.encode()).hexdigest()[:20]
+    return f"interaction_shell_viewer_{digest}"
+
+
+def _set_viewer_cookie(response: Response, created: CreateSessionResponse) -> None:
+    _set_viewer_cookie_from_values(
+        response,
+        created.snapshot.session_id,
+        created.session_key,
+        created.snapshot.expires_at,
+    )
+
+
+def _set_viewer_cookie_from_values(
+    response: Response,
+    session_id: str,
+    session_key: str,
+    expires_at: datetime,
+) -> None:
+    remaining = max(0, int((expires_at - datetime.now(expires_at.tzinfo)).total_seconds()))
+    response.set_cookie(
+        _viewer_cookie_name(session_id),
+        session_key,
+        max_age=remaining,
+        expires=expires_at,
+        path=f"/viewer/{session_id}",
+        secure=os.getenv("INTERACTION_SHELL_SECURE_COOKIES", "").lower() == "true",
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _require_same_viewer_session(session_id: str, rtc_session_id: str) -> None:
+    if not secrets.compare_digest(session_id, rtc_session_id):
+        raise HTTPException(404, "viewer session unavailable")
+
+
+def _viewer_security_headers() -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": (
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+            "connect-src 'self' stun: turn: turns:; img-src data:; media-src blob:; "
+            "frame-ancestors 'self'"
+        ),
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+    }
 
 
 if os.getenv("INTERACTION_SHELL_DEMO", "").lower() == "true":

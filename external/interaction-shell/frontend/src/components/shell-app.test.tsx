@@ -10,6 +10,25 @@ describe("public fact renderers", () => {
     expect(screen.getByText(/takeover unsupported/i)).toBeInTheDocument();
   });
 
+  it("renders only the owner-projected same-origin read-only viewer path", () => {
+    const snapshot = {
+      viewer: {
+        status: "available",
+        provider: "steel",
+        protected_path: "/viewer/shell-session",
+        reason_code: "",
+        read_only: true,
+      },
+    } as unknown as Snapshot;
+
+    render(<LiveView snapshot={snapshot} />);
+
+    const frame = screen.getByTitle("Read-only browser live view");
+    expect(frame).toHaveAttribute("src", "/viewer/shell-session");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
+    expect(frame).not.toHaveAttribute("allow");
+  });
+
   it("renders only owner-projected operator progress", () => {
     const snapshot = {
       task_text: "Choose an option",

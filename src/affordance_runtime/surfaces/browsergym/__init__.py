@@ -1,5 +1,6 @@
 """Reusable BrowserGym surface acquisition, projection, binding, and execution."""
 
+from affordance_runtime.surfaces.browsergym.backend import ThreadBoundBrowserGym
 from affordance_runtime.surfaces.browsergym.environment import (
     BrowserGymPort,
     BrowserGymSurfaceAdapter,
@@ -38,6 +39,7 @@ __all__ = [
     "BrowserGymTaskReason",
     "BrowserGymTaskStatus",
     "BrowserGymTransitionTrace",
+    "ThreadBoundBrowserGym",
     "browsergym_api_inventory",
     "assess_browsergym_task_state",
 ]

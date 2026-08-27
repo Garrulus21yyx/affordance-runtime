@@ -8,6 +8,7 @@ from interaction_shell.demo_port import ContractDemoPort
 from interaction_shell.manager import RunSessionManager
 from interaction_shell.port import RuntimeSessionUnavailable
 from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
+from interaction_shell.viewer import ViewerHTTPResponse
 
 
 @pytest.mark.asyncio
@@ -80,6 +81,68 @@ async def test_http_revision_uses_dedicated_typed_endpoint():
     body = response.json()
     assert body["kind"] == "unsupported"
     assert body["capability"] == "revise_task"
+
+
+@pytest.mark.asyncio
+async def test_viewer_route_uses_http_only_session_auth_and_bounded_read_only_proxy():
+    class FakeViewerGateway:
+        def __init__(self) -> None:
+            self.documents: list[str] = []
+            self.ice: list[str] = []
+            self.offers: list[tuple[str, bytes, str]] = []
+
+        async def document(self, session_id: str):
+            self.documents.append(session_id)
+            return ViewerHTTPResponse(200, b"<html>viewer</html>", "text/html")
+
+        async def ice_servers(self, session_id: str):
+            self.ice.append(session_id)
+            return ViewerHTTPResponse(200, b'{"iceServers":[]}', "application/json")
+
+        async def whep(self, session_id: str, body: bytes, content_type: str):
+            self.offers.append((session_id, body, content_type))
+            return ViewerHTTPResponse(201, b"answer", "application/sdp")
+
+    gateway = FakeViewerGateway()
+    app = create_app(RunSessionManager(ContractDemoPort()), viewer_gateway=gateway)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created_response = await client.post("/sessions", json={})
+        created = created_response.json()
+        session_id = created["snapshot"]["session_id"]
+        cookie = created_response.headers["set-cookie"]
+        assert "HttpOnly" in cookie
+        assert "SameSite=strict" in cookie
+        assert f"Path=/viewer/{session_id}" in cookie
+
+        viewer = await client.get(f"/viewer/{session_id}")
+        assert viewer.status_code == 200
+        assert viewer.text == "<html>viewer</html>"
+        assert viewer.headers["cache-control"] == "no-store"
+        assert "frame-ancestors 'self'" in viewer.headers["content-security-policy"]
+
+        wrong_nested_session = await client.get(
+            f"/viewer/{session_id}/steel/v1/rtc/ice-servers/not-this-session"
+        )
+        assert wrong_nested_session.status_code == 404
+
+        ice = await client.get(
+            f"/viewer/{session_id}/steel/v1/rtc/ice-servers/{session_id}"
+        )
+        offer = await client.post(
+            f"/viewer/{session_id}/steel/v1/rtc/whep/{session_id}",
+            content=b"offer",
+            headers={"Content-Type": "application/sdp"},
+        )
+        assert ice.status_code == 200
+        assert offer.status_code == 201
+
+    async with AsyncClient(transport=transport, base_url="http://test") as outsider:
+        unauthorized = await outsider.get(f"/viewer/{session_id}")
+    assert unauthorized.status_code == 401
+    assert gateway.documents == [session_id]
+    assert gateway.ice == [session_id]
+    assert gateway.offers == [(session_id, b"offer", "application/sdp")]
 
 
 @pytest.mark.asyncio

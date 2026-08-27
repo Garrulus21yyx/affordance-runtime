@@ -17,6 +17,7 @@ dependencies = [
 model = ["pydantic-ai>=2,<3"]
 deployment = [
   "browsergym-miniwob==0.14.3",
+  "httpx>=0.28,<1",
   "playwright==1.44.0",
   "pydantic-ai>=2,<3",
   "pydantic-ai-harness>=0.25,<0.26",

@@ -213,15 +213,40 @@ def test_browsergym_playwright_migration_updates_cached_getter_sites(monkeypatch
 
     browsergym_backend._install_thread_owned_browsergym_playwright()  # noqa: SLF001
 
-    for module in modules.values():
+    for name in ("browsergym.core", "browsergym.core.chat"):
         assert (
-            module._get_global_playwright  # type: ignore[attr-defined]
+            modules[name]._get_global_playwright  # type: ignore[attr-defined]
             is browsergym_backend._get_thread_owned_browsergym_playwright  # noqa: SLF001
         )
+    assert (
+        modules["browsergym.core.env"]._get_global_playwright  # type: ignore[attr-defined]
+        is browsergym_backend._get_thread_owned_browsergym_environment_playwright  # noqa: SLF001
+    )
     assert (
         modules["browsergym.core"]._set_global_playwright  # type: ignore[attr-defined]
         is browsergym_backend._set_thread_owned_browsergym_playwright  # noqa: SLF001
     )
+
+
+def test_browsergym_environment_playwright_override_does_not_replace_chat_owner() -> None:
+    owner = object()
+    environment_override = object()
+    browsergym_backend._set_thread_owned_browsergym_playwright(owner)  # noqa: SLF001
+    browsergym_backend._set_thread_owned_browsergym_environment_playwright(  # noqa: SLF001
+        environment_override
+    )
+    try:
+        assert (
+            browsergym_backend._get_thread_owned_browsergym_playwright()  # noqa: SLF001
+            is owner
+        )
+        assert (
+            browsergym_backend._get_thread_owned_browsergym_environment_playwright()  # noqa: SLF001
+            is environment_override
+        )
+    finally:
+        browsergym_backend._set_thread_owned_browsergym_environment_playwright(None)  # noqa: SLF001
+        browsergym_backend._set_thread_owned_browsergym_playwright(None)  # noqa: SLF001
 
 
 def _drag_fixture():
