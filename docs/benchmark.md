@@ -62,19 +62,23 @@ profile, or a benchmark.
 Phase 8 subsequently verified exclusive user takeover as a deployment/control
 capability. Runtime alone owns `agent|user` control and the opaque lease;
 takeover consumes the exact durable paused checkpoint, and return captures and
-evaluates fresh World before Agent dispatch can resume. Provider-free tests
-cover stale identities, restart fail-closed behavior, currentness failure,
-same-session input authorization, and post-return input rejection. A separate
-no-model live Steel witness changed the same CDP-owned page through the
-protected native input proxy, then returned control and reached terminal fresh
+evaluates fresh World before Agent dispatch can resume. Return now revokes the
+old input lease before capture; each Viewer frame verifies the socket's connected
+lease against the current Runtime lease under the same session lock used by the
+control command. Capture failure signs a new user lease. Provider-free tests
+cover the blocked-capture window, old-socket/new-takeover epochs, restart
+fail-closed behavior, and currentness failure. A separate no-model live Steel
+witness changed the same CDP-owned page, blocked return capture, proved a second
+old-lease click had no effect and closed 4409, then reached terminal fresh
 evaluation after one World capture and before a second policy call. The exact
 provider lease was released. This did not call a model, execute a compensation,
 run a benchmark case, or create benchmark evidence, so benchmark closure remains
 unchanged.
 The external Phase 9 release review then reran the whole provider-free
-repository: 1834 tests passed and 25 skipped, with only the two unchanged
-external baselines failing (fixed five-document governance and the absent
-historical live trace). External backend/architecture passed 78 tests, and the
+repository after the fencing repair: 1842 tests passed and 19 skipped, with only
+the absent historical live trace failing. The stale fixed-document governance
+gate now declares the maintained document set explicitly and passes. External
+backend/architecture passed 79 tests, and the
 frontend unit/lint/typecheck/build plus synthetic Demo E2E gates passed. These
 numbers close the external Full Web control release profile, not the benchmark
 program; no live benchmark was launched.

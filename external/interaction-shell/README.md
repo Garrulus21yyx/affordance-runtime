@@ -113,8 +113,11 @@ read-only while Runtime projects Agent ownership. `TakeOver` consumes the exact
 durable paused checkpoint and grants one process-local user lease; only then does
 the same protected document use an authenticated same-origin proxy for Steel's
 native input WebSocket. `ReturnControl` requires that exact lease, disables later
-input, captures/evaluates fresh World, invalidates stale Agent material, and only
-then continues the existing loop. Viewer loss remains fail-open for Runtime truth;
+input by revoking it before capture, captures/evaluates fresh World, invalidates
+stale Agent material, and only then continues the existing loop. Every input
+frame is checked against both current user ownership and the exact lease captured
+when its WebSocket connected, under the same per-session lock as ReturnControl.
+Capture failure grants a new user lease, so an old socket cannot revive. Viewer loss remains fail-open for Runtime truth;
 no screenshot polling, custom media/input protocol, second browser, or second
 executor is added.
 
@@ -130,7 +133,9 @@ of Viewer availability.
 The no-model takeover witness additionally reached `waiting_user`, committed a
 durable pause, granted user ownership, changed the same CDP-owned page through
 the protected native input proxy, and returned control. Runtime captured one
-fresh World and finished before a second ActionPolicy call; the exact checkpoint
+fresh World and finished before a second ActionPolicy call. The strengthened
+witness blocked that capture, sent another click on the revoked socket, observed
+no second page effect, and then observed WebSocket close 4409. The exact checkpoint
 was consumed, cleanup ran once, and the exact Steel lease was released. This is
 a deployment/control witness, not a benchmark result.
 

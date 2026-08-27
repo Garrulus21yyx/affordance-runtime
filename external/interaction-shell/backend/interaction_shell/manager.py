@@ -189,8 +189,10 @@ class RunSessionManager:
 
         managed = self.authenticate(session_id, session_key)
         async with managed.lock:
-            if await self._expire_if_needed(managed) or managed.closed:
+            if await self._expire_if_needed(managed):
                 raise SessionNotFound(session_id)
+            if managed.closed:
+                raise ViewerInputRejected(session_id)
             snapshot = await self._snapshot(managed)
             current_lease_id = snapshot.control_lease_id
             if (

@@ -26,7 +26,8 @@ effect can be kept when fresh evaluation proves the revised goal complete or com
 ActionPolicy/Binder/Risk/Executor chain. An explicit Steel profile now drives the same provider browser session through
 BrowserGym/Playwright CDP and projects a protected same-origin Viewer. The Viewer remains read-only under Agent
 ownership; an exact durable-paused `TakeOver` grants one ephemeral Runtime-owned user lease and enables only Steel's
-native input path, while `ReturnControl` captures/evaluates fresh World before Agent dispatch can continue. The local
+native input path, while `ReturnControl` revokes that lease before it captures/evaluates fresh World. Viewer frames
+are fenced by the exact lease captured at WebSocket connection, so Agent dispatch can continue only after input is closed. The local
 BrowserGym profile keeps Viewer and takeover typed unavailable. Process-restart browser reconnection in that local
 profile and multi-effect reconciliation remain typed unavailable/unsupported rather than being hidden by the UI or
 simulated by the shell.
@@ -112,9 +113,9 @@ The following states must not be collapsed into one label such as "implemented":
 | Running-task revision | Implemented with bounded single-effect reconciliation | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. One retained known effect is either kept by fresh complete evaluation or attached to revision `n+1` as pending compensation; uncertain, irreversible, missing, or multiple effect truth fails closed without replacing revision `n`. |
 | Model OTel deployment export | Unavailable, non-blocking | Native/custom instrumentation exists, but this deployment has no recording `TracerProvider + exporter`; Runtime JSONL/Langfuse projection remains available. |
 | Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
-| Exclusive user takeover/return | Implemented and verified for Steel | Runtime owns one `agent|user` authority and opaque process-local lease. `TakeOver` consumes the exact durable paused checkpoint before user ownership; only that snapshot enables native Steel input. `ReturnControl` requires the exact lease, disables later input, invalidates stale Agent material, and captures/evaluates fresh World before any policy continuation. Capture failure retains user ownership; restart revokes the lease and cannot reuse the consumed checkpoint. |
+| Exclusive user takeover/return | Implemented and verified for Steel | Runtime owns one `agent|user` authority and opaque process-local lease. `TakeOver` consumes the exact durable paused checkpoint before user ownership; only that snapshot enables native Steel input. A WebSocket binds that lease and every frame verifies exact current equality under the session command lock. `ReturnControl` revokes the lease before fresh capture. Capture failure grants a new user lease, so old sockets never revive; restart revokes the lease and cannot reuse the consumed checkpoint. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
-| Delivery hygiene | Full Web control release profile verified | Phase 0–9 contracts, Runtime authority, Shell v2 projection, generated OpenAPI/frontend types, provider-free tests, docs, and protected Steel control agree. Viewer evidence includes a no-model/no-action CDP reset, native H.264 playback, the authenticated WHEP/video path, and a no-model takeover/return chain that changed the same page and closed from fresh World without a second policy call. No live compensation action or benchmark was run. |
+| Delivery hygiene | Full Web control release profile verified | Phase 0–9 contracts, Runtime authority, Shell v2 projection, generated OpenAPI/frontend types, provider-free tests, docs, and protected Steel control agree. Viewer evidence includes a no-model/no-action CDP reset, native H.264 playback, the authenticated WHEP/video path, and a no-model takeover/return chain that fenced an old socket during blocked capture, changed the same page once, and closed from fresh World without a second policy call. No live compensation action or benchmark was run. |
 
 An unavailable viewer does not make the Runtime unavailable, and an unavailable checkpoint does not make a live
 single-process run unavailable. The UI and deployment health response must report these three capabilities separately:
@@ -1032,8 +1033,9 @@ Live View and session inspector and is the alternative when operational speed is
 `ViewerStateProjector` publishes only readiness and a secret-free `/viewer/...` path. The deployment proxy
 authenticates the shell session, resolves the opaque provider viewer reference, enforces read-only mode unless a valid
 control lease exists, and applies expiry/cleanup. The shell does not implement screenshot polling, video encoding, or
-a custom mouse/keyboard protocol; during user ownership it forwards provider-native input frames and rechecks Runtime
-authority before every frame.
+a custom mouse/keyboard protocol. Each input WebSocket records the current Runtime lease at connection; every frame
+checks current user ownership and exact lease equality, and check-plus-forward is serialized with control commands by
+the existing per-session command lock.
 
 The implemented Steel profile is explicit rather than inferred from the mere presence of a key:
 
@@ -1074,8 +1076,10 @@ Phase 8 live verification used the protected product API and the same Steel
 lease without a model or benchmark. Runtime reached `waiting_user`, committed a
 durable pause, consumed that exact checkpoint for takeover, and projected user
 ownership before native input was admitted. One click changed the same
-CDP-owned page. `ReturnControl` then captured exactly one fresh World and
-finished from TaskEvaluator before a second ActionPolicy call. Cleanup ran once,
+CDP-owned page. The strengthened witness then blocked ReturnControl capture,
+sent a second click through the old socket, observed no second page effect, and
+observed that socket close 4409 after the boundary completed. `ReturnControl`
+captured exactly one fresh World and finished from TaskEvaluator before a second ActionPolicy call. Cleanup ran once,
 released the exact lease, and the delivered document contained no provider
 locator. `scripts/phase8_steel_takeover_witness.py` is the opt-in reproducible
 witness.
@@ -1465,11 +1469,14 @@ consumes that checkpoint before projecting user ownership and disables ordinary
 Resume/Revise and Agent dispatch. Steel sessions are created input-capable, but
 the protected document remains read-only under Agent ownership. Only the
 user-owned Runtime snapshot can install the authenticated same-origin proxy to
-Steel's validated native input WebSocket, and every frame rechecks authority.
-`ReturnControl` requires the exact lease, invalidates pending action/binding/
-confirmation material, captures and evaluates fresh World, and only then starts
-the existing loop if evaluation remains incomplete. Capture failure retains
-user ownership; restart revokes the process-local lease, while the consumed
+Steel's validated native input WebSocket. The socket records the connection
+lease, and every frame checks exact current equality under the same session lock
+as control-command admission. `ReturnControl` requires and revokes the exact
+lease before capture, invalidates pending action/binding/confirmation material,
+captures and evaluates fresh World, and only then starts the existing loop if
+evaluation remains incomplete. Capture failure restores user ownership with a
+new lease, so old sockets never revive; restart revokes the process-local lease,
+while the consumed
 pre-takeover checkpoint remains unusable. Provider-free owner/state/fault tests,
 Shell/API/WebSocket tests, generated contracts, frontend controls, and the
 no-model live same-page witness pass. No second executor, custom input protocol,
@@ -1489,10 +1496,11 @@ model call, compensation action, or benchmark was added to this evidence.
 6. Commit/review all changes and publish the real deployment entry/configuration instructions.
 
 Implementation status (2026-08-27): complete for the declared single-process
-Steel Full Web control profile. The whole provider-free repository reached
-`1834 passed / 25 skipped`; only the unchanged fixed-document-governance and
-absent-historical-live-trace baselines failed. External backend/architecture
-passed 78 tests. Frontend passed 12 unit tests, ESLint, TypeScript, generated
+Steel Full Web control profile. After the lease-fencing repair, the whole
+provider-free repository reached `1842 passed / 19 skipped`; only the
+absent-historical-live-trace evidence-environment baseline failed. The stale
+fixed-document governance gate now declares this maintained document and passes.
+External backend/architecture passed 79 tests. Frontend passed 12 unit tests, ESLint, TypeScript, generated
 OpenAPI equality, production build, and one explicitly synthetic Demo
 Playwright E2E. External Pyright and Ruff passed. Touched Core MyPy still reports
 only its two pre-existing nullable-task findings in `core_loop.py`. Phase 8's
@@ -1594,8 +1602,9 @@ Takeover is acceptable only when the public Runtime port returns an exclusive ty
 disabled for the lease duration, and return-control reacquires fresh World before resuming. The shell is tested for
 admission, lease projection, stale-command rejection, and viewer protection; it does not implement a second executor.
 The Steel release profile satisfies this boundary: input is read-only under Agent ownership, the exact durable pause
-is consumed before user ownership, every native input frame rechecks the Runtime owner, and return either commits one
-fresh World transition or retains user ownership on capture failure. Restart revokes the ephemeral lease and cannot
+is consumed before user ownership, every native input frame matches its connected lease to the current Runtime lease
+under the command lock, and return revokes that lease before capture. Capture failure signs a new user lease; restart
+revokes the ephemeral lease and cannot
 replay the consumed pre-takeover checkpoint.
 
 ## 17. Alternatives considered

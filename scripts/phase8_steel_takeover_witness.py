@@ -126,6 +126,8 @@ class _SteelPageEnvironment:
         self._serial = 0
         self._inner = ScriptedEnvironment(initial_observation=self._world(False))
         self.capture_calls = 0
+        self.capture_started = asyncio.Event()
+        self.capture_allowed = asyncio.Event()
 
     def _world(self, clicked: bool):
         self._serial += 1
@@ -178,6 +180,8 @@ class _SteelPageEnvironment:
     async def capture(self, request):
         if self._task is None:
             raise RuntimeError("Steel witness environment is not initialized")
+        self.capture_started.set()
+        await self.capture_allowed.wait()
         clicked = bool(await self._page.evaluate("window.__phase8Clicked === true"))
         world = self._world(clicked)
         fresh = ScriptedEnvironment(
@@ -229,10 +233,10 @@ class _LiveFactory:
                 #target{border:0;font:48px sans-serif;background:#1677ff;color:white;}
                 </style></head><body>
                 <button id="target"
-                  onclick="window.__phase8Clicked=true;this.textContent='activated'">
+                  onclick="window.__phase8Clicked=true;window.__phase8ClickCount+=1;this.textContent='activated'">
                   activate takeover witness
                 </button>
-                <script>window.__phase8Clicked=false;</script>
+                <script>window.__phase8Clicked=false;window.__phase8ClickCount=0;</script>
                 </body></html>
                 """
             )
@@ -405,40 +409,65 @@ async def _run_witness(client, factory: _LiveFactory, store, port: int) -> None:
             isinstance(status_payload, dict) and status_payload.get("type") in {"connected", "welcome"},
             "Steel input channel did not publish its ready status",
         )
-        await websocket.send(
-            json.dumps(
-                {
-                    "type": "mouseEvent",
-                    "event": {
-                        "action": "click",
-                        "x": 640,
-                        "y": 360,
-                        "button": "left",
-                        "modifiers": 0,
-                    },
+        click_frame = json.dumps(
+            {
+                "type": "mouseEvent",
+                "event": {
+                    "action": "click",
+                    "x": 640,
+                    "y": 360,
+                    "button": "left",
+                    "modifiers": 0,
                 },
-                separators=(",", ":"),
-            )
+            },
+            separators=(",", ":"),
         )
+        await websocket.send(click_frame)
         deadline = asyncio.get_running_loop().time() + 10
         while not bool(await factory.page.evaluate("window.__phase8Clicked === true")):
             if asyncio.get_running_loop().time() >= deadline:
                 raise TimeoutError("native Steel input did not activate the same page")
             await asyncio.sleep(0.05)
 
-        returned_response = await client.post(
-            f"/sessions/{session_id}/commands/return-control",
-            headers=headers,
-            json={
-                "kind": "return_control",
-                "command_id": "phase8:return",
-                "expected_task_revision": controlled["task_revision"],
-                "expected_run_status": controlled["run_status"],
-                "control_lease_id": controlled["control_lease_id"],
-            },
+        returning = asyncio.create_task(
+            client.post(
+                f"/sessions/{session_id}/commands/return-control",
+                headers=headers,
+                json={
+                    "kind": "return_control",
+                    "command_id": "phase8:return",
+                    "expected_task_revision": controlled["task_revision"],
+                    "expected_run_status": controlled["run_status"],
+                    "control_lease_id": controlled["control_lease_id"],
+                },
+            )
         )
+        await asyncio.wait_for(factory.environment.capture_started.wait(), timeout=10)
+        fenced_response = await client.get(f"/sessions/{session_id}", headers=headers)
+        fenced_response.raise_for_status()
+        fenced = fenced_response.json()
+        _require(
+            fenced["control_owner"] == "agent"
+            and fenced["control_lease_id"] is None
+            and fenced["capabilities"] == ["close_session"],
+            "return admission must revoke Viewer input before fresh capture",
+        )
+
+        await websocket.send(click_frame)
+        await asyncio.sleep(0.2)
+        _require(
+            int(await factory.page.evaluate("window.__phase8ClickCount")) == 1,
+            "input from the revoked lease crossed the blocked capture boundary",
+        )
+        factory.environment.capture_allowed.set()
+        returned_response = await asyncio.wait_for(returning, timeout=10)
         returned_response.raise_for_status()
         returned = returned_response.json()["snapshot"]
+        await asyncio.wait_for(websocket.wait_closed(), timeout=10)
+        _require(
+            websocket.close_code == 4409,
+            "revoked input socket must close with the lease-conflict code",
+        )
 
     consumed = await store.checkpoint_resume_outcome(
         session_id,
@@ -466,6 +495,8 @@ async def _run_witness(client, factory: _LiveFactory, store, port: int) -> None:
     print(f"durable_pause {paused['run_status']} {bool(paused['checkpoint_id'])}")
     print(f"control_owner_during_input {controlled['control_owner']}")
     print("same_steel_page_changed True")
+    print("input_fenced_during_capture True")
+    print("old_input_lease_rejected True")
     print(f"return_status {returned['run_status']}")
     print(f"return_control_owner {returned['control_owner']}")
     print(f"fresh_world_captures {factory.environment.capture_calls}")

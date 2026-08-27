@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 8 reopened for verified control-lease/input fencing race; Phase 9 blocked; no live benchmark run
+Status: Full Web control release profile reverified through Phase 9 after lease-fencing repair; no live benchmark run
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -682,7 +682,7 @@ Constraints:
       `unsafe-eval`; the final witness used Python-side polling without weakening
       CSP. No alternate media path, second Runtime browser, model call, GUI
       action, compensation action, input WebSocket, takeover, or benchmark ran.
-23. **in progress — Phase 8 exclusive user takeover and return.**
+23. **done — Phase 8 exclusive user takeover and return.**
     - Authority: `TargetRuntimeSession` owns one ephemeral control owner and
       opaque lease identity. The deployment Viewer consumes that public
       projection but never infers ownership from iframe focus, socket state, or
@@ -723,7 +723,8 @@ Constraints:
       and evaluates a fresh World through the existing Core loop owners, commits
       a non-budget-consuming `RequestObservation`, invalidates stale pending
       action material, and only then restarts the ActionPolicy. Failed currentness
-      retains user ownership and Agent dispatch stays disabled; recovery of the
+      retains user ownership under a newly issued lease, permanently fencing
+      the old input epoch, while Agent dispatch stays disabled; recovery of the
       consumed pre-takeover checkpoint fails closed. The focused Runtime/session
       slice passes 47 tests; Shell/Steel/UI wiring remains in progress.
     - Shell/Steel/UI milestone implemented: dedicated typed TakeOver and
@@ -733,8 +734,10 @@ Constraints:
       created input-capable, but the protected document remains read-only until
       Runtime projects user ownership. Interactive documents replace the private
       provider locator with one authenticated same-origin WebSocket; every input
-      frame rechecks current Runtime ownership before native forwarding, and a
-      return closes later input with 4409. The UI exposes only capability-gated
+      frame matches the lease captured at WebSocket connection against the
+      current Runtime lease. Check-plus-forward and ReturnControl use the same
+      session command lock; Runtime revokes the lease before fresh capture, and
+      capture failure grants a new lease. Old sockets close with 4409. The UI exposes only capability-gated
       Take control / Return to Agent controls and reloads the same protected
       iframe mode. Evidence: 64 external backend/architecture tests, 14
       deployment tests, 135 Core/architecture tests, 12 frontend tests plus
@@ -744,7 +747,9 @@ Constraints:
       input channel without a model or benchmark: the Runtime reached
       `waiting_user`, committed one durable pause, granted the exact user lease,
       and forwarded one click only after Steel's input-ready status. That input
-      changed the same CDP-owned page. `ReturnControl` then captured exactly one
+      changed the same CDP-owned page. The strengthened witness blocked return
+      capture, proved a second old-lease click had no page effect, and observed
+      socket close 4409. `ReturnControl` then captured exactly one
       fresh World, evaluated the task `DONE` before a second policy call, and
       restored Agent ownership. The ActionPolicy call count remained one, the
       paused checkpoint was consumed by takeover, cleanup ran once, the exact
@@ -752,16 +757,17 @@ Constraints:
       document. Authoritative architecture/benchmark/interaction-shell docs,
       standalone contracts, and the external README now agree with that bounded
       release profile.
-24. **blocked — Phase 9 release-profile closure review.**
+24. **done — Phase 9 release-profile closure review.**
     - Begin only after Step 23 passes its owner/property/integration gates.
       Reconcile implementation, generated contracts, UI, documentation, and the
       declared profile evidence without treating Viewer/takeover evidence as a
       benchmark result.
     - Release result: Full Web control is closed for the declared single-process
-      Steel profile. The whole provider-free repository reached 1834 passed and
-      25 skipped; only the two unchanged external baselines failed (the fixed
-      five-document governance assertion and an absent historical live trace).
-      External backend/architecture passed 78 tests. Frontend passed 12 unit
+      Steel profile. After the fencing repair, the whole provider-free repository
+      reached 1842 passed and 19 skipped; only the absent historical live trace
+      evidence-environment baseline failed. The stale fixed-document governance
+      gate now declares the maintained set explicitly and passes.
+      External backend/architecture passed 79 tests. Frontend passed 12 unit
       tests, ESLint, TypeScript, generated OpenAPI equality, production build,
       and one synthetic Demo Playwright E2E. External Pyright and Ruff passed;
       touched Core MyPy reports only the two unchanged nullable-task baseline

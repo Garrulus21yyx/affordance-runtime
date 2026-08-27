@@ -143,22 +143,27 @@ process-local lease on that same session. `TakeOver` is admitted only against an
 exact durable paused checkpoint, consumes it before publishing user ownership,
 and disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
 snapshot enables the authenticated same-origin proxy to Steel's native input
-WebSocket; each incoming frame rechecks Runtime ownership. `ReturnControl`
-requires the exact lease, invalidates stale action material, and captures and
-evaluates one fresh World before the existing ActionPolicy can run again. A
-capture failure retains user ownership; process restart revokes the ephemeral
+WebSocket. A socket binds the Runtime lease active at connection; each incoming
+frame verifies current user ownership and exact lease equality, and that
+check-plus-forward shares the Shell session command lock with `ReturnControl`.
+`ReturnControl` revokes the old lease before capture, invalidates stale action
+material, and captures and evaluates one fresh World before the existing
+ActionPolicy can run again. A capture failure restores user ownership with a new
+lease, so old sockets remain fenced; process restart revokes the ephemeral
 lease and the consumed checkpoint cannot be replayed. A no-model live witness
-changed the same CDP-owned page through the protected input route and returned
-to a terminal fresh evaluation with one World capture and no second policy
-call; cleanup ran once and released the exact Steel lease. These are
+changed the same CDP-owned page through the protected input route, blocked return
+capture, proved a second old-lease click had no page effect and closed 4409, then
+returned to a terminal fresh evaluation with one World capture and no second
+policy call; cleanup ran once and released the exact Steel lease. These are
 Viewer/control deployment witnesses, not benchmark evidence, and do not alter
 the reopened overall project status. No live compensation action or benchmark
 was performed.
 
 The external Phase 9 review closes only the declared single-process Steel Full
-Web control profile. The complete provider-free repository reached 1834 passed
-and 25 skipped, with only the unchanged fixed-document-governance assertion and
-absent historical live trace failing. External backend/architecture passed 78
+Web control profile. After the fencing repair, a fresh whole-suite run reached
+1842 passed and 19 skipped with only the absent historical live trace failing;
+the stale fixed-document governance gate now includes the maintained interaction
+shell document and passes. External backend/architecture passed 79
 tests; frontend unit/lint/typecheck/build, generated OpenAPI equality, and one
 synthetic Demo E2E passed. External Pyright and Ruff passed. The two touched-Core
 MyPy findings remain the pre-existing nullable-task reports in `core_loop.py`.
