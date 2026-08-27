@@ -31,7 +31,7 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1803 passed / 19 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1805 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
 modified or removed; every other collected test passed. The focused provider-envelope/PydanticAI boundary reports
 `91 passed`; Ruff, compileall, and `git diff --check` pass.
@@ -45,7 +45,9 @@ gaps are stale after later evidence:
 - C12 already removed privacy-by-field-name TaskGoal filtering and current generated tests conserve route-shaped
   public business keys through GoalCompiler and ActionPolicy;
 - Task27 run2 live-verifies the one bounded read-only recapture after `acquisition_unstable`; ordinary stable
-  acquisition and typed stable-navigation paths are covered vertically and exercised by accepted runs.
+  acquisition and typed stable-navigation paths are covered vertically and exercised by accepted runs;
+- the first unseen frozen W2 case after the Task268 repairs, Task740 run1, independently completed the full
+  Wiki-coordinate to OSRM-directions workflow with native `verified_success`.
 
 The remaining gate is generalization and stability across untouched cases. A typed `navigation_pending` remains an
 intentional fail-closed unsupported acquisition state, not a missing retry or alternate currentness path.
@@ -1219,6 +1221,25 @@ reopening the completed route. Harness compaction ran once rather than run1's se
 about 585 seconds to 361 seconds; aggregate tokens fell from 1,753,888 to 1,631,827. The exercised Task268 paths are
 live-accepted. The broader W2 cohort and aggregate-token efficiency remain open; this single success does not
 authorize case-specific code or claim campaign stability.
+
+Task740
+[`run1`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run1/run.json) is the first unseen frozen W2
+post-repair witness, run at commit `1ee18bfa`. Formal acceptance is true; Runtime ended `done / complete`, cleanup
+succeeded, and the native evaluator returned `verified_success` after one STOP and one post-STOP capture. The Agent
+identified Madison Square Garden, read its official Wiki coordinates, read Carnegie Mellon University's official Wiki
+coordinates, switched to the provided OpenStreetMap tab, entered both decimal coordinate pairs into the OSRM
+directions form, submitted it, read the resulting route, and finalized. The 29 valid policy turns comprised 11 GUI
+executions and seven bounded page reads, with zero recovery calls, waits, grounding gaps, fallbacks, invalid arguments,
+stale catalogs, or context-capacity rejections.
+
+The first provider response proposed two content searches. The existing single-action boundary executed neither
+envelope directly; one representation repair retained the first supported search with its own call ID and normal
+same-ID result history. All later responses contained one accepted ToolCall. The semantic trajectory did not revisit
+Wiki pages after entering OSRM and did not repeat a failed route. The reported `no_progress_count=8` reflects local
+read/discovery steps that intentionally leave the fresh World unchanged, not eight repeated semantic attempts; Monitor
+never entered recovery. Wall time was about 216 seconds and aggregate tokens were 706,384. This independent success
+falsifies a Task268-only explanation for the repaired control path, but one unseen case still does not establish the
+declared multi-case held-out cohort or close aggregate-token efficiency.
 
 ## Live-run authorization and execution
 

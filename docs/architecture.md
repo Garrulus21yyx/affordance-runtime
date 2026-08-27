@@ -1346,6 +1346,21 @@ about 585 seconds in run1 to 361 seconds, while aggregate tokens fell from 1,753
 the exercised completion-priority, exact-output retention, expired-prose scheduling, and repair-call-lineage paths. It
 does not by itself close the broader W2 cohort or the remaining aggregate-token efficiency target.
 
+Task740 run1 is the first unseen frozen W2 witness after those repairs. At commit `1ee18bfa`, it completed the distinct
+navigation workflow `Wiki destination -> Wiki origin -> OSRM directions -> STOP` with formal acceptance and native
+`verified_success`. Its 29 valid policy turns made 11 GUI executions, seven bounded page reads, zero recovery calls,
+zero waits, and zero grounding, stale-catalog, fallback, invalid-argument, or context-capacity failures. One initial
+multi-call response crossed the existing single-action representation-repair boundary; the repaired first call used
+normal provider lineage and the next ActionPolicy turn continued from its same-ID result. No later call repeated that
+shape, and the Agent did not return to either Wiki page after the OSRM route was displayed.
+
+This witness exercises the intended single authority chain without another progress, evidence, cursor, or replanning
+path: official SDK history carries completed calls/results, fresh World carries current browser state, the one
+ActionPolicy selects the next semantic action, and the native evaluator owns terminal success. Its approximately
+216-second wall time and 706,384 aggregate tokens remain efficiency evidence rather than a correctness failure. One
+unseen accepted case broadens the empirical surface beyond Task268 but does not yet satisfy the multi-case held-out
+campaign exit criterion.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
