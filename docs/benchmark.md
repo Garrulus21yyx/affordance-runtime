@@ -1189,7 +1189,7 @@ uncontradicted re-verification. Harness compaction now prioritizes exact values 
 transient execution setup, and its expired-prose arm waits for one complete recent-suffix input budget rather than
 reusing the output cap. No Replanner, mutable progress state, Monitor semantic rule, World projection, cursor,
 ToolReturn path, or Runtime branch was added. Provider-free focused tests pass. This repair is implementation-complete
-but not live-accepted; Task268 requires a separately authorized fresh witness.
+but was not yet live-accepted at that checkpoint.
 
 Task268
 [`run2`](../evidence/live/w2-task-268-deepseek-v4-flash-20260827-run2/run.json) failed immediately after one
@@ -1205,6 +1205,20 @@ requiring operation and every schema-declared argument to remain unchanged. The 
 future ToolReturn use the new ID. A provider-free vertical test covers distinct initial/repair IDs through local-tool
 resolution and pending PydanticAI history. No search, normalizer, Catalog, resolver, ToolReturn, or CoreLoop behavior
 changed. Run2 is a failed pre-repair witness, not evidence about the Task268 semantic-completion repair.
+
+Task268
+[`run3`](../evidence/live/w2-task-268-deepseek-v4-flash-20260827-run3/run.json) is the accepted post-repair witness at
+commit `966fe598`. Formal acceptance is true; the case ended `done / complete`, cleanup succeeded, and the native
+evaluator returned `verified_success`. It completed after 69 valid single-call policy turns (59 ordinary and ten
+recovery), 25 executions, 28 observations, one STOP, one post-STOP capture, and one native evaluator call. The final
+submission was `[{"relation_id":2176999,"duration":"10:57:00"}]` under the required public envelope.
+
+Run3 crossed both fresh counterexamples. Its one representation-repair response used a valid new provider call ID and
+continued with zero invalid-argument failures. ActionPolicy retained the exact final values and submitted instead of
+reopening the completed route. Harness compaction ran once rather than run1's seventeen times. Wall time fell from
+about 585 seconds to 361 seconds; aggregate tokens fell from 1,753,888 to 1,631,827. The exercised Task268 paths are
+live-accepted. The broader W2 cohort and aggregate-token efficiency remain open; this single success does not
+authorize case-specific code or claim campaign stability.
 
 ## Live-run authorization and execution
 

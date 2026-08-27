@@ -1321,7 +1321,7 @@ locations, and service restrictions in its bounded fact quota. Finally, expired-
 suffix input budget, independently of the 1,024-token summary output cap. Run1 made seventeen compactor calls because
 those two units had been conflated. The implementation changes only the existing ActionPolicy prompt, Harness summary
 prompt, and Harness schedule; it adds no Replanner, progress store, mutable plan, second evaluator, or Runtime branch.
-Provider-free owner tests pass; Task268 remains empirically open pending a separately authorized fresh run.
+Provider-free owner tests passed; at that checkpoint Task268 remained empirically open pending a fresh run.
 
 Task268 run2 failed before any browser execution and exposes an independent representation-repair lineage defect.
 The first real DeepSeek response called `search_page_content` with the valid `query`/`cursor` operands plus an
@@ -1336,6 +1336,15 @@ schema-declared argument across representation repair, accepts the repair respon
 and uses that same new ID for the pending PydanticAI exchange and subsequent ToolReturn. A vertical test uses distinct
 initial and repaired IDs and verifies the accepted local-tool decision plus pending SDK history. No normalizer,
 Catalog, resolver, ToolReturn projection, CoreLoop, or provider-specific branch changed.
+
+Task268 run3 is the accepted post-repair witness at commit `966fe598`. Formal acceptance is true and the native
+evaluator returned `verified_success` after 69 valid single-call policy turns, 25 executions, 28 observations, one
+STOP, one post-STOP capture, and one native evaluation. The submitted result was relation ID `2176999` and biking
+duration `10:57:00`. The run recorded zero invalid tool arguments and successfully crossed one real representation
+repair with a new provider call ID. Harness compaction ran once rather than run1's seventeen times. Wall time fell from
+about 585 seconds in run1 to 361 seconds, while aggregate tokens fell from 1,753,888 to 1,631,827. This live-validates
+the exercised completion-priority, exact-output retention, expired-prose scheduling, and repair-call-lineage paths. It
+does not by itself close the broader W2 cohort or the remaining aggregate-token efficiency target.
 
 ## World, perception, and action boundaries
 
