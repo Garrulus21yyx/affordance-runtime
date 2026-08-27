@@ -78,6 +78,16 @@ failed route instead of abandoning it. The run blocked after 84 policy calls, 1,
 invalid responses, and no STOP/native evaluation. Canonical history recovery is live-verified; broader benchmark
 closure remains open for long-horizon failed-route convergence and a new untouched task-success witness.
 
+The provider-free failed-route repair now recognizes the first bounded ref-free `A -> ... -> A` GUI excursion as
+typed `route_regression`, even when the visited branch produced new public text. It sends that mechanical fact through
+the existing recovery feedback into one deliberate ActionPolicy call; Runtime neither judges task relevance nor
+chooses the alternate route. The exact outbound replay is rejected before dispatch, one bounded fallback remains
+available, and a different current route executes normally. Focused owner/consumer verification reports 331 passed
+and 3 skipped; PydanticAI/grounded-tool verification reports 137 passed. This is implementation evidence only:
+Task426 and one fresh held-out long task remain the live acceptance gate.
+The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped, with only the pre-existing
+`docs/interaction-shell.md` documentation-governance count failing.
+
 The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
 task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,
 raw evidence, and runner output. Focused Console verification covers bounded newest-first run summaries, public

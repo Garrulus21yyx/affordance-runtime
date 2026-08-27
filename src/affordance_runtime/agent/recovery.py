@@ -35,7 +35,6 @@ class RecoveryKind(StrEnum):
     STATE_OSCILLATION = "state_oscillation"
     ROUTE_REGRESSION = "route_regression"
     CONTROL_STALL = "control_stall"
-    STRATEGY_STALL = "strategy_stall"
     CAPABILITY_GAP = "capability_gap"
 
 

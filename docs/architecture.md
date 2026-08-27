@@ -103,6 +103,30 @@ again. After 84 policy calls, two final typed invalid responses let the existing
 This is now a separate long-horizon failed-route convergence and efficiency witness; it does not justify reopening
 the action projection or canonical provider-history contracts.
 
+The failed-route owner repair is implemented but not yet live-verified. `EpisodeMonitor` now retains its existing
+bounded ref-free GUI-attempt window across local `NEW_INFORMATION`, because new public text does not prove task
+progress. When a dispatched action returns to a semantic page where an earlier outbound attempt began, the Monitor
+emits the already-declared `ROUTE_REGRESSION` fact on that first closed excursion. It does not classify the route as
+semantically wrong. The signal purchases one existing deliberate `ActionPolicy` call over `TaskGoal`, fresh World,
+recent completed results, and the outbound signature; the model owns whether the acquired result is useful and which
+different action to take. An immediate exact outbound replay is rejected by the existing CoreLoop before dispatch,
+with the same one-fallback-then-block algebra already used for rejected local-tool recovery. The unowned
+`STRATEGY_STALL` recovery kind was removed. No Replanner, planning tree, progress state, Store, cursor, history path,
+or task/site keyword rule was added.
+
+This boundary follows the useful separation in current primary work: VeriGUI verifies local action effects against
+the next observation, while AgentOccam exposes model-owned branch/prune decisions and Agent S2 delegates semantic
+plan revision to a model role rather than a deterministic executor
+([VeriGUI](https://arxiv.org/abs/2604.05477),
+[AgentOccam](https://arxiv.org/abs/2410.13825),
+[Agent S2](https://arxiv.org/abs/2504.00906)). The project-level inference is narrower than those systems: Runtime
+proves only the closed route and exact replay; the single ActionPolicy performs the reflection. Provider-free
+verification covers first-return recovery, an intervening informative read, forward-only non-regression, one
+deliberate event, exact GUI replay with zero additional dispatch, and a materially different route reaching task
+completion. Live Task426 and one fresh held-out long task remain required before this gap can be closed.
+The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped; its sole failure remains the pre-existing
+`docs/interaction-shell.md` documentation-governance count, not a product or recovery regression.
+
 ### Local agent shell
 
 The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is

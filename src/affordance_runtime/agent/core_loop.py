@@ -508,9 +508,9 @@ class CoreAgentLoop:
                 result,
                 status_after=RunStatus.RUNNING,
                 feedback=(
-                    f"episode_monitor_recover:{getattr(signal.kind, 'value', 'strategy_stall')}"
+                    f"episode_monitor_recover:{getattr(signal.kind, 'value', 'control_stall')}"
                     if signal is not None
-                    else "episode_monitor_recover:strategy_stall"
+                    else "episode_monitor_recover:control_stall"
                 ),
                 recovery_signal=signal,
             )

@@ -125,6 +125,78 @@ def _task() -> TaskGoal:
     )
 
 
+def _route_world(observation_id: str, route: str, controls: tuple[str, ...]) -> WorldObservation:
+    document = SemanticTarget("route-document", "document", "Route test", {"page.route": route})
+    targets = (document,) + tuple(
+        SemanticTarget(control, "button", control.replace("-", " ").title())
+        for control in controls
+    )
+    bindings = tuple(
+        ActionBinding(
+            f"binding:{observation_id}:{control}",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            f"fingerprint:{control}",
+            control,
+            control,
+            "dom",
+            "dom",
+            "activate",
+            "click",
+            "local_reversible",
+            ("route_changed",),
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            {"selector": f"#{control}"},
+            risk=ActionRisk.LOW,
+        )
+        for control in controls
+    )
+    facts = (
+        StateFact(
+            f"fact:{observation_id}:route",
+            document.target_id,
+            "page.route",
+            route,
+            observation_id,
+        ),
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "dom",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        targets,
+        facts,
+        bindings,
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    return fused.observation
+
+
+def _route_task() -> TaskGoal:
+    return TaskGoal(
+        "route-recovery",
+        "Reach the completed route",
+        allowed_effects=("route_changed",),
+        risk_profile=RiskProfile.LOW,
+        loop_budget=LoopBudget(max_turns=8, max_observations=16),
+    )
+
+
+class RouteTaskEvaluator:
+    async def evaluate(self, task, observation):
+        route = str(observation.targets[0].state.get("page.route", ""))
+        return TaskEvaluation(
+            task.task_id,
+            observation.observation_id,
+            TaskEvaluationStatus.COMPLETE if route == "/done" else TaskEvaluationStatus.INCOMPLETE,
+            "route complete" if route == "/done" else "route incomplete",
+            completion_evidence_refs=(observation.facts[0].fact_id,) if route == "/done" else (),
+        )
+
+
 def _form_world(observation_id: str, from_value: str, to_value: str) -> WorldObservation:
     targets = (
         SemanticTarget("route-from", "textbox", "From", {"value": from_value}),
@@ -570,6 +642,75 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
+def test_closed_gui_route_gets_one_deliberate_turn_and_exact_replay_is_not_dispatched() -> None:
+    @dataclass
+    class RouteRecoveryPolicy:
+        turns: int = 0
+
+        @staticmethod
+        def select(context, target_id: str, call_id: str) -> SelectAction:
+            option = next(item for item in context.actions.options if item.target_id == target_id)
+            return SelectAction(context.context_id, option.action_id, tool_call_id=call_id)
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                return self.select(context, "primary-route", "provider-call:primary-first")
+            if self.turns == 2:
+                return SearchPageContentResult(
+                    context.context_id,
+                    "search_page_content",
+                    {"query": "destination status"},
+                    {
+                        "kind": "Matches",
+                        "items": ({"label": "Destination status", "value": "Not Found"},),
+                        "total_count": 1,
+                    },
+                    "provider-call:read-destination",
+                )
+            if self.turns == 3:
+                return self.select(context, "return-route", "provider-call:return")
+            if self.turns == 4:
+                assert context.control_feedback["kind"] == "route_regression"
+                assert context.control_feedback["observed_evidence"]["returned_to_prior_semantic_page"] is True
+                return self.select(context, "primary-route", "provider-call:primary-replay")
+            if self.turns == 5:
+                assert context.control_feedback["kind"] == "control_stall"
+                assert context.control_feedback["recovery_attempt"] == 2
+                return self.select(context, "alternate-route", "provider-call:alternate")
+            raise AssertionError("route recovery should finish after the alternate route")
+
+    async def scenario() -> None:
+        first = _route_world("route-a:first", "/search", ("primary-route", "alternate-route"))
+        failed = _route_world("route-b", "/relation/failed", ("return-route",))
+        returned = _route_world("route-a:returned", "/search", ("primary-route", "alternate-route"))
+        complete = _route_world("route-c", "/done", ())
+        policy = RouteRecoveryPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            RouteTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("route_regression_test"),
+            episode_monitor=EpisodeMonitor(AgentLoopProfile(8, 1)),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=first,
+            post_observations=(failed, returned, complete),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(3)),
+        )
+
+        state = await runtime.run_task(environment, _route_task())
+
+        assert state.status is RunStatus.DONE
+        assert policy.turns == 5
+        assert state.execution_count == 3
+        assert environment.execute_calls == 3
+        assert state.last_step is not None
+        assert state.last_step.decision.tool_call_id == "provider-call:alternate"
+
+    asyncio.run(scenario())
+
+
 def test_fresh_observation_replaces_context_projection_once(monkeypatch) -> None:
     calls: list[str] = []
     index_calls: list[str] = []
@@ -921,7 +1062,10 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         snapshot = snapshot_episode(state, episode_monitor=monitor)
 
         assert state.status is RunStatus.BLOCKED
-        assert policy.turns == 4
+        # Two no-effect Enter dispatches trigger recovery. The next two exact
+        # policy replays are both rejected before dispatch: the first returns
+        # one bounded fallback turn, and the second closes the stalled run.
+        assert policy.turns == 5
         assert environment.execute_calls == 3
         assert [item.intent.semantic_action for item in environment.dispatched_requests] == [
             "type_text",
@@ -931,10 +1075,10 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert state.last_step is not None
         assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
         assert state.workspace.recent_steps[-1].reason == "episode_monitor_blocked:control_stalled"
-        assert monitor.same_attempt_streak == 2
-        assert monitor.no_progress_count == 2
-        assert snapshot.same_attempt_streak == 2
-        assert snapshot.no_progress_count == 2
+        assert monitor.same_attempt_streak == 4
+        assert monitor.no_progress_count == 4
+        assert snapshot.same_attempt_streak == 4
+        assert snapshot.no_progress_count == 4
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
         assert snapshot.latest_control_reason_code == "control_stalled"
 

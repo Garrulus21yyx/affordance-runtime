@@ -707,38 +707,25 @@ def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None
     assert recovery.recovery_signal.prohibited_attempt_signature is not None
 
 
-def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence() -> None:
+def test_first_closed_gui_route_requests_deliberate_review() -> None:
     portland = _world("observation:portland", route="/wiki/Portland_Maine")
     acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
+    returned_portland = _world("observation:portland-returned", route="/wiki/Portland_Maine")
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(portland, _evaluation(portland))
 
     first = _evaluate(monitor, _dispatched_step(portland, acadia))
-    second = _evaluate(monitor, _dispatched_step(acadia, portland))
-    third = _evaluate(monitor, _dispatched_step(portland, acadia))
-    recovery = _evaluate(monitor, _dispatched_step(acadia, portland))
+    recovery = _evaluate(monitor, _dispatched_step(acadia, returned_portland))
 
-    assert all(
-        item.recommendation is EpisodeMonitorRecommendation.CONTINUE
-        for item in (first, second, third)
-    )
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert EpisodeMonitorEvent.STATE_CHANGED in recovery.events
+    assert EpisodeMonitorEvent.ROUTE_REGRESSION in recovery.events
     assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
-    assert recovery.recovery_signal.observed_evidence["cycle_period"] == 2
-    assert recovery.recovery_signal.prohibited_attempt_signature is None
-    assert "short cycle across fresh Worlds" in recovery.recovery_signal.human_instruction
-
-    # A local inspection does not make the effectful navigation cycle disappear.
-    local = _evaluate(monitor, _local_step(portland, query="coordinates"))
-    blocked = _evaluate(monitor, _dispatched_step(portland, acadia))
-
-    assert local.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
-    assert blocked.reason == "state_oscillation"
-    assert blocked.recovery_signal is not None
-    assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
+    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
+    assert recovery.recovery_signal.observed_evidence["route_effectful_attempt_count"] == 2
+    assert recovery.recovery_signal.prohibited_attempt_signature == monitor.recent_gui_attempts[0]
+    assert "returned to the semantic page" in recovery.recovery_signal.human_instruction
     assert len(monitor.recent_gui_attempts) <= 16
 
 
@@ -782,7 +769,7 @@ def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
     assert period == 0
 
 
-def test_six_step_gui_cycle_recovers_once_and_blocks_its_recurrence() -> None:
+def test_six_step_gui_excursion_recovers_on_first_return_to_origin() -> None:
     worlds = tuple(
         _world(f"observation:cycle-{index}", route=f"/state/{index}")
         for index in range(6)
@@ -790,60 +777,71 @@ def test_six_step_gui_cycle_recovers_once_and_blocks_its_recurrence() -> None:
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(worlds[0], _evaluation(worlds[0]))
 
-    first_two_cycles = tuple(
+    first_excursion = tuple(
         _evaluate(
             monitor,
             _dispatched_step(worlds[index % 6], worlds[(index + 1) % 6]),
         )
-        for index in range(12)
+        for index in range(6)
     )
 
     assert all(
         item.recommendation is EpisodeMonitorRecommendation.CONTINUE
-        for item in first_two_cycles[:-1]
+        for item in first_excursion[:-1]
     )
-    recovery = first_two_cycles[-1]
+    recovery = first_excursion[-1]
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.observed_evidence["cycle_period"] == 6
-
-    # The digest is phase-independent, so continuing the same sequence by one
-    # effectful action is already recurrence of the recovered cycle rather
-    # than six more free attempts.
-    blocked = _evaluate(monitor, _dispatched_step(worlds[0], worlds[1]))
-
-    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
-    assert blocked.reason == "state_oscillation"
-    assert blocked.recovery_signal is not None
-    assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
+    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
+    assert recovery.recovery_signal.observed_evidence["route_effectful_attempt_count"] == 6
 
 
-def test_new_public_information_closes_gui_cycle_recovery_episode() -> None:
+def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
     first = _world("observation:cycle-info-a", route="/state/a")
     second = _world("observation:cycle-info-b", route="/state/b")
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(first, _evaluation(first))
     store = ObservationDeliveryStore()
 
-    for index in range(4):
-        before, after = (first, second) if index % 2 == 0 else (second, first)
-        transition = _evaluate(monitor, _dispatched_step(before, after))
-    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert monitor.active_gui_cycle_digest
+    outbound = _evaluate(monitor, _dispatched_step(first, second))
+    assert outbound.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert len(monitor.recent_gui_attempts) == 1
 
-    information_step = _search_with_items(first)
-    delivery = store.reduce(information_step, step_index=5)
+    information_step = _search_with_items(second)
+    delivery = store.reduce(information_step, step_index=2)
     continued = monitor.evaluate(
         information_step,
-        current_findings_digest(first),
+        current_findings_digest(second),
         delivery.information_delta,
     )
 
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert delivery.information_delta is not None
     assert delivery.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-    assert monitor.recent_gui_attempts == ()
+    assert len(monitor.recent_gui_attempts) == 1
     assert monitor.active_gui_cycle_digest == ""
+
+    recovery = _evaluate(monitor, _dispatched_step(second, first))
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
+    assert recovery.recovery_signal.prohibited_attempt_signature == monitor.recent_gui_attempts[0]
+
+
+def test_forward_only_gui_route_does_not_invent_a_regression() -> None:
+    first = _world("observation:forward-a", route="/state/a")
+    second = _world("observation:forward-b", route="/state/b")
+    third = _world("observation:forward-c", route="/state/c")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first, _evaluation(first))
+
+    first_transition = _evaluate(monitor, _dispatched_step(first, second))
+    second_transition = _evaluate(monitor, _dispatched_step(second, third))
+
+    assert first_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.ROUTE_REGRESSION not in second_transition.events
 
 
 def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> None:

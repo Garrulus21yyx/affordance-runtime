@@ -58,6 +58,17 @@ def test_one_recovery_event_purchases_at_most_one_deliberate_call() -> None:
     assert second.phase is ActionPolicyInvocationPhase.ORDINARY
 
 
+def test_route_regression_uses_the_existing_operational_deliberate_profile() -> None:
+    profile = ActionPolicyReasoningPolicy().select(
+        _context("route_regression", "route:stable"),
+        frozenset(),
+    )
+
+    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
+    assert profile.trigger is ActionPolicyInvocationTrigger.OPERATIONAL_STALL
+    assert profile.thinking_mode == "enabled"
+
+
 def test_representation_semantic_choice_is_operation_and_target_stable() -> None:
     original = _semantic_choice(
         {"name": "activate", "arguments": {"target": "E2", "extra": "ignored"}}

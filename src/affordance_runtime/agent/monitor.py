@@ -40,7 +40,11 @@ from affordance_runtime.evaluation.contracts import (
 )
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
+from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.public_semantic_digest import (
+    public_page_semantic_digest,
+    public_world_semantic_digest,
+)
 
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
 _MAX_RECENT_GUI_ATTEMPTS = 16
@@ -126,6 +130,32 @@ class EpisodeMonitor:
             self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
+        if self.recovery_count and result.feedback == "recovery_repeat_rejected":
+            signature = self.latest_attempt_signature or _same_world_attempt_signature(result)
+            repeats_latest = signature == self.latest_attempt_signature
+            self.no_progress_count += 1
+            self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
+            self.latest_attempt_signature = signature
+            self.recovery_count = self.recovery_count + 1 if repeats_latest else 1
+            signal = _control_stall_signal(
+                result,
+                self,
+                recovery_attempt=self.recovery_count,
+            )
+            if self.recovery_count > self.profile.max_recovery_retries + 1:
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.CONTROL_STALL.value,
+                signal,
+            )
+
         if self.recovery_count and isinstance(result.decision, ToolRejectedResult):
             signature = _same_world_attempt_signature(result)
             repeats_latest = signature == self.latest_attempt_signature
@@ -153,7 +183,31 @@ class EpisodeMonitor:
             )
 
         gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+        route_origin, route_length = _closed_gui_route(
+            self.recent_gui_attempts,
+            gui_signature,
+            result.after_world,
+        )
         cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)
+        if route_origin is not None:
+            self.observation_only_streak = 0
+            self.no_progress_count += 1
+            self.same_attempt_streak = 1
+            self.latest_attempt_signature = route_origin
+            self.recovery_count = 1
+            self.active_gui_cycle_digest = ""
+            signal = _route_regression_recovery_signal(
+                result,
+                self,
+                outbound_attempt=route_origin,
+                route_length=route_length,
+            )
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REGRESSION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.ROUTE_REGRESSION.value,
+                signal,
+            )
         if cycle_digest:
             self.observation_only_streak = 0
             self.no_progress_count += 1
@@ -184,9 +238,10 @@ class EpisodeMonitor:
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
             ):
-                # Owner-produced task information, unlike a mere changed
-                # screen, closes the preceding operational-cycle episode.
-                self.recent_gui_attempts = ()
+                # New public content closes a same-screen read stall, but it
+                # does not prove that the surrounding GUI route advanced the
+                # task.  Keep the bounded effectful route so a later return to
+                # its origin can be reviewed by the ActionPolicy.
                 self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
@@ -200,15 +255,6 @@ class EpisodeMonitor:
             self.latest_attempt_signature = gui_signature
             self.same_attempt_streak = 1
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
-
-        if self.recovery_count and result.feedback == "recovery_repeat_rejected":
-            signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
-                EpisodeMonitorRecommendation.BLOCK,
-                "control_stalled",
-                signal,
-            )
 
         exact_replay = bool(
             information_delta is not None
@@ -387,6 +433,77 @@ def _gui_cycle_recovery_signal(
         ),
         recovery_attempt=recovery_attempt,
     )
+
+
+def _route_regression_recovery_signal(
+    result: StepResult,
+    monitor: EpisodeMonitor,
+    *,
+    outbound_attempt: PublicAttemptSignature,
+    route_length: int,
+) -> RecoverySignal:
+    """Request semantic review after one effectful excursion returns to its origin."""
+
+    returned_page_digest = public_page_semantic_digest(result.after_world)
+    signature = "route_regression:sha256:" + hashlib.sha256(
+        _canonical_json(
+            (
+                outbound_attempt.digest,
+                returned_page_digest,
+            )
+        ).encode()
+    ).hexdigest()
+    current_attempt = _gui_attempt_signature(result)
+    attempted_modes = tuple(
+        dict.fromkeys(
+            item
+            for item in (
+                outbound_attempt.operation,
+                current_attempt.operation if current_attempt is not None else "",
+            )
+            if item
+        )
+    )
+    return RecoverySignal(
+        RecoveryKind.ROUTE_REGRESSION,
+        signature,
+        {
+            "returned_to_prior_semantic_page": True,
+            "route_effectful_attempt_count": route_length,
+            "outbound_operation": outbound_attempt.operation,
+            "return_operation": current_attempt.operation if current_attempt is not None else "",
+            "world_digest": monitor.world_digest,
+            "current_findings_digest": monitor.current_findings_digest,
+        },
+        attempted_modes=attempted_modes,
+        prohibited_attempt_signature=outbound_attempt,
+        human_instruction=(
+            "The latest effectful GUI excursion returned to the semantic page where an earlier outbound attempt "
+            "began. Preserve facts acquired during the excursion and reassess them against the unresolved task "
+            "requirements. Do not immediately replay that exact outbound attempt; choose a different current route, "
+            "use the acquired result, or finish when the requested answer is already supported."
+        ),
+        recovery_attempt=1,
+    )
+
+
+def _closed_gui_route(
+    prior_attempts: tuple[PublicAttemptSignature, ...],
+    current_attempt: PublicAttemptSignature | None,
+    after_world: WorldObservation,
+) -> tuple[PublicAttemptSignature | None, int]:
+    """Return the most recent outbound attempt whose semantic origin was revisited."""
+
+    if current_attempt is None:
+        return None, 0
+    returned_page_digest = public_page_semantic_digest(after_world)
+    if current_attempt.page_semantic_digest == returned_page_digest:
+        return None, 0
+    bounded_prior = prior_attempts[-(_MAX_RECENT_GUI_ATTEMPTS - 1) :]
+    for offset, attempt in enumerate(reversed(bounded_prior)):
+        if attempt.page_semantic_digest == returned_page_digest:
+            return attempt, offset + 2
+    return None, 0
 
 
 def _short_gui_cycle(
