@@ -2,6 +2,32 @@
 
 ## Current status
 
+The first untouched four-case W2 batch after the Task740/759 witnesses is failed pre-repair evidence, not a closure
+batch:
+
+- Task424 blocked after 59 policy calls while repeatedly trying OSM Pittsburgh routes;
+- Task681 blocked after 60 calls despite having identified `eriklindernoren/PyTorch-GAN`, 193 commits, the technology
+  forum, and the exact post fields;
+- Task672 blocked after 18 calls at the same Postmill create-post boundary;
+- Task556 reached the GitLab Web IDE and extracted all 12 Nolan feature titles, but activated an IMDb link and received
+  native terminal task failure.
+
+Tasks 681/672/556 expose one observation/action-alignment reopening. In Task681 the fresh observation contained the
+executable `Submit` link and `ActionPager` reported 32 visible actions out of 347 complete actions, while the physical
+request admitted only the task-ranked `Forums` link and current focus. In Task556 `read_region` returned the exact
+`Christopher Nolan filmography` text without its current executable ref. The existing literal `find_controls`
+contract and Monitor repeat rejection both behaved as designed; neither can compensate for a projection owner that
+drops the already-bounded current action page or splits readable text from its fresh grounding.
+
+The implemented owner repair consumes the existing `base_actions` argument, hard-admits that bounded capability set
+together with at most five task-ranked suggestions, and removes the duplicate complete-ActionSpace presentation
+inventory. Read/search results now attach the existing current E-ref and verbs only to interactive targets they
+actually return. The complete current Catalog resolver, `find_controls`, PydanticAI call/result history, cursor,
+Monitor, Binder, Executor, and BrowserGym capture paths are unchanged. Focused property/vertical tests cover bounded
+base-set hard admission, hard-capacity failure, permutation, destination routes, duplicate readable labels, and
+same-World read-result E-ref execution. Live witness reruns and a fresh held-out case are still required; broader
+benchmark status therefore remains non-closed.
+
 The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
 task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,
 raw evidence, and runner output. Focused Console verification covers bounded newest-first run summaries, public

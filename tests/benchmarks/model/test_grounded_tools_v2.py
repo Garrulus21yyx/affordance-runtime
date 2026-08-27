@@ -1112,7 +1112,7 @@ def test_every_registered_local_tool_resolver_produces_its_contract_decision_typ
             assert resolution.decision.result
 
 
-def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> None:
+def test_readable_matches_attach_current_grounding_without_changing_discovery_authority() -> None:
     task = TaskGoal(
         "task:watch4-synthetic",
         "Open the requested navigation section.",
@@ -1190,7 +1190,10 @@ def test_read_and_action_discovery_remain_disjoint_for_duplicate_labels() -> Non
     )
     matches = inspected.items
     assert any(match["node_ref"] == readonly_ref for match in matches)
-    assert all(not {"actionable", "verbs", "action_refs"}.intersection(match) for match in matches)
+    grounded_matches = tuple(match for match in matches if match.get("target_ref") in actionable_refs)
+    assert {match["target_ref"] for match in grounded_matches} == actionable_refs
+    assert all(tuple(match["verbs"]) == ("activate",) for match in grounded_matches)
+    assert all("actionable" not in match and "action_refs" not in match for match in matches)
     assert not any(match.get("node_ref") in actionable_refs for match in matches)
 
     initial = ToolCall("activate", {"target": "E114"}, "call:initial")

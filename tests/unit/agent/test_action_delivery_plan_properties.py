@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -175,6 +176,55 @@ def test_explicit_query_result_is_one_hard_admitted_capability_set(
     first_query_attempt = next(call[query_kind] for call in calls if call[query_kind])
     assert first_query_attempt == count
     assert dict(packed.admitted_record_counts)[query_kind] == count
+
+
+def test_owner_bounded_base_page_is_one_hard_admitted_capability_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = replace(
+        _obligation(DeliveryObligationKind.BASE_ACTIONS, 4, 0),
+        required_record_count=4,
+    )
+    plan = ActionDeliveryPlan(
+        "actions:test",
+        "world:test",
+        (base,),
+        base.scope,
+    )
+
+    def exact_attempt(_request, **kwargs):
+        counts = dict(kwargs["admitted_records"])
+        if sum(counts.values()) > 4:
+            raise ModelRequestCapacityError(SimpleNamespace())
+        return _packed_artifacts(counts, kwargs["backoff_count"])
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(exact_attempt))
+    packed = TurnPacker().pack(
+        SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
+        binder=_fake_binder(),
+        identity=None,
+        call_profile=_fake_profile(),
+        supports_multimodal=False,
+        perception_profile=SimpleNamespace(),
+    )
+    assert dict(packed.admitted_record_counts)[base.kind.value] == 4
+
+    def short_attempt(_request, **kwargs):
+        counts = dict(kwargs["admitted_records"])
+        if sum(counts.values()) > 3:
+            raise ModelRequestCapacityError(SimpleNamespace())
+        return _packed_artifacts(counts, kwargs["backoff_count"])
+
+    monkeypatch.setattr(TurnPacker, "_attempt", staticmethod(short_attempt))
+    with pytest.raises(ModelRequestCapacityError):
+        TurnPacker().pack(
+            SimpleNamespace(agent_context=SimpleNamespace(action_delivery_plan=plan)),
+            binder=_fake_binder(),
+            identity=None,
+            call_profile=_fake_profile(),
+            supports_multimodal=False,
+            perception_profile=SimpleNamespace(),
+        )
 
 
 @pytest.mark.parametrize("capacity, expected_total", ((3, 3), (2, 2)))

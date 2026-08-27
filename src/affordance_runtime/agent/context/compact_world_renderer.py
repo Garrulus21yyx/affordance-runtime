@@ -634,6 +634,7 @@ def inspect_actor_world(
 
     if region_index.world_observation_id != observation.observation_id:
         return StaleContext(region_index.world_observation_id, observation.observation_id)
+    verbs_by_ref = {item.ref: item.verbs for item in grounding.entities}
     try:
         if action == "read_region":
             try:
@@ -646,6 +647,8 @@ def inspect_actor_world(
                 region,
                 canonical_world,
                 observation,
+                grounding,
+                verbs_by_ref,
             )
             return _page_region_items(
                 items,
@@ -664,6 +667,7 @@ def inspect_actor_world(
                 query,
                 observation,
                 grounding,
+                verbs_by_ref=verbs_by_ref,
                 public_fact_bindings=public_fact_bindings or {},
                 evidence_index=evidence_index,
             )
@@ -753,14 +757,19 @@ def _with_world_read_metadata(result: Mapping[str, object]) -> Mapping[str, obje
         "searched_domain": "readable_content",
         "read_only": True,
         "zero_browser_dispatch": True,
-        "does_not_search": "executable_controls",
+        "executable_grounding": "attached_to_returned_readable_targets",
     }
 
 
 def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:
     projected = dict(item)
     region_ref = str(item.get("region_ref", ""))
-    match_ref = str(item.get("node_ref") or item.get("evidence_ref") or "")
+    match_ref = str(
+        item.get("target_ref")
+        or item.get("node_ref")
+        or item.get("evidence_ref")
+        or ""
+    )
     if PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION):
         if PublicRefCodec.accepts(match_ref) and PublicRefCodec.decode(match_ref).kind is not PublicRefKind.REGION:
             projected["match_ref"] = match_ref
@@ -1453,6 +1462,7 @@ def _find_matches(
     observation,
     grounding,
     *,
+    verbs_by_ref: Mapping[str, tuple[str, ...]],
     public_fact_bindings: Mapping[str, str] | None = None,
     evidence_index: WorldEvidenceIndex | None = None,
 ) -> tuple[Mapping[str, object], ...]:
@@ -1471,6 +1481,8 @@ def _find_matches(
             region,
             canonical_world,
             observation,
+            grounding,
+            verbs_by_ref,
         )
         repeated_target_ids.update(grouped_target_ids)
         matches.extend(item for item in grouped if needle in _tool_record_search_text(item))
@@ -1481,13 +1493,13 @@ def _find_matches(
         if needle not in _normalized_readable_text(" ".join(values)).casefold():
             continue
         region_ref, node_ref = locations.get(target.target_id, ("", ""))
-        match = {
+        match: dict[str, object] = {
             "region_ref": region_ref,
-            "node_ref": (node_ref if PublicRefCodec.accepts(node_ref, expected=PublicRefKind.NODE) else ""),
             "role": target.role,
             "label": target.label,
             "structural_context": region_ref,
         }
+        _attach_current_grounding(match, node_ref, verbs_by_ref)
         state = _readable_state_projection(target.state)
         if state:
             match["state"] = state
@@ -1530,20 +1542,17 @@ def _find_matches(
             if evidence_index is not None and public_ref
             else None
         )
-        match = {
+        match: dict[str, object] = {
             "region_ref": region_ref,
-            "node_ref": (
-                ref
-                if PublicRefCodec.accepts(
-                    ref := locations.get(fact.subject_id, ("", ""))[1],
-                    expected=PublicRefKind.NODE,
-                )
-                else ""
-            ),
             "role": "fact",
             "label": fact.predicate,
             "value": fact.value,
         }
+        _attach_current_grounding(
+            match,
+            locations.get(fact.subject_id, ("", ""))[1],
+            verbs_by_ref,
+        )
         if public_ref:
             match["evidence_ref"] = public_ref
         if canonical_record is not None and public_ref and is_public_scalar(canonical_record.value):
@@ -1599,18 +1608,27 @@ def _region_items(
     region,
     canonical_world,
     observation,
+    grounding,
+    verbs_by_ref,
 ) -> tuple[Mapping[str, object], ...]:
     targets = {item.target_id: item for item in observation.targets}
     grouped, repeated_target_ids = _repeated_item_records(
         region,
         canonical_world,
         observation,
+        grounding,
+        verbs_by_ref,
     )
     if grouped:
         schema = tuple(
             {
                 "kind": "schema_member",
-                **_target_item(canonical_world.region_refs[region.key], targets[target_id]),
+                **_target_item(
+                    canonical_world.region_refs[region.key],
+                    targets[target_id],
+                    grounding,
+                    verbs_by_ref,
+                ),
             }
             for target_id in region.member_target_ids
             if target_id in targets and target_id not in repeated_target_ids
@@ -1622,7 +1640,12 @@ def _region_items(
         if target is None:
             continue
         items.append(
-            _target_item(canonical_world.region_refs[region.key], target)
+            _target_item(
+                canonical_world.region_refs[region.key],
+                target,
+                grounding,
+                verbs_by_ref,
+            )
         )
     return tuple(items)
 
@@ -1631,6 +1654,8 @@ def _repeated_item_records(
     region,
     canonical_world,
     observation,
+    grounding,
+    verbs_by_ref,
 ) -> tuple[tuple[Mapping[str, object], ...], set[str]]:
     if not region.repeated_item_roots:
         return (), set()
@@ -1666,7 +1691,13 @@ def _repeated_item_records(
             tuple(
                 compact
                 for target_id in target_ids
-                if (compact := _compact_repeated_target(targets[target_id])) is not None
+                if (
+                    compact := _compact_repeated_target(
+                        targets[target_id],
+                        grounding,
+                        verbs_by_ref,
+                    )
+                ) is not None
             )
         )
         record: dict[str, object] = {
@@ -1690,7 +1721,7 @@ def _repeated_item_records(
     return tuple(grouped), repeated_target_ids
 
 
-def _compact_repeated_target(target) -> Mapping[str, object] | None:
+def _compact_repeated_target(target, grounding, verbs_by_ref) -> Mapping[str, object] | None:
     state = _model_state(target.state, interactive=False)
     if not target.label and not state:
         return None
@@ -1699,6 +1730,11 @@ def _compact_repeated_target(target) -> Mapping[str, object] | None:
         item["text"] = target.label
     if state:
         item["state"] = state
+    _attach_current_grounding(
+        item,
+        grounding.target_refs.get(target.target_id, ""),
+        verbs_by_ref,
+    )
     return item
 
 
@@ -1806,7 +1842,7 @@ def _searchable_public_fact(predicate: str) -> bool:
     )
 
 
-def _target_item(region_ref, target) -> Mapping[str, object]:
+def _target_item(region_ref, target, grounding, verbs_by_ref) -> Mapping[str, object]:
     item: dict[str, object] = {
         "region_ref": region_ref,
         "role": target.role,
@@ -1815,7 +1851,34 @@ def _target_item(region_ref, target) -> Mapping[str, object]:
     state = _model_state(target.state, interactive=False)
     if state:
         item["state"] = state
+    _attach_current_grounding(
+        item,
+        grounding.target_refs.get(target.target_id, ""),
+        verbs_by_ref,
+    )
     return item
+
+
+def _attach_current_grounding(
+    item: dict[str, object],
+    public_ref: str,
+    verbs_by_ref: Mapping[str, tuple[str, ...]],
+) -> None:
+    """Attach the one fresh grounding identity already owned by World.
+
+    Read/search still select only readable records.  When one returned record
+    is also a current executable, keeping its E-ref and verbs avoids splitting
+    one AX element into unrelated readable and actionable projections.
+    """
+
+    if PublicRefCodec.accepts(public_ref, expected=PublicRefKind.EXECUTABLE):
+        verbs = verbs_by_ref.get(public_ref, ())
+        if verbs:
+            item["target_ref"] = public_ref
+            item["verbs"] = verbs
+            return
+    if PublicRefCodec.accepts(public_ref, expected=PublicRefKind.NODE):
+        item["node_ref"] = public_ref
 
 
 def _walk_structure_ids(root_id, nodes):

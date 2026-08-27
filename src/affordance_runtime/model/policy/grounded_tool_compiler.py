@@ -391,7 +391,7 @@ def _description(
     endpoints = " and ".join(field.public_name for field in fields)
     return (
         f"Use {operation} on current executable {endpoints} from the current World "
-        "or a same-World find_controls result."
+        "or a same-World read/search/find_controls result."
     )
 
 

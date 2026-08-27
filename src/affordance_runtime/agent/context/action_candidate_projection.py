@@ -281,6 +281,7 @@ class DeliveryObligation:
     source_coverage: str = "complete"
     result_coverage: str = "complete"
     public_provenance: tuple[str, ...] = ()
+    required_record_count: int = 0
 
     def __post_init__(self) -> None:
         records = tuple(self.records)
@@ -292,6 +293,7 @@ class DeliveryObligation:
             or self.inventory.records != records
             or self.source_coverage not in {"complete", "partial", "unavailable"}
             or self.result_coverage not in {"complete", "partial", "empty"}
+            or not 0 <= self.required_record_count <= len(records)
         ):
             raise ValueError("delivery obligation is invalid")
         object.__setattr__(self, "records", records)
@@ -429,7 +431,15 @@ def build_action_delivery_plan(
     action_space_issues: tuple[ActionSpaceIssue, ...] = (),
     target_refs: Mapping[str, str] | None = None,
 ) -> ActionDeliveryPlan:
-    """Build one bounded-family plan over complete current owner inventories."""
+    """Build one bounded presentation plan over current owner inventories.
+
+    ``base_actions`` is the ActionPager-owned current page.  It is already a
+    bounded, deterministic projection of the complete ActionSpace and must not
+    disappear behind a second task-lexical ranking.  ``automatic`` adds at
+    most five task-ranked suggestions; the complete ActionSpace remains the
+    catalog resolver and ``find_controls`` authority rather than being copied
+    into this presentation plan.
+    """
 
     complete_by_public = {(item.target_ref, item.operation): item for item in complete_actions}
     groups: dict[DeliveryObligationKind, list[DeliveryAtomicRecord]] = defaultdict(list)
@@ -552,17 +562,24 @@ def build_action_delivery_plan(
             else "automatic_relevance"
         )
         append(option, kind=DeliveryObligationKind.BASE_ACTIONS, reason=reason)
-    for option in sorted(complete_actions, key=_public_option_view_order):
-        if not option.destination_required and option.target_ref in interaction_target_refs:
+
+    # Preserve the existing ActionPager page in its owner-defined order.  The
+    # automatic prefix above remains a suggestion, while this bounded breadth
+    # prevents a lexical ranker from becoming a Runtime subgoal selector.
+    def base_page_order(option: AgentActionOptionView) -> tuple[object, ...]:
+        target_context = region_index.target_contexts.get(option.target_id)
+        return (
+            target_context.public_order if target_context is not None else len(region_index.target_contexts),
+            *_public_option_view_order(option),
+        )
+
+    for option in sorted(base_actions, key=base_page_order):
+        if option.target_ref in interaction_target_refs:
             continue
         append(
             option,
-            kind=(
-                DeliveryObligationKind.DESTINATION_ROUTES
-                if option.destination_required
-                else DeliveryObligationKind.BASE_ACTIONS
-            ),
-            reason="base_inventory",
+            kind=DeliveryObligationKind.BASE_ACTIONS,
+            reason="base_page",
         )
 
     issue_fragments: list[ActionRouteIssueFragment] = []
@@ -645,6 +662,7 @@ def build_action_delivery_plan(
                 discovery.source_coverage if kind is DeliveryObligationKind.EXPLICIT_QUERY and discovery else "complete",
                 "empty" if not inventory.records else "complete",
                 ("current_world", kind.value),
+                len(inventory.records) if kind is DeliveryObligationKind.BASE_ACTIONS else 0,
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
@@ -792,6 +810,7 @@ def _public_obligation_value(obligation: DeliveryObligation) -> Mapping[str, obj
             "source_coverage": obligation.source_coverage,
             "result_coverage": obligation.result_coverage,
             "public_provenance": obligation.public_provenance,
+            "required_record_count": obligation.required_record_count,
         }
     )
 

@@ -515,9 +515,26 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert len(context.action_candidates.candidates) <= 5
     base = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
     assert base is not None
-    assert len(tuple(item for item in base.records if isinstance(item, ActionRouteFragment))) == len(
-        context.complete_actions
-    )
+    interaction = context.action_delivery_plan.obligation(DeliveryObligationKind.INTERACTION)
+    delivered_routes = {
+        item.public_route
+        for obligation in (base, interaction)
+        if obligation is not None
+        for item in obligation.records
+        if isinstance(item, ActionRouteFragment)
+    }
+    base_page_routes = {
+        (option.operation, option.target_ref, destination_ref)
+        for option in context.actions.options
+        for destination_ref in (
+            tuple(item.grounding_ref for item in option.destinations.items)
+            if option.destination_required
+            else ("",)
+        )
+    }
+    assert base.required_record_count == len(base.records)
+    assert base_page_routes <= delivered_routes
+    assert len(base.records) <= len(base_page_routes) + 5
     assert candidates == context.action_delivery_plan.projection(dict(first.admitted_record_counts)).candidates
     assert first.action_candidates.projection_id == second.action_candidates.projection_id
     assert candidates == second.action_candidates.candidates
@@ -606,7 +623,7 @@ def test_destination_required_candidate_closes_destination_in_same_manifest_and_
     )
     assert bound.intent.target_id == "target:card"
     assert bound.intent.destination_id == expected_destination_id
-    destination_records = context.action_delivery_plan.obligation(DeliveryObligationKind.DESTINATION_ROUTES).records
+    destination_records = context.action_delivery_plan.obligation(DeliveryObligationKind.BASE_ACTIONS).records
     assert len(destination_records) == 2
     assert {item.public_route[2] for item in destination_records} == {
         item.grounding_ref for item in context.complete_actions[0].destinations.items
@@ -1062,7 +1079,7 @@ def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_f
     assert reasons["Zulu control"] == "focus_container"
 
 
-def test_fresh_focus_and_task_ranked_action_both_survive_a_one_route_soft_target() -> None:
+def test_bounded_base_page_and_fresh_focus_survive_a_one_route_soft_target() -> None:
     task, world, _actions, evaluation, _context_value = _context()
     focused_world = replace(
         world,
@@ -1138,8 +1155,12 @@ def test_fresh_focus_and_task_ranked_action_both_survive_a_one_route_soft_target
         expected_delivery_id=packed.delivery.delivery_id,
     )
 
-    assert sum(dict(packed.admitted_record_counts).values()) == 2
-    assert dict(packed.admitted_record_counts)[DeliveryObligationKind.BASE_ACTIONS.value] == 1
+    assert sum(dict(packed.admitted_record_counts).values()) == len(base.records) + 1
+    assert (
+        dict(packed.admitted_record_counts)[DeliveryObligationKind.BASE_ACTIONS.value]
+        == len(base.records)
+        == base.required_record_count
+    )
     assert dict(packed.admitted_record_counts)[DeliveryObligationKind.INTERACTION.value] == 1
     assert ranked.candidate.target_ref in packed.delivery.manifest.executable_refs
     assert focused.candidate.target_ref in packed.delivery.manifest.executable_refs
@@ -1250,7 +1271,7 @@ def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_acti
     assert "read_region" not in tuple(item.semantic_action for item in context.complete_actions)
 
 
-def test_read_region_and_search_page_content_results_never_publish_action_inventory() -> None:
+def test_read_region_and_search_results_preserve_grounding_for_returned_readable_controls() -> None:
     _task, world, _actions, _evaluation, context = _context()
     candidate = context.action_candidates.candidates[0]
     opened = inspect_outcome_public(
@@ -1275,13 +1296,31 @@ def test_read_region_and_search_page_content_results_never_publish_action_invent
             query="Settings",
         )
     )
-    forbidden = {"actionable", "verbs", "action_refs"}
+    forbidden = {"actionable", "action_refs"}
     opened_json = json.dumps(to_json_compatible(opened))
     content_json = json.dumps(to_json_compatible(content))
 
     assert all(value not in opened_json for value in forbidden)
     assert all(value not in content_json for value in forbidden)
-    assert not any(str(item.get("node_ref", "")).startswith("E") for item in content["items"])
+    grounded = tuple(item for item in content["items"] if str(item.get("target_ref", "")).startswith("E"))
+    assert grounded
+    operations_by_ref = {
+        ref: tuple(sorted({option.operation for option in context.complete_actions if option.target_ref == ref}))
+        for ref in {str(item["target_ref"]) for item in grounded}
+    }
+    assert all(tuple(sorted(item["verbs"])) == operations_by_ref[item["target_ref"]] for item in grounded)
+    assert opened["executable_grounding"] == "attached_to_returned_readable_targets"
+    assert content["executable_grounding"] == "attached_to_returned_readable_targets"
+
+    delivery, catalog = _catalog(context)
+    selected = grounded[0]
+    resolution = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(selected["verbs"][0], {"target": selected["target_ref"]}, "call:read-grounding"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+    assert isinstance(resolution.decision, SelectAction)
 
 
 def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -> None:
@@ -1435,7 +1474,7 @@ def test_recent_action_target_does_not_implicitly_expand_its_current_region() ->
     assert delivered.view.coverage["candidate_region_expansion_reason"] == "none"
 
 
-def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragment() -> None:
+def test_turn_packer_hard_admits_bounded_base_capability_set_and_reprices_catalog() -> None:
     task, world, actions, evaluation, context_value = _context()
     builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
     context = builder.build(task, world, actions, evaluation)
@@ -1465,28 +1504,27 @@ def test_turn_packer_reprices_actual_catalog_and_backs_off_only_optional_fragmen
         )
         return estimate_canonical_envelope(envelope).estimated_input_tokens
 
-    mandatory_total = total(0)
-    first_optional_total = total(1)
-    second_optional_total = total(2)
-    assert first_optional_total > mandatory_total
-    limited = CanonicalProviderEnvelopeBinder(
+    required_count = foreground.required_record_count
+    assert required_count == len(foreground.records) > 1
+    required_total = total(required_count)
+    exact = CanonicalProviderEnvelopeBinder(
         request_budget=ModelRequestBudget(
-            model_context_window=second_optional_total + 5_000,
+            model_context_window=required_total + 5_000,
             max_output_tokens=0,
             protocol_reserve_tokens=0,
             safety_margin_tokens=0,
-            admission_limit=second_optional_total - 1,
+            admission_limit=required_total,
         )
     )
     packed = _pack(
         request,
-        binder=limited,
+        binder=exact,
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
     )
 
-    assert dict(packed.admitted_record_counts)[foreground.kind.value] == 1
-    assert packed.packing_backoff_count >= 1
+    assert dict(packed.admitted_record_counts)[foreground.kind.value] == required_count
+    assert packed.packing_backoff_count == 0
     assert (
         packed.delivery.manifest.action_routes
         == build_model_turn_delivery(

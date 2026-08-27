@@ -124,13 +124,16 @@ class TurnPacker:
         if explicit_query is not None and explicit_query.remaining:
             required[explicit_query.kind.value] = len(explicit_query.remaining)
         else:
-            for required_kind in (
-                DeliveryObligationKind.BASE_ACTIONS,
-                DeliveryObligationKind.INTERACTION,
-            ):
-                obligation = plan.obligation(required_kind)
-                if obligation is not None and obligation.remaining:
-                    required[required_kind.value] = 1
+            base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+            if base is not None and base.remaining:
+                # BASE_ACTIONS is the bounded union of the ActionPager-owned
+                # current page and at most five task-ranked suggestions.  It
+                # is one observation capability set, not an optional prefix
+                # of the complete ActionSpace.
+                required[base.kind.value] = max(1, base.required_record_count)
+            interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+            if interaction is not None and interaction.remaining:
+                required[interaction.kind.value] = 1
             if not any(required.values()) and foreground is not None and foreground.remaining:
                 required[foreground.kind.value] = 1
 
@@ -138,10 +141,9 @@ class TurnPacker:
         if required_kinds:
             for kind in required_kinds:
                 attempted_counts[kind] = required[kind]
-            # A bounded find_controls result is one complete capability set.
-            # Ordinary turns retain both structural current focus and one
-            # task-ranked suggestion instead of forcing a Runtime guess
-            # between them when the soft target can fit only one route.
+            # Explicit discovery and the ordinary bounded current page are
+            # both complete capability sets.  Ordinary turns additionally
+            # retain direct structural focus when it is not already present.
             accepted = self._attempt(
                 request,
                 binder=binder,

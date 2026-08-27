@@ -6,6 +6,52 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+The first four-case untouched W2 batch after Task740/759 did not support broader closure. Tasks 424, 681, 672, and
+556 all failed. Tasks 681 and 672 reached the correct Postmill forum with the exact repository/title/body facts, yet
+could not reach the current `Submit` link; Task556 read the exact `Christopher Nolan filmography` link text, then
+activated a different ranked `Christopher Nolan` link and terminal-failed. The traces rule out cursor, history,
+Monitor, ToolReturn, and ActionSpace construction as the shared cause. For Task681, the fresh World contained 347
+legal actions and the existing `ActionPager` had already selected a bounded 32-action page, including the current
+site controls. The packed observation nevertheless contained only one lexical suggestion (`Forums`) plus focus.
+
+The reopened owner defect was in `ActionDeliveryPlan`: `ContextBuilder` passed its existing bounded
+`base_actions`, but `build_action_delivery_plan` never consumed that argument. It rebuilt presentation from a task
+lexical Top-5 and the complete ActionSpace, while `TurnPacker` hard-admitted only the first ranked record. Read/search
+made the same split in another form: an AX link or button returned as readable text deliberately lost its executable
+`E-ref`, even though the fresh World and complete catalog already owned that exact identity and route. Earlier gates
+proved that a literal `find_controls` result remained callable and that focus plus one ranked action survived packing;
+they did not prove that the existing bounded action page survived, or that a readable interactive element retained
+its grounding. Treating eventual lexical recovery as equivalent to direct usability was the acceptance gap.
+
+The positive contract is now one observation/action alignment, not a new retrieval or state path:
+
+```text
+fresh World -> complete current ActionSpace -> complete current Catalog resolver
+            -> ActionPager-owned bounded current page
+               + at most five non-authoritative task-ranked suggestions
+            -> one ActionDeliveryPlan capability set -> model
+
+read_region/search_page_content -> bounded readable records
+  returned target is current executable -> attach the same fresh E-ref + current verbs
+  returned target is read-only          -> retain its N/F/R identity
+```
+
+The bounded base capability set is hard-admitted as a set; the complete ActionSpace is no longer copied into the
+presentation plan as optional inventory. `find_controls` remains the literal bounded lookup over the complete current
+ActionSpace, and the unchanged catalog resolver remains the only authority that can accept an E-ref. Read/search do
+not search all controls and do not manufacture executable identities; they only preserve the grounding of records
+they already returned. No delivery lens, synonym table, dense index, cursor, Store inventory, memory, Replanner,
+second Binder, or second loop was introduced.
+
+This boundary matches the primary-source GUI-agent pattern. BrowserGym defines browser actions directly over the
+current element `bid` and its observation implementation already carries element bid/visibility/bbox metadata
+([action space](https://browsergym.readthedocs.io/latest/core/action_space.html),
+[observation source](https://github.com/ServiceNow/BrowserGym/blob/main/browsergym/core/src/browsergym/core/observation.py)).
+AgentOccam reports its largest gains from aligning and simplifying observation/action representations; specifically,
+it merges an interactive element with same-label text while preserving the useful element rather than delegating the
+choice to a Runtime lexical singleton ([ICLR 2025 paper](https://proceedings.iclr.cc/paper_files/paper/2025/file/f2c6e459b95694a24ac69c469a4ee746-Paper-Conference.pdf)).
+The local implementation keeps the same single ActionPolicy and mature BrowserGym/PydanticAI boundaries.
+
 ### Local agent shell
 
 The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is
