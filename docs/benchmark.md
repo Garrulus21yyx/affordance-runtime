@@ -59,6 +59,25 @@ deployment tests may load the project `.env` through established deployment
 startup, but Phase 7 did not inspect, print, or use the Viewer credential and
 did not start Viewer, a live model/provider, a real compensation browser
 profile, or a benchmark.
+Phase 8 subsequently verified exclusive user takeover as a deployment/control
+capability. Runtime alone owns `agent|user` control and the opaque lease;
+takeover consumes the exact durable paused checkpoint, and return captures and
+evaluates fresh World before Agent dispatch can resume. Provider-free tests
+cover stale identities, restart fail-closed behavior, currentness failure,
+same-session input authorization, and post-return input rejection. A separate
+no-model live Steel witness changed the same CDP-owned page through the
+protected native input proxy, then returned control and reached terminal fresh
+evaluation after one World capture and before a second policy call. The exact
+provider lease was released. This did not call a model, execute a compensation,
+run a benchmark case, or create benchmark evidence, so benchmark closure remains
+unchanged.
+The external Phase 9 release review then reran the whole provider-free
+repository: 1834 tests passed and 25 skipped, with only the two unchanged
+external baselines failing (fixed five-document governance and the absent
+historical live trace). External backend/architecture passed 78 tests, and the
+frontend unit/lint/typecheck/build plus synthetic Demo E2E gates passed. These
+numbers close the external Full Web control release profile, not the benchmark
+program; no live benchmark was launched.
 The local BrowserGym deployment still reports process-restart reconnect as
 unavailable because it cannot reconnect the exact Playwright context. This is
 control-plane verification only; no benchmark case was run for these changes.

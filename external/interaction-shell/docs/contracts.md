@@ -17,8 +17,9 @@ success.
 The Runtime now publishes `affordance-runtime.session.v2`. When a deployment
 composes `CoreRuntimeSessionPort` with a `TargetRuntimeSessionFactory`, the
 supported commands are start, AskUser answer, confirmation approve/reject,
-cooperative cancel, durable pause/resume, bounded task revision, and close. The
-opaque Core handle owns resumable `RunState`; the external manager
+cooperative cancel, durable pause/resume, bounded task revision, exclusive user
+takeover/return, and close. The opaque Core handle owns resumable `RunState` and
+the sole `agent|user` control owner; the external manager
 stores only that handle and drains owner-projected events by epoch/cursor without
 retaining a second event list, timestamp, or envelope projection. Without a
 configured Runtime/environment factory, the production-safe default remains
@@ -43,14 +44,20 @@ one currently offered same-resource action through the existing
 Binder/Risk/Confirmation/Executor path; the fresh local postcondition must verify
 before Runtime publishes `compensated`. `SENT_UNKNOWN`, irreversible, missing,
 multiple, unavailable, or unverified effects remain typed and fail-closed.
-New-task replacement, takeover, and return-control remain unavailable. Viewer
-interaction likewise remains
-disabled without an exclusive typed control lease and return outcome.
+New-task replacement remains unavailable. `TakeOver` requires the exact durable
+paused checkpoint, consumes it, and returns one opaque process-local control
+lease. `ReturnControl` requires that exact lease and reacquires fresh World before
+Agent dispatch can resume; restart revokes the ephemeral lease and cannot replay
+the consumed pre-takeover checkpoint.
 
 Steel/Browserbase Live View is a deployment projection, not a media protocol:
-`ViewerStateProjector` may publish only a read-only, secret-free same-origin
-`/viewer/...` path. Unconfigured deployments publish typed unavailable. The
-provider session and its cleanup stay in the Runtime environment lease.
+`ViewerStateProjector` may publish only a secret-free same-origin `/viewer/...`
+path. It is read-only under Agent ownership. Under the exact Runtime user lease,
+the protected Steel document may use one authenticated same-origin proxy for the
+provider-native input WebSocket; every input frame rechecks Runtime ownership.
+Unconfigured deployments publish typed unavailable. Provider routing, session,
+credentials, and cleanup stay deployment-private in the Runtime environment
+lease.
 
 ## SOTA alignment
 

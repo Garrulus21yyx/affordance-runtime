@@ -20,10 +20,10 @@ recorded SHA-256 digest. The browser pane is therefore a near-real-time, read-on
 second browser authority and not pixel-derived task state. Raw `/events` remains available only to the explicit Labs
 evidence view.
 
-This shell does not invent a free-form Runtime session API, task revision, or interactive browser takeover. Those
-controls are visibly unavailable until their owning Runtime contracts exist; the current benchmark runner remains the
-only launch and stop owner. Run history and automatic bad-case grouping are bounded to the current Console process.
-This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
+This local benchmark Console does not expose the external product session API, task revision, or interactive browser
+takeover; the benchmark runner remains its only launch and stop owner. Those controls belong to the separately
+packaged external shell described below. Run history and automatic bad-case grouping are bounded to the current
+Console process. This UI work changes neither the single `CoreAgentLoop` nor the benchmark closure status below.
 
 ### External interaction shell real-execution profile
 
@@ -116,18 +116,18 @@ bounded pair and still reads v2; the unchanged revision command payload keeps it
 old durable digest version while the additive Runtime/Shell snapshot advances to
 v2. The Shell projects only semantic reconciliation facts and exact codes. It is
 not an effect ledger, rollback mechanism, multi-effect Saga, second policy, or
-second loop. Takeover remains unavailable. A subsequent deployment-only Viewer
-milestone adds one explicit Steel profile: BrowserGym's surface-owned Chromium
-launch connects over CDP to one Steel session, and the snapshot projects only a
-read-only same-origin `/viewer/{session}` path for that same lease. HttpOnly
-Shell-session auth guards the route; a bounded proxy removes the reusable key,
-provider debug/CDP URL, provider session ID, RTC bearer, and input WebSocket from
-the delivered document, then forwards only Steel's native WebRTC ICE/WHEP
-exchange. Viewer failure never changes Runtime status, receipt, evaluation, or
-cleanup truth. The local BrowserGym profile remains Viewer unavailable, and a
-cloud profile rejects loopback/private task sources instead of opening a second
-browser. Provider-free tests plus a no-model/no-action live Steel CDP reset and
-document/ICE probe verify this deployment boundary. The earlier WHEP 400 from
+second loop. The deployment Viewer milestone adds one explicit Steel profile:
+BrowserGym's surface-owned Chromium launch connects over CDP to one Steel
+session, and the snapshot projects only a same-origin `/viewer/{session}` path
+for that same lease. HttpOnly Shell-session auth guards the route; a bounded
+proxy removes the reusable key, provider debug/CDP URL, provider session ID, RTC
+bearer, and input WebSocket from the delivered document, then forwards Steel's
+native WebRTC ICE/WHEP exchange. Viewer failure never changes Runtime status,
+receipt, evaluation, or cleanup truth. The local BrowserGym profile remains
+Viewer unavailable, and a cloud profile rejects loopback/private task sources
+instead of opening a second browser. Provider-free tests plus a
+no-model/no-action live Steel CDP reset and document/ICE probe verify this
+deployment boundary. The earlier WHEP 400 from
 both the proxy and Steel's native `debugUrl` was traced to the validation
 client: Playwright's bundled Linux Chromium advertised no H.264 codec, while
 Steel's headful stream requires H.264 baseline. A held-out native control with
@@ -138,9 +138,33 @@ official Chrome for Testing observed unauthenticated 401, authenticated document
 provider locator in the delivered HTML, and exact lease release. The strict CSP
 was not weakened; acceptance used Python-side polling because Playwright string
 `wait_for_function` requires `unsafe-eval`. No second media path or retry branch
-was added. These are Viewer deployment witnesses, not benchmark evidence, and
-do not alter the reopened overall project status. No live compensation action
-or benchmark was performed.
+was added. Phase 8 now places one Runtime-owned `agent|user` authority and opaque
+process-local lease on that same session. `TakeOver` is admitted only against an
+exact durable paused checkpoint, consumes it before publishing user ownership,
+and disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
+snapshot enables the authenticated same-origin proxy to Steel's native input
+WebSocket; each incoming frame rechecks Runtime ownership. `ReturnControl`
+requires the exact lease, invalidates stale action material, and captures and
+evaluates one fresh World before the existing ActionPolicy can run again. A
+capture failure retains user ownership; process restart revokes the ephemeral
+lease and the consumed checkpoint cannot be replayed. A no-model live witness
+changed the same CDP-owned page through the protected input route and returned
+to a terminal fresh evaluation with one World capture and no second policy
+call; cleanup ran once and released the exact Steel lease. These are
+Viewer/control deployment witnesses, not benchmark evidence, and do not alter
+the reopened overall project status. No live compensation action or benchmark
+was performed.
+
+The external Phase 9 review closes only the declared single-process Steel Full
+Web control profile. The complete provider-free repository reached 1834 passed
+and 25 skipped, with only the unchanged fixed-document-governance assertion and
+absent historical live trace failing. External backend/architecture passed 78
+tests; frontend unit/lint/typecheck/build, generated OpenAPI equality, and one
+synthetic Demo E2E passed. External Pyright and Ruff passed. The two touched-Core
+MyPy findings remain the pre-existing nullable-task reports in `core_loop.py`.
+Implementation, public contracts, UI, generated types, startup instructions,
+and capability docs now agree. This does not close the separately reopened GUI
+benchmark program.
 
 Implementation of the thin result/history cutover, action-discovery closure repair, readable-AX completeness repair,
 single-current-World cutover, atomic PageMap/Manifest repair, bounded post-action recapture repair, and BrowserGym

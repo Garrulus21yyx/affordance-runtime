@@ -50,8 +50,9 @@ forwards `events(after)` and never keeps a second event log.
 The configured port supports start, AskUser answer, confirmation approve/reject,
 cooperative cancel, durable pause/resume, bounded task revision, one retained
 known reversible/compensatable effect through the ordinary compensation pipeline,
-and close. Multiple retained effects, uncertain/irreversible effects, new-task
-replacement, and takeover remain typed fail-closed or unavailable.
+exclusive Steel user takeover/return, and close. Multiple retained effects,
+uncertain/irreversible effects, and new-task replacement remain typed fail-closed
+or unavailable.
 
 For revision, the manager attaches an immutable language-only snapshot of at
 most six turns and 16 KiB to the single Runtime command. Runtime adds its own
@@ -93,7 +94,7 @@ WAL checkpoints make cooperative pause durable and provide the reconnectable-
 lease restart/resume contract; the local profile still cannot reconnect its
 Playwright context after process restart.
 
-For the protected read-only Steel profile, keep the provider key in the server
+For the protected Steel profile, keep the provider key in the server
 environment and point BrowserGym at a task host reachable from the cloud browser
 (a loopback/private URL is rejected):
 
@@ -107,9 +108,15 @@ export INTERACTION_SHELL_SECURE_COOKIES=true      # when served over HTTPS
 BrowserGym executes through Playwright CDP in the exact Steel session whose Live
 View is exposed at the secret-free `/viewer/{session_id}` path. The backend uses
 HttpOnly same-session auth, removes provider locators and reusable credentials
-from Steel's document, and proxies only its read-only WebRTC ICE/WHEP calls.
-Viewer loss remains fail-open for Runtime truth; no screenshot polling, custom
-video path, input WebSocket, second browser, or takeover is added.
+from Steel's document, and proxies its native WebRTC ICE/WHEP calls. The view is
+read-only while Runtime projects Agent ownership. `TakeOver` consumes the exact
+durable paused checkpoint and grants one process-local user lease; only then does
+the same protected document use an authenticated same-origin proxy for Steel's
+native input WebSocket. `ReturnControl` requires that exact lease, disables later
+input, captures/evaluates fresh World, invalidates stale Agent material, and only
+then continues the existing loop. Viewer loss remains fail-open for Runtime truth;
+no screenshot polling, custom media/input protocol, second browser, or second
+executor is added.
 
 Live verification (2026-08-27) is complete. The initial WHEP 400 in both the
 native page and proxy came from Playwright's bundled Linux Chromium lacking
@@ -119,6 +126,14 @@ with 201 and rendered 1280x720 video at `readyState=4`. The product-path probe
 also verified unauthorized 401, no page errors, no provider locator in delivered
 HTML, and exact provider lease release. Runtime execution remains independent
 of Viewer availability.
+
+The no-model takeover witness additionally reached `waiting_user`, committed a
+durable pause, granted user ownership, changed the same CDP-owned page through
+the protected native input proxy, and returned control. Runtime captured one
+fresh World and finished before a second ActionPolicy call; the exact checkpoint
+was consumed, cleanup ran once, and the exact Steel lease was released. This is
+a deployment/control witness, not a benchmark result.
+
 Model-call OpenTelemetry instrumentation is present, but this deployment does
 not yet configure a recording `TracerProvider` or exporter; existing Runtime
 JSONL/Langfuse projection remains the deployed diagnostic path.
@@ -132,9 +147,10 @@ SHELL_BACKEND_URL=http://127.0.0.1:8200 npm run dev -- --port 3100
 ```
 
 Open `http://127.0.0.1:3100` for the operator shell. It contains only
-conversation/HITL, the read-only browser surface, and concise Runtime-projected
-progress hydrated from SSE. It does not load or render token, latency,
-evaluation, or attribution data.
+conversation/HITL, the browser surface, capability-gated takeover/return controls,
+and concise Runtime-projected progress hydrated from SSE. The surface is
+read-only unless Runtime projects the current user-control lease. The UI does not
+load or render token, latency, evaluation, or attribution data.
 
 Open `http://127.0.0.1:3100/diagnostics` for the separate engineering bad-case
 workbench. Token/cost, latency, trajectory metrics, failure attribution, and
@@ -144,9 +160,11 @@ evidence references live only on that surface.
 
 The local/default production profile remains typed Viewer unavailable. The
 explicit Steel profile supplies a protected same-origin path through
-`ViewerStateProjector`; the contract rejects provider URLs, query secrets,
-writable views, and non-`/viewer/` routes. Browserbase remains an unimplemented
-alternative. Langfuse is an optional fail-open diagnosis sink.
+`ViewerStateProjector`; the contract rejects provider URLs, query secrets, and
+non-`/viewer/` routes. Interactive projection is valid only while Runtime owns an
+exact user-control lease; all other projections remain read-only. Browserbase
+remains an unimplemented alternative. Langfuse is an optional fail-open diagnosis
+sink.
 
 ## Verification
 
@@ -158,6 +176,17 @@ npm run lint
 npm run typecheck
 npm run build
 npm run test:e2e
+```
+
+The opt-in no-model Steel control witness runs only after loading a server-side
+Steel key and does not launch a benchmark:
+
+```bash
+cd /path/to/affordance-runtime
+set -a && source .env && set +a
+PYTHONPATH=src:external/interaction-shell/backend \
+  /home/yang/.venvs/affordance-browsergym-py312/bin/python \
+  scripts/phase8_steel_takeover_witness.py
 ```
 
 No live benchmark is part of this package's verification.

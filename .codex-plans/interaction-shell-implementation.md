@@ -1,6 +1,6 @@
 # External Interaction Shell implementation plan
 
-Status: Phase 7 bounded compensation and protected Steel Viewer verified complete; Phase 8 takeover in progress
+Status: Full Web control release profile verified through Phase 9; no live benchmark run
 Worktree: `/home/yang/projects/affordance-runtime-interaction-shell`
 Branch: `codex/external-interaction-shell`
 Scope owner: standalone product plus the subsequently authorized Core public session boundary
@@ -682,7 +682,7 @@ Constraints:
       `unsafe-eval`; the final witness used Python-side polling without weakening
       CSP. No alternate media path, second Runtime browser, model call, GUI
       action, compensation action, input WebSocket, takeover, or benchmark ran.
-23. **in progress — Phase 8 exclusive user takeover and return.**
+23. **done — Phase 8 exclusive user takeover and return.**
     - Authority: `TargetRuntimeSession` owns one ephemeral control owner and
       opaque lease identity. The deployment Viewer consumes that public
       projection but never infers ownership from iframe focus, socket state, or
@@ -749,12 +749,25 @@ Constraints:
       restored Agent ownership. The ActionPolicy call count remained one, the
       paused checkpoint was consumed by takeover, cleanup ran once, the exact
       provider lease was released, and no provider locator entered the public
-      document. Final authoritative documentation closure remains.
-24. **pending — Phase 9 release-profile closure review.**
+      document. Authoritative architecture/benchmark/interaction-shell docs,
+      standalone contracts, and the external README now agree with that bounded
+      release profile.
+24. **done — Phase 9 release-profile closure review.**
     - Begin only after Step 23 passes its owner/property/integration gates.
       Reconcile implementation, generated contracts, UI, documentation, and the
       declared profile evidence without treating Viewer/takeover evidence as a
       benchmark result.
+    - Release result: Full Web control is closed for the declared single-process
+      Steel profile. The whole provider-free repository reached 1834 passed and
+      25 skipped; only the two unchanged external baselines failed (the fixed
+      five-document governance assertion and an absent historical live trace).
+      External backend/architecture passed 78 tests. Frontend passed 12 unit
+      tests, ESLint, TypeScript, generated OpenAPI equality, production build,
+      and one synthetic Demo Playwright E2E. External Pyright and Ruff passed;
+      touched Core MyPy reports only the two unchanged nullable-task baseline
+      findings in `core_loop.py`. The opt-in no-model Steel takeover witness
+      passed and released its exact lease. No model call, compensation action,
+      live benchmark, or benchmark artifact was produced by Phase 8/9.
 
 ## Current-work produced files
 

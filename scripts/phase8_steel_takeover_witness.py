@@ -277,8 +277,10 @@ class _LiveFactory:
                     await browser.close()
                 except Exception:
                     pass
-            await playwright.stop()
-            await self.gateway.release(lease)
+            try:
+                await playwright.stop()
+            finally:
+                await self.gateway.release(lease)
             raise
 
     async def recover(self, session_id, checkpoint_id, expires_at):
