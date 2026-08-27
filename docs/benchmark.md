@@ -64,7 +64,19 @@ The vertical regression reproduces the live shape—one historical accepted resp
 length response—then proves the next call succeeds with every earlier ToolCall paired to its exact ToolReturn. The
 PydanticAI/history/request-admission focused set reports 97 passed; the fixed BrowserGym Python full suite reports
 1,819 passed and 19 skipped, with only the pre-existing `docs/interaction-shell.md` governance failure. A Task426
-same-witness rerun and another fresh held-out case remain required before broader closure.
+same-witness rerun and another fresh held-out case remained required before broader closure.
+
+Task426
+[`history-recovery-run2`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-history-recovery-run2/run.json)
+is the post-repair lifecycle witness but not a task-success witness. Three separate physical responses ended
+`output_truncated`; later ActionPolicy calls still reached the provider, and the run recorded 81 valid calls, zero
+grounding gaps, zero invalid arguments, and no recurrence of the old `invalid_response -> internal_error` history
+dead end. The policy navigated from Wikipedia to OSM, searched Shanksville, and repeatedly activated the exact current
+`Shanksville, Somerset County, 15560, United States` result. That result consistently routed to
+`/relation/189076`, where the current site returned `Not Found`; the policy returned to search and retried the same
+failed route instead of abandoning it. The run blocked after 84 policy calls, 1,556,528 total tokens, two final typed
+invalid responses, and no STOP/native evaluation. Canonical history recovery is live-verified; broader benchmark
+closure remains open for long-horizon failed-route convergence and a new untouched task-success witness.
 
 The local benchmark Console foreground has been replaced with the agent-shell information architecture: a central
 task/status thread, a verified read-only browser-frame pane, and a Labs workspace for launch configuration, bad cases,

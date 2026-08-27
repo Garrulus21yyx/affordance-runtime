@@ -93,6 +93,16 @@ Workspace lookup, trace replay, CoreLoop fallback, pending-result store, retry s
 was added. A vertical test exercises `accepted call -> ToolReturn -> single truncated response -> typed failure ->
 next accepted call` and verifies exact call/result conservation plus one-response accounting.
 
+Task426
+[`history-recovery-run2`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-history-recovery-run2/run.json)
+crosses this provider-history lifecycle three times. The run produced three physical `output_truncated` outcomes and
+continued to later provider calls after each; it made 81 valid tool calls with zero grounding gaps, invalid arguments,
+or post-failure internal-history errors. It did not complete the task. The policy repeatedly opened the exact current
+Shanksville search result, received `/relation/189076 -> Not Found`, returned to search, and tried the same failed route
+again. After 84 policy calls, two final typed invalid responses let the existing Monitor block the stalled episode.
+This is now a separate long-horizon failed-route convergence and efficiency witness; it does not justify reopening
+the action projection or canonical provider-history contracts.
+
 ### Local agent shell
 
 The local benchmark Console now presents the existing Runtime as an ordinary-user agent shell. The center column is
