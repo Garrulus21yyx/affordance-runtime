@@ -242,7 +242,7 @@ def _transition(result: StepResult, action: ActionOutcome | None) -> Mapping[str
     transition = dict(_target_snapshot(result, receipt.request.intent.target_id if receipt else ""))
     delta = result.public_world_delta
     assert delta is not None
-    transition["semantic_change"] = "changed" if delta.changed else "unchanged"
+    transition["semantic_change"] = "changed" if delta.semantic_changed else "unchanged"
     if action is not None:
         transition["observed_change"] = action.observed_change.value
         transition["evidence_method"] = action.evidence_method.value

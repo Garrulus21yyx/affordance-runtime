@@ -282,7 +282,7 @@ def _reduce_activity(
     information_delta: object | None = None,
 ) -> tuple[ActivitySummary, ...]:
     family = _ACTIVITY_BY_TOOL.get(detailed_step.semantic_action if detailed_step is not None else "")
-    if family is None and not delta.changed and detailed_step is not None and detailed_step.dispatch_status:
+    if family is None and not delta.semantic_changed and detailed_step is not None and detailed_step.dispatch_status:
         family = ActivityFamily.NO_EFFECT
     if family is None:
         return previous

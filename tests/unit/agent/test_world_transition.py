@@ -54,6 +54,29 @@ def _world(observation_id: str, values: dict[str, int]):
     return fused_world(observation_id, targets, facts, surface="dom")
 
 
+def _rekeyed_world(observation_id: str, prefix: str, values: dict[str, int]):
+    targets = tuple(
+        SemanticTarget(
+            f"{prefix}:{key}",
+            "status",
+            f"item {key}",
+            {"value": value},
+        )
+        for key, value in sorted(values.items())
+    )
+    facts = tuple(
+        StateFact(
+            f"fact:{observation_id}:{key}",
+            f"{prefix}:{key}",
+            "value",
+            value,
+            observation_id,
+        )
+        for key, value in sorted(values.items())
+    )
+    return fused_world(observation_id, targets, facts, surface="dom")
+
+
 def test_public_world_delta_is_complete_and_binds_exact_lineage() -> None:
     before = _world("source:before", {"kept": 1, "removed": 2})
     after = _world("source:after", {"kept": 3, "added": 4})
@@ -131,6 +154,27 @@ def test_same_world_transition_does_not_rebuild_region_indexes(monkeypatch) -> N
     assert delta.before_observation_id == delta.after_observation_id == world.observation_id
     assert delta.before_world_digest == delta.after_world_digest
     assert not delta.changed
+
+
+@given(
+    st.dictionaries(
+        st.text(alphabet="abcde", min_size=1, max_size=4),
+        st.integers(),
+        min_size=1,
+        max_size=12,
+    )
+)
+def test_public_identity_churn_is_not_a_semantic_world_change(values: dict[str, int]) -> None:
+    delta = WorldTransitionProjector().project(
+        _rekeyed_world("source:before-rekey", "before", values),
+        _rekeyed_world("source:after-rekey", "after", values),
+    )
+
+    assert delta.changed
+    assert delta.target_changes
+    assert delta.fact_changes
+    assert delta.before_world_digest == delta.after_world_digest
+    assert not delta.semantic_changed
 
 
 def test_fresh_world_transition_reuses_supplied_region_indexes(monkeypatch) -> None:
@@ -332,6 +376,7 @@ def test_runtime_consumers_share_one_delta_instance_or_exact_serialization() -> 
         "before_world_digest": delta.before_world_digest,
         "after_world_digest": delta.after_world_digest,
         "changed": delta.changed,
+        "semantic_changed": delta.semantic_changed,
         "changed_target_count": len(delta.target_changes),
         "changed_fact_count": len(delta.fact_changes),
         "changed_region_keys": delta.changed_region_keys,

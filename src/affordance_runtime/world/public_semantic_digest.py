@@ -220,6 +220,34 @@ def public_subject_semantics(observation: WorldObservation, subject_id: str) -> 
     return target_semantics(target, bases)
 
 
+def public_subject_semantics_changed(
+    before: WorldObservation,
+    after: WorldObservation,
+    subject_id: str,
+) -> bool:
+    """Compare one before-World subject without treating public-ID churn as an effect."""
+
+    before_target = next((item for item in before.targets if item.target_id == subject_id), None)
+    if before_target is None:
+        return False
+    before_bases = {
+        item.target_id: (item.role, item.label, to_json_compatible(item.state))
+        for item in before.targets
+    }
+    before_semantics = target_semantics(before_target, before_bases)
+    after_bases = {
+        item.target_id: (item.role, item.label, to_json_compatible(item.state))
+        for item in after.targets
+    }
+    same_identity = next((item for item in after.targets if item.target_id == subject_id), None)
+    if same_identity is not None:
+        return target_semantics(same_identity, after_bases) != before_semantics
+    return all(
+        target_semantics(item, after_bases) != before_semantics
+        for item in after.targets
+    )
+
+
 def action_option_semantics(
     option: ActionOption,
     target_map: Mapping[str, tuple[object, ...]],

@@ -96,7 +96,15 @@ class PublicWorldDelta:
 
     @property
     def changed(self) -> bool:
+        """Whether any public identity/fact record changed."""
+
         return bool(self.target_changes or self.fact_changes)
+
+    @property
+    def semantic_changed(self) -> bool:
+        """Whether the identity-free public meaning of the World changed."""
+
+        return self.before_world_digest != self.after_world_digest
 
     @property
     def changed_region_keys(self) -> tuple[str, ...]:

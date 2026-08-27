@@ -1497,6 +1497,7 @@ def _public_world_delta_trace_payload(delta: object) -> dict[str, object]:
         "before_world_digest": str(getattr(delta, "before_world_digest", "")),
         "after_world_digest": str(getattr(delta, "after_world_digest", "")),
         "changed": bool(target_changes or fact_changes),
+        "semantic_changed": bool(getattr(delta, "semantic_changed", False)),
         "changed_target_count": len(target_changes),
         "changed_fact_count": len(fact_changes),
         "changed_region_keys": changed_region_keys[:64],

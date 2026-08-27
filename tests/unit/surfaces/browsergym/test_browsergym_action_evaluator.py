@@ -309,8 +309,8 @@ def test_browsergym_stable_navigation_reaches_projector_with_fresh_world_evidenc
     asyncio.run(environment.close())
 
 
-def _activate_world(observation_id: str, shade: int):
-    raw = raw_observation(ax_node("private-button", "button", "Target"))
+def _activate_world(observation_id: str, shade: int, *, private_id: str = "private-button"):
+    raw = raw_observation(ax_node(private_id, "button", "Target"))
     raw["screenshot"] = np.full((40, 80, 3), shade, dtype=np.uint8)
     return project_browsergym_observation(
         raw,
@@ -323,8 +323,13 @@ def _activate_world(observation_id: str, shade: int):
     ).world
 
 
-def _activate_structural_world(observation_id: str, active: bool):
-    world = _activate_world(observation_id, 255)
+def _activate_structural_world(
+    observation_id: str,
+    active: bool,
+    *,
+    private_id: str = "private-button",
+):
+    world = _activate_world(observation_id, 255, private_id=private_id)
     source = world.sources[0]
     target = next(item for item in source.targets if item.role == "button")
     active_fact = StateFact(
@@ -502,3 +507,52 @@ def test_activate_unchanged_visual_state_reports_unchanged_not_applicable() -> N
     assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
     assert evaluation.evidence["screenshot_changed"] is False
     assert evaluation.evidence["target_changed"] is False
+
+
+def test_activate_identity_churn_with_same_semantics_and_screenshot_is_unchanged() -> None:
+    before = _activate_world("obs:before-rekey", 255, private_id="before-private-button")
+    after = _activate_world("obs:after-rekey", 255, private_id="after-private-button")
+
+    evaluation = _evaluate_activate(before, after)
+
+    assert evaluation.public_world_delta is not None
+    assert evaluation.public_world_delta.changed
+    assert not evaluation.public_world_delta.semantic_changed
+    assert evaluation.observed_change is ObservedChange.UNCHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
+    assert evaluation.evidence_method is EvidenceMethod.VISUAL_DIFF
+    assert evaluation.evidence["screenshot_changed"] is False
+    assert evaluation.evidence["target_changed"] is False
+    assert len(evaluation.evidence_refs) == 1
+
+
+def test_activate_semantic_change_with_rekeyed_target_uses_structural_evidence_without_screenshot() -> None:
+    before = _activate_structural_world(
+        "obs:before-rekeyed-change",
+        False,
+        private_id="before-private-button",
+    )
+    after = _activate_structural_world(
+        "obs:after-rekeyed-change",
+        True,
+        private_id="after-private-button",
+    )
+    before = replace(
+        before,
+        sources=tuple(replace(source, media=()) for source in before.sources),
+    )
+    after = replace(
+        after,
+        sources=tuple(replace(source, media=()) for source in after.sources),
+    )
+
+    evaluation = _evaluate_activate(before, after)
+
+    assert evaluation.public_world_delta is not None
+    assert evaluation.public_world_delta.semantic_changed
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.evidence_method is EvidenceMethod.STRUCTURAL
+    assert evaluation.evidence["verification_profile"] == "structural_world_diff_v2"
+    assert evaluation.evidence["target_changed"] is True
+    assert evaluation.evidence["structural_world_changed"] is True
+    assert evaluation.evidence["fact_changes"]

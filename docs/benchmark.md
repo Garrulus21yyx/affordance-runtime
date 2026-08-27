@@ -37,10 +37,11 @@ missing from the catalog. The recall owner now requires remaining target terms t
 matches by target coverage, and leaves an executable-control miss empty instead of suggesting readable-content search.
 The repository-wide mypy command still reports its pre-existing baseline errors in unchanged modules.
 
-The latest full code suite reports `1801 passed / 25 skipped`; its sole failure is the pre-existing tracked
+The latest full code suite reports `1813 passed / 19 skipped`; its sole failure is the pre-existing tracked
 `docs/interaction-shell.md` exceeding the repository's five-maintained-document governance set. That document was not
-modified or removed; every other collected test passed. The combined focused read/Catalog/PydanticAI boundary reports
-`221 passed`; Ruff, compileall, and `git diff --check` pass.
+modified or removed; every other collected test passed. The current focused
+BrowserGym/Agent/Evaluation owner surface reports `551 passed / 3 skipped`; Ruff, compileall, and
+`git diff --check` pass.
 
 Overall project status remains **non-closed at the broader held-out benchmark level**. The former named implementation
 gaps are stale after later evidence:
@@ -1302,6 +1303,32 @@ requested payload. Focused tests pass 440/440 with 11 skips. The full suite has 
 the previously recorded unrelated `docs/interaction-shell.md` governance failure. A fresh Task740 live run is still
 required to verify that the final call is the bounded `NAVIGATE/SUCCESS` response and reaches native evaluation.
 
+Task740 `run4` was an invalid launch attempt: Python multiprocessing could not spawn the BrowserGym child from a
+`<stdin>` main module, so no benchmark case began and it supplies no behavioral evidence. The file-backed `run5` did
+begin normally at commit `7bf34249` and crossed the GoalCompiler/final-response repair. The Agent found CMU and
+Madison Square Garden, retained both exact coordinates, opened the OSM directions page, filled both inputs with
+postcondition-satisfied actions, and dispatched `Go`. This rules out the run3 task/envelope conflation as run5's
+failure.
+
+Run5 was stopped after 67 model turns and 66 completed steps once its exact loop was proven. From the first `Go`
+response onward, the model emitted the same semantic action text and call 43 times. The first click produced a real
+fresh semantic World; every later completed click kept the same identity-free World digest and the same screenshot
+SHA-256. Nevertheless each OSM capture reconstructed enough DOM/AX nodes to produce 583 raw public target changes and
+1,042 identity-keyed fact changes. `ProductionActionOutcomeProjector` selected 521 current structural refs and
+reported `ObservedChange.CHANGED`; Monitor consequently reset its attempt streak on every step and emitted zero
+recoveries. The final `run_error` records the manual interruption and is not an environment or provider diagnosis.
+
+The owner repair keeps both meanings explicit without another state channel. Raw `PublicWorldDelta.changed` continues
+to conserve identity/fact lineage. Its derived `semantic_changed` compares the existing identity-free before/after
+digests. ActionOutcome structural promotion is now gated by that semantic fact, and the visual verifier treats a
+semantically equivalent re-keyed target as unchanged. Step history and Workspace use the same derived bit; Trace
+reports both raw churn and semantic change. Monitor is unchanged and therefore receives `UNCHANGED/UNKNOWN` for the
+repeated attempts, recovers on the second equivalent replay, and can reject another exact attempt through the existing
+typed recovery contract. Generated re-keying properties plus focused BrowserGym/Agent/Evaluation tests cover the
+full owner/consumer chain (`551 passed / 3 skipped`); the full suite reports `1,813 passed / 19 skipped` plus only the
+known documentation-governance failure above. No OSM/task/label branch, Replanner, cursor, evidence inventory, retry,
+or additional model role was added. A fresh live Task740 run remains required.
+
 ## Live-run authorization and execution
 
 A live run begins only after the user explicitly authorizes it. Reuse the project facts in `AGENTS.md`:
@@ -1402,6 +1429,9 @@ The final read-only review for this cutover must answer:
     result kind, semantic event, or summary-output cap?
 36. Can representation repair keep the operation and every schema-declared operand unchanged while accepting the new
     provider-generated call ID of its own physical response, with the later ToolReturn paired under that same new ID?
+37. When a dynamic page re-keys DOM/AX targets while preserving identity-free World meaning and the screenshot, do
+    ActionOutcome, model-visible step history, Workspace, Trace, and Monitor agree that no semantic effect occurred,
+    while a genuine semantic or visual transition remains `CHANGED`?
 
 ## Exit statement
 

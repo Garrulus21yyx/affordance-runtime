@@ -1421,6 +1421,37 @@ with 11 skips; the full suite passes 1,809 tests with 19 skips except for the pr
 failure caused by the unmaintained `docs/interaction-shell.md`. No World, history, cursor, ToolReturn, Monitor,
 Workspace, evaluator, or additional model role changed.
 
+The first formal post-repair attempt, Task740
+[`run5`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run5/traces/webarena-verified-w2-task-740/trace.jsonl),
+crossed that GoalCompiler boundary: the policy recovered both Wiki coordinate pairs, opened the OSM directions form,
+filled both fields, and dispatched `Go`. The initial dispatch changed the identity-free World digest. The next 41
+completed steps did not: both identity-free World digests and the screenshot SHA-256 remained identical, while OSM's
+DOM reconstruction changed 583 public target identities and 1,042 identity-keyed facts on each capture. The policy
+repeated the same `activate(E10)` response 43 times, and Monitor emitted zero recoveries. The run was deliberately
+interrupted after 66 completed steps and is failed diagnostic evidence, not a benchmark result; an earlier `run4`
+stdin/multiprocessing launch error never started a case and is not a witness.
+
+This reopening has one causal explanation shared by outcome projection and Monitor. `PublicWorldDelta.changed`
+correctly represented complete identity/fact churn, but `ProductionActionOutcomeProjector` promoted any such churn to
+`ObservedChange.CHANGED`; Monitor then treated that typed outcome as an operational effect and cleared the exact-action
+streak. Raw public identity/fact delta and identity-free World meaning are distinct existing views, not competing
+authorities. `PublicWorldDelta.semantic_changed` is now derived solely from its existing before/after semantic
+digests. Action outcome projection, visual evidence applicability, model-visible step projection, and Workspace
+no-effect classification consume that one derived meaning, while Trace continues to retain the raw identity counts
+and now reports the semantic-change bit explicitly. A semantically equivalent target reappearing under a new public
+ID is compared by identity-free target semantics; it is not action evidence. Monitor itself gains no state, model,
+retry, or task rule: after a true effect it still resets, while two subsequent same-semantics/same-screenshot attempts
+reach its existing recovery path.
+
+This is the thin ReAct boundary used by current GUI-agent work: a grounding ID belongs to one observation, and the
+next observation/screenshot verifies the preceding action. UI-TARS-2 models each step as thought/action/observation;
+AgentOccam improves a single policy by aligning and compacting observations/actions rather than treating DOM identity
+allocation as progress; Agent S2's optional reflection likewise evaluates the latest screenshot trajectory. None
+requires a second World, Replanner, evidence ledger, or cursor for this failure. Generated identity-rekeying tests and
+the full BrowserGym/Agent/Evaluation owner surface protect the repaired invariant. The focused owner surface passes
+`551 tests / 3 skipped`; the full suite passes `1,813 / 19 skipped` with only the previously recorded unrelated
+`docs/interaction-shell.md` governance failure. A fresh live Task740 witness remains required.
+
 ## World, perception, and action boundaries
 
 All DOM, AX, screenshot, visual-provider, WoT, and HTTP observations enter through `SurfaceAdapter` and fusion into the
@@ -1564,6 +1595,9 @@ This cutover is implementation-complete only when all of the following agree:
     compaction requires the declared high-water plus minimum-reclaim hysteresis independent of summary output size.
 26. A separate representation-repair provider response may own a new call ID while preserving the rejected operation
     and every schema-declared semantic operand; the accepted response and subsequent ToolReturn pair under that new ID.
+27. Public identity/fact churn remains available as exact transition lineage but cannot become `semantic_change` or
+    `ObservedChange.CHANGED` when both identity-free World meaning and screenshot are unchanged; repeated equivalent
+    GUI attempts must therefore reach the existing Monitor recovery independent of target-ID reallocation.
 
 These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
 paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark

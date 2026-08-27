@@ -11,7 +11,7 @@ from affordance_runtime.evaluation.contracts import (
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.evaluation.evidence_records import evidence_source_is_current
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
-from affordance_runtime.world.public_semantic_digest import target_semantics
+from affordance_runtime.world.public_semantic_digest import public_subject_semantics_changed
 from affordance_runtime.world.source_profile import assurance_satisfies
 
 
@@ -158,7 +158,7 @@ def _apply_visual_profile(evaluation, request, before, after, records):
         return _unknown(evaluation, "activation screenshot state is unavailable")
     target_id = request.intent.target_id
     screenshot_changed = before_digests != after_digests
-    target_changed = _target_semantics(before, target_id) != _target_semantics(after, target_id)
+    target_changed = public_subject_semantics_changed(before, after, target_id)
     changed = screenshot_changed or target_changed
     if evaluation.observed_change is ObservedChange.CHANGED and changed:
         return evaluation
@@ -174,8 +174,3 @@ def _screenshot_digests(observation: WorldObservation) -> tuple[str, ...]:
         for media in source.media
         if media.kind == "screenshot"
     }))
-
-
-def _target_semantics(observation: WorldObservation, target_id: str):
-    target = next((item for item in observation.targets if item.target_id == target_id), None)
-    return None if target is None else target_semantics(target)

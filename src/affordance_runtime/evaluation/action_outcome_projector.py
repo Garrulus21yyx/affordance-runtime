@@ -21,6 +21,7 @@ from affordance_runtime.evaluation.evidence_records import evidence_source_is_cu
 from affordance_runtime.execution import ExecutionTransition
 from affordance_runtime.world import CoverageState
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
+from affordance_runtime.world.public_semantic_digest import public_subject_semantics_changed
 from affordance_runtime.world.source_profile import assurance_satisfies
 
 
@@ -178,18 +179,23 @@ def _evaluate_navigation_context(
     after,
     public_world_delta: PublicWorldDelta,
 ) -> ActionOutcome:
-    target_changed = any(
-        item.target_id == request.intent.target_id
-        for item in public_world_delta.target_changes
-    )
-    target_refs = _changed_fact_refs(
-        public_world_delta,
+    semantic_world_changed = public_world_delta.semantic_changed
+    target_changed = semantic_world_changed and public_subject_semantics_changed(
+        before,
         after,
-        target_id=request.intent.target_id,
+        request.intent.target_id,
     )
-    structural_refs = target_refs or _changed_fact_refs(public_world_delta, after)
-    if structural_refs:
-        fact_changes = _fact_change_payloads(public_world_delta, structural_refs)
+    target_refs = (
+        _changed_fact_refs(
+            public_world_delta,
+            after,
+            target_id=request.intent.target_id,
+        )
+        if semantic_world_changed
+        else ()
+    )
+    if target_refs:
+        fact_changes = _fact_change_payloads(public_world_delta, target_refs)
         return ActionOutcome(
             request.request_id,
             before.observation_id,
@@ -201,17 +207,13 @@ def _evaluate_navigation_context(
                 else LocalPostconditionStatus.NOT_APPLICABLE
             ),
             EvidenceMethod.STRUCTURAL,
-            (
-                "public target semantics changed with current structural evidence"
-                if target_refs
-                else "public structural world facts changed after interaction"
-            ),
-            structural_refs,
+            "public target semantics changed with current structural evidence",
+            target_refs,
             {
-                "verification_profile": ("structural_target_diff_v1" if target_refs else "structural_world_diff_v1"),
+                "verification_profile": "structural_target_diff_v1",
                 "expected_effects": request.selection.semantic_effects,
                 "observed_change": ObservedChange.CHANGED.value,
-                "target_changed": bool(target_refs),
+                "target_changed": True,
                 "structural_world_changed": True,
                 "fact_changes": fact_changes,
             },
@@ -220,9 +222,41 @@ def _evaluate_navigation_context(
     before_digests = _screenshot_digests(before)
     after_digests = _screenshot_digests(after)
     evidence_ref = _screenshot_evidence_ref(after)
-    if not before_digests or not after_digests or evidence_ref is None:
+    screenshot_available = bool(before_digests and after_digests and evidence_ref is not None)
+    screenshot_changed = screenshot_available and before_digests != after_digests
+    if (
+        semantic_world_changed
+        and not screenshot_changed
+        and not (screenshot_available and target_changed)
+    ):
+        structural_refs = _changed_fact_refs(public_world_delta, after)
+        if structural_refs:
+            fact_changes = _fact_change_payloads(public_world_delta, structural_refs)
+            return ActionOutcome(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.CHANGED,
+                (
+                    LocalPostconditionStatus.UNKNOWN
+                    if request.intent.expected_outcome
+                    else LocalPostconditionStatus.NOT_APPLICABLE
+                ),
+                EvidenceMethod.STRUCTURAL,
+                "public structural World semantics changed after interaction",
+                structural_refs,
+                {
+                    "verification_profile": "structural_world_diff_v2",
+                    "expected_effects": request.selection.semantic_effects,
+                    "observed_change": ObservedChange.CHANGED.value,
+                    "target_changed": target_changed,
+                    "structural_world_changed": True,
+                    "fact_changes": fact_changes,
+                },
+                public_world_delta,
+            )
+    if not screenshot_available:
         return _evaluation(request, before, after, public_world_delta=public_world_delta)
-    screenshot_changed = before_digests != after_digests
     observed_change = ObservedChange.CHANGED if screenshot_changed or target_changed else ObservedChange.UNCHANGED
     local_postcondition = (
         LocalPostconditionStatus.UNKNOWN if request.intent.expected_outcome else LocalPostconditionStatus.NOT_APPLICABLE

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from dataclasses import replace
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -24,6 +27,8 @@ from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
     current_findings_digest,
 )
+from affordance_runtime.agent.context.step_projection import project_step_result
+from affordance_runtime.agent.evaluation_control import validated_action_outcome
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.recovery import (
@@ -32,7 +37,12 @@ from affordance_runtime.agent.recovery import (
     RecoveryKind,
 )
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ObservedChange,
+    ProductionActionOutcomeProjector,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution import (
     ActionResult,
     DispatchStatus,
@@ -82,6 +92,43 @@ def _world(observation_id: str, *, route: str = "/map", result_text: str = ""):
         risk=ActionRisk.LOW,
     )
     return fused_world(observation_id, tuple(targets), tuple(facts), (binding,))
+
+
+def _rekeyed_world(observation_id: str, prefix: str):
+    document_id = f"{prefix}:document"
+    go_id = f"{prefix}:go"
+    targets = (
+        SemanticTarget(document_id, "document", "Map", {"page.route": "/map"}),
+        SemanticTarget(go_id, "button", "Go"),
+    )
+    facts = (
+        StateFact(
+            f"fact:{observation_id}:route",
+            document_id,
+            "page.route",
+            "/map",
+            observation_id,
+        ),
+    )
+    binding = ActionBinding(
+        f"binding:{observation_id}:go",
+        observation_id,
+        observation_id,
+        f"revision:{observation_id}",
+        "fingerprint:go",
+        go_id,
+        go_id,
+        "fixture",
+        "fixture",
+        "activate",
+        "click",
+        "local_reversible",
+        ("external_ui_interaction",),
+        {"type": "object", "properties": {}, "additionalProperties": False},
+        {"fixture": "go"},
+        risk=ActionRisk.LOW,
+    )
+    return fused_world(observation_id, targets, facts, (binding,))
 
 
 def _evaluation(world, status: TaskEvaluationStatus = TaskEvaluationStatus.INCOMPLETE) -> TaskEvaluation:
@@ -136,6 +183,23 @@ def _evaluate(monitor: EpisodeMonitor, step: StepResult):
         step,
         current_findings_digest(step.after_world),
     )
+
+
+def _with_projected_outcome(step: StepResult) -> StepResult:
+    assert step.execution_receipts is not None
+    receipt = step.execution_receipts.receipts[-1]
+    outcome = asyncio.run(
+        validated_action_outcome(
+            ProductionActionOutcomeProjector(),
+            _task(),
+            step.before_world,
+            receipt.request,
+            receipt.result,
+            step.after_world,
+            step.public_world_delta,
+        )
+    )
+    return replace(step, action_outcome=outcome)
 
 
 def _search_with_items(world) -> StepResult:
@@ -617,6 +681,30 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
     assert monitor.no_progress_count == 3
     assert monitor.latest_attempt_signature is not None
     assert monitor.latest_attempt_signature.digest.startswith("sha256:")
+
+
+def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None:
+    first_world = _rekeyed_world("observation:rekey-a", "a")
+    second_world = _rekeyed_world("observation:rekey-b", "b")
+    third_world = _rekeyed_world("observation:rekey-c", "c")
+    first_step = _with_projected_outcome(_dispatched_step(first_world, second_world))
+    second_step = _with_projected_outcome(_dispatched_step(second_world, third_world))
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    first = _evaluate(monitor, first_step)
+    recovery = _evaluate(monitor, second_step)
+
+    assert first_step.public_world_delta is not None
+    assert first_step.public_world_delta.changed
+    assert not first_step.public_world_delta.semantic_changed
+    assert first_step.action_outcome is not None
+    assert first_step.action_outcome.observed_change is ObservedChange.UNKNOWN
+    assert project_step_result(first_step).transition["semantic_change"] == "unchanged"
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.prohibited_attempt_signature is not None
 
 
 def test_effectful_gui_cycle_recovers_across_fresh_worlds_then_blocks_recurrence() -> None:

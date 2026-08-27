@@ -147,6 +147,7 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
             "before_world_digest": step["lineage"]["before_world_digest"],
             "after_world_digest": step["lineage"]["after_world_digest"],
             "changed": True,
+            "semantic_changed": True,
             "changed_target_count": 1,
             "changed_fact_count": 1,
             "changed_region_keys": step["result"]["public_world_delta"]["changed_region_keys"],
