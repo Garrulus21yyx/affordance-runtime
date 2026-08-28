@@ -74,6 +74,7 @@ class ObservationOrchestrator:
         *,
         route_source: str = "",
         optional_need_ids: frozenset[str] = frozenset(),
+        structural_baseline_available: bool = False,
     ) -> ObservationSelectionResult:
         ordered = tuple(sorted(offers, key=_offer_rank))
         if not ordered:
@@ -113,6 +114,7 @@ class ObservationOrchestrator:
             if (
                 adequate
                 and all(item.modality is ObservationModality.VISUAL for item in adequate)
+                and not structural_baseline_available
                 and not any(
                     _offer(item.source, ordered).modality is ObservationModality.STRUCTURAL
                     for item in selected.values()
@@ -222,6 +224,8 @@ class ObservationOrchestrator:
         *,
         terminal: bool,
         route_source: str = "",
+        prior_plan: ObservationSelectionPlan | None = None,
+        acquired_sources: frozenset[str] = frozenset(),
     ) -> ObservationSelectionResult:
         """Complete stage two using typed residual need, without adapter selection."""
 
@@ -231,11 +235,18 @@ class ObservationOrchestrator:
             if any(_offer_satisfies(offer, need) for offer in offers)
         )
         needs = tuple(dict.fromkeys((request.needs or (_lifecycle_need(request),)) + residual))
-        return self._select(
+        refined = self._select(
             offers,
             replace(request, needs=needs),
             route_source=route_source,
             optional_need_ids=frozenset(item.need_id for item in residual),
+            structural_baseline_available=True,
+        )
+        if refined.plan is None or prior_plan is None or not acquired_sources:
+            return refined
+        return replace(
+            refined,
+            plan=_retain_acquired_sources(prior_plan, refined.plan, acquired_sources),
         )
 
     def _add(
@@ -359,4 +370,38 @@ def _offer_rank(offer: ObservationOffer) -> tuple[int, int, str]:
         _COST[AcquisitionCost(offer.acquisition_cost)],
         _MODALITY[ObservationModality(offer.modality)],
         offer.source,
+    )
+
+
+def _retain_acquired_sources(
+    initial: ObservationSelectionPlan,
+    refined: ObservationSelectionPlan,
+    acquired_sources: frozenset[str],
+) -> ObservationSelectionPlan:
+    """Keep stage-one sources in the final plan that owns their activation lineage."""
+
+    refined_by_source = {item.source: item for item in refined.selections}
+    retained = tuple(
+        item
+        for item in initial.selections
+        if item.source in acquired_sources and item.source not in refined_by_source
+    )
+    if not retained:
+        return refined
+    selections: tuple[SourceSelection, ...] = (*retained, *refined.selections)
+    selected_sources = {item.source for item in selections}
+    unselected = tuple(
+        item
+        for item in (*initial.unselected, *refined.unselected)
+        if item.source not in selected_sources
+    )
+    unselected = tuple({item.source: item for item in unselected}.values())
+    needs_by_id = {item.need_id: item for item in (*initial.needs, *refined.needs)}
+    need_ids = tuple(need_id for item in selections for need_id in item.need_ids)
+    return ObservationSelectionPlan(
+        selections,
+        unselected,
+        refined.acquisition_budget,
+        tuple(needs_by_id[need_id] for need_id in need_ids),
+        tuple(dict.fromkeys(item.reason_code for item in selections)),
     )

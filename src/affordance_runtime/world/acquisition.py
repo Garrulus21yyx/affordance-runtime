@@ -444,7 +444,11 @@ class ProviderActivation:
         expected = {item.need_id for item in self.request.needs}
         actual = {item.need_id for item in self.result.need_results}
         if actual != expected:
-            raise ValueError("provider activation must close every selected need exactly once")
+            raise ValueError(
+                "provider activation must close every selected need exactly once: "
+                f"source={self.request.source!r} "
+                f"expected={sorted(expected)!r} actual={sorted(actual)!r}"
+            )
 
 
 @dataclass(frozen=True)

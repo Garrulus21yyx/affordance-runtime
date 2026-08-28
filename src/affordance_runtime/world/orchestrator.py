@@ -262,6 +262,8 @@ class ObservationAcquisitionCoordinator:
                 baseline,
                 terminal=False,
                 route_source=route_source,
+                prior_plan=selected,
+                acquired_sources=frozenset(item.source for item in stage_requests),
             )
             if refined.plan is None:
                 deferred = tuple(item for item in all_initial_requests if item not in stage_requests)
@@ -287,8 +289,14 @@ class ObservationAcquisitionCoordinator:
                 )
             selected = refined.plan
             final_requests = selected_observation_requests(selected, request, self._offers, acquisition_id)
-            acquired_sources = {item.source for item in stage_requests}
-            residual_requests = tuple(item for item in final_requests if item.source not in acquired_sources)
+            stage_by_source = {item.source: item for item in stage_requests}
+            residual_requests = tuple(
+                item
+                for item in final_requests
+                if item.source not in stage_by_source
+                or {need.need_id for need in item.needs}
+                != {need.need_id for need in stage_by_source[item.source].needs}
+            )
             if residual_requests:
                 try:
                     provider_results.extend(await self._acquire_selected(residual_requests))
@@ -304,12 +312,18 @@ class ObservationAcquisitionCoordinator:
                     )
                     self._remember(cancelled)
                     raise AcquisitionCancelled(cancelled) from exc
-                acquired.extend(
-                    item.observation
-                    for item in provider_results[len(stage_requests) :]
-                    if item.status is SourceAcquisitionStatus.ACQUIRED and item.observation is not None
-                )
             stage_requests = final_requests
+        provider_by_source = {item.source: item for item in provider_results}
+        provider_results = [
+            provider_by_source[item.source]
+            for item in stage_requests
+            if item.source in provider_by_source
+        ]
+        acquired = [
+            item.observation
+            for item in provider_results
+            if item.status is SourceAcquisitionStatus.ACQUIRED and item.observation is not None
+        ]
         activations = self._activations(stage_requests, tuple(provider_results))
         results = self._source_results(selected, stage_requests, tuple(provider_results))
         required_failures = tuple(

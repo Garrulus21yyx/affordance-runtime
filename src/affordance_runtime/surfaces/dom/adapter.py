@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from time import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
@@ -43,6 +42,7 @@ from affordance_runtime.world.contracts import (
     ObservationMedia,
     ObservationMediaVariant,
     ObservationSourceProfile,
+    ObservationStructureNode,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -51,6 +51,11 @@ from affordance_runtime.world.contracts import (
 if TYPE_CHECKING:
     from affordance_runtime.actions.contracts import Affordance
     from affordance_runtime.surfaces.dom.browser_session import BrowserSession
+
+
+MAX_VISIBLE_TEXT_RECORDS = 128
+MAX_VISIBLE_TEXT_RECORD_CHARS = 1_200
+_PUBLIC_WHITESPACE = re.compile(r"\s+")
 
 
 @dataclass
@@ -116,7 +121,13 @@ class DomSurfaceAdapter:
         browser_state = self.session.browser_context_state()
         browser_target = _browser_context_target(browser_state)
         action_targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
-        targets = (browser_target, *action_targets, *(document.targets if document_enabled else ()))
+        text_targets, text_projection_truncated = _visible_text_targets(
+            str(snapshot.observation.metadata.get("visible_text") or ""),
+            source_truncated=snapshot.observation.metadata.get("visible_text_truncated") is True,
+        )
+        readable_targets = (*text_targets, *(document.targets if document_enabled else ()))
+        targets = (browser_target, *action_targets, *readable_targets)
+        structure = _dom_structure(browser_target, action_targets, readable_targets)
         binding_results = tuple(
             _binding(
                 self._task,
@@ -158,7 +169,11 @@ class DomSurfaceAdapter:
             targets,
             facts,
             bindings,
-            CoverageState.TRUNCATED if document_enabled and document.truncated else CoverageState.COMPLETE,
+            (
+                CoverageState.TRUNCATED
+                if text_projection_truncated or (document_enabled and document.truncated)
+                else CoverageState.COMPLETE
+            ),
             {
                 "url": snapshot.observation.url,
                 "screenshot_ref": snapshot.observation.screenshot_ref,
@@ -167,6 +182,8 @@ class DomSurfaceAdapter:
             },
             media=media,
             acquisition_root_id=f"browser:{snapshot.observation.page_revision}",
+            structure=structure,
+            structure_total_count=len(structure),
         )
         return SelectedObservationResult.acquired(
             request,
@@ -183,7 +200,6 @@ class DomSurfaceAdapter:
             binding.surface == self.surface
             and binding.source_observation_id == self._observation_id
             and binding.source_revision == self._source_revision
-            and (not binding.expires_at_s or time() <= binding.expires_at_s)
         )
         if not identity_is_current:
             return False, 0
@@ -272,6 +288,112 @@ def _target(affordance: Affordance) -> SemanticTarget:
         affordance.role,
         affordance.label,
         dict(affordance.state),
+    )
+
+
+def _visible_text_targets(
+    value: str,
+    *,
+    source_truncated: bool,
+) -> tuple[tuple[SemanticTarget, ...], bool]:
+    records: list[str] = []
+    projection_truncated = source_truncated
+    for raw_line in value.splitlines():
+        line = _PUBLIC_WHITESPACE.sub(" ", raw_line).strip()
+        while line:
+            if len(records) >= MAX_VISIBLE_TEXT_RECORDS:
+                projection_truncated = True
+                break
+            records.append(line[:MAX_VISIBLE_TEXT_RECORD_CHARS])
+            line = line[MAX_VISIBLE_TEXT_RECORD_CHARS:]
+        if len(records) >= MAX_VISIBLE_TEXT_RECORDS and line:
+            break
+    targets = tuple(
+        SemanticTarget(
+            f"dom-readable-text:{index}",
+            "StaticText",
+            text,
+            {
+                "visible": True,
+                **(
+                    {"semantic.accessible_name.truncated": True}
+                    if projection_truncated and index == len(records) - 1
+                    else {}
+                ),
+            },
+        )
+        for index, text in enumerate(records)
+    )
+    return targets, projection_truncated
+
+
+def _dom_structure(
+    browser_target: SemanticTarget,
+    action_targets: tuple[SemanticTarget, ...],
+    readable_targets: tuple[SemanticTarget, ...],
+) -> tuple[ObservationStructureNode, ...]:
+    """Publish bounded readable content and captured control order from one DOM epoch."""
+
+    controls = (browser_target, *action_targets)
+    root_id = "dom-page-root"
+    controls_id = "dom-controls-root"
+    readable_id = "dom-readable-root"
+    control_node_ids = tuple(f"dom-control-node:{index}" for index in range(len(controls)))
+    readable_node_ids = tuple(
+        f"dom-readable-node:{index}" for index in range(len(readable_targets))
+    )
+    root_children = (controls_id, *((readable_id,) if readable_targets else ()))
+    return (
+        ObservationStructureNode(
+            root_id,
+            "document",
+            "Current page",
+            child_structure_ids=root_children,
+        ),
+        ObservationStructureNode(
+            controls_id,
+            "region",
+            "Interactive controls",
+            parent_structure_id=root_id,
+            child_structure_ids=control_node_ids,
+        ),
+        *(
+            ObservationStructureNode(
+                structure_id,
+                target.role,
+                target.label,
+                parent_structure_id=controls_id,
+                semantic_target_id=target.target_id,
+            )
+            for structure_id, target in zip(control_node_ids, controls, strict=True)
+        ),
+        *(
+            (
+                ObservationStructureNode(
+                    readable_id,
+                    "region",
+                    "Visible page text",
+                    parent_structure_id=root_id,
+                    child_structure_ids=readable_node_ids,
+                ),
+                *(
+                    ObservationStructureNode(
+                        structure_id,
+                        target.role,
+                        target.label,
+                        parent_structure_id=readable_id,
+                        semantic_target_id=target.target_id,
+                    )
+                    for structure_id, target in zip(
+                        readable_node_ids,
+                        readable_targets,
+                        strict=True,
+                    )
+                ),
+            )
+            if readable_targets
+            else ()
+        ),
     )
 
 
@@ -495,7 +617,12 @@ def _binding(
         parameter_schema=schema,
         payload=dict(affordance.locator),
         observation_barrier=classification.observation_barrier,
-        expires_at_s=affordance.lease.expires_at_s,
+        # DOM currentness is proven by the source revision plus a live target
+        # fingerprint probe immediately before dispatch.  Publishing the
+        # parser's short-lived internal lease here would make model-visible
+        # actions expire merely because model inference took longer than the
+        # parser lease.
+        expires_at_s=0.0,
         confidence=affordance.confidence,
         risk=classification.risk,
         resource_ref=affordance.id,

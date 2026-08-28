@@ -1237,6 +1237,53 @@ def test_physical_stale_not_sent_refreshes_world_and_returns_to_policy_without_r
     asyncio.run(scenario())
 
 
+def test_model_latency_cannot_expire_the_current_observation_action_space() -> None:
+    @dataclass
+    class SlowPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            assert context.actions.options
+            await asyncio.sleep(0.03)
+            return SelectAction(
+                context.context_id,
+                context.actions.options[0].action_id,
+                tool_call_id="provider-call:slow-current-world",
+            )
+
+    async def scenario() -> None:
+        before = _world("slow-before", False)
+        source = before.sources[0]
+        expiring_source = replace(
+            source,
+            bindings=(replace(source.bindings[0], expires_at_s=1.0),),
+        )
+        fused = WorldFusion().fuse((expiring_source,))
+        assert fused.observation is not None
+        policy = SlowPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("slow_policy_currentness_test"),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=fused.observation,
+            post_observations=(_world("slow-after", True),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.DONE
+        assert policy.turns == 1
+        assert environment.execute_calls == 1
+        assert len(environment.dispatched_requests) == 1
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     "correctable_error",
     (

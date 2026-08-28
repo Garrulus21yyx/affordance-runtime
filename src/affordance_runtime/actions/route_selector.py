@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from time import time
 
 from affordance_runtime.actions.space_contracts import AdmittedActionSelection
 from affordance_runtime.schema_digest import schema_digest
@@ -32,6 +31,12 @@ class RouteSelectionResult:
 
 @dataclass(frozen=True)
 class RouteSelector:
+    """Select one deterministic private route from the accepted observation.
+
+    Surface adapters, not this observation-local selector, own live currentness
+    and any provider lease semantics immediately before dispatch.
+    """
+
     def select(
         self,
         selection: AdmittedActionSelection,
@@ -86,7 +91,6 @@ def _binding_current(binding: ActionBinding, observation: WorldObservation) -> b
     if (
         binding.world_observation_id != observation.observation_id
         or not binding.target_fingerprint
-        or (binding.expires_at_s and time() > binding.expires_at_s)
     ):
         return False
     if not observation.sources:

@@ -51,6 +51,35 @@ class CountingBrowserSession(BrowserSession):
         return super().probe_dom_target(source_target_id)
 
 
+class RepeatedControlsPage(InteractivePage):
+    def content(self) -> str:
+        return (
+            "<main>"
+            "<button id='first'>Show</button>"
+            "<button id='second'>Show</button>"
+            "</main>"
+        )
+
+
+class ReadablePage(RepeatedControlsPage):
+    def evaluate(self, expression: str) -> object:
+        if "document.activeElement" in expression:
+            return ""
+        if "innerText" in expression:
+            return (
+                "OpenAI\n"
+                "OpenAI is an American artificial intelligence research organization."
+            )
+        return {}
+
+
+class TruncatedReadablePage(ReadablePage):
+    def evaluate(self, expression: str) -> object:
+        if "innerText" in expression:
+            return "A" * 33_000
+        return super().evaluate(expression)
+
+
 def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> None:
     async def scenario() -> None:
         page = InteractivePage()
@@ -87,6 +116,135 @@ def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> No
         assert after.observation_id != before.observation_id
         assert next(target for target in after.targets if target.role == "button").label == ("Shared state enabled")
         assert any(target.role == "browser_context" for target in after.targets)
+
+    asyncio.run(scenario())
+
+
+def test_dom_live_probe_not_parser_lease_owns_execution_currentness() -> None:
+    async def scenario() -> None:
+        page = InteractivePage()
+        session = CountingBrowserSession(page)
+        adapter = DomSurfaceAdapter(session)
+        world = UnifiedWorldEnvironment((adapter,))
+        task = TaskGoal(
+            "shared",
+            "Enable shared state",
+            allowed_effects=("shared_state_enabled",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquisition = await world.reset(task)
+        assert acquisition.observation is not None
+        observed = acquisition.observation
+        option = ActionSpaceBuilder().build(task, observed).options[0]
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}),
+            observed,
+            "context:slow-model",
+        )
+
+        assert request.binding.expires_at_s == 0.0
+        await asyncio.sleep(0.01)
+        assert world.is_current(request)
+        result = (await world.execute(request)).result
+
+        assert result.transport_success
+        assert session.currentness_probes == 1
+        assert page.clicks == 1
+
+    asyncio.run(scenario())
+
+
+def test_dom_capture_order_disambiguates_identical_executable_controls() -> None:
+    async def scenario() -> None:
+        page = RepeatedControlsPage()
+        task = TaskGoal(
+            "repeated-controls",
+            "Activate one visible control",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment((
+            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+        )).reset(task)
+        assert acquired.observation is not None
+        observed = acquired.observation
+
+        source = observed.sources[0]
+        show_target_ids = {
+            target.target_id for target in observed.targets if target.label == "Show"
+        }
+        show_nodes = tuple(
+            node for node in source.structure if node.semantic_target_id in show_target_ids
+        )
+        projection = canonical_world(
+            observed,
+            ActionSpaceBuilder().build(task, observed),
+        )
+        show_records = tuple(
+            record
+            for record in projection.ordered_target_records
+            if record.label == "Show" and record.ref.startswith("E")
+        )
+
+        assert len(show_nodes) == 2
+        assert len({node.structure_id for node in show_nodes}) == 2
+        assert len(show_records) == 2
+        assert len({record.ref for record in show_records}) == 2
+
+    asyncio.run(scenario())
+
+
+def test_dom_visible_text_enters_the_existing_readable_world_contract() -> None:
+    async def scenario() -> None:
+        page = ReadablePage()
+        task = TaskGoal(
+            "read-visible-text",
+            "Report the first sentence",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment((
+            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+        )).reset(task)
+        assert acquired.observation is not None
+        observed = acquired.observation
+        readable = tuple(target for target in observed.targets if target.role == "StaticText")
+        index = canonical_world(
+            observed,
+            ActionSpaceBuilder().build(task, observed),
+        )
+
+        assert [target.label for target in readable] == [
+            "OpenAI",
+            "OpenAI is an American artificial intelligence research organization.",
+        ]
+        assert any(
+            node.label == "Visible page text" for node in observed.sources[0].structure
+        )
+        assert any(record.label == readable[1].label for record in index.ordered_target_records)
+
+    asyncio.run(scenario())
+
+
+def test_dom_visible_text_reports_honest_source_and_record_truncation() -> None:
+    async def scenario() -> None:
+        page = TruncatedReadablePage()
+        task = TaskGoal(
+            "read-truncated-text",
+            "Read a bounded real page",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment((
+            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+        )).reset(task)
+        assert acquired.observation is not None
+        source = acquired.observation.sources[0]
+        readable = tuple(target for target in source.targets if target.role == "StaticText")
+
+        assert source.coverage.value == "truncated"
+        assert readable
+        assert readable[-1].state["semantic.accessible_name.truncated"] is True
 
     asyncio.run(scenario())
 

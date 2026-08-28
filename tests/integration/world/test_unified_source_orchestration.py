@@ -356,6 +356,56 @@ def test_typed_structural_truncation_adds_optional_visual_discovery() -> None:
     assert visual.reason_code == "visual_entity_discovery"
     assert visual.need_ids == ("residual:entity_discovery",)
     assert visual.requirement is SourceRequirement.OPTIONAL
+    assert all(not item.need_id.startswith("baseline:") for item in selected.plan.needs)
+
+
+def test_staged_post_action_refinement_reuses_the_acquired_structural_baseline() -> None:
+    async def scenario() -> None:
+        dom = OfferedAdapter(
+            "dom",
+            ObservationOffer("dom", "structural", "structural", "low"),
+            replace(_source("dom"), coverage=CoverageState.TRUNCATED),
+        )
+        visual = OfferedAdapter(
+            "visual",
+            ObservationOffer(
+                "visual",
+                "visual",
+                "weak",
+                "high",
+                supported_purposes=(ObservationPurpose.ENTITY_DISCOVERY,),
+            ),
+            _source("visual", profile=ObservationSourceProfile.visual()),
+        )
+        environment = UnifiedWorldEnvironment((dom, visual))
+        await environment.reset(_task())
+        verification = ObservationNeed(
+            "verification:staged-post-action",
+            ObservationPurpose.EFFECT_VERIFICATION,
+            required_assurance=ObservationAssurance.WEAK,
+        )
+
+        acquired = await environment.capture(WorldObservationRequest(
+            ObservationRequestKind.POST_ACTION_FALLBACK,
+            "post action with a partial structural baseline",
+            (verification,),
+        ))
+
+        assert acquired.status is AcquisitionStatus.ACQUIRED
+        assert {
+            activation.request.source: tuple(item.need_id for item in activation.request.needs)
+            for activation in acquired.activations
+        } == {
+            "dom": (verification.need_id,),
+            "visual": ("residual:entity_discovery",),
+        }
+        assert all(
+            {item.need_id for item in activation.request.needs}
+            == {item.need_id for item in activation.result.need_results}
+            for activation in acquired.activations
+        )
+
+    asyncio.run(scenario())
 
 
 def test_public_state_distinction_closes_ambiguity_without_visual_source() -> None:

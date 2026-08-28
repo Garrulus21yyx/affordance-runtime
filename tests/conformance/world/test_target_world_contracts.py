@@ -98,6 +98,25 @@ def test_action_space_is_current_and_schema_is_immutable() -> None:
         space.options[0].parameter_schema["type"] = "array"  # type: ignore[index]
 
 
+def test_action_space_membership_is_stable_across_private_lease_expiry() -> None:
+    world = _world()
+    task = TaskGoal(
+        "share",
+        "Enable sharing",
+        allowed_effects=("shared_state_enabled",),
+        risk_profile=RiskProfile.LOW,
+    )
+    live = replace(world, bindings=(replace(world.bindings[0], expires_at_s=9_999_999_999.0),))
+    expired = replace(world, bindings=(replace(world.bindings[0], expires_at_s=1.0),))
+
+    live_space = ActionSpaceBuilder().build(task, live)
+    expired_space = ActionSpaceBuilder().build(task, expired)
+
+    assert expired_space == live_space
+    selection = ActionSpaceBuilder().admit(expired_space.options[0], {})
+    assert ActionBinder().bind(selection, expired, "context:lease-owner").binding.binding_id == "binding-1"
+
+
 def test_identical_current_routes_merge_only_their_private_binding_ids() -> None:
     world = _world()
     duplicate = replace(world.bindings[0], binding_id="binding-2", confidence=0.25)

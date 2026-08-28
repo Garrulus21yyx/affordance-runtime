@@ -352,6 +352,7 @@ def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
     assert ("control_value", "") in assertions
     assert ("focused", False) in assertions
     assert snapshot.observation.metadata["visible_text"] == "Copy this exactly: Trim-sensitive text "
+    assert snapshot.observation.metadata["visible_text_truncated"] is False
 
 
 def test_browser_session_preserves_current_multi_select_values() -> None:

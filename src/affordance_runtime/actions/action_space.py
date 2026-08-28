@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from time import time
 from typing import Any
 
 from affordance_runtime.actions.admission import AdmissionIssue, AdmissionIssueCode
@@ -330,7 +329,12 @@ class ActionSpaceBuilder:
 def _binding_is_current(binding: ActionBinding, observation: WorldObservation) -> bool:
     if binding.world_observation_id != observation.observation_id:
         return False
-    if not binding.target_fingerprint or (binding.expires_at_s and time() > binding.expires_at_s):
+    # ActionSpace is an immutable projection of one captured observation.  A
+    # wall-clock lease must not make that projection change while the model is
+    # reasoning over it.  The selected surface owns live currentness at the
+    # execution boundary, where it can probe the actual target or reject with a
+    # typed stale-binding result.
+    if not binding.target_fingerprint:
         return False
     if not observation.sources:
         return binding.source_observation_id == observation.observation_id

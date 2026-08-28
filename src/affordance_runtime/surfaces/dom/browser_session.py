@@ -54,6 +54,8 @@ from affordance_runtime.world.observation import (
     SourceCoverage,
 )
 
+MAX_VISIBLE_TEXT_CHARS = 32_000
+
 
 class PageDriver(Protocol):
     context: Any
@@ -810,6 +812,7 @@ class BrowserSession:
         control_states: dict[str, Any] = {}
         active_control = ""
         visible_text = ""
+        visible_text_truncated = False
         live_bindings = [
             {
                 "key": str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or ""),
@@ -838,11 +841,13 @@ class BrowserSession:
                     active_control = captured_active_control
                 captured_visible_text = evaluator("() => document.body?.innerText || ''")
                 if isinstance(captured_visible_text, str):
-                    visible_text = captured_visible_text[:2_000]
+                    visible_text_truncated = len(captured_visible_text) > MAX_VISIBLE_TEXT_CHARS
+                    visible_text = captured_visible_text[:MAX_VISIBLE_TEXT_CHARS]
             except Exception:
                 control_states = {}
                 active_control = ""
                 visible_text = ""
+                visible_text_truncated = False
         if (
             (spatial_required or visual_required)
             and perception_requirements is not None
@@ -1151,6 +1156,7 @@ class BrowserSession:
                 "active_control": active_control,
                 "document_generation": document_generation,
                 "visible_text": visible_text,
+                "visible_text_truncated": visible_text_truncated,
                 "environment_family": _environment_family(url),
                 "observation_epoch_id": snapshot_id,
                 "svg_geometry_count": len(svg_geometry.elements) if svg_geometry is not None else 0,
