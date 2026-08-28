@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from interaction_shell.content_filtering import (
-    PINNED_UBOL_SHA256,
+    PINNED_UBOL_COMPLETE_PATCH_ID,
     PINNED_UBOL_VERSION,
     ContentFilterProfile,
     CosmeticFilterExtensionAttestation,
@@ -24,6 +24,7 @@ def _cosmetic_extension() -> CosmeticFilterExtensionAttestation:
         "uBOLite_2026_825_1619",
         "2026-08-25T16:20:50Z",
         "2026-08-25T16:20:50Z",
+        "1" * 64,
     )
 
 
@@ -273,8 +274,10 @@ async def test_strict_filter_attests_and_attaches_the_exact_pinned_extension() -
     assert lease.content_filter is not None
     assert lease.content_filter.profile is ContentFilterProfile.ADS_AND_COSMETIC
     assert lease.content_filter.engine_id == "ublock-origin-lite"
-    assert lease.content_filter.engine_version == PINNED_UBOL_VERSION
-    assert lease.content_filter.ruleset_digest == f"sha256:{PINNED_UBOL_SHA256}"
+    assert lease.content_filter.engine_version == (
+        f"{PINNED_UBOL_VERSION}+{PINNED_UBOL_COMPLETE_PATCH_ID}"
+    )
+    assert lease.content_filter.ruleset_digest == f"sha256:{'1' * 64}"
     assert lease.content_filter.activation_latency_ms >= 0
     assert lease.content_filter.blocked_request_count is None
     assert lease.content_filter.cosmetic_rule_count is None

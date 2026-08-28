@@ -464,6 +464,7 @@ class BrowserSession:
         dom_adapter: DomAdapter | None = None,
         perception_orchestrator: PerceptionOrchestratorPort | None = None,
         visual_executor: str = "visual",
+        rendered_dom_only: bool = False,
     ) -> None:
         self._page = page
         self._initial_url = initial_url
@@ -475,6 +476,7 @@ class BrowserSession:
         self._dom_executor = dom_executor
         self._perception_orchestrator = perception_orchestrator
         self._visual_executor = visual_executor
+        self._rendered_dom_only = rendered_dom_only
         self._last_capture_profile: _CaptureProfile | None = None
         self._targeted_capture_sequence = 0
         self._navigation_lock = RLock()
@@ -502,6 +504,7 @@ class BrowserSession:
         perception_orchestrator: PerceptionOrchestratorPort | None = None,
         visual_executor: str = "visual",
         environment_playwright_factory: Callable[[object], object] | None = None,
+        rendered_dom_only: bool = False,
     ) -> "BrowserSession":
         try:
             from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
@@ -541,6 +544,7 @@ class BrowserSession:
             dom_adapter=dom_adapter,
             perception_orchestrator=perception_orchestrator,
             visual_executor=visual_executor,
+            rendered_dom_only=rendered_dom_only,
         )
 
     def open(self, url: str) -> None:
@@ -670,7 +674,7 @@ class BrowserSession:
 
         if not self._navigation_tracking_available:
             return False
-        html = self._page.content()
+        html = self._public_html()
         url = self.url
         dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
         environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
@@ -768,7 +772,7 @@ class BrowserSession:
     ) -> BrowserSnapshot:
         """Capture one coherent, selectively multi-source observation epoch."""
 
-        html = self._page.content()
+        html = self._public_html()
         url = self.url
         snapshot_id = f"snap_{uuid.uuid4().hex}"
         dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
@@ -877,7 +881,7 @@ class BrowserSession:
         if accessibility_tree is not None or (
             perception_requirements is not None and (visual_required or spatial_required)
         ):
-            final_html = self._page.content()
+            final_html = self._public_html()
             final_url = self.url
             final_model = self._dom.transduce(
                 final_html,
@@ -1364,7 +1368,7 @@ class BrowserSession:
     def probe_dom_target(self, source_target_id: str) -> tuple[str, str] | None:
         """Return live DOM revision/fingerprint without a full observation capture."""
 
-        html = self._page.content()
+        html = self._public_html()
         url = self.url
         dom_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
         environment_revision = hashlib.sha256(f"{url}\0{dom_hash}".encode()).hexdigest()
@@ -1378,6 +1382,50 @@ class BrowserSession:
         )
         target = next((item for item in model.affordances if item.id == source_target_id), None)
         return (model.page_revision, target.target_fingerprint) if target is not None else None
+
+    def _public_html(self) -> str:
+        if not self._rendered_dom_only:
+            return self._page.content()
+        evaluator = getattr(self._page, "evaluate", None)
+        if not callable(evaluator):
+            raise RuntimeError("rendered DOM projection is unavailable")
+        rendered = evaluator(
+            """() => {
+              const runtimeRenderedDomProjection = true;
+              const sourceRoot = document.documentElement;
+              if (!sourceRoot) return '';
+              const cloneRoot = sourceRoot.cloneNode(true);
+              const pending = [[sourceRoot, cloneRoot]];
+              while (pending.length !== 0) {
+                const [source, clone] = pending.pop();
+                if (source instanceof Element) {
+                  const style = getComputedStyle(source);
+                  if (
+                    style.display === 'none' ||
+                    style.visibility === 'hidden' ||
+                    style.visibility === 'collapse' ||
+                    style.opacity === '0'
+                  ) {
+                    clone.remove();
+                    continue;
+                  }
+                }
+                const sourceChildren = Array.from(source.children || []);
+                const cloneChildren = Array.from(clone.children || []);
+                if (sourceChildren.length !== cloneChildren.length) {
+                  throw new Error('rendered DOM clone drifted');
+                }
+                for (let index = sourceChildren.length - 1; index >= 0; index -= 1) {
+                  pending.push([sourceChildren[index], cloneChildren[index]]);
+                }
+              }
+              void runtimeRenderedDomProjection;
+              return cloneRoot.outerHTML;
+            }"""
+        )
+        if not isinstance(rendered, str) or not rendered.strip():
+            raise RuntimeError("rendered DOM projection is invalid")
+        return rendered
 
     def screenshot(self, path: str | None = None) -> bytes:
         return self._page.screenshot(path=path) if path else self._page.screenshot()

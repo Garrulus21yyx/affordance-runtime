@@ -48,7 +48,7 @@ from dotenv import load_dotenv
 from .api import create_app
 from .completed_runs import CompletedRunSummaryResolver
 from .content_filtering import (
-    PINNED_UBOL_SHA256,
+    PINNED_UBOL_COMPLETE_PATCH_ID,
     PINNED_UBOL_VERSION,
     ContentFilterProfile,
     CosmeticFilterExtensionAttestation,
@@ -138,10 +138,15 @@ class BrowserDeploymentSettings:
                 "",
             )
         else:
+            artifact_digest = (
+                self.cosmetic_filter_extension.artifact_sha256
+                if self.cosmetic_filter_extension is not None
+                else ""
+            )
             engine_id, engine_version, ruleset_digest = (
                 "ublock-origin-lite",
-                PINNED_UBOL_VERSION,
-                f"sha256:{PINNED_UBOL_SHA256}",
+                f"{PINNED_UBOL_VERSION}+{PINNED_UBOL_COMPLETE_PATCH_ID}",
+                f"sha256:{artifact_digest}" if artifact_digest else "",
             )
         return {
             "content_filter_profile": self.content_filter_profile.value,
@@ -446,6 +451,7 @@ async def _open_browser(
             settings.initial_url,
             headless=settings.browser_provider != "steel",
             environment_playwright_factory=playwright_factory,
+            rendered_dom_only=settings.content_filter_profile.requires_cosmetic_filtering,
         )
     )
     try:

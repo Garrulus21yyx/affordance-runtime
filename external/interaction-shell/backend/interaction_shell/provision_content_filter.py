@@ -6,12 +6,15 @@ import hashlib
 import json
 import os
 from collections.abc import Mapping
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import httpx
 from dotenv import load_dotenv
 
 from .content_filtering import (
+    PINNED_UBOL_COMPLETE_PATCH_ID,
     PINNED_UBOL_FILENAME,
     PINNED_UBOL_SHA256,
     PINNED_UBOL_SIZE_BYTES,
@@ -22,6 +25,9 @@ from .content_filtering import (
 
 _STEEL_API_ORIGIN = "https://api.steel.dev"
 _PROVISION_TIMEOUT_S = 120.0
+_MODE_MANAGER_PATH = "js/mode-manager.js"
+_OPTIMAL_DEFAULT = b"    optimal: [ 'all-urls' ],\n    complete: [],"
+_COMPLETE_DEFAULT = b"    optimal: [],\n    complete: [ 'all-urls' ],"
 
 
 def verify_pinned_artifact(
@@ -36,24 +42,66 @@ def verify_pinned_artifact(
         raise RuntimeError("pinned cosmetic filter artifact digest mismatch")
 
 
+def build_complete_filtering_artifact(
+    upstream_content: bytes,
+    *,
+    expected_size: int = PINNED_UBOL_SIZE_BYTES,
+    expected_sha256: str = PINNED_UBOL_SHA256,
+) -> bytes:
+    """Apply the one pinned configuration patch required for generic cosmetic rules."""
+
+    verify_pinned_artifact(
+        upstream_content,
+        expected_size=expected_size,
+        expected_sha256=expected_sha256,
+    )
+    output = BytesIO()
+    patched = 0
+    with ZipFile(BytesIO(upstream_content), "r") as upstream, ZipFile(
+        output,
+        "w",
+        compression=ZIP_DEFLATED,
+    ) as derived:
+        for info in upstream.infolist():
+            content = upstream.read(info.filename)
+            if info.filename == _MODE_MANAGER_PATH:
+                if content.count(_OPTIMAL_DEFAULT) != 1:
+                    raise RuntimeError("pinned cosmetic filter patch witness mismatch")
+                content = content.replace(_OPTIMAL_DEFAULT, _COMPLETE_DEFAULT)
+                patched += 1
+            derived.writestr(info, content)
+    if patched != 1:
+        raise RuntimeError("pinned cosmetic filter mode owner is unavailable")
+    return output.getvalue()
+
+
 def provision_pinned_extension(
     api_key: str,
     *,
     client: httpx.Client,
+    existing_extension_id: str = "",
 ) -> CosmeticFilterExtensionAttestation:
     if not api_key.strip():
         raise RuntimeError("Steel API key is unavailable")
     artifact_response = client.get(PINNED_UBOL_SOURCE_URL, follow_redirects=True)
     artifact_response.raise_for_status()
-    verify_pinned_artifact(artifact_response.content)
+    derived_artifact = build_complete_filtering_artifact(artifact_response.content)
+    derived_digest = hashlib.sha256(derived_artifact).hexdigest()
 
-    upload_response = client.post(
-        f"{_STEEL_API_ORIGIN}/v1/extensions",
+    method = "PUT" if existing_extension_id else "POST"
+    endpoint = (
+        f"{_STEEL_API_ORIGIN}/v1/extensions/{existing_extension_id}"
+        if existing_extension_id
+        else f"{_STEEL_API_ORIGIN}/v1/extensions"
+    )
+    upload_response = client.request(
+        method,
+        endpoint,
         headers={"steel-api-key": api_key},
         files={
             "file": (
-                PINNED_UBOL_FILENAME,
-                artifact_response.content,
+                PINNED_UBOL_FILENAME.replace(".chromium.zip", ".complete.chromium.zip"),
+                derived_artifact,
                 "application/zip",
             )
         },
@@ -67,6 +115,7 @@ def provision_pinned_extension(
             name=_required_text(payload, "name"),
             created_at=_required_text(payload, "createdAt"),
             updated_at=_required_text(payload, "updatedAt"),
+            artifact_sha256=derived_digest,
         )
     except (TypeError, ValueError) as exc:
         raise RuntimeError("Steel cosmetic filter extension response is invalid") from exc
@@ -80,6 +129,7 @@ def attestation_environment(
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_NAME": attestation.name,
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_CREATED_AT": attestation.created_at,
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_UPDATED_AT": attestation.updated_at,
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_SHA256": attestation.artifact_sha256,
     }
 
 
@@ -90,13 +140,21 @@ def main() -> int:
         "STEEL_API_KEY", ""
     ).strip()
     with httpx.Client(timeout=_PROVISION_TIMEOUT_S) as client:
-        attestation = provision_pinned_extension(api_key, client=client)
+        attestation = provision_pinned_extension(
+            api_key,
+            client=client,
+            existing_extension_id=os.environ.get(
+                "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_ID", ""
+            ).strip(),
+        )
     print(
         json.dumps(
             {
                 "artifact": {
                     "filename": PINNED_UBOL_FILENAME,
-                    "sha256": PINNED_UBOL_SHA256,
+                    "patch_id": PINNED_UBOL_COMPLETE_PATCH_ID,
+                    "source_sha256": PINNED_UBOL_SHA256,
+                    "derived_sha256": attestation.artifact_sha256,
                     "source_url": PINNED_UBOL_SOURCE_URL,
                     "version": PINNED_UBOL_VERSION,
                 },

@@ -40,7 +40,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Add fixture coverage for third-party and same-origin cosmetic ads.
 - Commit and push.
 
-### Phase 3 — single filtered frame and compatibility gates (`in_progress`)
+### Phase 3 — single filtered frame and compatibility gates (`done`)
 
 - Prove DOM/AX projection and screenshot derive from one post-filter CaptureFrame.
 - Verify popups/new pages inherit the session filter.
@@ -48,7 +48,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Add no-site-specialization source checks and provider-free regression gates.
 - Commit and push.
 
-### Phase 4 — visual capability evaluation matrix (`pending`)
+### Phase 4 — visual capability evaluation matrix (`in_progress`)
 
 - Keep controlled visual evaluations on filtering `off` to avoid confounding.
 - Add/run provider-free fixture gates first, then the separately authorized live DeepSeek VLM arm.
@@ -79,6 +79,17 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   creation, adds only that `extensionId`, and carries private engine/version/digest/latency metadata on the lease and
   trace identity. Live metadata lookup and create/release smoke succeeded; no page navigation or benchmark ran.
   Shell backend and architecture gate: 114 passed.
+- 2026-08-28: Phase 3 corrected the strict semantic contract after the upstream FAQ showed that uBO Lite defaults to
+  Optimal and does not enable generic cosmetic filtering. Provisioning now applies one deterministic
+  `default-filtering-complete.v1` owner patch; upstream SHA remains pinned and the derived SHA
+  `16b3548cc7c975c73e328d2bf66af3437d0f1a0d8d0ec12846e57456ab0f63ab` is attested in `.env` and trace metadata.
+  Strict Surface acquisition projects rendered DOM only, so CSS-hidden nodes cannot remain visible through raw HTML;
+  `off` preserves the old raw projection exactly. Provider-free gates: Shell backend/architecture 117 passed, core
+  full repository 2004 passed / 19 skipped / 1 warning. Live non-Agent fixtures proved: off ad script HTTP 200,
+  network profile browser-level failure, and strict cosmetic removal from computed style, visible text, AX, rendered
+  DOM, and screenshot across current and newly opened tabs. One earlier 3-minute smoke lease could not be explicitly
+  released after a local Sync Playwright startup error and expired by its provider timeout; all subsequent leases were
+  released in `finally`.
 
 ## Files changed by this plan
 
@@ -90,3 +101,6 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - `external/interaction-shell/tests/backend/test_content_filtering.py`
 - `external/interaction-shell/tests/backend/test_deployment_app.py`
 - `external/interaction-shell/tests/backend/test_steel_viewer.py`
+- `src/affordance_runtime/surfaces/dom/browser_session.py`
+- `src/affordance_runtime/surfaces/dom/thread_session.py`
+- `tests/unit/agent/test_browser_session.py`

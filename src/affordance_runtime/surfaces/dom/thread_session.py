@@ -23,6 +23,7 @@ class ThreadBoundBrowserSession:
     lease_ttl_ms: int = 2_000
     command_timeout_s: float = 30.0
     environment_playwright_factory: Callable[[object], object] | None = None
+    rendered_dom_only: bool = False
     _commands: queue.Queue[_Command | None] = field(init=False, repr=False)
     _ready: Future = field(init=False, repr=False)
     _thread: threading.Thread = field(init=False, repr=False)
@@ -52,6 +53,7 @@ class ThreadBoundBrowserSession:
         action_timeout_ms: int = 8_000,
         lease_ttl_ms: int = 2_000,
         environment_playwright_factory: Callable[[object], object] | None = None,
+        rendered_dom_only: bool = False,
     ) -> ThreadBoundBrowserSession:
         return cls(
             url,
@@ -59,6 +61,7 @@ class ThreadBoundBrowserSession:
             action_timeout_ms,
             lease_ttl_ms,
             environment_playwright_factory=environment_playwright_factory,
+            rendered_dom_only=rendered_dom_only,
         )
 
     def _run(self) -> None:
@@ -69,6 +72,7 @@ class ThreadBoundBrowserSession:
                 action_timeout_ms=self.action_timeout_ms,
                 lease_ttl_ms=self.lease_ttl_ms,
                 environment_playwright_factory=self.environment_playwright_factory,
+                rendered_dom_only=self.rendered_dom_only,
             )
             self._ready.set_result(True)
         except BaseException as exc:

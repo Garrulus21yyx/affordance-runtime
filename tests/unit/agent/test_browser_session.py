@@ -93,6 +93,37 @@ def test_browser_session_captures_observation_and_affordances() -> None:
     assert snapshot.grounding_candidates[0].is_current(snapshot.observation)
 
 
+def test_rendered_dom_projection_excludes_css_hidden_controls_only_when_enabled() -> None:
+    class FilteredPage(FakePage):
+        def content(self) -> str:
+            return (
+                "<main><button id='keep'>Continue</button>"
+                "<button id='hidden-ad'>Sponsored action</button></main>"
+            )
+
+        def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+            del args, kwargs
+            if "runtimeRenderedDomProjection" in expression:
+                return "<html><body><main><button id='keep'>Continue</button></main></body></html>"
+            return super().evaluate(expression)
+
+    unfiltered = BrowserSession(FilteredPage()).capture(page_id="fixture")
+    filtered_session = BrowserSession(FilteredPage(), rendered_dom_only=True)
+    filtered = filtered_session.capture(page_id="fixture")
+
+    assert [item.label for item in unfiltered.affordance_model.affordances] == [
+        "Continue",
+        "Sponsored action",
+    ]
+    assert [item.label for item in filtered.affordance_model.affordances] == ["Continue"]
+    assert "Sponsored action" not in str(filtered.observation.metadata["html"])
+    target = filtered.affordance_model.affordances[0]
+    assert filtered_session.probe_dom_target(target.id) == (
+        filtered.affordance_model.page_revision,
+        target.target_fingerprint,
+    )
+
+
 def test_browser_environment_family_uses_origin_without_url_credentials_or_path() -> None:
     page = FakePage()
     page.url = "https://user:secret@example.test:8443/private?token=hidden"

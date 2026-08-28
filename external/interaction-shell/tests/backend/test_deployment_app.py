@@ -203,6 +203,7 @@ def test_deployment_parses_strict_filter_extension_attestation_atomically() -> N
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_NAME": "uBOLite_2026_825_1619",
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_CREATED_AT": "2026-08-25T16:20:50Z",
         "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_UPDATED_AT": "2026-08-25T16:20:50Z",
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_SHA256": "1" * 64,
     }
 
     settings = deployment_app.BrowserDeploymentSettings.from_environment(environment)
@@ -212,11 +213,47 @@ def test_deployment_parses_strict_filter_extension_attestation_atomically() -> N
         "uBOLite_2026_825_1619",
         "2026-08-25T16:20:50Z",
         "2026-08-25T16:20:50Z",
+        "1" * 64,
     )
 
     environment.pop("INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_UPDATED_AT")
     with pytest.raises(ValueError, match="attestation is incomplete"):
         deployment_app.BrowserDeploymentSettings.from_environment(environment)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("profile", "expected_rendered_dom_only"),
+    [
+        (ContentFilterProfile.OFF, False),
+        (ContentFilterProfile.ADS_AND_COSMETIC, True),
+    ],
+)
+async def test_browser_open_enables_rendered_projection_only_for_strict_filtering(
+    monkeypatch,
+    profile: ContentFilterProfile,
+    expected_rendered_dom_only: bool,
+) -> None:
+    calls: list[dict[str, object]] = []
+    browser = FakeBrowser(1)
+
+    def launch(*_args, **kwargs):
+        calls.append(dict(kwargs))
+        return browser
+
+    monkeypatch.setattr(deployment_app.ThreadBoundBrowserSession, "launch", launch)
+    settings = deployment_app.BrowserDeploymentSettings(
+        "about:blank",
+        10,
+        90,
+        "steel",
+        profile,
+    )
+
+    opened = await deployment_app._open_browser(settings)
+
+    assert opened is browser
+    assert calls[0]["rendered_dom_only"] is expected_rendered_dom_only
 
 
 @pytest.mark.asyncio
@@ -372,6 +409,7 @@ async def test_strict_filter_identity_is_attached_to_trace_and_exact_steel_lease
         "uBOLite_2026_825_1619",
         "2026-08-25T16:20:50Z",
         "2026-08-25T16:20:50Z",
+        "1" * 64,
     )
     settings = deployment_app.BrowserDeploymentSettings(
         "about:blank",
