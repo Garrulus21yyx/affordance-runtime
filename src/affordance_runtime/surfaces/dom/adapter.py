@@ -124,7 +124,7 @@ class DomSurfaceAdapter:
         browser_state = self.session.browser_context_state()
         browser_target = _browser_context_target(browser_state)
         action_targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
-        layer_targets, action_targets = _project_browser_layers(
+        layer_targets, action_targets, blocked_keys = _project_browser_layers(
             snapshot.layers,
             tuple(snapshot.affordance_model.affordances),
             action_targets,
@@ -137,7 +137,9 @@ class DomSurfaceAdapter:
         targets = (browser_target, *layer_targets, *action_targets, *readable_targets)
         structure = _dom_structure(browser_target, action_targets, readable_targets, layer_targets)
         binding_results = tuple(
-            _binding(
+            None
+            if _affordance_key(affordance) in blocked_keys
+            else _binding(
                 self._task,
                 observation_id,
                 affordance,
@@ -153,7 +155,7 @@ class DomSurfaceAdapter:
         unsupported = tuple(
             affordance.action
             for affordance, binding in zip(snapshot.affordance_model.affordances, binding_results, strict=True)
-            if binding is None
+            if binding is None and _affordance_key(affordance) not in blocked_keys
         )
         facts = tuple(
             StateFact(
@@ -306,15 +308,22 @@ def _target(affordance: Affordance) -> SemanticTarget:
     )
 
 
+def _affordance_key(affordance: Affordance) -> str:
+    return str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or "")
+
+
 def _project_browser_layers(layers, affordances, action_targets):
     """Project browser-owned layer facts and relate contained controls without exposing routes."""
 
     member_parent: dict[str, str] = {}
+    blocked_by: dict[str, str] = {}
     projected: list[SemanticTarget] = []
     for index, layer in enumerate(layers):
         target_id = f"dom-layer:{index}"
         for member_key in layer.member_keys:
             member_parent.setdefault(member_key, target_id)
+        for occluded_key in layer.occluded_keys:
+            blocked_by.setdefault(occluded_key, target_id)
         projected.append(
             SemanticTarget(
                 target_id,
@@ -325,6 +334,8 @@ def _project_browser_layers(layers, affordances, action_targets):
                     "active_layer": True,
                     "layer_kind": layer.kind.value,
                     "modal": layer.modal,
+                    "blocks_background": bool(layer.occluded_keys),
+                    "blocked_control_count": len(layer.occluded_keys),
                     **({"visible_text": layer.text} if layer.text and layer.text != layer.label else {}),
                 },
             )
@@ -332,15 +343,26 @@ def _project_browser_layers(layers, affordances, action_targets):
     adjusted: list[SemanticTarget] = []
     children: dict[str, list[str]] = {target.target_id: [] for target in projected}
     for affordance, target in zip(affordances, action_targets, strict=True):
-        key = str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or "")
+        key = _affordance_key(affordance)
         parent_id = member_parent.get(key, "")
         if parent_id:
             children[parent_id].append(target.target_id)
             target = replace(target, relations={**target.relations, "parent_id": parent_id})
+        blocking_layer_id = blocked_by.get(key, "")
+        if blocking_layer_id:
+            target = replace(
+                target,
+                state={
+                    **target.state,
+                    "interaction_blocked": True,
+                    "blocked_by_active_layer": blocking_layer_id,
+                },
+            )
         adjusted.append(target)
     return (
         tuple(replace(target, relations={"child_ids": tuple(children[target.target_id])}) for target in projected),
         tuple(adjusted),
+        frozenset(blocked_by),
     )
 
 

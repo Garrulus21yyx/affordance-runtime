@@ -7,6 +7,7 @@ from affordance_runtime.actions import (
 )
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import RiskProfile, TaskGoal
@@ -103,6 +104,41 @@ class GeometricOverlayPage(ReadablePage):
                     "member_keys": ["#shared"],
                 }
             ]
+        return super().evaluate(expression)
+
+
+class BlockingOverlayPage(ReadablePage):
+    def content(self) -> str:
+        return '<main><button id="shared">Search</button></main>'
+
+    def evaluate(self, expression: str) -> object:
+        if "runtimeLayerProbe" in expression:
+            return [
+                {
+                    "layer_id": "layer:0",
+                    "kind": "geometric_overlay",
+                    "role": "region",
+                    "label": "Visible overlay",
+                    "text": "",
+                    "modal": False,
+                    "bbox": [0, 0, 800, 600],
+                    "member_keys": [],
+                    "occluded_keys": ["#shared"],
+                }
+            ]
+        return super().evaluate(expression)
+
+
+class AppearingBlockingOverlayPage(BlockingOverlayPage):
+    def __init__(self) -> None:
+        super().__init__()
+        self.overlay_visible = False
+
+    def evaluate(self, expression: str) -> object:
+        if "runtimeLayerProbe" in expression and not self.overlay_visible:
+            return []
+        if "runtimeTargetHitTest" in expression:
+            return not self.overlay_visible
         return super().evaluate(expression)
 
 
@@ -279,6 +315,86 @@ def test_dom_structure_preserves_browser_observed_geometric_layer_and_membership
         assert layer.state["visible_text"] == "Scan the visible QR code with the Taobao app"
         assert control.relations["parent_id"] == layer.target_id
         assert control_node.parent_structure_id == layer_node.structure_id
+
+    asyncio.run(scenario())
+
+
+def test_active_overlay_withholds_occluded_control_from_current_action_space() -> None:
+    async def scenario() -> None:
+        page = BlockingOverlayPage()
+        task = TaskGoal(
+            "blocking-layer",
+            "Handle the current visible overlay",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        world = UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        )
+        acquired = await world.reset(task)
+        assert acquired.observation is not None
+        observed = acquired.observation
+        layer = next(target for target in observed.targets if target.state.get("active_layer") is True)
+        blocked = next(target for target in observed.targets if target.label == "Search")
+        space = ActionSpaceBuilder().build(task, observed)
+        index = WorldDeliveryIndex.from_observation(observed, space.options)
+        layer_region = index.region_for_target(layer.target_id)
+
+        assert blocked.state["interaction_blocked"] is True
+        assert blocked.state["blocked_by_active_layer"] == layer.target_id
+        assert layer.state["blocks_background"] is True
+        assert layer.state["blocked_control_count"] == 1
+        assert all(option.target_id != blocked.target_id for option in space.options)
+        assert any(option.target_id == "browser-context:current" for option in space.options)
+        assert layer_region is not None
+        assert layer_region.state_badges == {
+            "active_layer": True,
+            "blocks_background": True,
+            "blocked_control_count": 1,
+            "modal": False,
+        }
+
+    asyncio.run(scenario())
+
+
+def test_new_overlay_invalidates_previously_observed_background_binding_before_dispatch() -> None:
+    async def scenario() -> None:
+        page = AppearingBlockingOverlayPage()
+        task = TaskGoal(
+            "overlay-currentness",
+            "Use the visible Search control",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        world = UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        )
+        acquired = await world.reset(task)
+        assert acquired.observation is not None
+        observed = acquired.observation
+        search = next(target for target in observed.targets if target.label == "Search")
+        option = next(
+            item for item in ActionSpaceBuilder().build(task, observed).options if item.target_id == search.target_id
+        )
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(option, {}),
+            observed,
+            "context:overlay-currentness",
+        )
+
+        page.overlay_visible = True
+
+        # The World identity is still current, while the execution owner must
+        # reject the now-occluded live route before transport dispatch.
+        assert world.is_current(request)
+        result = (await world.execute(request)).result
+        assert result.dispatch_status.value == "not_sent"
+        assert result.error == "stale_binding"
+        assert page.clicks == 0
 
     asyncio.run(scenario())
 

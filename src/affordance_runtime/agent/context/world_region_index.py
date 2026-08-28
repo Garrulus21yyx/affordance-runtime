@@ -832,7 +832,18 @@ def _repeated_item_roots(root_id, member_ids, nodes, source_order: Mapping[str, 
 
 def _state_badges(target_ids: tuple[str, ...], targets) -> Mapping[str, object]:
     badges: dict[str, object] = {}
-    for key in ("checked", "selected", "active", "expanded", "disabled", "required"):
+    for key in (
+        "active_layer",
+        "blocks_background",
+        "blocked_control_count",
+        "modal",
+        "checked",
+        "selected",
+        "active",
+        "expanded",
+        "disabled",
+        "required",
+    ):
         values = [targets[item].state.get(key) for item in target_ids if key in targets[item].state]
         if values and all(value == values[0] for value in values):
             badges[key] = values[0]

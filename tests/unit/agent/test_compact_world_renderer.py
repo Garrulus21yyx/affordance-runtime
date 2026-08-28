@@ -211,6 +211,57 @@ def test_page_map_keeps_every_current_non_entity_action_subject() -> None:
         assert f'"current_marker":"{kind.value}"' in rendered.view.text
 
 
+def test_page_map_tells_action_policy_when_active_layer_blocks_background() -> None:
+    state = {
+        "active_layer": True,
+        "blocks_background": True,
+        "blocked_control_count": 3,
+        "modal": False,
+    }
+    observation = fused_world(
+        "S1",
+        (SemanticTarget("layer:current", "region", "Visible overlay", state),),
+        surface="dom",
+    )
+    index = WorldDeliveryIndex(
+        observation.observation_id,
+        (
+            WorldRegion(
+                key="region:active-layer",
+                source_id="S1",
+                root_structure_id="layer:root",
+                member_target_ids=("layer:current",),
+                heading="Visible overlay",
+                role="region",
+                counts={"targets": 1, "facts": 4, "actions": 0},
+                state_badges=state,
+                coverage="complete",
+            ),
+        ),
+    )
+    projection = canonical_world_with_regions(
+        _canonical_world(observation), observation, index
+    )
+    snapshot = _snapshot((ActorWorldNodeView("N1", "region", "Visible overlay", state),))
+    grounding = AgentGroundingIndexView(
+        (AgentGroundingEntityView("N1", "region", "Visible overlay", state),),
+        {"layer:current": "N1"},
+    )
+
+    rendered = render_compact_actor_world(
+        snapshot,
+        grounding,
+        include_images=False,
+        region_index=index,
+        canonical_world=projection,
+        observation=observation,
+    )
+
+    assert '"active_layer":true' in rendered.view.text
+    assert '"blocks_background":true' in rendered.view.text
+    assert '"blocked_control_count":3' in rendered.view.text
+
+
 def test_large_page_map_is_bounded_without_shrinking_recoverable_region_index() -> None:
     count = 40
     snapshot = _snapshot(tuple(_post(index) for index in range(1, count + 1)))

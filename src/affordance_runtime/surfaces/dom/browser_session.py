@@ -100,6 +100,7 @@ class BrowserLayer:
     modal: bool
     bbox: tuple[float, float, float, float]
     member_keys: tuple[str, ...] = ()
+    occluded_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -117,6 +118,7 @@ class BrowserLayer:
             raise ValueError("browser layer is invalid")
         object.__setattr__(self, "bbox", tuple(float(value) for value in self.bbox))
         object.__setattr__(self, "member_keys", tuple(dict.fromkeys(self.member_keys)))
+        object.__setattr__(self, "occluded_keys", tuple(dict.fromkeys(self.occluded_keys)))
 
 
 @dataclass(frozen=True)
@@ -494,7 +496,7 @@ def _visible_browser_layers(
             raw = evaluator(
                 """() => { const runtimeLayerProbe = true; const bindings = """
                 + serialized_bindings
-                + r"""; const viewportArea = Math.max(1, innerWidth * innerHeight); const visible = (element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; }; const explicit = Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="alert"], [aria-modal="true"]')).filter(visible); const explicitSet = new Set(explicit); const geometric = Array.from(document.body?.querySelectorAll('*') || []).filter((element) => { if (explicitSet.has(element) || explicit.some((item) => element.contains(item))) return false; const style = getComputedStyle(element); if (style.position !== 'fixed' || style.pointerEvents === 'none' || !visible(element)) return false; const z = Number.parseFloat(style.zIndex); if (!Number.isFinite(z) || z < 1) return false; const rect = element.getBoundingClientRect(); const ratio = rect.width * rect.height / viewportArea; if (ratio < 0.02) return false; const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2)); const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2)); const topmost = document.elementFromPoint(centerX, centerY); const intersectsCenter = rect.left <= innerWidth / 2 && rect.right >= innerWidth / 2 && rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2; const spansViewport = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.15; return Boolean(topmost && element.contains(topmost) && (intersectsCenter || spansViewport) && ((element.innerText || '').trim() || element.querySelector('button, input, select, textarea, a[href], [role="button"], iframe, frame, embed, object'))); }); const candidates = [...explicit.map((element) => ({element, kind:'semantic'})), ...geometric.map((element) => ({element, kind:'geometric_overlay'}))]; return candidates.slice(0, 8).map(({element, kind}, index) => { const rect = element.getBoundingClientRect(); const authoredRole = (element.getAttribute('role') || '').toLowerCase(); const role = element.tagName.toLowerCase() === 'dialog' ? 'dialog' : ['alert','alertdialog','dialog'].includes(authoredRole) ? authoredRole : element.getAttribute('aria-modal') === 'true' ? 'dialog' : 'region'; const text = (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000); const label = (element.getAttribute('aria-label') || element.getAttribute('title') || text || 'Visible overlay').trim().slice(0, 160); const memberKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); return key && target && element.contains(target) ? [key] : []; } catch { return []; } }); return {layer_id:`layer:${index}`, kind, role, label, text, modal: element.getAttribute('aria-modal') === 'true' || element.tagName.toLowerCase() === 'dialog', bbox:[rect.x, rect.y, rect.width, rect.height], member_keys:memberKeys}; }); void runtimeLayerProbe; }"""
+                + r"""; const viewportArea = Math.max(1, innerWidth * innerHeight); const visible = (element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; }; const explicit = Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="alert"], [aria-modal="true"]')).filter(visible); const explicitSet = new Set(explicit); const geometric = Array.from(document.body?.querySelectorAll('*') || []).filter((element) => { if (explicitSet.has(element) || explicit.some((item) => element.contains(item))) return false; const style = getComputedStyle(element); if (style.position !== 'fixed' || style.pointerEvents === 'none' || !visible(element)) return false; const z = Number.parseFloat(style.zIndex); if (!Number.isFinite(z) || z < 1) return false; const rect = element.getBoundingClientRect(); const ratio = rect.width * rect.height / viewportArea; if (ratio < 0.02) return false; const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2)); const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2)); const topmost = document.elementFromPoint(centerX, centerY); const intersectsCenter = rect.left <= innerWidth / 2 && rect.right >= innerWidth / 2 && rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2; const spansViewport = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.15; return Boolean(topmost && element.contains(topmost) && (intersectsCenter || spansViewport) && ((element.innerText || '').trim() || element.querySelector('button, input, select, textarea, a[href], [role="button"], iframe, frame, embed, object'))); }); const candidates = [...explicit.map((element) => ({element, kind:'semantic'})), ...geometric.map((element) => ({element, kind:'geometric_overlay'}))]; return candidates.slice(0, 8).map(({element, kind}, index) => { const rect = element.getBoundingClientRect(); const authoredRole = (element.getAttribute('role') || '').toLowerCase(); const modal = element.getAttribute('aria-modal') === 'true' || element.tagName.toLowerCase() === 'dialog'; const role = element.tagName.toLowerCase() === 'dialog' ? 'dialog' : ['alert','alertdialog','dialog'].includes(authoredRole) ? authoredRole : element.getAttribute('aria-modal') === 'true' ? 'dialog' : 'region'; const text = (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000); const label = (element.getAttribute('aria-label') || element.getAttribute('title') || text || 'Visible overlay').trim().slice(0, 160); const memberKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); return key && target && element.contains(target) ? [key] : []; } catch { return []; } }); const occludedKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); if (!key || !target || element.contains(target)) return []; if (modal) return [key]; const targetRect = target.getBoundingClientRect(); if (targetRect.width <= 0 || targetRect.height <= 0) return []; const pointX = Math.max(0, Math.min(innerWidth - 1, targetRect.left + targetRect.width / 2)); const pointY = Math.max(0, Math.min(innerHeight - 1, targetRect.top + targetRect.height / 2)); const topmost = document.elementFromPoint(pointX, pointY); return topmost && element.contains(topmost) ? [key] : []; } catch { return []; } }); return {layer_id:`layer:${index}`, kind, role, label, text, modal, bbox:[rect.x, rect.y, rect.width, rect.height], member_keys:memberKeys, occluded_keys:occludedKeys}; }); void runtimeLayerProbe; }"""
             )
         except Exception:
             continue
@@ -525,11 +527,36 @@ def _visible_browser_layers(
                             local_bbox[3],
                         ),
                         tuple(str(value) for value in item.get("member_keys", ()) if str(value).strip()),
+                        tuple(str(value) for value in item.get("occluded_keys", ()) if str(value).strip()),
                     )
                 )
             except (IndexError, KeyError, TypeError, ValueError):
                 continue
     return tuple(result)
+
+
+def _target_receives_pointer_events(page: PageDriver, selector: str) -> bool | None:
+    """Use browser hit testing as a bounded pre-dispatch actionability probe."""
+
+    evaluator = getattr(page, "evaluate", None)
+    if not callable(evaluator):
+        return None
+    try:
+        result = evaluator(
+            "() => { const runtimeTargetHitTest = true; const target = document.querySelector("
+            + json.dumps(selector)
+            + "); if (!target) return false; const rect = target.getBoundingClientRect(); "
+            "if (rect.width <= 0 || rect.height <= 0) return false; "
+            "const points = [[0.5,0.5],[0.25,0.25],[0.75,0.25],[0.25,0.75],[0.75,0.75]]; "
+            "return points.some(([xRatio,yRatio]) => { const x = Math.max(0, Math.min(innerWidth - 1, "
+            "rect.left + rect.width * xRatio)); const y = Math.max(0, Math.min(innerHeight - 1, "
+            "rect.top + rect.height * yRatio)); const hit = document.elementFromPoint(x, y); "
+            "return Boolean(hit && (hit === target || target.contains(hit))); }); "
+            "void runtimeTargetHitTest; }"
+        )
+    except Exception:
+        return None
+    return result if isinstance(result, bool) else None
 
 
 def _assertion_property_evidence(property_key: str) -> EvidenceKind:
@@ -1546,7 +1573,12 @@ class BrowserSession:
             allow_offscreen=True,
         )
         target = next((item for item in model.affordances if item.id == source_target_id), None)
-        return (model.page_revision, target.target_fingerprint) if target is not None else None
+        if target is None:
+            return None
+        selector = str(target.locator.get("selector") or "")
+        if selector and _target_receives_pointer_events(self._page, selector) is False:
+            return None
+        return model.page_revision, target.target_fingerprint
 
     def _public_html(self) -> str:
         if not self._rendered_dom_only:

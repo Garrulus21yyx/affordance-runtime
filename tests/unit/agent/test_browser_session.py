@@ -175,6 +175,7 @@ def test_browser_session_observes_a_visible_geometric_overlay_without_calling_a_
                         "modal": False,
                         "bbox": [120, 80, 560, 420],
                         "member_keys": ["#save"],
+                        "occluded_keys": ["#background"],
                     }
                 ]
             return super().evaluate(expression)
@@ -186,6 +187,7 @@ def test_browser_session_observes_a_visible_geometric_overlay_without_calling_a_
     assert layer.kind is BrowserLayerKind.GEOMETRIC_OVERLAY
     assert layer.label == "Scan with the app to sign in"
     assert layer.member_keys == ("#save",)
+    assert layer.occluded_keys == ("#background",)
 
 
 def test_browser_session_observes_child_frame_layer_in_main_viewport_coordinates() -> None:
@@ -258,6 +260,7 @@ def test_browser_session_geometric_layer_probe_keeps_full_viewport_blocking_laye
             del args, kwargs
             if "runtimeLayerProbe" in expression:
                 assert "ratio > 0.98" not in expression
+                assert "elementFromPoint(pointX, pointY)" in expression
                 return [
                     {
                         "layer_id": "layer:0",
