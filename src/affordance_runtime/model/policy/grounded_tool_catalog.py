@@ -10,7 +10,9 @@ from typing import Mapping
 
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.actions.schema_validation import validate_value
-from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
+from affordance_runtime.agent.context.actor_world_snapshot import (
+    complete_homogeneous_child_counts,
+)
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
     inspect_outcome_public,
@@ -520,7 +522,7 @@ def compile_grounded_tool_catalog(
 
     child_counts = {
         ref: count
-        for ref, count in _countable_child_groups(context.actor_world).items()
+        for ref, count in complete_homogeneous_child_counts(context.actor_world).items()
         if ref in delivery.manifest.exact_refs
     }
     if child_counts:
@@ -1442,27 +1444,3 @@ _DYNAMIC_VISUAL_PURPOSES = frozenset(
         ObservationPurpose.VISUAL_CHANGE.value,
     }
 )
-
-
-def _countable_child_groups(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
-    """Return exact counts only for complete homogeneous public groups."""
-
-    counts: dict[str, int] = {}
-
-    def visit(node: ActorWorldNodeView) -> None:
-        if len(node.children) >= 2 and _homogeneous_children(node.children):
-            counts[node.ref] = len(node.children)
-        for child in node.children:
-            visit(child)
-
-    for document in snapshot.documents:
-        if not document.truncated:
-            for root in document.roots:
-                visit(root)
-    return counts
-
-
-def _homogeneous_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
-    first = children[0]
-    shape = (first.role, first.label, first.state, len(first.children))
-    return all((child.role, child.label, child.state, len(child.children)) == shape for child in children[1:])

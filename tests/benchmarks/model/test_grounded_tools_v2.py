@@ -1777,6 +1777,33 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
         region_ref=region_ref,
     )
     assert opened.items
+    group_record = next(item for item in opened.items if item.get("node_ref") == group_ref)
+    assert group_record["direct_child_count"] == 2
+    assert group_record["direct_child_count_coverage"] == "complete"
+    document = context.actor_world.documents[0]
+    incomplete_snapshot = replace(
+        context.actor_world,
+        documents=(
+            replace(
+                document,
+                total_node_count=document.retained_node_count + 1,
+                truncated=True,
+            ),
+        ),
+    )
+    incomplete_opened = inspect_actor_world(
+        incomplete_snapshot,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=context.current_observation,
+        action="read_region",
+        region_ref=region_ref,
+    )
+    incomplete_group = next(
+        item for item in incomplete_opened.items if item.get("node_ref") == group_ref
+    )
+    assert "direct_child_count" not in incomplete_group
     assert "count_children" not in {item.name for item in catalog.specs}
     root = context.actor_world.documents[0].roots[0]
     assert "member_count" not in root.state

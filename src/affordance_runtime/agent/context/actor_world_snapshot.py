@@ -210,6 +210,26 @@ def _walk_nodes(root: ActorWorldNodeView):
         yield from _walk_nodes(child)
 
 
+def complete_homogeneous_child_counts(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
+    """Return exact direct-child counts for complete homogeneous public groups."""
+
+    counts: dict[str, int] = {}
+    for document in snapshot.documents:
+        if document.truncated:
+            continue
+        for root in document.roots:
+            for node in _walk_nodes(root):
+                if len(node.children) >= 2 and _homogeneous_actor_children(node.children):
+                    counts[node.ref] = len(node.children)
+    return freeze_json(counts)
+
+
+def _homogeneous_actor_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
+    first = children[0]
+    shape = (first.role, first.label, first.state, len(first.children))
+    return all((child.role, child.label, child.state, len(child.children)) == shape for child in children[1:])
+
+
 def actor_world_for_delivery(
     snapshot: ActorWorldSnapshot,
     *,
