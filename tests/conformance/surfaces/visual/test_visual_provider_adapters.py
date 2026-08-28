@@ -7,11 +7,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from PIL import Image
+from pydantic_ai import BinaryContent
+from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.models.function import FunctionModel
 
 from affordance_runtime.integrations.omniparser import OmniParserHttpRegionProposer
+from affordance_runtime.model.policy.pydantic_ai_bridge import ConfiguredPydanticAIModel
 from affordance_runtime.model.providers.port import StructuredModelError
 from affordance_runtime.surfaces.visual.disambiguation import (
-    OpenAICompatibleVisualCandidateDisambiguator,
+    PydanticAIVisualCandidateDisambiguator,
     VisualCandidate,
     VisualCandidateDisambiguationRequest,
 )
@@ -20,6 +24,7 @@ from affordance_runtime.surfaces.visual.grounding import (
     configured_visual_region_proposer_from_environment,
     visual_region_proposer_from_environment,
 )
+from affordance_runtime.surfaces.visual.pydantic_ai_inference import PydanticAIVisualInference
 
 
 def _png() -> bytes:
@@ -91,28 +96,24 @@ def test_region_factory_selects_omniparser_without_importing_an_agent_runtime() 
 
 
 def test_candidate_disambiguator_returns_only_a_supplied_e_ref() -> None:
-    received: list[dict[str, object]] = []
+    outputs = ['{"ref":"E2"}', '{"ref":"E9"}']
+    received: list[list[object]] = []
 
-    class Handler(BaseHTTPRequestHandler):
-        selected_ref = "E2"
+    async def respond(messages, info):  # type: ignore[no-untyped-def]
+        del info
+        received.append(messages)
+        return ModelResponse(parts=[TextPart(outputs.pop(0))])
 
-        def do_POST(self) -> None:  # noqa: N802
-            received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            body = json.dumps({
-                "choices": [{"message": {"content": json.dumps({"ref": self.selected_ref})}}]
-            }).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    inference = PydanticAIVisualInference(
+        ConfiguredPydanticAIModel(
+            FunctionModel(respond, model_name="visual-disambiguation-fixture"),
+            "zhipu",
+            "glm-4.6v-test",
+            "fixture",
+            True,
+        ),
+        timeout_s=5,
+    )
     request = VisualCandidateDisambiguationRequest(
         "sample",
         _png(),
@@ -123,20 +124,11 @@ def test_candidate_disambiguator_returns_only_a_supplied_e_ref() -> None:
             VisualCandidate("E2", "right", "button", "Save", (100, 10, 40, 20)),
         ),
     )
-    try:
-        disambiguator = OpenAICompatibleVisualCandidateDisambiguator(
-            f"http://127.0.0.1:{server.server_port}", "secret", "glm-test",
-        )
-        assert disambiguator.choose(request) == "E2"
-        Handler.selected_ref = "E9"
-        with pytest.raises(StructuredModelError, match="E-ref validation"):
-            disambiguator.choose(request)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+    disambiguator = PydanticAIVisualCandidateDisambiguator(inference)
+    assert disambiguator.choose(request) == "E2"
+    with pytest.raises(StructuredModelError, match="E-ref validation"):
+        disambiguator.choose(request)
 
-    content = received[0]["messages"][1]["content"]  # type: ignore[index]
-    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")  # type: ignore[index]
-    assert "coordinate" not in content[1]["text"].casefold()  # type: ignore[index]
-    assert received[0]["max_tokens"] == 2048
+    user = next(part for part in received[0][-1].parts if isinstance(part, UserPromptPart))
+    assert any(isinstance(item, BinaryContent) for item in user.content)
+    assert all("coordinate" not in item.casefold() for item in user.content if isinstance(item, str))

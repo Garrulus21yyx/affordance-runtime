@@ -76,6 +76,7 @@ Runtime and policy owner facts
 - mutable milestone/todo、achievement record、第二 World、第二 Binder、第二 evaluator 或第二 provider history；
 - 用 Runtime 解释页面语义、价格、商品、文件、航班、酒店或站点文案；
 - 让 VLM 直接选择并执行下一动作；
+- 为每个视觉角色分别维护 HTTP/OpenAI-compatible wire client、provider response parser 或模型注册表；
 - 让 Option selection 绕过 ActionPolicy/Catalog/Binder 直接 dispatch；
 - 让 PublicArtifact、AgentIntent、ActionEffect 或 UI 文案证明任务完成；
 - 将 selector、坐标、prompt、provider token、raw trace 或 JSON 暴露到普通用户 feed；
@@ -94,6 +95,7 @@ Runtime and policy owner facts
 | acquisition 需要 | `ObservationNeed` | CoreLoop 的机械转换 | ObservationOrchestrator、SurfaceAdapter | provider output、Feed |
 | screenshot/frame currentness | Visual capture owner | Browser/BrowserGym SurfaceAdapter | visual provider request、binding currentness | provider output、ActionPolicy |
 | provider request | visual SurfaceAdapter | current need + current capture + resolved candidates | Visual provider port | CoreLoop、Shell |
+| PydanticAI model/provider construction | shared PydanticAI model factory | frozen provider profile + model configuration | ActionPolicy adapter、visual inference boundary | individual visual roles、SurfaceAdapter、CoreLoop |
 | visual purpose capability offer | grouped visual SurfaceAdapter | actually configured provider ports | GroundedToolCatalog、acquisition selection | provider transport、CoreLoop、prompt |
 | provider completed/unknown/failed | visual provider boundary | provider adapter | SurfaceAdapter | WorldFusion、UI |
 | source-local视觉事实 | `SurfaceObservation` | visual SurfaceAdapter | WorldFusion | ActionPolicy raw provider result |
@@ -650,6 +652,21 @@ Visual offer 按实际配置发布：
 
 “新 visual offer 可能新增 VLM 调用”不是指 offer 发布时就调用模型。Offer 只是能力广告；现有 adaptive escalation 可能在 structural coverage 为 `TRUNCATED` 等稳定条件下产生视觉 need。过去对应 purpose 未被 offer 时，该 need 无法路由；接入新 offer 后，它可能变成一次真实 provider call。因此 compatibility profile 必须保留原 offer 集与 escalation 配置，新 purpose 先由显式 capability/profile 启用；不能仅以“Agent 没有显式 RequestObservation”推断调用数不变。
 
+### 6.1 统一 PydanticAI 视觉 provider 边界
+
+所有 model-backed visual roles（region、point、candidate disambiguation、predicate、text、spatial、change）必须复用项目既有的 PydanticAI model/provider construction，不得各自拼接 `/chat/completions`、base64 JSON body、`response_format` 或解析 provider-specific response envelope。DeepSeek、Zhipu、Gemini 只是同一 factory 的 frozen profile/model 配置，不形成视觉专属 client 或第二 registry。
+
+每个 browser Surface bundle 只构造一个 `PydanticAIVisualInference`，各视觉 role 通过其 typed port 共享该 inference。每次调用仍由 role 自己拥有 atomic prompt、Pydantic output type、purpose-specific validation 与 evidence semantics；共享 transport 不共享 task planning、history、ActionPolicy tool schema 或动作 authority。图片只作为 PydanticAI `BinaryContent` 放入 user message；system message 不携带图片。视觉返回只能是对应 typed evidence/unknown/failed，不能直接产生 `SelectAction`、binding、completion 或用户可见成功声明。
+
+统一边界的回归门：
+
+- model-backed visual role 模块不得导入或调用 `_post_json`、`_structured_json_content`、`AsyncOpenAI`、`requests`、`urllib` 或 `httpx`；OmniParser 等非 VLM 专用 parser port 不在此禁令内；
+- product bundle 对七个 role 注入同一 inference identity；仅创建/编译 role 和 offer 时 provider 调用数为零；
+- provider/model/prompt version、image count 和 typed validation failure 在视觉边界记录，Runtime 继续补 frame digest/page/viewport/latency 等 owner facts；
+- DeepSeek vision 配置必须使用显式视觉 model，不能静默回落到 ActionPolicy text model；
+- PydanticAI function-model tests 覆盖一图与 before/after 两图输入、typed output validation、unsupported multimodal model 拒绝和 worker close；
+- compatibility profile 的 ToolCatalog、model image-input count 和 visual provider call count 保持 Phase 0 门禁，不因 transport 统一而扩张。
+
 ## 7. 分阶段实施计划
 
 ### Phase 0 — 冻结基线与防回归门禁
@@ -742,6 +759,7 @@ Owner：visual predicate classifier port、BrowserGym/browser bundle SurfaceAdap
 每个 kind 的共同门禁：
 
 - provider request 不含完整 TaskGoal/GoalPlan/history；
+- 所有 model-backed role 经统一 PydanticAI visual inference；视觉角色不得自有 provider wire transport/parser；
 - no immediate dispatch；
 - ambiguous/conflict/unknown 零 binding；
 - unmatched 只有在 visual-only binding 合同满足时可执行；
@@ -928,9 +946,12 @@ src/affordance_runtime/model/policy/perception.py
 ```text
 src/affordance_runtime/surfaces/visual/contracts.py
 src/affordance_runtime/surfaces/visual/adapter.py
+src/affordance_runtime/surfaces/visual/pydantic_ai_inference.py
 src/affordance_runtime/surfaces/visual/grounding.py
 src/affordance_runtime/surfaces/visual/disambiguation.py
 src/affordance_runtime/surfaces/visual/predicate_classification.py
+src/affordance_runtime/surfaces/visual/semantic_classification.py
+src/affordance_runtime/model/providers/capabilities.py
 src/affordance_runtime/surfaces/browsergym/environment.py
 src/affordance_runtime/surfaces/browsergym/visual_projection.py
 src/affordance_runtime/surfaces/browsergym/visual_disambiguation.py

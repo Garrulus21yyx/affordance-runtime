@@ -1,20 +1,21 @@
-import base64
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 from PIL import Image
+from pydantic_ai import BinaryContent
+from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.models.function import FunctionModel
 
 from affordance_runtime.benchmarks.screenspot import (
     load_screenspot_predictions,
     run_screenspot_grounder_suite,
     run_screenspot_offline_suite,
 )
+from affordance_runtime.model.policy.pydantic_ai_bridge import ConfiguredPydanticAIModel
 from affordance_runtime.surfaces.visual.grounding import (
-    OpenAICompatibleVisualGrounder,
-    OpenAICompatibleVisualRegionProposer,
+    PydanticAIVisualGrounder,
+    PydanticAIVisualRegionProposer,
     VisualGroundingPoint,
     VisualGroundingRequest,
     VisualRegion,
@@ -25,6 +26,28 @@ from affordance_runtime.surfaces.visual.grounding import (
     visual_grounder_from_environment,
     visual_region_proposer_from_environment,
 )
+from affordance_runtime.surfaces.visual.pydantic_ai_inference import PydanticAIVisualInference
+
+
+def _visual_inference(
+    *outputs: str,
+) -> tuple[PydanticAIVisualInference, list[list[object]]]:
+    scripted = list(outputs)
+    records: list[list[object]] = []
+
+    async def respond(messages, info):  # type: ignore[no-untyped-def]
+        del info
+        records.append(messages)
+        return ModelResponse(parts=[TextPart(scripted.pop(0))])
+
+    configured = ConfiguredPydanticAIModel(
+        FunctionModel(respond, model_name="visual-fixture"),
+        "zhipu",
+        "glm-4.6v-test",
+        "fixture",
+        True,
+    )
+    return PydanticAIVisualInference(configured, timeout_s=5), records
 
 
 def _write_fixture(root: Path) -> tuple[Path, Path, Path]:
@@ -191,47 +214,19 @@ def test_screenspot_grounder_runner_fails_closed_for_invalid_normalized_point(tm
     assert report["acceptance_errors"] == ["missing predictions: 2", "grounder failures: 2"]
 
 
-def test_openai_compatible_visual_grounder_sends_only_screenshot_and_instruction(tmp_path: Path) -> None:
+def test_pydantic_ai_visual_grounder_sends_only_screenshot_and_instruction(tmp_path: Path) -> None:
     image = tmp_path / "sample.png"
     Image.new("RGB", (20, 10), "white").save(image)
-    requests: list[dict[str, object]] = []
+    inference, records = _visual_inference('{"x":0.5,"y":0.4,"normalized":true}')
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
-            length = int(self.headers["Content-Length"])
-            requests.append(json.loads(self.rfile.read(length)))
-            response = json.dumps(
-                {"choices": [{"message": {"content": '{"x":0.5,"y":0.4,"normalized":true}\n</think>trailing prose'}}]}
-            ).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        point = OpenAICompatibleVisualGrounder(
-            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
-        ).ground(VisualGroundingRequest("sample", image, image.read_bytes(), (20, 10), "click the target"))
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+    point = PydanticAIVisualGrounder(inference).ground(
+        VisualGroundingRequest("sample", image, image.read_bytes(), (20, 10), "click the target")
+    )
 
     assert point == VisualGroundingPoint((0.5, 0.4), normalized=True)
-    content = requests[0]["messages"][1]["content"]  # type: ignore[index]
-    encoded = content[0]["image_url"]["url"]  # type: ignore[index]
-    assert encoded.startswith("data:image/png;base64,")
-    assert base64.b64decode(encoded.split(",", 1)[1]) == image.read_bytes()
-    assert "click the target" in content[1]["text"]  # type: ignore[index]
-    assert requests[0]["model"] == "vision-test"
-    assert requests[0]["thinking"] == {"type": "disabled"}
+    user = next(part for part in records[0][-1].parts if isinstance(part, UserPromptPart))
+    assert any(isinstance(item, BinaryContent) and item.data == image.read_bytes() for item in user.content)
+    assert any(isinstance(item, str) and "click the target" in item for item in user.content)
 
 
 def test_visual_region_converts_normalized_bbox_and_rejects_invalid_extent() -> None:
@@ -246,39 +241,12 @@ def test_visual_region_proposer_uses_named_corners_and_converts_to_xywh(tmp_path
     image = tmp_path / "sample.png"
     Image.new("RGB", (200, 100), "white").save(image)
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
-            response = json.dumps(
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"detected target","actionable":false,"color":"blue","shape":"circle","row":2,"column":3,"selected":false},{"left":0.8,"top":0.8,"right":1.2,"bottom":0.9,"label":"invalid sibling","confidence":0.9,"role":"option","actionable":true}]}'
-                            }
-                        }
-                    ]
-                }
-            ).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        regions = OpenAICompatibleVisualRegionProposer(
-            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
-        ).propose(VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target"))
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+    inference, _ = _visual_inference(
+        '{"regions":[{"left":0.1,"top":0.2,"right":0.35,"bottom":0.7,"label":"target","confidence":0.9,"role":"detected target","actionable":false,"color":"blue","shape":"circle","row":2,"column":3,"selected":false},{"left":0.8,"top":0.8,"right":1.2,"bottom":0.9,"label":"invalid sibling","confidence":0.9,"role":"option","actionable":true}]}'
+    )
+    regions = PydanticAIVisualRegionProposer(inference).propose(
+        VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target")
+    )
 
     assert len(regions) == 1
     assert regions[0].pixel_bbox((200, 100)) == pytest.approx((20.0, 20.0, 50.0, 50.0))
@@ -295,43 +263,15 @@ def test_visual_region_proposer_accepts_first_valid_region_without_point_retry(
 ) -> None:
     image = tmp_path / "sample.png"
     Image.new("RGB", (200, 100), "white").save(image)
-    request_count = 0
+    inference, records = _visual_inference(
+        '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
+        '"label":"low confidence target","confidence":0.2,"role":"option","actionable":true}]}'
+    )
+    regions = PydanticAIVisualRegionProposer(inference).propose(
+        VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target")
+    )
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
-            nonlocal request_count
-            request_count += 1
-            content = (
-                '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
-                '"label":"low confidence target","confidence":0.2,"role":"option","actionable":true}]}'
-                if request_count == 1
-                else '<think>bounded analysis</think>{"regions":[{"x":0.1,"y":0.2,'
-                '"width":0.25,"height":0.5,"label":"target","confidence":0.9,'
-                '"role":"coordinate point"}]}'
-            )
-            response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        regions = OpenAICompatibleVisualRegionProposer(
-            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
-        ).propose(VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target"))
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-    assert request_count == 1
+    assert len(records) == 1
     assert len(regions) == 1
     assert regions[0].pixel_bbox((200, 100)) == pytest.approx((0.0, 0.0, 200.0, 100.0))
     assert regions[0].label == "low confidence target"
@@ -344,39 +284,15 @@ def test_visual_region_proposer_never_owns_point_fallback(
 ) -> None:
     image = tmp_path / "sample.png"
     Image.new("RGB", (200, 100), "white").save(image)
-    request_count = 0
+    inference, records = _visual_inference(
+        '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
+        '"label":"context","confidence":0.9,"role":"region","actionable":false}]}'
+    )
+    regions = PydanticAIVisualRegionProposer(inference).propose(
+        VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target")
+    )
 
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:  # noqa: N802 - stdlib hook
-            nonlocal request_count
-            request_count += 1
-            content = (
-                '{"regions":[{"left":0.0,"top":0.0,"right":1.0,"bottom":1.0,'
-                '"label":"context","confidence":0.9,"role":"region","actionable":false}]}'
-            )
-            response = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        regions = OpenAICompatibleVisualRegionProposer(
-            base_url=f"http://127.0.0.1:{server.server_port}", api_key="secret", model="vision-test"
-        ).propose(VisualRegionProposalRequest("sample", image, image.read_bytes(), (200, 100), "click target"))
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-    assert request_count == 1
+    assert len(records) == 1
     assert regions[0].primitive_action == "observe_only"
 
 
@@ -404,12 +320,12 @@ def test_visual_grounder_environment_factory_uses_zhipu_vision_model_without_exp
             "LLM_VISUAL_PROFILE": "zhipu",
             "LLM_ZHIPU_BASE_URL": "https://zhipu.invalid/v4/",
             "LLM_ZHIPU_API_KEY": "zhipu-secret",
-            "LLM_ZHIPU_VISION_MODEL": "glm-vision-test",
+            "LLM_ZHIPU_VISION_MODEL": "glm-4.6v-test",
         }
     )
 
-    assert isinstance(grounder, OpenAICompatibleVisualGrounder)
-    assert grounder.model == "glm-vision-test"
+    assert isinstance(grounder, PydanticAIVisualGrounder)
+    assert grounder.model == "glm-4.6v-test"
     assert "zhipu-secret" not in repr(grounder)
 
 

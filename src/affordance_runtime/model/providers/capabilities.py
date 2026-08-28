@@ -12,10 +12,15 @@ def model_supports_multimodal(provider: str, model_id: str) -> bool:
     provider's declared ``glm-<version>v-*`` naming family.
     """
 
-    if provider.strip().casefold() != "zhipu":
-        return False
+    normalized_provider = provider.strip().casefold()
     normalized_model = model_id.strip().casefold()
-    return re.match(r"^glm-\d+(?:\.\d+)?v(?:-|$)", normalized_model) is not None
+    if normalized_provider == "zhipu":
+        return re.match(r"^glm-\d+(?:\.\d+)?v(?:-|$)", normalized_model) is not None
+    if normalized_provider == "deepseek":
+        return re.fullmatch(r"deepseek-v\d+(?:-[a-z0-9]+)*-vision(?:-[a-z0-9]+)*", normalized_model) is not None
+    if normalized_provider == "gemini":
+        return normalized_model.startswith("gemini-")
+    return False
 
 
 __all__ = ["model_supports_multimodal"]

@@ -29,9 +29,13 @@ from affordance_runtime.surfaces.visual.predicate_classification import (
     VisualPredicateClassifierPort,
     visual_predicate_classifier_from_environment,
 )
+from affordance_runtime.surfaces.visual.pydantic_ai_inference import (
+    pydantic_ai_visual_inference_from_environment,
+)
 from affordance_runtime.surfaces.visual.semantic_classification import (
     VisualChangeClassificationRequest,
     VisualChangeClassifierPort,
+    VisualSemanticRole,
     VisualSpatialClassificationRequest,
     VisualSpatialClassifierPort,
     VisualTextReaderPort,
@@ -513,16 +517,31 @@ def browser_surface_from_environment(
 
     if not environment.get("LLM_VISUAL_PROFILE", "").strip():
         return DomSurfaceAdapter(session)
-    semantic = visual_semantic_classifier_from_environment(environment)
+    inference = pydantic_ai_visual_inference_from_environment(environment)
+    text_reader = visual_semantic_classifier_from_environment(
+        environment,
+        inference=inference,
+        role=VisualSemanticRole.TEXT,
+    )
+    spatial_classifier = visual_semantic_classifier_from_environment(
+        environment,
+        inference=inference,
+        role=VisualSemanticRole.SPATIAL,
+    )
+    change_classifier = visual_semantic_classifier_from_environment(
+        environment,
+        inference=inference,
+        role=VisualSemanticRole.CHANGE,
+    )
     return BrowserSessionSurfaceBundle(
         session,
-        visual_region_proposer_from_environment(environment),
-        visual_grounder_from_environment(environment),
-        visual_candidate_disambiguator_from_environment(environment),
-        visual_predicate_classifier_from_environment(environment),
-        semantic,
-        semantic,
-        semantic,
+        visual_region_proposer_from_environment(environment, inference=inference),
+        visual_grounder_from_environment(environment, inference=inference),
+        visual_candidate_disambiguator_from_environment(environment, inference=inference),
+        visual_predicate_classifier_from_environment(environment, inference=inference),
+        text_reader,
+        spatial_classifier,
+        change_classifier,
     )
 
 

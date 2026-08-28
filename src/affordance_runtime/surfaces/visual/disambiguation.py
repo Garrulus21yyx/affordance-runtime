@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import base64
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
-from affordance_runtime.model.providers.port import StructuredModelError, _post_json, _structured_json_content
-from affordance_runtime.surfaces.visual.grounding import _first_json_object, _visual_profile_config
+from pydantic import BaseModel, ConfigDict
+
+from affordance_runtime.model.providers.port import StructuredModelError
+from affordance_runtime.surfaces.visual.pydantic_ai_inference import (
+    PydanticAIVisualInference,
+    VisualImage,
+    pydantic_ai_visual_inference_from_environment,
+)
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 from affordance_runtime.world.vision_escalation import VisionEvidenceNeed
 from affordance_runtime.world.visual_annotation import BoundingBox, VisualMark, annotate_screenshot
@@ -70,22 +74,31 @@ class VisualCandidateDisambiguationRequest:
 
 
 class VisualCandidateDisambiguatorPort(Protocol):
-    provider: str
-    model: str
-    prompt_version: str
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model(self) -> str: ...
+
+    @property
+    def prompt_version(self) -> str: ...
 
     def choose(self, request: VisualCandidateDisambiguationRequest) -> str | None:
         """Return one supplied E-ref or ``None``; coordinates are not representable."""
 
 
 @dataclass
-class OpenAICompatibleVisualCandidateDisambiguator:
-    base_url: str
-    api_key: str = field(repr=False)
-    model: str = "glm-4.6v-flash"
-    provider: str = "zhipu"
+class PydanticAIVisualCandidateDisambiguator:
+    inference: PydanticAIVisualInference = field(repr=False)
     prompt_version: str = _PROMPT_VERSION
-    timeout_s: float = 90.0
+
+    @property
+    def model(self) -> str:
+        return self.inference.model
+
+    @property
+    def provider(self) -> str:
+        return self.inference.provider
 
     def choose(self, request: VisualCandidateDisambiguationRequest) -> str | None:
         marks = tuple(
@@ -102,71 +115,45 @@ class OpenAICompatibleVisualCandidateDisambiguator:
             for item in request.candidates
         )
         annotated = annotate_screenshot(request.image_bytes, marks)
-        image_url = "data:image/png;base64," + base64.b64encode(annotated).decode("ascii")
         inventory = [
             {"ref": item.ref, "role": item.role, "label": item.label, "state": dict(item.state)}
             for item in request.candidates
         ]
-        body: dict[str, Any] = {
-            "model": self.model,
-            "temperature": 0.0,
-            "max_tokens": 2048,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                        {
-                            "type": "text",
-                            "text": (
-                                f"Selection mode: {request.evidence_need.value}. "
-                                f"Atomic visual query: {json.dumps(request.instruction, ensure_ascii=False)}. "
-                                f"Candidates: {json.dumps(inventory, ensure_ascii=False, separators=(',', ':'))}. "
-                                "Return one supplied ref for the current atomic "
-                                "interaction, or null."
-                            ),
-                        },
-                    ],
-                },
-            ],
-            "response_format": {"type": "json_object"},
-        }
-        if self.provider == "zhipu":
-            body["thinking"] = {"type": "disabled"}
-        response, _, _ = _post_json(
-            f"{self.base_url.rstrip('/')}/chat/completions",
-            body,
-            timeout_s=self.timeout_s,
-            headers={"Authorization": f"Bearer {self.api_key}"},
+        payload = self.inference.infer(
+            _DisambiguationOutput,
+            system_prompt=_SYSTEM_PROMPT,
+            content=(
+                VisualImage(annotated),
+                (
+                    f"Selection mode: {request.evidence_need.value}. "
+                    f"Atomic visual query: {json.dumps(request.instruction, ensure_ascii=False)}. "
+                    f"Candidates: {json.dumps(inventory, ensure_ascii=False, separators=(',', ':'))}. "
+                    "Return one supplied ref for the current atomic interaction, or null."
+                ),
+            ),
         )
         try:
-            content = response["choices"][0]["message"]["content"]
-            if isinstance(content, list):
-                content = "".join(
-                    str(item.get("text") or "") for item in content if isinstance(item, dict)
-                )
-            payload = _first_json_object(_structured_json_content(content))
-            if set(payload) != {"ref"}:
-                raise ValueError("visual disambiguation response must contain only ref")
-            selected = payload["ref"]
+            selected = payload.ref
             if selected is None:
                 return None
-            if not isinstance(selected, str) or selected not in {item.ref for item in request.candidates}:
+            if selected not in {item.ref for item in request.candidates}:
                 raise ValueError("visual disambiguation selected an unoffered ref")
             return selected
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (TypeError, ValueError) as exc:
             raise StructuredModelError("visual disambiguation response failed E-ref validation") from exc
+
+
+class _DisambiguationOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ref: str | None
 
 
 def visual_candidate_disambiguator_from_environment(
     environment: Mapping[str, str] | None = None,
+    *,
+    inference: PydanticAIVisualInference | None = None,
 ) -> VisualCandidateDisambiguatorPort:
-    env = os.environ if environment is None else environment
-    base_url, api_key, model, profile = _visual_profile_config(env)
-    return OpenAICompatibleVisualCandidateDisambiguator(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-        provider=profile,
+    return PydanticAIVisualCandidateDisambiguator(
+        inference or pydantic_ai_visual_inference_from_environment(environment)
     )
