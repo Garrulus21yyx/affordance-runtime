@@ -1,16 +1,16 @@
-# Diagnosis input boundary
+# Completed-run analysis boundary
 
-`CaseDiagnosisProjector` accepts only versioned `BenchmarkResultExport` and
-`PublicTraceExport` JSON. It copies canonical terminal status/stage/code and
-computes only bounded, non-authoritative diagnosis fields.
+The benchmark runner persists the authoritative case result and a bounded,
+non-authoritative `analysis/<case_id>.json` read model. The analysis contains
+disjoint provider usage, request-admission estimates, Runtime mechanical facts,
+trajectory evidence, and one typed Bad-case presentation projection.
 
-Generate a deterministic local report:
+`CompletedRunSummaryResolver` reads only explicitly configured completed-run
+directories. It copies the persisted Bad-case `category | stage | origin | code |
+termination_source | summary` fields and never parses failure prose, reconstructs
+Runtime state, or guesses a likely upstream stage.
 
-```bash
-cd external/interaction-shell/backend
-python -m interaction_shell.diagnosis_cli result.json trace.json --output diagnosis.json
-```
-
-Langfuse projection is optional and must be called through `project_fail_open`.
-Reporting, export, viewer, or Langfuse failures cannot replace the GUI task
-outcome contained in the benchmark result.
+Langfuse remains the primary engineering-analysis surface. Shell exposes only a
+bounded summary and independent Langfuse/local evidence links. Reporting,
+analysis export, Viewer, or Langfuse failures cannot replace the native benchmark
+outcome.

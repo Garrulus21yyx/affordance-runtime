@@ -5,10 +5,34 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
+
+BadCaseCategory = Literal[
+    "not_applicable",
+    "not_assessed",
+    "structured_output_invalid",
+    "provider_failure",
+    "control_stall",
+    "no_progress",
+    "budget_exhausted",
+    "harness_timeout",
+    "external_interruption",
+    "acquisition_failure",
+    "execution_failure",
+    "evaluation_failure",
+    "native_task_failure",
+    "runtime_rejected",
+    "waiting_user",
+    "waiting_confirmation",
+    "cancelled",
+    "cleanup_failure",
+    "environment_failure",
+    "evidence_failure",
+    "unclassified_typed_failure",
+]
 
 
 class CompletedRunSummary(BaseModel):
@@ -29,6 +53,12 @@ class CompletedRunSummary(BaseModel):
     control_stalls: int = Field(default=0, ge=0)
     state_oscillations: int = Field(default=0, ge=0)
     detour_disposition: Literal["suspected_detour", "not_assessed"] = "not_assessed"
+    bad_case_category: BadCaseCategory = "not_assessed"
+    failure_stage: str = Field(default="", max_length=80)
+    failure_origin: str = Field(default="", max_length=96)
+    failure_code: str = Field(default="", max_length=96)
+    termination_source: str = Field(default="", max_length=96)
+    failure_summary: str = Field(default="", max_length=240)
     langfuse_url: str | None = None
     local_evidence_url: str | None = None
 
@@ -108,6 +138,7 @@ class CompletedRunSummaryResolver:
                     continue
                 locator_id = hashlib.sha256(f"{attempt_id}\0{case_id}".encode()).hexdigest()[:32]
                 analysis = _read_analysis(run_directory, case_id, attempt_id)
+                bad_case = _bad_case(analysis, str(payload["status"]))
                 self._locators[locator_id] = (run_directory, result_path)
                 summaries.append(
                     CompletedRunSummary(
@@ -122,6 +153,12 @@ class CompletedRunSummaryResolver:
                         control_stalls=_metric(payload, "control_stall_count"),
                         state_oscillations=_metric(payload, "state_oscillation_count"),
                         detour_disposition=_detour_disposition(analysis),
+                        bad_case_category=bad_case[0],
+                        failure_stage=bad_case[1],
+                        failure_origin=bad_case[2],
+                        failure_code=bad_case[3],
+                        termination_source=bad_case[4],
+                        failure_summary=bad_case[5],
                         langfuse_url=(
                             f"{self._langfuse_base_url}/sessions/{quote(attempt_id, safe='')}"
                             if self._langfuse_base_url
@@ -185,3 +222,37 @@ def _detour_disposition(
 ) -> Literal["suspected_detour", "not_assessed"]:
     value = analysis.get("detour_disposition")
     return "suspected_detour" if value == "suspected_detour" else "not_assessed"
+
+
+def _bad_case(
+    analysis: Mapping[str, object],
+    status: str,
+) -> tuple[BadCaseCategory, str, str, str, str, str]:
+    value = analysis.get("bad_case")
+    if not isinstance(value, Mapping):
+        return (
+            "not_applicable" if status == "done" else "not_assessed",
+            "",
+            "",
+            "",
+            "",
+            "" if status == "done" else "Failure analysis is unavailable for this evidence schema.",
+        )
+    allowed = set(BadCaseCategory.__args__)
+    category = value.get("category")
+    if not isinstance(category, str) or category not in allowed:
+        category = "not_assessed"
+    typed_category = cast(BadCaseCategory, category)
+
+    def bounded(name: str, limit: int) -> str:
+        candidate = value.get(name, "")
+        return candidate[:limit] if isinstance(candidate, str) else ""
+
+    return (
+        typed_category,
+        bounded("stage", 80),
+        bounded("origin", 96),
+        bounded("code", 96),
+        bounded("termination_source", 96),
+        bounded("summary", 240),
+    )

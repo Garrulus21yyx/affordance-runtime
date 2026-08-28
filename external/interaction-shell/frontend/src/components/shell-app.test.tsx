@@ -2,8 +2,9 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "valibot";
 import { vRuntimeSessionSnapshot } from "@/generated/valibot.gen";
+import type { CompletedRunSummary } from "@/generated/types.gen";
 import { projectShellView } from "@/session/view-model";
-import { EffectReconciliationNotice, LiveView, Progress } from "./shell-app";
+import { CompletedBadCase, EffectReconciliationNotice, LiveView, Progress } from "./shell-app";
 
 const base = () => parse(vRuntimeSessionSnapshot, {
   schema_version: "interaction-shell.v4",
@@ -80,5 +81,41 @@ describe("public fact renderers", () => {
     render(<EffectReconciliationNotice view={projectShellView(snapshot)} />);
     expect(screen.getByTestId("effect-reconciliation")).toHaveTextContent("compensation_unverified");
     expect(screen.queryByText(/selector|coordinate|backend/i)).not.toBeInTheDocument();
+  });
+
+  it("renders persisted Bad-case cause, owner, code, and evidence links", () => {
+    const run: CompletedRunSummary = {
+      locator_id: "a".repeat(32),
+      run_attempt_id: `attempt:${"b".repeat(32)}`,
+      case_id: "browsergym/miniwob.click-button",
+      status: "failed",
+      bad_case_category: "control_stall",
+      failure_stage: "control",
+      failure_origin: "runtime_control",
+      failure_code: "control_stalled",
+      termination_source: "episode_monitor",
+      failure_summary: "Repeated control attempts made no progress and the Runtime monitor stopped the run.",
+      turns: 8,
+      control_stalls: 2,
+      state_oscillations: 1,
+      langfuse_url: "https://langfuse.example.test/session/attempt",
+      local_evidence_url: "/labs/completed-runs/evidence/locator/result",
+    };
+
+    render(<CompletedBadCase run={run} />);
+
+    const card = screen.getByTestId("completed-bad-case");
+    expect(card).toHaveTextContent("撞墙 · Control stalled");
+    expect(card).toHaveTextContent("episode_monitor");
+    expect(card).toHaveTextContent("control_stalled");
+    expect(card).toHaveTextContent("Stalls 2");
+    expect(screen.getByRole("link", { name: /Open in Langfuse/ })).toHaveAttribute(
+      "href",
+      run.langfuse_url,
+    );
+    expect(screen.getByRole("link", { name: /本地证据/ })).toHaveAttribute(
+      "href",
+      run.local_evidence_url,
+    );
   });
 });

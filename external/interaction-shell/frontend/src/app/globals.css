@@ -340,6 +340,17 @@ select, input { width: 100%; min-width: 0; min-height: 42px; padding: 0 11px; ov
 .bad-case b { font-size: 12px; }
 .bad-case small { margin-top: 5px; color: var(--quiet); font-size: 9px; }
 .bad-case > span { padding: 5px 7px; color: var(--danger); background: rgba(168,67,50,.08); border-radius: 6px; font: 650 9px/1 "Inconsolata", monospace; text-transform: uppercase; }
+.bad-case-detailed { display: block; border-left: 3px solid var(--danger); }
+.bad-case-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.bad-case-category { flex: none; padding: 5px 7px; color: var(--danger); background: rgba(168,67,50,.08); border-radius: 6px; font: 650 9px/1 "Inconsolata", monospace; }
+.bad-case-detailed p { margin: 11px 0 9px; color: var(--ink); font-size: 10px; line-height: 1.55; }
+.bad-case-facts { display: flex; flex-wrap: wrap; gap: 5px; }
+.bad-case-facts code { padding: 4px 6px; color: var(--quiet); background: rgba(23,34,29,.05); border-radius: 5px; font: 550 8px/1.2 "Inconsolata", monospace; }
+.bad-case-metrics { display: flex; gap: 14px; margin-top: 11px; color: var(--quiet); font: 500 8px/1 "Inconsolata", monospace; text-transform: uppercase; }
+.bad-case-metrics b { display: inline; margin-left: 3px; color: var(--ink); font-size: 9px; }
+.bad-case-links { display: flex; gap: 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.bad-case-links a { color: var(--pine); font-size: 9px; font-weight: 650; text-decoration: none; }
+.bad-case-links a:focus-visible { outline: 2px solid var(--apricot); outline-offset: 3px; }
 .bad-case-empty { display: grid; min-height: 260px; place-content: center; justify-items: center; color: var(--quiet); text-align: center; }
 .bad-case-empty b { color: var(--ink); font-size: 13px; }
 .bad-case-empty span { max-width: 280px; margin-top: 6px; font-size: 10px; line-height: 1.5; }

@@ -172,8 +172,13 @@ export INTERACTION_SHELL_EVIDENCE_RUNS=/absolute/evidence/run-a:/absolute/eviden
 export LANGFUSE_BASE_URL=https://langfuse.example.test
 ```
 
-The Labs completed-run projection shows only benchmark status, turns, provider
-input/output usage, recovery/stall counts, `suspected_detour | not_assessed`, and independent links.
+The Labs completed-run projection shows benchmark status, turns, provider
+input/output usage, recovery/stall counts, `suspected_detour | not_assessed`,
+and one benchmark-produced Bad-case projection. Bad cases expose a closed
+category plus typed stage, origin, code, termination source, and bounded summary;
+for example policy `schema_error`, Runtime `control_stalled` owned by
+`episode_monitor`, harness timeout, or native-verifier task failure. The Shell
+does not parse error prose or infer a likely upstream stage.
 `INTERACTION_SHELL_LOCAL_EVIDENCE_ENABLED=true` plus a nonblank
 `INTERACTION_SHELL_EVIDENCE_ACCESS_KEY` enables the opaque fixed-result route.
 The engineering reverse proxy must inject the matching `X-Engineering-Key`;

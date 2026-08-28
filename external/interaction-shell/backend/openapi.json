@@ -709,6 +709,34 @@
       "CompletedRunSummary": {
         "additionalProperties": false,
         "properties": {
+          "bad_case_category": {
+            "default": "not_assessed",
+            "enum": [
+              "not_applicable",
+              "not_assessed",
+              "structured_output_invalid",
+              "provider_failure",
+              "control_stall",
+              "no_progress",
+              "budget_exhausted",
+              "harness_timeout",
+              "external_interruption",
+              "acquisition_failure",
+              "execution_failure",
+              "evaluation_failure",
+              "native_task_failure",
+              "runtime_rejected",
+              "waiting_user",
+              "waiting_confirmation",
+              "cancelled",
+              "cleanup_failure",
+              "environment_failure",
+              "evidence_failure",
+              "unclassified_typed_failure"
+            ],
+            "title": "Bad Case Category",
+            "type": "string"
+          },
           "benchmark_result": {
             "default": "available",
             "enum": [
@@ -737,6 +765,30 @@
               "not_assessed"
             ],
             "title": "Detour Disposition",
+            "type": "string"
+          },
+          "failure_code": {
+            "default": "",
+            "maxLength": 96,
+            "title": "Failure Code",
+            "type": "string"
+          },
+          "failure_origin": {
+            "default": "",
+            "maxLength": 96,
+            "title": "Failure Origin",
+            "type": "string"
+          },
+          "failure_stage": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Failure Stage",
+            "type": "string"
+          },
+          "failure_summary": {
+            "default": "",
+            "maxLength": 240,
+            "title": "Failure Summary",
             "type": "string"
           },
           "langfuse_url": {
@@ -805,6 +857,12 @@
             "maxLength": 80,
             "minLength": 1,
             "title": "Status",
+            "type": "string"
+          },
+          "termination_source": {
+            "default": "",
+            "maxLength": 96,
+            "title": "Termination Source",
             "type": "string"
           },
           "turns": {

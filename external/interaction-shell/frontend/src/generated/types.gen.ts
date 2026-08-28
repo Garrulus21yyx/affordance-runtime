@@ -430,6 +430,10 @@ export type CommandOffer = ({
  */
 export type CompletedRunSummary = {
     /**
+     * Bad Case Category
+     */
+    bad_case_category?: 'not_applicable' | 'not_assessed' | 'structured_output_invalid' | 'provider_failure' | 'control_stall' | 'no_progress' | 'budget_exhausted' | 'harness_timeout' | 'external_interruption' | 'acquisition_failure' | 'execution_failure' | 'evaluation_failure' | 'native_task_failure' | 'runtime_rejected' | 'waiting_user' | 'waiting_confirmation' | 'cancelled' | 'cleanup_failure' | 'environment_failure' | 'evidence_failure' | 'unclassified_typed_failure';
+    /**
      * Benchmark Result
      */
     benchmark_result?: 'available' | 'not_applicable';
@@ -445,6 +449,22 @@ export type CompletedRunSummary = {
      * Detour Disposition
      */
     detour_disposition?: 'suspected_detour' | 'not_assessed';
+    /**
+     * Failure Code
+     */
+    failure_code?: string;
+    /**
+     * Failure Origin
+     */
+    failure_origin?: string;
+    /**
+     * Failure Stage
+     */
+    failure_stage?: string;
+    /**
+     * Failure Summary
+     */
+    failure_summary?: string;
     /**
      * Langfuse Url
      */
@@ -485,6 +505,10 @@ export type CompletedRunSummary = {
      * Status
      */
     status: string;
+    /**
+     * Termination Source
+     */
+    termination_source?: string;
     /**
      * Turns
      */

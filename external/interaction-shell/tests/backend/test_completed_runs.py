@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 from interaction_shell.api import create_app
 from interaction_shell.completed_runs import CompletedRunSummaryResolver
 
+from affordance_runtime.benchmarks.target_loop.manifest import get_manifest
+from affordance_runtime.benchmarks.target_loop.runner import run_suite
+
 
 def _write_run(root, *, attempt_id: str = "attempt:" + "a" * 32):
     (root / "cases").mkdir(parents=True)
+    (root / "analysis").mkdir(parents=True)
     (root / "run.json").write_text(
         json.dumps({"identity": {"run_attempt_id": attempt_id}}),
         encoding="utf-8",
@@ -29,6 +35,24 @@ def _write_run(root, *, attempt_id: str = "attempt:" + "a" * 32):
     }
     result = root / "cases" / "case-1.json"
     result.write_text(json.dumps(case), encoding="utf-8")
+    (root / "analysis" / "case-1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "target-loop-analysis.v2",
+                "identity": {"run_attempt_id": attempt_id, "case_id": "case-1"},
+                "bad_case": {
+                    "applicable": True,
+                    "category": "structured_output_invalid",
+                    "stage": "policy",
+                    "origin": "action_policy",
+                    "code": "schema_error",
+                    "termination_source": "action_policy",
+                    "summary": "The model output did not satisfy the required schema after bounded repair.",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     return result
 
 
@@ -48,6 +72,10 @@ def test_resolver_reads_only_configured_results_and_exposes_no_absolute_path(tmp
     assert summary.case_id == "case-1"
     assert summary.turns == 3
     assert summary.provider_input_tokens == 100
+    assert summary.bad_case_category == "structured_output_invalid"
+    assert summary.failure_stage == "policy"
+    assert summary.failure_code == "schema_error"
+    assert summary.termination_source == "action_policy"
     assert summary.langfuse_url.endswith("/sessions/attempt%3A" + "a" * 32)
     assert summary.local_evidence_url == f"/labs/completed-runs/evidence/{summary.locator_id}/result"
     assert str(tmp_path) not in summary.model_dump_json()
@@ -93,3 +121,18 @@ def test_diagnostics_api_is_read_only_summary_and_fixed_result_locator(tmp_path)
     assert result.json()["case_id"] == "case-1"
     assert post.status_code == 405
     assert traversal.status_code in {404, 422}
+
+
+def test_resolver_consumes_an_actual_runner_export_without_fabricated_fields(tmp_path):
+    manifest = get_manifest("internal-core", "deterministic", 7)
+    one_case = replace(manifest, cases=(manifest.cases[0],))
+
+    suite = asyncio.run(run_suite(one_case, trace_dir=tmp_path))
+    summaries = CompletedRunSummaryResolver((tmp_path,)).list()
+
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary.run_attempt_id == suite.identity.run_attempt_id
+    assert summary.case_id == suite.cases[0].case_id
+    assert summary.bad_case_category == "not_applicable"
+    assert (tmp_path / "analysis" / f"{summary.case_id}.json").is_file()

@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
-import type { BenchmarkLabRunSpec, BenchmarkLabRunSummary } from "@/generated/types.gen";
+import type { BenchmarkLabRunSpec, BenchmarkLabRunSummary, CompletedRunSummary } from "@/generated/types.gen";
 import { useBenchmarkLabs, type LabEvent } from "@/hooks/use-benchmark-labs";
 import { useShellSession } from "@/hooks/use-shell-session";
 import type { ShellViewModel } from "@/session/view-model";
@@ -41,6 +41,50 @@ function statusLabel(status: string) {
 function humanize(value: string) {
   const label = value.replace(/^browsergym\/miniwob\./, "").replaceAll("-", " ");
   return label ? label.charAt(0).toUpperCase() + label.slice(1) : "未命名任务";
+}
+
+const badCaseLabels: Record<string, string> = {
+  structured_output_invalid: "Invalid JSON / Schema",
+  provider_failure: "Provider failure",
+  control_stall: "撞墙 · Control stalled",
+  no_progress: "重复无进展",
+  budget_exhausted: "步数 / 等待预算耗尽",
+  harness_timeout: "Watchdog 超时",
+  external_interruption: "外部终止",
+  acquisition_failure: "页面观测失败",
+  execution_failure: "动作执行失败",
+  evaluation_failure: "评估失败",
+  native_task_failure: "Native verifier 判定失败",
+  runtime_rejected: "Runtime 拒绝",
+  waiting_user: "等待用户输入",
+  waiting_confirmation: "等待风险确认",
+  cancelled: "任务已取消",
+  cleanup_failure: "清理失败",
+  environment_failure: "环境启动失败",
+  evidence_failure: "证据完整性失败",
+  unclassified_typed_failure: "其他 typed failure",
+  not_assessed: "原因尚未分析",
+};
+
+export function CompletedBadCase({ run }: { run: CompletedRunSummary }) {
+  const label = badCaseLabels[run.bad_case_category ?? "not_assessed"] ?? run.bad_case_category;
+  const facts = [run.termination_source, run.failure_stage, run.failure_origin, run.failure_code].filter(Boolean);
+  return (
+    <article className="bad-case bad-case-detailed" data-testid="completed-bad-case">
+      <div className="bad-case-heading">
+        <span className="bad-case-copy"><b>{humanize(run.case_id)}</b><small>{run.run_attempt_id}</small></span>
+        <span className="bad-case-category">{label}</span>
+      </div>
+      <p>{run.failure_summary || "该历史证据没有可用的 typed failure projection。"}</p>
+      {facts.length > 0 && <div className="bad-case-facts" aria-label="失败事实">{facts.map((fact, index) => <code key={`${index}:${fact}`}>{fact}</code>)}</div>}
+      <div className="bad-case-metrics">
+        <span>Turns <b>{run.turns ?? 0}</b></span>
+        <span>Stalls <b>{run.control_stalls ?? 0}</b></span>
+        <span>Cycles <b>{run.state_oscillations ?? 0}</b></span>
+      </div>
+      {(run.langfuse_url || run.local_evidence_url) && <nav className="bad-case-links" aria-label="失败证据链接">{run.langfuse_url && <a href={run.langfuse_url} target="_blank" rel="noreferrer">Open in Langfuse ↗</a>}{run.local_evidence_url && <a href={run.local_evidence_url} target="_blank" rel="noreferrer">本地证据 ↗</a>}</nav>}
+    </article>
+  );
 }
 
 function eventText(event: LabEvent, key: string) {
@@ -201,17 +245,19 @@ function LabsDrawer({ open, tab, setTab, close, labs, showRun }: {
   showRun: (run: BenchmarkLabRunSummary) => void;
 }) {
   const failed = labs.runs.filter((run) => run.status === "failed");
+  const completedBadCases = labs.completedRuns.filter((run) => run.status !== "done");
+  const badCaseCount = failed.length + completedBadCases.length;
   const [selectedRaw, setSelectedRaw] = useState<LabEvent | null>(null);
   return (
     <>
       {open && <button className="drawer-backdrop" aria-label="关闭 Labs 遮罩" onClick={close} />}
       <aside className={`labs-drawer ${open ? "open" : ""}`} aria-labelledby="labsTitle" aria-hidden={!open}>
         <header className="labs-header"><div><span>DEVELOPER WORKSPACE</span><h2 id="labsTitle">Labs</h2></div><button className="icon-button" type="button" aria-label="关闭 Labs" onClick={close}><X size={18} /></button></header>
-        <div className="labs-tabs" role="tablist"><button className={tab === "experiment" ? "active" : ""} onClick={() => setTab("experiment")}>实验</button><button className={tab === "bad-cases" ? "active" : ""} onClick={() => setTab("bad-cases")}>Bad cases <span>{failed.length}</span></button><button className={tab === "evidence" ? "active" : ""} onClick={() => setTab("evidence")}>证据</button></div>
+        <div className="labs-tabs" role="tablist"><button className={tab === "experiment" ? "active" : ""} onClick={() => setTab("experiment")}>实验</button><button className={tab === "bad-cases" ? "active" : ""} onClick={() => setTab("bad-cases")}>Bad cases <span>{badCaseCount}</span></button><button className={tab === "evidence" ? "active" : ""} onClick={() => setTab("evidence")}>证据</button></div>
         <div className="labs-content">
           <section className="labs-view active">
             {tab === "experiment" && <LabExperiment labs={labs} showRun={showRun} />}
-            {tab === "bad-cases" && <><div className="labs-intro"><h3>Bad cases</h3><p>失败状态只来自正式 runner 或已完成 benchmark 的权威结果。</p></div><div className="bad-case-list">{failed.map((run) => <button className="bad-case" type="button" key={run.run_id} onClick={() => { labs.selectRun(run); setTab("evidence"); }}><span className="bad-case-copy"><b>{humanize(run.spec.case_id)}</b><small>{run.run_id}</small></span><span>failed</span></button>)}{labs.completedRuns.filter((run) => run.status !== "done").map((run) => <div className="bad-case" key={run.locator_id}><span className="bad-case-copy"><b>{run.case_id}</b><small>{run.run_attempt_id}</small></span><span>{run.status}</span></div>)}{!failed.length && !labs.completedRuns.some((run) => run.status !== "done") && <div className="bad-case-empty"><b>暂时没有 Bad case</b><span>失败运行会自动进入这里，不需要手动标记。</span></div>}</div></>}
+            {tab === "bad-cases" && <><div className="labs-intro"><h3>Bad cases</h3><p>失败类型来自 benchmark 持久化的 typed facts；点击链接可继续查看完整证据。</p></div><div className="bad-case-list">{failed.map((run) => <button className="bad-case" type="button" key={run.run_id} onClick={() => { labs.selectRun(run); setTab("evidence"); }}><span className="bad-case-copy"><b>{humanize(run.spec.case_id)}</b><small>{run.run_id}</small></span><span>等待持久分析</span></button>)}{completedBadCases.map((run) => <CompletedBadCase run={run} key={run.locator_id} />)}{!badCaseCount && <div className="bad-case-empty"><b>暂时没有 Bad case</b><span>失败运行会自动进入这里，不需要手动标记。</span></div>}</div></>}
             {tab === "evidence" && <><div className="evidence-head"><div><span>当前运行</span><b>{labs.selectedRun?.run_id ?? "尚未选择"}</b></div><button type="button" disabled={!selectedRaw} onClick={() => selectedRaw && navigator.clipboard.writeText(JSON.stringify(selectedRaw, null, 2))}>复制 JSON</button></div><div className="metric-strip"><div><span>Events</span><b>{labs.rawEvents.length}</b></div><div><span>Policy</span><b>{labs.rawEvents.filter((item) => eventText(item, "event") === "model_turn").length}</b></div><div><span>Actions</span><b>{labs.rawEvents.filter((item) => eventText(item, "event") === "step_completed").length}</b></div><div><span>Status</span><b>{statusLabel(labs.selectedRun?.status ?? "idle")}</b></div></div><div className="trace-list">{labs.rawEvents.map((event, index) => <button className={`trace-event ${selectedRaw === event ? "selected" : ""}`} type="button" key={`${eventNumber(event, "sequence")}-${index}`} onClick={() => setSelectedRaw(event)}><span>{String(eventNumber(event, "sequence") || index + 1).padStart(3, "0")}</span><span><b>{eventText(event, "event") || "Trace event"}</b><small>{eventText(event, "observation_id") || eventText(event, "outcome") || "recorded"}</small></span><em>TRACE</em></button>)}{!labs.rawEvents.length && <div className="evidence-empty">选择或启动一次运行后，原始事件会出现在这里。</div>}</div><div className="trace-inspector"><div className="trace-summary"><b>{selectedRaw ? eventText(selectedRaw, "event") : "选择一个事件"}</b><span>查看原始本地证据</span></div><pre id="jsonInspector" tabIndex={0}>{JSON.stringify(selectedRaw ?? {}, null, 2)}</pre></div><details className="stdout-drawer"><summary>Runner output</summary><pre id="stdoutOutput">{labs.selectedRun?.stdout_tail?.join("\n") || "No runner output yet."}</pre></details><p className="evidence-path">{labs.selectedRun?.evidence_dir ?? "No evidence directory"}</p></>}
           </section>
         </div>

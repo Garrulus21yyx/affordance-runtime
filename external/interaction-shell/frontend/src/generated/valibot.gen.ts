@@ -136,10 +136,37 @@ export const vCloseSessionOffer = v.strictObject({
  * CompletedRunSummary
  */
 export const vCompletedRunSummary = v.strictObject({
+    bad_case_category: v.optional(v.picklist([
+        'not_applicable',
+        'not_assessed',
+        'structured_output_invalid',
+        'provider_failure',
+        'control_stall',
+        'no_progress',
+        'budget_exhausted',
+        'harness_timeout',
+        'external_interruption',
+        'acquisition_failure',
+        'execution_failure',
+        'evaluation_failure',
+        'native_task_failure',
+        'runtime_rejected',
+        'waiting_user',
+        'waiting_confirmation',
+        'cancelled',
+        'cleanup_failure',
+        'environment_failure',
+        'evidence_failure',
+        'unclassified_typed_failure'
+    ]), 'not_assessed'),
     benchmark_result: v.optional(v.picklist(['available', 'not_applicable']), 'available'),
     case_id: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
     control_stalls: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0),
     detour_disposition: v.optional(v.picklist(['suspected_detour', 'not_assessed']), 'not_assessed'),
+    failure_code: v.optional(v.pipe(v.string(), v.maxLength(96)), ''),
+    failure_origin: v.optional(v.pipe(v.string(), v.maxLength(96)), ''),
+    failure_stage: v.optional(v.pipe(v.string(), v.maxLength(80)), ''),
+    failure_summary: v.optional(v.pipe(v.string(), v.maxLength(240)), ''),
     langfuse_url: v.nullish(v.string()),
     local_evidence_url: v.nullish(v.string()),
     locator_id: v.pipe(v.string(), v.regex(/^[0-9a-f]{32}$/)),
@@ -150,6 +177,7 @@ export const vCompletedRunSummary = v.strictObject({
     schema_version: v.optional(v.literal('interaction-shell.completed-run.v1'), 'interaction-shell.completed-run.v1'),
     state_oscillations: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0),
     status: v.pipe(v.string(), v.minLength(1), v.maxLength(80)),
+    termination_source: v.optional(v.pipe(v.string(), v.maxLength(96)), ''),
     turns: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0)
 });
 
