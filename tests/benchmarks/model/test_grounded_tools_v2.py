@@ -706,6 +706,127 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
         )
 
 
+def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> None:
+    base = _context()
+    purposes = (
+        "entity_discovery",
+        "visual_property",
+        "target_disambiguation",
+        "point_grounding",
+        "text_in_image",
+        "spatial_relationship",
+        "visual_change",
+    )
+    context = replace(
+        base,
+        actor_world=replace(
+            base.actor_world,
+            observation_capabilities=(
+                {
+                    "modality": "visual",
+                    "assurance": "weak",
+                    "purposes": purposes,
+                },
+            ),
+        ),
+    )
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+        ObservationToolExposureProfile.DYNAMIC_VISUAL,
+    )
+    spec = next(item for item in catalog.specs if item.name == "request_evidence")
+    refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
+    assert len(refs) >= 2
+    calls = {
+        "entity_discovery": {
+            "entity_query": "visible blocks in both groups",
+            "max_results": 16,
+        },
+        "visual_property": {
+            "subject_refs": [refs[0], refs[1]],
+            "predicate": "visually selected",
+        },
+        "target_disambiguation": {
+            "candidate_refs": [refs[0], refs[1]],
+            "selection_criterion": "the candidate with the red outline",
+        },
+        "point_grounding": {
+            "target_description": "the small circular control in the center",
+        },
+        "text_in_image": {
+            "subject_refs": [refs[0]],
+            "text_query": "the text rendered inside the image",
+        },
+        "spatial_relationship": {
+            "subject_refs": [refs[0], refs[1]],
+            "relation": "the first subject is left of the second",
+        },
+        "visual_change": {
+            "subject_refs": [refs[0]],
+            "change_predicate": "the visible appearance changed",
+        },
+    }
+    bindings = context.grounding.private_subject_bindings()
+    for purpose, arguments in calls.items():
+        public_arguments = {"purpose": purpose, **arguments}
+        assert validate_value_issue(public_arguments, spec.input_schema) is None
+        outcome = _resolve_catalog_call(
+            catalog,
+            ToolCall("request_evidence", public_arguments, call_id=f"call:{purpose}"),
+            expected_context_id=context.context_id,
+            expected_catalog_id=catalog.catalog_id,
+        )
+        assert isinstance(outcome.decision, RequestObservation)
+        assert outcome.decision.purpose.value == purpose
+
+    discovery = _resolve_catalog_call(
+        catalog,
+        ToolCall("request_evidence", {"purpose": "entity_discovery", **calls["entity_discovery"]}),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(discovery, RequestObservation)
+    assert discovery.atomic_query == "visible blocks in both groups"
+    assert discovery.max_results == 16
+    point = _resolve_catalog_call(
+        catalog,
+        ToolCall("request_evidence", {"purpose": "point_grounding", **calls["point_grounding"]}),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(point, RequestObservation)
+    assert point.atomic_query == "the small circular control in the center"
+    assert point.subject_ids == ()
+    assert point.candidate_ids == ()
+    disambiguation = _resolve_catalog_call(
+        catalog,
+        ToolCall(
+            "request_evidence",
+            {"purpose": "target_disambiguation", **calls["target_disambiguation"]},
+        ),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(disambiguation, RequestObservation)
+    assert disambiguation.candidate_ids == (bindings[refs[0]], bindings[refs[1]])
+    assert disambiguation.atomic_query == "the candidate with the red outline"
+    assert "structural evidence cannot answer" in spec.description
+    encoded_schema = json.dumps(to_json_compatible(spec.input_schema))
+    assert "entity_query" in encoded_schema
+    assert "target_description" in encoded_schema
+    assert "atomic_query" not in encoded_schema
+    assert (
+        validate_value_issue(
+            {
+                "purpose": "point_grounding",
+                "atomic_query": "How many visible blocks are there?",
+            },
+            spec.input_schema,
+        )
+        is not None
+    )
+
+
 def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> None:
     base = _context()
     delivery = _delivery(base)
@@ -742,7 +863,7 @@ def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> 
             {
                 "purpose": "visual_change",
                 "subject_refs": [refs[0]],
-                "predicate": "appearance changed",
+                "change_predicate": "appearance changed",
             },
             spec.input_schema,
         )

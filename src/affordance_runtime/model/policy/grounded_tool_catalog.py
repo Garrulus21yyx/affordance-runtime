@@ -102,18 +102,11 @@ class _EvidenceBinding:
                     purpose=purpose,
                     tool_call_id=tool_call_id,
                 )
-            subject_ids = self._resolve_refs(arguments.get("subject_refs", ()))
-            candidate_ids = self._resolve_refs(arguments.get("candidate_refs", ()))
-            return RequestObservation(
+            return self._resolve_dynamic(
+                arguments,
                 context_id=context_id,
                 query_id=query_id,
                 purpose=purpose,
-                subject_ids=subject_ids,
-                candidate_ids=candidate_ids,
-                atomic_query=str(arguments.get("atomic_query", "")).strip(),
-                predicate=str(arguments.get("predicate", "")).strip(),
-                max_results=int(arguments.get("max_results", 1)),
-                public_intent=str(arguments.get("public_intent", "")).strip(),
                 tool_call_id=tool_call_id,
             )
         except (KeyError, ValueError) as exc:
@@ -121,6 +114,55 @@ class _EvidenceBinding:
                 GroundedToolResolutionCode.INVALID_ARGUMENTS,
                 str(exc),
             ) from exc
+
+    def _resolve_dynamic(
+        self,
+        arguments: Mapping[str, object],
+        *,
+        context_id: str,
+        query_id: str,
+        purpose: ObservationPurpose,
+        tool_call_id: str,
+    ) -> RequestObservation:
+        subject_ids: tuple[str, ...] = ()
+        candidate_ids: tuple[str, ...] = ()
+        atomic_query = ""
+        predicate = ""
+        max_results = 1
+        if purpose is ObservationPurpose.ENTITY_DISCOVERY:
+            atomic_query = str(arguments["entity_query"]).strip()
+            max_results = int(arguments["max_results"])
+        elif purpose is ObservationPurpose.VISUAL_PROPERTY:
+            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            predicate = str(arguments["predicate"]).strip()
+        elif purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+            candidate_ids = self._resolve_refs(arguments["candidate_refs"])
+            atomic_query = str(arguments["selection_criterion"]).strip()
+        elif purpose is ObservationPurpose.POINT_GROUNDING:
+            atomic_query = str(arguments["target_description"]).strip()
+        elif purpose is ObservationPurpose.TEXT_IN_IMAGE:
+            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            atomic_query = str(arguments["text_query"]).strip()
+        elif purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
+            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            predicate = str(arguments["relation"]).strip()
+        elif purpose is ObservationPurpose.VISUAL_CHANGE:
+            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            predicate = str(arguments["change_predicate"]).strip()
+        else:  # pragma: no cover - guarded by the typed exposure set
+            raise ValueError("purpose is unavailable in dynamic observation schema")
+        return RequestObservation(
+            context_id=context_id,
+            query_id=query_id,
+            purpose=purpose,
+            subject_ids=subject_ids,
+            candidate_ids=candidate_ids,
+            atomic_query=atomic_query,
+            predicate=predicate,
+            max_results=max_results,
+            public_intent=str(arguments.get("public_intent", "")).strip(),
+            tool_call_id=tool_call_id,
+        )
 
     def _resolve_refs(self, raw_refs: object) -> tuple[str, ...]:
         if not isinstance(raw_refs, list | tuple):
@@ -223,11 +265,7 @@ class _ControlBinding:
             return InteractionRequestDraft(
                 context_id,
                 str(arguments["question"]),
-                (
-                    InteractionResponseKind.STRUCTURED_FIELDS
-                    if fields
-                    else InteractionResponseKind.FREE_TEXT
-                ),
+                (InteractionResponseKind.STRUCTURED_FIELDS if fields else InteractionResponseKind.FREE_TEXT),
                 fields,
                 tool_call_id=tool_call_id,
             )
@@ -398,10 +436,7 @@ def compile_grounded_tool_catalog(
     purposes: set[str] = set()
     for capability in context.actor_world.observation_capabilities:
         if _observation_tool_needed(context, capability):
-            purposes.update(
-                set(capability["purposes"])
-                & _purposes_for_exposure_profile(observation_tool_profile)
-            )
+            purposes.update(set(capability["purposes"]) & _purposes_for_exposure_profile(observation_tool_profile))
     if purposes:
         refs = {
             ref: subject
@@ -412,9 +447,7 @@ def compile_grounded_tool_catalog(
         ordered_purposes = tuple(sorted(purposes))
         if observation_tool_profile is ObservationToolExposureProfile.DYNAMIC_VISUAL:
             ordered_purposes = tuple(
-                item
-                for item in ordered_purposes
-                if _dynamic_purpose_applicable(item, context, delivery, refs)
+                item for item in ordered_purposes if _dynamic_purpose_applicable(item, context, delivery, refs)
             )
         if ordered_purposes:
             schema = (
@@ -426,7 +459,13 @@ def compile_grounded_tool_catalog(
                 RegisteredGroundedTool(
                     ToolSpec(
                         GroundedLocalToolName.REQUEST_EVIDENCE.value,
-                        "Request missing current-world evidence; Runtime chooses how to obtain it.",
+                        (
+                            "Request missing current-world evidence; Runtime chooses how to obtain it."
+                            if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
+                            else "Acquire missing read-only visual evidence for the next decision. "
+                            "Use only when current structural evidence cannot answer the required visual fact; "
+                            "this never performs a GUI action."
+                        ),
                         schema,
                     ),
                     _EvidenceBinding(ordered_purposes, subjects, observation_tool_profile),
@@ -444,9 +483,7 @@ def compile_grounded_tool_catalog(
             admitted_routes=frozenset(
                 (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
             ),
-            include_public_intent=(
-                interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
-            ),
+            include_public_intent=(interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED),
         )
     )
 
@@ -571,9 +608,7 @@ def compile_grounded_tool_catalog(
         )
     )
     evidence_bindings = {
-        ref: canonical
-        for ref, canonical in context.private_fact_bindings.items()
-        if ref in delivery.manifest.fact_refs
+        ref: canonical for ref, canonical in context.private_fact_bindings.items() if ref in delivery.manifest.fact_refs
     }
     evidence_bindings.update({item.evidence_ref: item.evidence_ref for item in delivery.media})
     media_refs = frozenset(item.evidence_ref for item in delivery.media)
@@ -947,7 +982,7 @@ def _structured_interaction_request_schema(
                 },
                 ("prompt", "response_kind", "field_drafts"),
             ),
-        ]
+        ],
     }
 
 
@@ -989,10 +1024,7 @@ def _resolve_interaction_draft(
     if not isinstance(raw_fields, list | tuple) or not isinstance(raw_options, list | tuple):
         raise ValueError("interaction draft collections must be arrays")
     fields = tuple(_resolve_field_draft(item) for item in raw_fields)
-    options = tuple(
-        _resolve_option_draft(item, evidence_bindings, media_refs)
-        for item in raw_options
-    )
+    options = tuple(_resolve_option_draft(item, evidence_bindings, media_refs) for item in raw_options)
     return InteractionRequestDraft(
         context_id,
         str(arguments["prompt"]),
@@ -1158,15 +1190,8 @@ def _dynamic_evidence_request_schema(
         "minLength": 1,
         "maxLength": 240,
     }
-    atomic_query = {
+    bounded_text = {
         "type": "string",
-        "description": "one bounded visual question, never the overall task goal",
-        "minLength": 1,
-        "maxLength": 500,
-    }
-    predicate = {
-        "type": "string",
-        "description": "one bounded observable predicate",
         "minLength": 1,
         "maxLength": 500,
     }
@@ -1182,40 +1207,97 @@ def _dynamic_evidence_request_schema(
 
     variants: list[Mapping[str, object]] = []
     for purpose in purposes:
-        purpose_schema = {"type": "string", "enum": [purpose]}
+        purpose_schema: dict[str, object] = {"type": "string", "enum": [purpose]}
         properties: dict[str, object] = {
             "purpose": purpose_schema,
             "public_intent": public_intent,
         }
         required = ["purpose"]
         if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
+            purpose_schema["description"] = "enumerate missing visible entities or regions"
             properties.update(
                 {
-                    "atomic_query": atomic_query,
+                    "entity_query": {
+                        **bounded_text,
+                        "description": (
+                            "visible entity class or regions to enumerate; use when relevant entities are not "
+                            "already represented by current refs; do not ask for a count, choice, or action"
+                        ),
+                    },
                     "max_results": {"type": "integer", "minimum": 1, "maximum": 32},
                 }
             )
-            required.extend(("atomic_query", "max_results"))
+            required.extend(("entity_query", "max_results"))
         elif purpose == ObservationPurpose.VISUAL_PROPERTY.value:
-            properties.update({"subject_refs": ref_array(1), "predicate": predicate})
+            purpose_schema["description"] = "classify one visible property for known subjects"
+            properties.update(
+                {
+                    "subject_refs": ref_array(1),
+                    "predicate": {
+                        **bounded_text,
+                        "description": "one directly visible property to classify for every subject ref",
+                    },
+                }
+            )
             required.extend(("subject_refs", "predicate"))
         elif purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
-            properties.update({"candidate_refs": ref_array(2), "atomic_query": atomic_query})
-            required.extend(("candidate_refs", "atomic_query"))
+            purpose_schema["description"] = "choose among known visually ambiguous candidates"
+            properties.update(
+                {
+                    "candidate_refs": ref_array(2),
+                    "selection_criterion": {
+                        **bounded_text,
+                        "description": "one visible criterion that distinguishes the intended candidate",
+                    },
+                }
+            )
+            required.extend(("candidate_refs", "selection_criterion"))
         elif purpose == ObservationPurpose.POINT_GROUNDING.value:
-            properties["atomic_query"] = atomic_query
-            if refs:
-                properties["candidate_refs"] = ref_array(1)
-            required.append("atomic_query")
+            purpose_schema["description"] = "locate one already-decided visible target"
+            properties["target_description"] = {
+                **bounded_text,
+                "description": (
+                    "one already-decided visible target whose point is missing; not a question, count, text read, "
+                    "property classification, or candidate choice"
+                ),
+            }
+            required.append("target_description")
         elif purpose == ObservationPurpose.TEXT_IN_IMAGE.value:
-            properties.update({"subject_refs": ref_array(1), "atomic_query": atomic_query})
-            required.extend(("subject_refs", "atomic_query"))
+            purpose_schema["description"] = "read text that exists only in pixels"
+            properties.update(
+                {
+                    "subject_refs": ref_array(1),
+                    "text_query": {
+                        **bounded_text,
+                        "description": "specific pixel-only text to read from the supplied subjects",
+                    },
+                }
+            )
+            required.extend(("subject_refs", "text_query"))
         elif purpose == ObservationPurpose.SPATIAL_RELATIONSHIP.value:
-            properties.update({"subject_refs": ref_array(2), "predicate": predicate})
-            required.extend(("subject_refs", "predicate"))
+            purpose_schema["description"] = "classify a visible relation among known subjects"
+            properties.update(
+                {
+                    "subject_refs": ref_array(2),
+                    "relation": {
+                        **bounded_text,
+                        "description": "one visible spatial relation to classify among the supplied subjects",
+                    },
+                }
+            )
+            required.extend(("subject_refs", "relation"))
         elif purpose == ObservationPurpose.VISUAL_CHANGE.value:
-            properties.update({"subject_refs": ref_array(1), "predicate": predicate})
-            required.extend(("subject_refs", "predicate"))
+            purpose_schema["description"] = "compare a known subject across Runtime-owned frames"
+            properties.update(
+                {
+                    "subject_refs": ref_array(1),
+                    "change_predicate": {
+                        **bounded_text,
+                        "description": "one visible change to check across the admitted before/after frames",
+                    },
+                }
+            )
+            required.extend(("subject_refs", "change_predicate"))
         else:  # pragma: no cover - guarded by the typed exposure set
             raise ValueError(f"unsupported dynamic observation purpose: {purpose}")
         variants.append(_object_schema(properties, tuple(required)))
@@ -1249,10 +1331,10 @@ def _dynamic_purpose_applicable(
     del delivery  # refs were already intersected with this exact manifest
     ref_count = len(refs)
     if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
-        return bool(context.actor_world.media) and (
-            any(document.truncated for document in context.actor_world.documents)
-            or any(source.projection_coverage != "complete" for source in context.actor_world.sources)
-        )
+        # The outer capability gate already established that current visual
+        # evidence is missing or incomplete. Structural projection completeness
+        # does not imply that pixel-only entities have been represented.
+        return bool(context.actor_world.media)
     if purpose in {
         ObservationPurpose.VISUAL_PROPERTY.value,
         ObservationPurpose.TEXT_IN_IMAGE.value,
