@@ -50,7 +50,7 @@ def apply_action_evidence_profile(
         if evaluation.observed_change is ObservedChange.CHANGED:
             return (
                 evaluation
-                if _any_supported_structural_change(records, before, after)
+                if _any_supported_structural_change(records, request, before, after)
                 else _unknown(evaluation, "current evidence does not support the claimed local change")
             )
         if evaluation.observed_change is ObservedChange.UNCHANGED:
@@ -63,14 +63,26 @@ def apply_action_evidence_profile(
     return _unknown(evaluation, "action verification method is unsupported")
 
 
-def _any_supported_structural_change(records, before, after) -> bool:
+def _any_supported_structural_change(records, request, before, after) -> bool:
+    target = next(
+        (item for item in after.targets if item.target_id == request.intent.target_id),
+        None,
+    )
+    allow_truncated = bool(target is not None and target.role == "browser_context")
     return any(
         item is not None
         and item.kind == "fact"
         and item.predicate != "focused"
         and evidence_source_is_current(item, after)
         and assurance_satisfies(item.source_assurance, "structural")
-        and _source_coverage_complete(item.source_observation_id, after)
+        and _source_coverage_admits(
+            item.source_observation_id,
+            after,
+            allow_truncated=(
+                allow_truncated
+                and item.subject_id == request.intent.target_id
+            ),
+        )
         and _before_values(before, item.subject_id, item.predicate) != (item.value,)
         for item in records
     )
@@ -117,16 +129,34 @@ def _all_supported_structural_unchanged(records, before, after) -> bool:
 
 
 def _source_coverage_complete(source_observation_id: str, observation) -> bool:
+    return _source_coverage_admits(
+        source_observation_id,
+        observation,
+        allow_truncated=False,
+    )
+
+
+def _source_coverage_admits(
+    source_observation_id: str,
+    observation,
+    *,
+    allow_truncated: bool,
+) -> bool:
     source = next(
         (item for item in observation.sources if item.observation_id == source_observation_id),
         None,
     )
+    admitted = (
+        {CoverageState.COMPLETE, CoverageState.TRUNCATED}
+        if allow_truncated
+        else {CoverageState.COMPLETE}
+    )
     return bool(
         source is not None
-        and source.coverage == CoverageState.COMPLETE
+        and source.coverage in admitted
         and any(
             item.source_observation_id == source.observation_id
-            and item.coverage == CoverageState.COMPLETE
+            and item.coverage in admitted
             for item in observation.source_manifest
         )
     )

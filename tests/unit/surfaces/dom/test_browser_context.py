@@ -11,6 +11,7 @@ from affordance_runtime.evaluation import (
     ObservedChange,
     ProductionActionOutcomeProjector,
 )
+from affordance_runtime.evaluation.action_applicability import apply_action_evidence_profile
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
@@ -142,6 +143,15 @@ def test_sent_unknown_navigation_uses_current_browser_context_on_truncated_page(
         assert outcome.evidence["verification_profile"] == "structural_target_diff_v1"
         assert outcome.evidence_refs
         assert all(WorldEvidenceIndex.from_observation(after).resolve(ref) for ref in outcome.evidence_refs)
+        applicable = apply_action_evidence_profile(
+            outcome,
+            request,
+            before,
+            after,
+            WorldEvidenceIndex.from_observation(after),
+        )
+        assert applicable.observed_change is ObservedChange.CHANGED
+        assert applicable.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
 
     asyncio.run(scenario())
 
