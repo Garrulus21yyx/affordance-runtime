@@ -109,7 +109,10 @@ class GeometricOverlayPage(ReadablePage):
 
 class BlockingOverlayPage(ReadablePage):
     def content(self) -> str:
-        return '<main><button id="shared">Search</button></main>'
+        return (
+            '<main><button id="shared">Search</button>'
+            '<button id="hidden" style="position:absolute;left:-10000px">Hidden background action</button></main>'
+        )
 
     def evaluate(self, expression: str) -> object:
         if "runtimeLayerProbe" in expression:
@@ -123,7 +126,8 @@ class BlockingOverlayPage(ReadablePage):
                     "modal": False,
                     "bbox": [0, 0, 800, 600],
                     "member_keys": [],
-                    "occluded_keys": ["#shared"],
+                    "occluded_keys": ["#shared", "#hidden"],
+                    "blocks_background": True,
                 }
             ]
         return super().evaluate(expression)
@@ -337,22 +341,27 @@ def test_active_overlay_withholds_occluded_control_from_current_action_space() -
         assert acquired.observation is not None
         observed = acquired.observation
         layer = next(target for target in observed.targets if target.state.get("active_layer") is True)
-        blocked = next(target for target in observed.targets if target.label == "Search")
+        blocked_targets = tuple(
+            target for target in observed.targets if target.label in {"Search", "Hidden background action"}
+        )
         space = ActionSpaceBuilder().build(task, observed)
         index = WorldDeliveryIndex.from_observation(observed, space.options)
         layer_region = index.region_for_target(layer.target_id)
 
-        assert blocked.state["interaction_blocked"] is True
-        assert blocked.state["blocked_by_active_layer"] == layer.target_id
+        assert len(blocked_targets) == 2
+        assert all(target.state["interaction_blocked"] is True for target in blocked_targets)
+        assert all(target.state["blocked_by_active_layer"] == layer.target_id for target in blocked_targets)
         assert layer.state["blocks_background"] is True
-        assert layer.state["blocked_control_count"] == 1
-        assert all(option.target_id != blocked.target_id for option in space.options)
+        assert layer.state["blocked_control_count"] == 2
+        assert not {option.target_id for option in space.options}.intersection(
+            target.target_id for target in blocked_targets
+        )
         assert any(option.target_id == "browser-context:current" for option in space.options)
         assert layer_region is not None
         assert layer_region.state_badges == {
             "active_layer": True,
             "blocks_background": True,
-            "blocked_control_count": 1,
+            "blocked_control_count": 2,
             "modal": False,
         }
 

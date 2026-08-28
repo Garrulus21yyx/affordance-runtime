@@ -188,6 +188,7 @@ def test_browser_session_observes_a_visible_geometric_overlay_without_calling_a_
     assert layer.label == "Scan with the app to sign in"
     assert layer.member_keys == ("#save",)
     assert layer.occluded_keys == ("#background",)
+    assert layer.blocks_background is False
 
 
 def test_browser_session_observes_child_frame_layer_in_main_viewport_coordinates() -> None:
@@ -261,6 +262,7 @@ def test_browser_session_geometric_layer_probe_keeps_full_viewport_blocking_laye
             if "runtimeLayerProbe" in expression:
                 assert "ratio > 0.98" not in expression
                 assert "elementFromPoint(pointX, pointY)" in expression
+                assert "if (blocksBackground) return [key]" in expression
                 return [
                     {
                         "layer_id": "layer:0",
@@ -271,6 +273,7 @@ def test_browser_session_geometric_layer_probe_keeps_full_viewport_blocking_laye
                         "modal": False,
                         "bbox": [0, 0, 800, 600],
                         "member_keys": [],
+                        "blocks_background": True,
                     }
                 ]
             return super().evaluate(expression)
@@ -278,6 +281,7 @@ def test_browser_session_geometric_layer_probe_keeps_full_viewport_blocking_laye
     snapshot = BrowserSession(FullViewportOverlayPage()).capture(page_id="settings")
 
     assert snapshot.layers[0].bbox == (0.0, 0.0, 800.0, 600.0)
+    assert snapshot.layers[0].blocks_background is True
 
 
 def test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload() -> None:

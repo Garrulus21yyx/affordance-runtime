@@ -334,7 +334,7 @@ def _project_browser_layers(layers, affordances, action_targets):
                     "active_layer": True,
                     "layer_kind": layer.kind.value,
                     "modal": layer.modal,
-                    "blocks_background": bool(layer.occluded_keys),
+                    "blocks_background": layer.blocks_background,
                     "blocked_control_count": len(layer.occluded_keys),
                     **({"visible_text": layer.text} if layer.text and layer.text != layer.label else {}),
                 },
