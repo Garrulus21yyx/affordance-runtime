@@ -148,6 +148,7 @@ from affordance_runtime.world.observation_outcomes import (
     ObservationObservedItem,
     ObservationQueryDisposition,
     ObservationQueryOutcome,
+    ObservationResultLocator,
     ObservationUnknownItem,
     QueryScopeLocator,
     ResultLocator,
@@ -1682,7 +1683,7 @@ class BrowserGymSurfaceAdapter:
                     if decision.status is VisualCorrespondenceStatus.MATCHED
                     else decision.source_target_id
                 )
-                locator = QueryScopeLocator()
+                locator: ObservationResultLocator = QueryScopeLocator()
                 if subject_id in need.candidate_ids:
                     locator = InputLocator((need.candidate_ids.index(subject_id),))
                 outcomes.append(

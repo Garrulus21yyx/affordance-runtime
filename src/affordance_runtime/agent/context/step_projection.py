@@ -235,7 +235,12 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
         }
     if isinstance(decision, InteractionRequestDraft):
         return {
-            "prompt": decision.prompt,
+            # A draft only survives into recent-step history on rejected
+            # admission. Preserve the legacy AskUser projection keys for
+            # compatibility consumers; admitted requests use the canonical
+            # InteractionRequest branch above.
+            "question": decision.prompt,
+            "requested_fields": tuple(field.label for field in decision.field_drafts),
             "response_kind": decision.response_kind.value,
             "public_intent": _bounded(decision.public_intent),
             "committed": False,
@@ -297,7 +302,7 @@ def _target_snapshot(result: StepResult, target_id: str) -> Mapping[str, object]
     }
 
 
-def _control_tool_name(decision: AgentDecision) -> str:
+def _control_tool_name(decision: AgentDecision | InteractionRequest) -> str:
     if isinstance(decision, LocalToolResult):
         return decision.tool_name
     return decision.kind.value

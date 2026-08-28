@@ -319,3 +319,12 @@ def test_non_action_turn_projection_has_bounded_semantic_summary(decision, expec
     representation = repr(summary)
     assert "context:1" not in representation
     assert "selector" not in representation
+
+
+def test_rejected_interaction_draft_preserves_ask_user_history_projection() -> None:
+    summary = project_decision_summary(AskUser("context:1", "Which account?", ("account",)))
+
+    assert summary["question"] == "Which account?"
+    assert summary["requested_fields"] == ("account",)
+    assert summary["response_kind"] == "structured_fields"
+    assert summary["committed"] is False

@@ -168,12 +168,13 @@ _HISTORY_COMPACTION_INSTRUCTIONS = (
 )
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
+    from pydantic_ai.models import Model
     from pydantic_ai_harness.step_persistence import StepStore
 
 
 @dataclass(frozen=True)
 class ConfiguredPydanticAIModel:
-    model: object
+    model: Model | str
     provider_id: str
     model_id: str
     endpoint_host: str

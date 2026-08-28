@@ -154,8 +154,6 @@ class BoundedConversation:
             )
         else:
             return
-        if self._turns and self._turns[-1].role == turn.role and self._turns[-1].text == turn.text:
-            return
         self.append(turn)
 
     def has_revision_context(self, command_id: str) -> bool:

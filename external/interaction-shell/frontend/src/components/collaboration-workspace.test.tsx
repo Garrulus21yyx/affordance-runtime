@@ -67,6 +67,60 @@ describe("generic collaboration components", () => {
     });
   });
 
+  it("omits untouched optional fields without inventing empty, zero, or false values", () => {
+    const respond = vi.fn(async () => null);
+    render(<InteractionRequestPanel request={{
+      request_id: "request-fields-omitted",
+      prompt: "可选补充信息",
+      response_kind: "structured_fields",
+      public_intent: "我会使用你明确提供的信息。",
+      fields: [
+        { field_id: "optional-text", kind: "text", label: "备注", description: "", required: false },
+        { field_id: "optional-integer", kind: "integer", label: "数量", description: "", required: false },
+        { field_id: "optional-decimal", kind: "decimal", label: "预算", description: "", required: false },
+        { field_id: "optional-boolean", kind: "boolean", label: "允许替代", description: "", required: false },
+        { field_id: "optional-date", kind: "date", label: "日期", description: "", required: false },
+      ],
+      options: [],
+    }} active respond={respond} />);
+
+    fireEvent.submit(screen.getByRole("button", { name: "提交信息" }).closest("form")!);
+
+    expect(respond).toHaveBeenCalledWith({
+      kind: "structured_fields",
+      request_id: "request-fields-omitted",
+      values: [],
+    });
+  });
+
+  it("preserves explicit zero and false structured-field answers", () => {
+    const respond = vi.fn(async () => null);
+    render(<InteractionRequestPanel request={{
+      request_id: "request-fields-explicit",
+      prompt: "补充信息",
+      response_kind: "structured_fields",
+      public_intent: "我会保留你的精确回答。",
+      fields: [
+        { field_id: "integer", kind: "integer", label: "数量", description: "", required: false },
+        { field_id: "boolean", kind: "boolean", label: "允许替代", description: "", required: false },
+      ],
+      options: [],
+    }} active respond={respond} />);
+    fireEvent.change(screen.getByLabelText("数量"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("允许替代"), { target: { value: "false" } });
+
+    fireEvent.submit(screen.getByRole("button", { name: "提交信息" }).closest("form")!);
+
+    expect(respond).toHaveBeenCalledWith({
+      kind: "structured_fields",
+      request_id: "request-fields-explicit",
+      values: [
+        { kind: "integer", field_id: "integer", integer: 0 },
+        { kind: "boolean", field_id: "boolean", boolean: false },
+      ],
+    });
+  });
+
   it("renders deterministic revision differences and generic artifacts", () => {
     render(<>
       <RevisionDiff block={{

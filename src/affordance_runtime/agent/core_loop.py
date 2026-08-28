@@ -1935,20 +1935,18 @@ class CoreAgentLoop:
                 and cancelled_post.observation is not None
                 else state.current_world
             )
-            transition_fields = {}
+            transition_delta: PublicWorldDelta | None = None
+            transition_before: CanonicalPublicWorldProjection | None = None
+            transition_after: CanonicalPublicWorldProjection | None = None
+            transition_index: WorldDeliveryIndex | None = None
             if after.observation_id != state.current_world.observation_id:
-                delta, after_projection, after_index = self._canonical_transition_for(
+                transition_delta, transition_after, transition_index = self._canonical_transition_for(
                     task,
                     state.current_world,
                     after,
                     previous_index=state.delivery_index,
                 )
-                transition_fields = {
-                    "public_world_delta": delta,
-                    "before_public_world": state.canonical_world,
-                    "after_public_world": after_projection,
-                    "after_delivery_index": after_index,
-                }
+                transition_before = state.canonical_world
             return StepResult(
                 decision,
                 state.current_world,
@@ -1961,7 +1959,10 @@ class CoreAgentLoop:
                     completion=ExecutionCompletion.CANCELLED,
                 ),
                 feedback="action_execution_cancelled",
-                **transition_fields,
+                public_world_delta=transition_delta,
+                before_public_world=transition_before,
+                after_public_world=transition_after,
+                after_delivery_index=transition_index,
             )
         if (
             execution.result.dispatch_status is DispatchStatus.NOT_SENT

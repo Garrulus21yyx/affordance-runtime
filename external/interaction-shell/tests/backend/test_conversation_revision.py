@@ -143,3 +143,29 @@ def test_feed_replay_is_idempotent_and_only_language_blocks_enter_revision_conte
             event_cursor=2,
             blocks=(conflicting,),
         )
+
+
+@given(st.text(min_size=1, max_size=80))
+def test_distinct_feed_identities_preserve_equal_language_turns(content: str) -> None:
+    conversation = BoundedConversation()
+    occurred_at = datetime.now(UTC)
+    blocks = tuple(
+        UserTurnBlock(
+            kind="user_turn",
+            block_id=f"feed:epoch:1:{index}",
+            occurred_at=occurred_at,
+            content=content,
+        )
+        for index in range(2)
+    )
+
+    assert conversation.ingest_feed(
+        event_epoch="event-epoch-0001",
+        event_cursor=1,
+        blocks=blocks,
+    )
+
+    assert tuple(turn.turn_id for turn in conversation.projection().turns) == tuple(
+        block.block_id for block in blocks
+    )
+    assert tuple(turn.text for turn in conversation.projection().turns) == (content, content)

@@ -112,6 +112,7 @@ class PydanticAIVisualInference:
         async def invoke() -> VisualOutputT:
             from pydantic_ai import Agent, BinaryContent, PromptedOutput
             from pydantic_ai.exceptions import UnexpectedModelBehavior
+            from pydantic_ai.settings import ModelSettings
 
             user_content: list[object] = []
             for item in content:
@@ -121,16 +122,17 @@ class PydanticAIVisualInference:
                     user_content.append(BinaryContent(data=item.data, media_type="image/png"))
                 else:
                     user_content.append(item)
+            model_settings: ModelSettings = {
+                "temperature": 0.0,
+                "max_tokens": max_tokens,
+                "timeout": self.timeout_s,
+            }
             agent = Agent(
                 self.configured.model,
                 output_type=PromptedOutput(output_type),
                 system_prompt=system_prompt,
                 retries=retries,
-                model_settings={
-                    "temperature": 0.0,
-                    "max_tokens": max_tokens,
-                    "timeout": self.timeout_s,
-                },
+                model_settings=model_settings,
                 name="visual_evidence_provider",
             )
             try:

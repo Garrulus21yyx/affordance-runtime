@@ -139,8 +139,7 @@ body { font-family: "IBM Plex Sans Variable", "PingFang SC", sans-serif; }
 .structured-fields label > span { font-size: 9px; font-weight: 650; }
 .structured-fields label > span b { margin-left: 6px; color: var(--signal-red); font-size: 7px; }
 .structured-fields label small { color: var(--quiet); font-size: 8px; line-height: 1.45; }
-.structured-fields input { min-height: 36px; padding: 0 9px; font-size: 10px; }
-.structured-fields input[type="checkbox"] { width: 22px; min-height: 22px; }
+.structured-fields input, .structured-fields select { min-height: 36px; padding: 0 9px; font-size: 10px; }
 .structured-fields > button { align-self: end; padding: 0 13px; }
 
 .revision-diff dl { display: grid; gap: 6px; margin: 13px 0 0 42px; }

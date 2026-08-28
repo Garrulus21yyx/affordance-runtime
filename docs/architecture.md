@@ -2123,3 +2123,46 @@ This cutover is implementation-complete only when all of the following agree:
 These gates and the later Task27 run2, Task266 run37, and Task7 run2 live witnesses prove the bounded implementation
 paths they exercise. They do not establish breadth or repeated-run stability across the broader held-out benchmark
 campaign.
+
+## 2026-08-28 — Supervised GUI collaboration and visual evidence
+
+The product Shell now composes a general supervised GUI Agent workspace; shopping remains an acceptance scenario, not
+a production protocol. The control architecture is unchanged: one `CoreAgentLoop` owns orchestration, one
+ActionPolicy selects `SelectAction | RequestObservation | InteractionRequestDraft | FinalResponse | Wait | Abort`,
+and only fresh `WorldObservation`, the current Catalog/Binder/Executor path, and the native evaluator authorize GUI
+effects or completion. VLM roles never select GUI actions or declare task completion.
+
+Model-visible visual acquisition remains one dynamically compiled public tool named `request_evidence`. The
+`GroundedToolCatalog` intersects the frozen exposure profile, the fresh Surface capability offer, the current World,
+and the exact delivery manifest before publishing the applicable closed purpose variants. Advertising a purpose does
+not call a provider. Catalog binding validates the frozen call; the acquisition/Surface owner revalidates live
+capability, frame lineage, and currentness before activating a private visual port. Unsupported, stale, ambiguous,
+conflicting, or unknown evidence fails closed and cannot reach GUI dispatch. `compatibility.v1` retains the prior
+model-visible contract; `dynamic-visual.v1` enables the seven-purpose batch contract without adding a planner or a
+second tool registry.
+
+All model-backed visual roles—region, point, candidate disambiguation, predicate, OCR, spatial relationship, and
+visual change—share the existing PydanticAI provider boundary. Their inputs remain atomic typed queries and one
+immutable `CaptureFrame`. DeepSeek's
+[official vision guide](https://api-docs.deepseek.com/zh-cn/guides/vision/) identifies
+`deepseek-v4-flash-vision-exp`, OpenAI-compatible content blocks, and user-message-only image input; DeepSeek, Zhipu,
+or Gemini is selected only by provider configuration. The grouped browser Surface owns one physical reset/capture and
+projects structural and visual evidence from the same screenshot digest, viewport, page generation, and episode
+lineage.
+
+User interaction follows draft → Runtime admission → typed response. Runtime assigns request/option/field identities,
+validates evidence/currentness, and keeps the sole pending interaction. `PublicArtifact` is evaluator-confirmed
+presentation sidecar data; it never changes the native final-response bytes or evaluator order. PublicSession emits a
+closed, identity-stable feed-source algebra from admitted commands, committed receipts, evidence, confirmation, and
+terminal facts. The Shell stores only a bounded, replay-deduplicated presentation projection. It cannot restore or
+modify TaskGoal, RunStatus, ControlOwner, action receipts, or evaluator outcomes.
+
+The React workspace renders `Sessions | Collaboration feed | Live surface` from generated v4 contracts. Command
+legality comes only from current command offers; the pure view model exhaustively projects the run-status/control-owner
+product and every feed variant. Raw provider, token, trace, and JSON data remains inside Labs. There are no
+`ShoppingTask`, `ProductCard`, site-specific visual prompts, or benchmark-case branches in this feature.
+
+Provider-free implementation and live benchmark closure are deliberately separate. The feature series beginning at
+`71245cc9` implements the bounded contract and preserves the DOM-only/default compatibility path; no live benchmark was
+launched. A paired live baseline/candidate run still requires explicit user authorization before any benchmark
+non-regression or capability-improvement claim.

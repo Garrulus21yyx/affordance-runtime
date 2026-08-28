@@ -1851,3 +1851,46 @@ permits describing the exercised thin result, bounded recapture, stable-navigati
 history-compaction paths as verified. It does not permit describing the whole GUI agent or benchmark campaign as
 stable across untouched cases. That status changes only after the declared held-out cohort passes without
 case-specific production branches.
+
+## 2026-08-28 — Supervised GUI Agent UI provider-free checkpoint
+
+The feature branch `codex/supervised-gui-agent-ui` adds the general visual-evidence, interaction, artifact, feed, and
+collaboration-UI contracts in the commit series beginning at `71245cc9`. It does not add a VLM planner, chat planner,
+benchmark-specific production branch, or second execution path. The public observation tool keeps its existing name
+`request_evidence`; `compatibility.v1` preserves the old schema/offer behavior, while `dynamic-visual.v1` exposes only
+the closed variants supported by the fresh Surface offer and current delivery manifest. Provider availability and
+tool advertisement both have zero visual calls; a call occurs only after the single ActionPolicy selects an admitted
+request and acquisition revalidates live currentness and frame lineage.
+
+The default product composition remains DOM-only when no visual profile is configured. The configured visual path
+uses one grouped browser session and one immutable frame owner, while every model-backed visual role uses the same
+PydanticAI provider boundary. The local ignored `.env` selects DeepSeek
+`deepseek-v4-flash-vision-exp`; credentials and provider internals are absent from committed artifacts and the ordinary
+Shell feed.
+
+Provider-free verification recorded for this checkpoint:
+
+- feature-selected Python tests: `284 passed, 1 skipped`; the skip is the optional `webarena_verified` dependency,
+  and the legacy rejected-`AskUser` history projection is repaired at its step-summary owner;
+- full repository provider-free suite against the exact staged tree: `1987 passed, 19 skipped, 1 warning`;
+- complete external Shell backend and isolation suites: `104 passed`;
+- exact staged frontend tree: `39 passed`, TypeScript and ESLint green, production build green;
+- canonical full-source mypy comparison: baseline `417 errors in 38 files / 311 source files`, staged feature
+  `398 errors in 37 files / 319 source files`, with zero changed source file increasing its baseline error count;
+- generated OpenAPI/TypeScript/Valibot regeneration: zero diff;
+- Playwright contract flow: start → answer → confirmation → completion → Labs, `1 passed`;
+- separate 1728×1024 demo-browser inspection: current goal and Runtime question projected into the collaboration feed,
+  generic Live surface present, zero browser-console errors.
+
+A fresh-context independent review first found two Shell projection defects: equal text from distinct feed identities
+was collapsed, and untouched optional structured fields were materialized as empty/zero/false values. The owning
+conversation projection now admits language turns only by source identity; the form projection omits untouched values
+and uses a three-state boolean input so explicit `false` remains distinct from omission. Identity, omission, explicit
+zero, and explicit false regressions are included in the counts above. The review found no remaining authority or
+contract gap after these repairs.
+
+These results support only a provider-free implementation statement. They do not prove that MiniWoB, WebArena,
+ScreenSpot, or the shopping flagship improved or remained statistically unchanged under live providers. No live
+benchmark command was run in this work. That claim requires separately authorized paired baseline/candidate runs with
+the frozen runner profile, resolved configuration/tree attestation, compatibility tool-schema parity, and persisted
+per-case evidence described in `docs/supervised-gui-agent-ui-completion-plan.md`.

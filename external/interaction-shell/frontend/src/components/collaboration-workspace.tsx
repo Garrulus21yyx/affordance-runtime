@@ -204,19 +204,24 @@ export function OptionSet({
   );
 }
 
-function fieldValue(field: InteractionRequest["fields"][number], data: FormData): InteractionFieldValue {
+function fieldValue(
+  field: InteractionRequest["fields"][number],
+  data: FormData,
+): InteractionFieldValue | undefined {
   const raw = data.get(field.field_id);
+  if (raw === null || raw === "") return undefined;
   switch (field.kind) {
     case "text":
-      return { kind: "text", field_id: field.field_id, text: String(raw ?? "") };
+      return { kind: "text", field_id: field.field_id, text: String(raw) };
     case "integer":
-      return { kind: "integer", field_id: field.field_id, integer: Number(raw ?? 0) };
+      return { kind: "integer", field_id: field.field_id, integer: Number(raw) };
     case "decimal":
-      return { kind: "decimal", field_id: field.field_id, decimal_string: String(raw ?? "") };
+      return { kind: "decimal", field_id: field.field_id, decimal_string: String(raw) };
     case "boolean":
-      return { kind: "boolean", field_id: field.field_id, boolean: raw === "on" };
+      if (raw !== "true" && raw !== "false") return undefined;
+      return { kind: "boolean", field_id: field.field_id, boolean: raw === "true" };
     case "date":
-      return { kind: "date", field_id: field.field_id, iso_date: String(raw ?? "") };
+      return { kind: "date", field_id: field.field_id, iso_date: String(raw) };
     default:
       return assertNever(field.kind);
   }
@@ -238,7 +243,10 @@ function StructuredFields({
     void respond({
       kind: "structured_fields",
       request_id: request.request_id,
-      values: request.fields.map((field) => fieldValue(field, data)),
+      values: request.fields.flatMap((field) => {
+        const value = fieldValue(field, data);
+        return value === undefined ? [] : [value];
+      }),
     });
   };
   return (
@@ -248,7 +256,16 @@ function StructuredFields({
           <span>{field.label}{field.required && <b>必填</b>}</span>
           {field.description && <small>{field.description}</small>}
           {field.kind === "boolean"
-            ? <input name={field.field_id} type="checkbox" disabled={!active} />
+            ? <select
+                name={field.field_id}
+                defaultValue=""
+                required={field.required}
+                disabled={!active}
+              >
+                <option value="">{field.required ? "请选择" : "未填写"}</option>
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
             : <input
                 name={field.field_id}
                 type={field.kind === "date" ? "date" : field.kind === "text" ? "text" : "number"}
