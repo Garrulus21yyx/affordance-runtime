@@ -1301,7 +1301,7 @@ def test_structured_profile_adds_sidecars_without_changing_compatibility_schema(
     assert "public_intent" in structured_activate.input_schema["properties"]
 
 
-def test_structured_profile_closes_empty_evidence_ref_domain_without_empty_enum() -> None:
+def test_structured_profile_omits_empty_evidence_ref_domain_and_runtime_defaults_it() -> None:
     context = replace(_context(), private_fact_bindings={})
     delivery = _delivery(context)
     catalog = compile_grounded_tool_catalog(
@@ -1314,11 +1314,13 @@ def test_structured_profile_closes_empty_evidence_ref_domain_without_empty_enum(
 
     final = next(item for item in catalog.specs if item.name == "submit_final_response")
     artifact = final.input_schema["properties"]["artifact"]
-    top_refs = artifact["properties"]["evidence_refs"]
-    item_refs = artifact["properties"]["items"]["items"]["properties"]["evidence_refs"]
-    assert top_refs["maxItems"] == item_refs["maxItems"] == 0
-    assert "enum" not in top_refs["items"]
-    assert "enum" not in item_refs["items"]
+    assert "evidence_refs" not in artifact["properties"]
+    assert "evidence_refs" not in artifact["properties"]["items"]["items"]["properties"]
+    ask = next(item for item in catalog.specs if item.name == "ask_user")
+    for variant in ask.input_schema["oneOf"]:
+        option_drafts = variant["properties"].get("option_drafts")
+        if option_drafts is not None:
+            assert "evidence_refs" not in option_drafts["items"]["properties"]
     outcome = _resolve_catalog_call(
         catalog,
         ToolCall(
@@ -1327,8 +1329,7 @@ def test_structured_profile_closes_empty_evidence_ref_domain_without_empty_enum(
                 "content": "Done.",
                 "artifact": {
                     "title": "Result",
-                    "items": [{"title": "Item", "evidence_refs": []}],
-                    "evidence_refs": [],
+                    "items": [{"title": "Item"}],
                 },
             },
             "call:empty-evidence-artifact",

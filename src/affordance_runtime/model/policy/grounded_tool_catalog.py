@@ -857,12 +857,11 @@ def _attributes_schema() -> Mapping[str, object]:
 
 
 def _evidence_refs_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
-    item_schema: dict[str, object] = {"type": "string", "maxLength": 512}
-    if evidence_refs:
-        item_schema["enum"] = list(evidence_refs)
+    if not evidence_refs:
+        raise ValueError("evidence ref schema requires a non-empty current domain")
     return {
         "type": "array",
-        "items": item_schema,
+        "items": {"type": "string", "enum": list(evidence_refs)},
         "maxItems": min(32, len(evidence_refs)),
     }
 
@@ -875,13 +874,14 @@ def _option_draft_schema(
         "title": {"type": "string", "minLength": 1, "maxLength": 240},
         "description": {"type": "string", "maxLength": 1000},
         "attributes": _attributes_schema(),
-        "evidence_refs": _evidence_refs_schema(evidence_refs),
         "uncertainties": {
             "type": "array",
             "items": {"type": "string", "minLength": 1, "maxLength": 500},
             "maxItems": 32,
         },
     }
+    if evidence_refs:
+        properties["evidence_refs"] = _evidence_refs_schema(evidence_refs)
     if media_refs:
         properties["media_ref"] = {"type": "string", "enum": list(media_refs)}
     return _object_schema(properties, ("title",))
@@ -951,22 +951,26 @@ def _structured_interaction_request_schema(
 
 
 def _artifact_draft_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
+    item_properties: dict[str, object] = {
+        "title": {"type": "string", "minLength": 1, "maxLength": 240},
+        "summary": {"type": "string", "maxLength": 1000},
+        "attributes": _attributes_schema(),
+    }
+    if evidence_refs:
+        item_properties["evidence_refs"] = _evidence_refs_schema(evidence_refs)
     item = _object_schema(
-        {
-            "title": {"type": "string", "minLength": 1, "maxLength": 240},
-            "summary": {"type": "string", "maxLength": 1000},
-            "attributes": _attributes_schema(),
-            "evidence_refs": _evidence_refs_schema(evidence_refs),
-        },
+        item_properties,
         ("title",),
     )
+    artifact_properties: dict[str, object] = {
+        "title": {"type": "string", "minLength": 1, "maxLength": 240},
+        "summary": {"type": "string", "maxLength": 2000},
+        "items": {"type": "array", "items": item, "maxItems": 32},
+    }
+    if evidence_refs:
+        artifact_properties["evidence_refs"] = _evidence_refs_schema(evidence_refs)
     return _object_schema(
-        {
-            "title": {"type": "string", "minLength": 1, "maxLength": 240},
-            "summary": {"type": "string", "maxLength": 2000},
-            "items": {"type": "array", "items": item, "maxItems": 32},
-            "evidence_refs": _evidence_refs_schema(evidence_refs),
-        },
+        artifact_properties,
         ("title",),
     )
 
