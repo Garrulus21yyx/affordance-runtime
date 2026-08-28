@@ -78,7 +78,14 @@ def test_trace_segments_follow_refreshed_action_to_sent_receipt_and_fresh_confir
 
     def action_step(sequence: int, action_id: str, status: str) -> dict[str, object]:
         receipt = (
-            {"receipts": [{"result": {"dispatch_status": status}}]}
+            {
+                "receipts": [
+                    {
+                        "result": {"dispatch_status": status},
+                        "after_observation_id": "after-current",
+                    }
+                ]
+            }
             if status == "sent"
             else {"receipts": [], "terminal_failure": {"dispatch_status": status}}
         )
@@ -99,18 +106,16 @@ def test_trace_segments_follow_refreshed_action_to_sent_receipt_and_fresh_confir
         action_step(4, "current-action", "sent"),
         {
             "sequence": 5,
-            "event": "model_turn",
-            "outcome": "read_region",
-            "decision": {
-                "result": {
-                    "items": [
-                        {
-                            "target_ref": "E4",
-                            "label": "Selected",
-                            "state": {"semantic_scope_label": "Field jacket"},
-                        }
-                    ]
-                }
+            "event": "observation",
+            "observation": {
+                "observation_id": "after-current",
+                "targets": [
+                    {
+                        "target_ref": "E4",
+                        "label": "Selected",
+                        "state": {"semantic_scope_label": "Field jacket"},
+                    }
+                ],
             },
         },
     )
@@ -120,6 +125,7 @@ def test_trace_segments_follow_refreshed_action_to_sent_receipt_and_fresh_confir
     assert segments["selected_action"]["action_id"] == "current-action"
     assert segments["selected_action"]["dispatch_statuses"] == ["not_sent", "sent"]
     assert segments["selection_confirmation"] == {
+        "observation_id": "after-current",
         "target_ref": "E4",
         "label": "Selected",
         "semantic_scope_label": "Field jacket",

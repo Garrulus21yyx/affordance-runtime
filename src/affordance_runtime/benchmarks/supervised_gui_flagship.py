@@ -211,6 +211,7 @@ def _trace_segments(
         )
         action_result = action_step.get("result") if isinstance(action_step, Mapping) else None
         attempt_dispatches: list[str] = []
+        after_observation_ids: list[str] = []
         if isinstance(action_result, Mapping):
             receipts = action_result.get("execution_receipts")
             if isinstance(receipts, Mapping):
@@ -219,6 +220,9 @@ def _trace_segments(
                     receipt_result = receipt.get("result") if isinstance(receipt, Mapping) else None
                     if isinstance(receipt_result, Mapping):
                         attempt_dispatches.append(str(receipt_result.get("dispatch_status", "")))
+                    after_id = receipt.get("after_observation_id") if isinstance(receipt, Mapping) else None
+                    if isinstance(after_id, str) and after_id:
+                        after_observation_ids.append(after_id)
             terminal = receipts.get("terminal_failure") if isinstance(receipts, Mapping) else None
             if isinstance(terminal, Mapping):
                 attempt_dispatches.append(str(terminal.get("dispatch_status", "")))
@@ -227,6 +231,7 @@ def _trace_segments(
             "action_id": action_id,
             "grounding": action_turn.get("selected_grounding"),
             "dispatch_statuses": attempt_dispatches,
+            "after_observation_ids": after_observation_ids,
             "feedback": action_result.get("feedback", "") if isinstance(action_result, Mapping) else "",
         })
     successful_attempt: dict[str, object] | None = None
@@ -238,13 +243,22 @@ def _trace_segments(
     if successful_attempt is None and attempts:
         successful_attempt = attempts[-1]
 
+    successful_after_ids = (
+        successful_attempt.get("after_observation_ids") if successful_attempt else None
+    )
+    current_after_ids = (
+        {item for item in successful_after_ids if isinstance(item, str)}
+        if isinstance(successful_after_ids, list | tuple)
+        else set()
+    )
     selection_confirmation: dict[str, object] | None = None
-    for event in turns:
-        if event.get("outcome") != "read_region":
+    for event in events:
+        if event.get("event") != "observation":
             continue
-        decision = event.get("decision")
-        result = decision.get("result") if isinstance(decision, Mapping) else None
-        items = result.get("items") if isinstance(result, Mapping) else None
+        observation = event.get("observation")
+        if not isinstance(observation, Mapping) or observation.get("observation_id") not in current_after_ids:
+            continue
+        items = observation.get("targets")
         for item in items if isinstance(items, list | tuple) else ():
             if not isinstance(item, Mapping):
                 continue
@@ -256,6 +270,7 @@ def _trace_segments(
                 == choice_title.strip().casefold()
             ):
                 selection_confirmation = {
+                    "observation_id": observation.get("observation_id", ""),
                     "target_ref": item.get("target_ref", ""),
                     "label": item.get("label", ""),
                     "semantic_scope_label": state.get("semantic_scope_label", ""),
