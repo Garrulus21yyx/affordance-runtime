@@ -48,6 +48,9 @@ def test_case_result_has_one_metric_authority() -> None:
         "seed",
         "manifest_digest",
         "harness_schema_version",
+        "run_id",
+        "run_attempt_id",
+        "control_termination_owner",
     }
 
 

@@ -37,10 +37,13 @@ from tests.integration.agent.test_core_loop import (
 
 
 def test_langfuse_names_history_compaction_attempt_as_its_own_role() -> None:
-    assert _langfuse_generation_name(
-        {},
-        {"role": "history_compactor"},
-    ) == "history-compaction-generation"
+    assert (
+        _langfuse_generation_name(
+            {},
+            {"role": "history_compactor"},
+        )
+        == "history-compaction-generation"
+    )
     assert _langfuse_generation_name({}, {"role": "action_policy"}) == "action-policy-generation"
 
 
@@ -60,6 +63,25 @@ def test_run_finished_is_local_only_and_never_offers_to_queued_viewer(tmp_path) 
     assert viewer.calls == 0
     assert recorder.events[-1]["event"] == "run_finished"
     assert json.loads(recorder.path.read_text().splitlines()[-1])["event"] == "run_finished"
+
+
+def test_analysis_identity_is_immutable_trace_join_metadata(tmp_path) -> None:
+    identity = {
+        "run_id": "suite:profile:configuration",
+        "run_attempt_id": "attempt:" + "a" * 32,
+        "case_id": "case-1",
+    }
+    recorder = RunTraceRecorder(tmp_path, analysis_identity=identity)
+    identity["case_id"] = "mutated"
+
+    recorder.case_lifecycle_phase("CASE_STARTED")
+
+    persisted = json.loads(recorder.path.read_text().splitlines()[0])
+    assert persisted["analysis_identity"] == {
+        "run_id": "suite:profile:configuration",
+        "run_attempt_id": "attempt:" + "a" * 32,
+        "case_id": "case-1",
+    }
 
 
 def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -> None:
@@ -132,9 +154,9 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
         assert "policy_observation" not in step["result"]
         assert "policy_target_refs" not in step["result"]
         assert step["result"]["execution_receipts"] is not None
-        transition = step["result"]["execution_receipts"]["receipts"][0]["result"][
-            "adapter_evidence"
-        ]["browsergym_transition"]
+        transition = step["result"]["execution_receipts"]["receipts"][0]["result"]["adapter_evidence"][
+            "browsergym_transition"
+        ]
         assert transition["navigation_committed"] < transition["post_capture_started"]
         assert transition["before_url"].endswith("/search")
         assert transition["after_url"].endswith("/result")
@@ -151,9 +173,7 @@ def test_core_loop_persists_complete_lineage_and_deduplicated_worlds(tmp_path) -
             "changed_target_count": 1,
             "changed_fact_count": 1,
             "changed_region_keys": step["result"]["public_world_delta"]["changed_region_keys"],
-            "changed_region_total_count": len(
-                step["result"]["public_world_delta"]["changed_region_keys"]
-            ),
+            "changed_region_total_count": len(step["result"]["public_world_delta"]["changed_region_keys"]),
             "changed_regions_truncated": False,
         }
         assert step["result"]["task_evaluation"]["status"] == "complete"
@@ -754,23 +774,31 @@ def test_one_megabyte_trace_event_is_projected_before_viewer_ipc(tmp_path) -> No
         "model_turn",
         model_metadata={"provider_id": "fixture", "model_id": "fixture-model"},
         generation_attempts=[
-                {
-                    "attempt": 1,
-                    "phase": "representation_repair",
-                    "status": "failed",
-                    "transcript": {
-                        "llm.input_messages": [{"role": "user", "content": "x" * 1_000_000}],
-                        "llm.output_messages": [],
-                    },
-                }
-            ],
+            {
+                "attempt": 1,
+                "phase": "representation_repair",
+                "status": "failed",
+                "transcript": {
+                    "llm.input_messages": [{"role": "user", "content": "x" * 1_000_000}],
+                    "llm.output_messages": [],
+                },
+            }
+        ],
     )
 
     assert recorder.path.stat().st_size > 1_000_000
     assert len(captured) == 1
     assert len(json.dumps(captured[0], sort_keys=True).encode()) <= 16_384
     assert captured[0]["event"] == "model_turn"
+    assert captured[0]["model_metadata"] == {
+        "provider_id": "fixture",
+        "model_id": "fixture-model",
+    }
     assert captured[0]["generation_attempts"][0]["phase"] == "representation_repair"
+    assert captured[0]["generation_attempts"][0]["transcript"]["llm.input_messages"][0] == {
+        "role": "user",
+        "content": "x" * 512,
+    }
 
 
 def test_ipc_projection_of_run13_sized_event_is_bounded_and_ref_free() -> None:
@@ -811,8 +839,8 @@ def test_langfuse_v4_session_attributes_cover_root_and_children(tmp_path) -> Non
     exporter = exporter_module.InMemorySpanExporter()
     provider = trace_module.TracerProvider()
     client = langfuse_module.Langfuse(
-        public_key="pk-lf-provider-free",
-        secret_key="sk-lf-provider-free",
+        public_key="pk-lf-session-contract",
+        secret_key="sk-lf-session-contract",
         tracer_provider=provider,
         span_exporter=exporter,
     )
@@ -843,6 +871,97 @@ def test_langfuse_v4_session_attributes_cover_root_and_children(tmp_path) -> Non
 
     spans = exporter.get_finished_spans()
     assert {span.attributes.get("session.id") for span in spans} == {"suite:provider-free"}
+    client.shutdown()
+
+
+def test_langfuse_generation_uses_standard_model_usage_real_duration_and_attempt_tags() -> None:
+    langfuse_module = pytest.importorskip("langfuse")
+    trace_module = pytest.importorskip("opentelemetry.sdk.trace")
+    exporter_module = pytest.importorskip("opentelemetry.sdk.trace.export.in_memory_span_exporter")
+    exporter = exporter_module.InMemorySpanExporter()
+    provider = trace_module.TracerProvider()
+    client = langfuse_module.Langfuse(
+        public_key="pk-lf-provider-free",
+        secret_key="sk-lf-provider-free",
+        tracer_provider=provider,
+        span_exporter=exporter,
+    )
+    attempt_id = "attempt:" + "a" * 32
+    identity = {
+        "run_attempt_id": attempt_id,
+        "suite_id": "suite",
+        "profile_id": "profile",
+        "case_id": "case",
+        "environment": "test",
+        "release": "target-loop-harness.v6",
+    }
+    sink = LangfuseOtelSink(client, session_id=attempt_id, benchmark_managed=True)
+    sink.record(
+        _langfuse_ipc_projection(
+            {
+                "event": "benchmark_case_started",
+                "run_id": "case:local",
+                "sequence": 1,
+                "case_id": "case",
+                "description": "public",
+                "analysis_identity": identity,
+            }
+        )
+    )
+    sink.record(
+        _langfuse_ipc_projection(
+            {
+                "event": "model_turn",
+                "run_id": "case:local",
+                "sequence": 2,
+                "analysis_identity": identity,
+                "model_metadata": {"provider_id": "fixture", "model_id": "fixture-model"},
+                "generation_attempts": [
+                    {
+                        "attempt": 1,
+                        "phase": "ordinary",
+                        "status": "accepted",
+                        "latency_ms": 125.0,
+                        "prompt_tokens": 11,
+                        "completion_tokens": 3,
+                        "total_tokens": 14,
+                        "transcript": {
+                            "llm.input_messages": [{"role": "user", "content": "safe input"}],
+                            "llm.output_messages": [{"role": "assistant", "content": "safe output"}],
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    sink.record(
+        _langfuse_ipc_projection(
+            {
+                "event": "benchmark_case_finished",
+                "run_id": "case:local",
+                "sequence": 3,
+                "case_id": "case",
+                "status": "done",
+                "analysis_identity": identity,
+            }
+        )
+    )
+    sink.flush()
+
+    generation = next(span for span in exporter.get_finished_spans() if span.name == "action-policy-generation")
+    assert (generation.end_time - generation.start_time) / 1_000_000 == pytest.approx(125.0)
+    assert generation.attributes["langfuse.observation.model.name"] == "fixture-model"
+    assert generation.attributes["langfuse.observation.usage_details"] == ('{"input": 11, "output": 3, "total": 14}')
+    assert generation.attributes["langfuse.observation.input"] == (
+        '{"messages": [{"role": "user", "content": "safe input"}]}'
+    )
+    assert generation.attributes["session.id"] == attempt_id
+    assert "run_attempt_id:" + attempt_id in generation.attributes["langfuse.trace.tags"]
+    assert "suite_id:suite" in generation.attributes["langfuse.trace.tags"]
+    assert "profile_id:profile" in generation.attributes["langfuse.trace.tags"]
+    assert generation.attributes["langfuse.observation.metadata.cost_disposition"] == (
+        "langfuse_model_definition_required"
+    )
     client.shutdown()
 
 

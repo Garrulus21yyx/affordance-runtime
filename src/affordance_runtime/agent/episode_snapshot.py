@@ -34,6 +34,7 @@ class EpisodeSnapshot:
     decision_kind_counts: tuple[tuple[str, int], ...] = ()
     latest_control_status: str = ""
     latest_control_reason_code: str = ""
+    latest_control_owner: str = ""
     latest_acquisition_request_kind: str = ""
     latest_attempt_operation: str = ""
     latest_attempt_reason_code: str = ""
@@ -115,6 +116,9 @@ def snapshot_episode(
         latest_control_status=str(control_status or state.status),
         latest_control_reason_code=(
             state.control_termination.kind.value if state.control_termination is not None else ""
+        ),
+        latest_control_owner=(
+            state.control_termination.owner if state.control_termination is not None else ""
         ),
         task_outcome_kind=str(task_outcome.kind) if task_outcome is not None else "",
         task_outcome_code=task_outcome.code if task_outcome is not None else "",

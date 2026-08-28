@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -176,6 +177,16 @@ def test_runner_is_sequential_isolated_and_always_cleans_up(tmp_path) -> None:
     assert [item.case_id for item in result.cases] == ["a", "b"]
     assert (tmp_path / "traces" / "a" / "trace.jsonl").is_file()
     assert (tmp_path / "traces" / "b" / "trace.jsonl").is_file()
+    run_payload = json.loads((tmp_path / "run.json").read_text())
+    case_payload = json.loads((tmp_path / "cases" / "a.json").read_text())
+    analysis_payload = json.loads((tmp_path / "analysis" / "a.json").read_text())
+    attempt_id = run_payload["identity"]["run_attempt_id"]
+    assert attempt_id.startswith("attempt:")
+    assert case_payload["run_attempt_id"] == attempt_id
+    assert analysis_payload["identity"]["run_attempt_id"] == attempt_id
+    assert "control_stall_count" in case_payload["measurements"]
+    assert "state_oscillation_count" in case_payload["measurements"]
+    assert analysis_payload["bad_case"]["applicable"] is True
 
 
 def test_counting_reset_preserves_malformed_return_for_runtime_boundary() -> None:

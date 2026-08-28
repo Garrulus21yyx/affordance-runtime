@@ -21,6 +21,10 @@ from affordance_runtime.agent.observability import (
 from affordance_runtime.agent.run_state import RunState, RunStatus
 from affordance_runtime.app.composition import compose_target_runtime
 from affordance_runtime.benchmarks.target_loop.acceptance import accept_case, accept_suite, safe_rate
+from affordance_runtime.benchmarks.target_loop.analysis import (
+    export_case_analysis,
+    project_case_analysis,
+)
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import (
     BenchmarkCaseResult,
@@ -136,7 +140,7 @@ async def run_suite(
             status_changed=status_changed,
             result_store=store,
             store_initialization_error=store_initialization_error,
-            session_id=identity.run_id,
+            session_id=identity.run_attempt_id,
             run_identity=identity,
         )
         completed.append(result)
@@ -239,6 +243,20 @@ async def _run_case(
             run_id=f"case:{session_id}:{case.case_id}",
             session_id=session_id,
             benchmark_managed=True,
+            analysis_identity={
+                "run_id": run_identity.run_id if run_identity is not None else "",
+                "run_attempt_id": (
+                    run_identity.run_attempt_id if run_identity is not None else session_id
+                ),
+                "suite_id": run_identity.suite_id if run_identity is not None else case.suite_id,
+                "profile_id": run_identity.profile_id if run_identity is not None else "",
+                "case_id": case.case_id,
+                "seed": run_identity.seed if run_identity is not None else case.seed,
+                "git_sha": run_identity.git_sha if run_identity is not None else "",
+                "manifest_digest": run_identity.manifest_digest if run_identity is not None else "",
+                "environment": os.environ.get("LLM_ACTIVE_PROFILE", "local"),
+                "release": run_identity.harness_schema_version if run_identity is not None else "",
+            },
         )
         if trace_dir is not None
         else RunTraceRecorder()
@@ -545,6 +563,8 @@ async def _run_case(
             seed=run_identity.seed,
             manifest_digest=run_identity.manifest_digest,
             harness_schema_version=run_identity.harness_schema_version,
+            run_id=run_identity.run_id,
+            run_attempt_id=run_identity.run_attempt_id,
         )
     report_disposition = ReportDisposition.NOT_ATTEMPTED
     export_disposition = ExportDisposition.NOT_ATTEMPTED
@@ -605,6 +625,8 @@ async def _run_case(
                     seed=run_identity.seed,
                     manifest_digest=run_identity.manifest_digest,
                     harness_schema_version=run_identity.harness_schema_version,
+                    run_id=run_identity.run_id,
+                    run_attempt_id=run_identity.run_attempt_id,
                 )
             if report_failure_code == "json_export_failed":
                 try:
@@ -653,6 +675,13 @@ async def _run_case(
             )
         else:
             final_commit_disposition = FinalCommitDisposition.COMMITTED
+    case_analysis = project_case_analysis(case_result)
+    if trace_dir is not None:
+        try:
+            export_case_analysis(case_analysis, trace_dir)
+        except Exception:
+            # Analysis is fail-open; result JSON/SQLite and trace remain authoritative.
+            pass
     instrumentation.benchmark_case_finished(
         case_id=case.case_id,
         status=body_record.behavior_status,
@@ -660,6 +689,7 @@ async def _run_case(
         report_disposition=report_disposition.value,
         export_disposition=export_disposition.value,
         final_commit_disposition=final_commit_disposition.value,
+        analysis=case_analysis,
     )
     flush = getattr(trace_recorder, "flush_viewer", None)
     if flush is not None:

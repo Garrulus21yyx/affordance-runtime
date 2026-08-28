@@ -1463,6 +1463,7 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert snapshot.no_progress_count == 4
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
         assert snapshot.latest_control_reason_code == "control_stalled"
+        assert snapshot.latest_control_owner == "episode_monitor"
 
     asyncio.run(scenario())
 

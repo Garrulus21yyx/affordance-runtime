@@ -10,6 +10,7 @@ import multiprocessing
 import os
 import queue
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -36,6 +37,7 @@ class RunTraceSink(Protocol):
         report_disposition: str = "not_attempted",
         export_disposition: str = "not_attempted",
         final_commit_disposition: str = "not_attempted",
+        analysis: Mapping[str, object] | None = None,
     ) -> None: ...
 
     def run_start_failed(self, task: object, acquisition: object) -> None: ...
@@ -278,6 +280,7 @@ class RunTraceRecorder:
 
     directory: Path | None = None
     run_id: str = field(default_factory=lambda: f"run:{uuid.uuid4().hex}")
+    analysis_identity: Mapping[str, object] = field(default_factory=dict)
     events: list[dict[str, object]] = field(default_factory=list, init=False)
     errors: list[str] = field(default_factory=list, init=False)
     _sequence: int = field(default=0, init=False, repr=False)
@@ -285,6 +288,7 @@ class RunTraceRecorder:
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        self.analysis_identity = dict(self.analysis_identity)
         if self.directory is not None:
             self.directory = Path(self.directory).resolve()
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -323,6 +327,7 @@ class RunTraceRecorder:
         report_disposition: str = "not_attempted",
         export_disposition: str = "not_attempted",
         final_commit_disposition: str = "not_attempted",
+        analysis: Mapping[str, object] | None = None,
     ) -> None:
         self._emit(
             "benchmark_case_finished",
@@ -332,6 +337,7 @@ class RunTraceRecorder:
             report_disposition=report_disposition,
             export_disposition=export_disposition,
             final_commit_disposition=final_commit_disposition,
+            analysis=_json_value(dict(analysis), None) if analysis is not None else None,
         )
 
     def run_start_failed(self, task: object, acquisition: object) -> None:
@@ -421,9 +427,7 @@ class RunTraceRecorder:
             exception_type=str(getattr(diagnostic, "exception_type", "")),
             safe_message=str(getattr(diagnostic, "safe_message", "")),
             observation_id=str(getattr(diagnostic, "observation_id", "")),
-            native_snapshot_present_fields=tuple(
-                getattr(diagnostic, "native_snapshot_present_fields", ())
-            ),
+            native_snapshot_present_fields=tuple(getattr(diagnostic, "native_snapshot_present_fields", ())),
             diagnostic_ref=str(getattr(diagnostic, "diagnostic_ref", "")),
             traceback_ref=str(getattr(diagnostic, "traceback_ref", "")),
         )
@@ -553,6 +557,11 @@ class RunTraceRecorder:
                     "run_id": self.run_id,
                     "sequence": self._sequence,
                     "event": event_type,
+                    **(
+                        {"analysis_identity": _json_value(self.analysis_identity, None)}
+                        if self.analysis_identity
+                        else {}
+                    ),
                     **payload,
                 }
                 self.events.append(event)
@@ -734,6 +743,7 @@ class LangfuseOtelSink:
     _root_context: Any | None = field(default=None, init=False)
     _attribute_context: Any | None = field(default=None, init=False)
     _ended: bool = field(default=False, init=False)
+    _analysis_identity: dict[str, object] = field(default_factory=dict, init=False)
 
     def record(self, event: Mapping[str, object]) -> None:
         event_type = str(event.get("event", "unknown"))
@@ -792,7 +802,13 @@ class LangfuseOtelSink:
                 transcript = attempt.get("transcript")
                 transcript = transcript if isinstance(transcript, Mapping) else {}
                 metadata = _langfuse_model_metadata(event)
-                with self.client.start_as_current_observation(
+                raw_latency = attempt.get("latency_ms", 0.0)
+                latency_ms = (
+                    max(0.0, float(raw_latency))
+                    if isinstance(raw_latency, int | float) and not isinstance(raw_latency, bool)
+                    else 0.0
+                )
+                generation_context = self.client.start_as_current_observation(
                     name=_langfuse_generation_name(event, attempt),
                     as_type="generation",
                     input=_bounded_remote_projection(
@@ -807,14 +823,15 @@ class LangfuseOtelSink:
                     ),
                     model=str(metadata.get("model_id", "")) or None,
                     model_parameters={
-                        "max_output_tokens": int(attempt.get("max_output_tokens", 0)),
+                        "max_output_tokens": _mapping_nonnegative_int(attempt, "max_output_tokens"),
                         "thinking": str(attempt.get("thinking_effective", "")),
                     },
                     usage_details={
-                        "input": int(attempt.get("prompt_tokens", 0)),
-                        "output": int(attempt.get("completion_tokens", 0)),
-                        "total": int(attempt.get("total_tokens", 0)),
+                        "input": _mapping_nonnegative_int(attempt, "prompt_tokens"),
+                        "output": _mapping_nonnegative_int(attempt, "completion_tokens"),
+                        "total": _mapping_nonnegative_int(attempt, "total_tokens"),
                     },
+                    end_on_exit=False,
                     level="ERROR" if attempt.get("status") == "failed" else None,
                     metadata=_bounded_remote_projection(
                         {
@@ -834,14 +851,30 @@ class LangfuseOtelSink:
                             "prompt_version": metadata.get("prompt_version"),
                             "schema_version": attempt.get("schema_version"),
                             "latency_ms": attempt.get("latency_ms"),
+                            "duration_source": "provider_boundary_latency_ms",
+                            "cost_disposition": _langfuse_cost_disposition(attempt),
+                            "request_admission_estimates": _langfuse_request_estimates(event),
+                            **self._analysis_identity,
                         }
                     ),
-                ):
-                    pass
+                )
+                generation = generation_context.__enter__()
+                try:
+                    end = getattr(generation, "end", None)
+                    if callable(end):
+                        _end_langfuse_generation(generation, latency_ms)
+                finally:
+                    generation_context.__exit__(None, None, None)
 
     def _start_root(self, event: Mapping[str, object]) -> None:
         if self.root is not None:
             return
+        raw_identity = event.get("analysis_identity")
+        self._analysis_identity = (
+            {str(key): _external_projection(value) for key, value in raw_identity.items()}
+            if isinstance(raw_identity, Mapping)
+            else {}
+        )
         self._root_context = self.client.start_as_current_observation(
             name="benchmark-gui-agent-case" if self.benchmark_managed else "run-gui-agent-case",
             as_type="agent",
@@ -855,14 +888,25 @@ class LangfuseOtelSink:
                 if event.get("event") == "benchmark_case_started"
                 else _public_task_projection(event.get("task"))
             ),
-            metadata={"local_run_id": event.get("run_id")},
+            metadata={"local_run_id": event.get("run_id"), **self._analysis_identity},
             end_on_exit=False,
         )
         self.root = self._root_context.__enter__()
-        if self.session_id:
+        if self.session_id or self._analysis_identity:
             from langfuse import propagate_attributes  # type: ignore[import-not-found]
 
-            self._attribute_context = propagate_attributes(session_id=self.session_id)
+            tags = [
+                f"{name}:{self._analysis_identity[name]}"
+                for name in ("suite_id", "profile_id", "case_id", "run_attempt_id")
+                if self._analysis_identity.get(name) not in {None, ""}
+            ]
+            self._attribute_context = propagate_attributes(
+                session_id=self.session_id or str(self._analysis_identity.get("run_attempt_id", "")),
+                metadata=self._analysis_identity or None,
+                version=str(self._analysis_identity.get("release", "")) or None,
+                tags=tags or None,
+                environment=str(self._analysis_identity.get("environment", "")) or None,
+            )
             self._attribute_context.__enter__()
 
     def _finish(self, event: Mapping[str, object], *, error: bool = False) -> None:
@@ -872,6 +916,9 @@ class LangfuseOtelSink:
             output=_langfuse_event_projection(event),
             **({"level": "ERROR"} if error else {}),
         )
+        analysis = event.get("analysis")
+        if isinstance(analysis, Mapping):
+            _score_langfuse_case(self.root, analysis)
         if self._attribute_context is not None:
             self._attribute_context.__exit__(None, None, None)
         self.root.end()
@@ -1136,6 +1183,7 @@ def trace_recorder_from_environment(
     run_id: str | None = None,
     session_id: str = "",
     benchmark_managed: bool = False,
+    analysis_identity: Mapping[str, object] | None = None,
 ) -> RunTraceSink:
     raw_directory = environment.get("AFFORDANCE_TRACE_DIR", "").strip()
     local_directory = directory or (Path(raw_directory) if raw_directory else None)
@@ -1149,18 +1197,35 @@ def trace_recorder_from_environment(
         raise ValueError("Langfuse viewing requires configured SDK credentials")
     if local_directory is None:
         return NullRunTraceSink()
-    recorder_arguments: dict[str, object] = {"directory": local_directory}
-    if run_id:
-        recorder_arguments["run_id"] = run_id
+    identity = dict(analysis_identity or {})
     if not langfuse_enabled:
-        return RunTraceRecorder(**recorder_arguments)
-    return QueuedViewerRunTraceRecorder(
-        **recorder_arguments,
-        viewer_process=LangfuseViewerProcess(
-            _langfuse_client_from_environment,
-            session_id=session_id,
-            benchmark_managed=benchmark_managed,
-        ),
+        return (
+            RunTraceRecorder(
+                directory=local_directory,
+                run_id=run_id,
+                analysis_identity=identity,
+            )
+            if run_id
+            else RunTraceRecorder(directory=local_directory, analysis_identity=identity)
+        )
+    viewer = LangfuseViewerProcess(
+        _langfuse_client_from_environment,
+        session_id=session_id,
+        benchmark_managed=benchmark_managed,
+    )
+    return (
+        QueuedViewerRunTraceRecorder(
+            directory=local_directory,
+            run_id=run_id,
+            analysis_identity=identity,
+            viewer_process=viewer,
+        )
+        if run_id
+        else QueuedViewerRunTraceRecorder(
+            directory=local_directory,
+            analysis_identity=identity,
+            viewer_process=viewer,
+        )
     )
 
 
@@ -1194,11 +1259,7 @@ def _langfuse_generation_name(
     attempt: Mapping[str, object],
 ) -> str:
     del event
-    return (
-        "history-compaction-generation"
-        if attempt.get("role") == "history_compactor"
-        else "action-policy-generation"
-    )
+    return "history-compaction-generation" if attempt.get("role") == "history_compactor" else "action-policy-generation"
 
 
 def _langfuse_generation_attempts(
@@ -1249,6 +1310,7 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             "decision",
             "policy_failure",
             "model_metadata",
+            "tool_catalog",
             "visible_action_count",
             "exception",
         ),
@@ -1286,6 +1348,7 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             "report_disposition",
             "export_disposition",
             "final_commit_disposition",
+            "analysis",
         ),
         "case_lifecycle_phase": ("phase",),
         "finalization_protocol": (
@@ -1341,6 +1404,9 @@ def _langfuse_ipc_projection(event: Mapping[str, object]) -> dict[str, object]:
         **_langfuse_event_projection(event),
         "run_id": str(event.get("run_id", ""))[:240],
     }
+    identity = event.get("analysis_identity")
+    if isinstance(identity, Mapping):
+        projected["analysis_identity"] = _bounded_remote_projection(dict(identity))
     if event.get("event") in {"run_started", "run_start_failed"}:
         projected["task"] = _public_task_projection(event.get("task"))
     metadata = _langfuse_model_metadata(event)
@@ -1392,6 +1458,94 @@ def _langfuse_attempt_projection(
             "llm.output_messages": _external_projection(transcript.get("llm.output_messages", ())),
         }
     return projected
+
+
+def _langfuse_request_estimates(event: Mapping[str, object]) -> dict[str, object]:
+    """Keep capacity estimates visibly separate from standard provider usage."""
+
+    tool_catalog = event.get("tool_catalog")
+    if not isinstance(tool_catalog, Mapping):
+        return {}
+    breakdowns = tool_catalog.get("request_breakdowns")
+    return _bounded_remote_projection(
+        {
+            "estimated_input_tokens": tool_catalog.get("estimated_input_tokens", 0),
+            "output_reserve_tokens": tool_catalog.get("output_reserve_tokens", 0),
+            "complete_request_tokens": tool_catalog.get("complete_request_tokens", 0),
+            "request_breakdowns": breakdowns if isinstance(breakdowns, tuple | list) else (),
+            "billing_semantics": "capacity_estimate_not_provider_usage",
+        }
+    )
+
+
+def _langfuse_cost_disposition(attempt: Mapping[str, object]) -> str:
+    if any(attempt.get(name) is not None for name in ("input_cost", "output_cost", "total_cost")):
+        return "provider_cost_ingested"
+    return "langfuse_model_definition_required"
+
+
+def _mapping_nonnegative_int(value: Mapping[str, object], name: str) -> int:
+    candidate = value.get(name, 0)
+    return max(0, candidate) if type(candidate) is int else 0
+
+
+def _score_langfuse_case(root: object, analysis: Mapping[str, object]) -> None:
+    """Publish bounded owner-produced values as trace scores for dashboards."""
+
+    score = getattr(root, "score_trace", None)
+    if not callable(score):
+        return
+    evaluator = analysis.get("evaluator_truth")
+    if isinstance(evaluator, Mapping):
+        status = evaluator.get("status")
+        if isinstance(status, str) and status:
+            score(
+                name="benchmark_status",
+                value=status,
+                metadata={"authority": "benchmark_evaluator"},
+            )
+    bad_case = analysis.get("bad_case")
+    if isinstance(bad_case, Mapping) and bad_case.get("applicable") is True:
+        category = bad_case.get("category")
+        if isinstance(category, str) and category:
+            score(
+                name="bad_case_category",
+                value=category,
+                metadata={"authority": "benchmark_analysis_projection"},
+            )
+    for family_name in (
+        "provider_usage",
+        "model_timing",
+        "request_admission_estimate",
+        "runtime_mechanical",
+    ):
+        family = analysis.get(family_name)
+        if not isinstance(family, Mapping):
+            continue
+        for name, value in family.items():
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                continue
+            score(
+                name=f"{family_name}.{name}",
+                value=float(value),
+                metadata={
+                    "authority": family_name,
+                    "billing": family_name == "provider_usage",
+                },
+            )
+
+
+def _end_langfuse_generation(generation: object, latency_ms: float) -> None:
+    """Backdate the pinned v4 SDK span from provider-owned duration."""
+
+    end = getattr(generation, "end")
+    end_time_ns = time.time_ns()
+    otel_span = getattr(generation, "_otel_span", None)
+    if otel_span is None or not hasattr(otel_span, "_start_time"):
+        end()
+        return
+    otel_span._start_time = end_time_ns - round(latency_ms * 1_000_000)
+    end(end_time=end_time_ns)
 
 
 def _compact_world_summary(value: object) -> dict[str, object]:
@@ -1562,8 +1716,7 @@ def _step_payload(result: object, directory: Path | None) -> dict[str, object]:
     payload = {
         item.name: _json_value(getattr(result, item.name), directory)
         for item in fields(result)
-        if item.name not in {"before_world", "after_world"}
-        and item.metadata.get("serialize", True)
+        if item.name not in {"before_world", "after_world"} and item.metadata.get("serialize", True)
     }
     delta = getattr(result, "public_world_delta", None)
     if delta is not None:
@@ -1662,13 +1815,18 @@ _REMOTE_PUBLIC_ID_KEYS = frozenset(
         "case_id",
         "checkpoint_id",
         "context_id",
+        "model_id",
         "observation_id",
+        "profile_id",
+        "provider_id",
         "request_id",
         "run_id",
+        "run_attempt_id",
+        "suite_id",
         "task_id",
     }
 )
-_REMOTE_MAX_DEPTH = 6
+_REMOTE_MAX_DEPTH = 12
 _REMOTE_MAX_ITEMS = 40
 _REMOTE_MAX_STRING = 512
 _REMOTE_MAX_BYTES = 16_384

@@ -11,7 +11,16 @@ def test_manifest_digest_and_run_identity_are_stable_and_secret_free() -> None:
     assert identity.git_sha
     assert identity.suite_id == "suite"
     assert identity.runtime == "core"
+    assert identity.run_attempt_id.startswith("attempt:")
     assert "endpoint_url" not in identity.__dict__
+
+
+def test_repeated_configuration_has_stable_run_id_and_unique_attempt_identity() -> None:
+    first = BenchmarkRunIdentity.create("suite", "digest", "deterministic", 7)
+    second = BenchmarkRunIdentity.create("suite", "digest", "deterministic", 7)
+
+    assert first.run_id == second.run_id
+    assert first.run_attempt_id != second.run_attempt_id
 
 
 def test_manifest_digest_covers_auto_confirm() -> None:

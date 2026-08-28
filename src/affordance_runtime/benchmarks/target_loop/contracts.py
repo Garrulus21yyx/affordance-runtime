@@ -7,6 +7,7 @@ import platform
 import re
 import subprocess
 import sys
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -44,7 +45,7 @@ from affordance_runtime.world.environment import WorldEnvironment
 if TYPE_CHECKING:
     from affordance_runtime.benchmarks.target_loop.instrumentation import BenchmarkInstrumentation
 
-CASE_SCHEMA_VERSION = "target-loop-case.v12"
+CASE_SCHEMA_VERSION = "target-loop-case.v13"
 # v10 encoded the removed mission control path. Its files remain raw archival
 # JSON rather than a compatibility surface for the current exact-field decoder.
 SUPPORTED_CASE_SCHEMA_VERSIONS = frozenset(
@@ -398,6 +399,7 @@ class BenchmarkRunIdentity:
     manifest_schema_version: str = "target-loop-manifest.v1"
     harness_schema_version: str = "target-loop-harness.v6"
     runtime: str = "core"
+    run_attempt_id: str = ""
 
     @classmethod
     def create(cls, suite_id: str, digest: str, profile_id: str, seed: int) -> BenchmarkRunIdentity:
@@ -406,8 +408,22 @@ class BenchmarkRunIdentity:
         started = datetime.now(UTC).isoformat()
         run_id = f"{suite_id}:{profile_id}:{sha[:12]}:{digest[:12]}:{seed}"
         return cls(
-            run_id, sha, dirty, suite_id, digest, profile_id, seed, started, sys.version.split()[0], platform.platform()
+            run_id,
+            sha,
+            dirty,
+            suite_id,
+            digest,
+            profile_id,
+            seed,
+            started,
+            sys.version.split()[0],
+            platform.platform(),
+            run_attempt_id=f"attempt:{uuid.uuid4().hex}",
         )
+
+    def __post_init__(self) -> None:
+        if self.run_attempt_id and re.fullmatch(r"attempt:[0-9a-f]{32}", self.run_attempt_id) is None:
+            raise ValueError("benchmark run attempt identity is invalid")
 
 
 @dataclass(frozen=True)
@@ -447,6 +463,9 @@ class BenchmarkCaseResult:
     seed: int = 0
     manifest_digest: str = ""
     harness_schema_version: str = "target-loop-harness.v6"
+    run_id: str = ""
+    run_attempt_id: str = ""
+    control_termination_owner: str = ""
 
     def __post_init__(self) -> None:
         if not self.cleanup_status:
@@ -477,12 +496,19 @@ class BenchmarkCaseResult:
             self.profile_id,
             self.manifest_digest,
             self.harness_schema_version,
+            self.run_id,
+            self.run_attempt_id,
+            self.control_termination_owner,
         )
         if any(
             not isinstance(value, str) or len(value) > 512 or any(ord(character) < 32 for character in value)
             for value in text_fields
         ):
             raise TypeError("benchmark case text fields must be bounded strings")
+        if self.run_attempt_id and re.fullmatch(r"attempt:[0-9a-f]{32}", self.run_attempt_id) is None:
+            raise ValueError("benchmark case run attempt identity is invalid")
+        if self.control_termination_owner not in {"", "core_transition", "episode_monitor"}:
+            raise ValueError("benchmark control termination owner is outside the closed vocabulary")
         object.__setattr__(self, "recovery_failure_codes", tuple(self.recovery_failure_codes))
         object.__setattr__(self, "secondary_failure_codes", tuple(self.secondary_failure_codes))
         if any(

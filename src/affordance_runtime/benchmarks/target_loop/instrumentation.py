@@ -16,6 +16,7 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.recovery import RecoveryKind
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
 from affordance_runtime.benchmarks.target_loop.failure_origin import observation_failure_origin
 from affordance_runtime.benchmarks.target_loop.metric_registry import require_custom_metric_name
@@ -42,6 +43,8 @@ class BenchmarkInstrumentation:
     action_policy_ordinary_calls: int = 0
     action_policy_recovery_calls: int = 0
     representation_repair_calls: int = 0
+    control_stall_count: int = 0
+    state_oscillation_count: int = 0
     goal_compiler_calls: int = 0
     goal_compiler_provider_attempts: int = 0
     goal_compiler_schema_repair_count: int = 0
@@ -169,6 +172,10 @@ class BenchmarkInstrumentation:
         """Observe the committed StepResult without reconstructing Runtime state."""
 
         self.trace_recorder.step_completed(step_number, result)
+        signal = getattr(result, "recovery_signal", None)
+        kind = getattr(signal, "kind", None)
+        self.control_stall_count += int(kind is RecoveryKind.CONTROL_STALL)
+        self.state_oscillation_count += int(kind is RecoveryKind.STATE_OSCILLATION)
 
     def run_paused(self, state) -> None:
         self.trace_recorder.run_paused(state)

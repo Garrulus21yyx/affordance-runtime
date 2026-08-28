@@ -7,6 +7,7 @@ import pytest
 
 from affordance_runtime.agent import AgentFailureCode, RunStatus
 from affordance_runtime.agent.episode_snapshot import EpisodeSnapshot
+from affordance_runtime.agent.recovery import RecoveryKind, RecoverySignal
 from affordance_runtime.agent.runtime_failure import FailureKind, FailureStage, RuntimeFailure
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
 from affordance_runtime.benchmarks.target_loop.contracts import CaseFailureOrigin
@@ -192,6 +193,27 @@ def test_success_reason_does_not_become_a_failure_code() -> None:
     assert projected.failure_origin is CaseFailureOrigin.NONE
 
 
+def test_monitor_control_termination_survives_the_case_projection_boundary() -> None:
+    snapshot = replace(
+        _snapshot(control_status="blocked"),
+        latest_control_reason_code="control_stalled",
+        latest_control_owner="episode_monitor",
+    )
+
+    projected = project_case_result(
+        "case",
+        object(),
+        BenchmarkInstrumentation(),
+        1.0,
+        "",
+        final_snapshot=snapshot,
+    )
+
+    assert projected.terminal_reason_code.value == "control_stalled"
+    assert projected.runtime_reason_code == "control_stalled"
+    assert projected.control_termination_owner == "episode_monitor"
+
+
 def test_watchdog_snapshot_has_explicit_precedence_over_final_snapshot() -> None:
     instrumentation = BenchmarkInstrumentation()
     instrumentation.record_watchdog("case_timeout", TimeoutError())
@@ -372,6 +394,35 @@ def test_instrumentation_does_not_reconstruct_unresolved_runtime_state() -> None
     assert unresolved.failure_origin is CaseFailureOrigin.NONE
     assert unresolved.primary_execution_failure_code == ""
     assert unresolved.primary_execution_failure_phase == ""
+
+
+def test_instrumentation_counts_only_runtime_owned_typed_recovery_signals() -> None:
+    recorder = SimpleNamespace(step_completed=lambda *_args: None)
+    instrumentation = BenchmarkInstrumentation(trace_recorder=recorder)
+
+    instrumentation.step_completed(
+        1,
+        SimpleNamespace(
+            recovery_signal=RecoverySignal(
+                RecoveryKind.CONTROL_STALL,
+                "control_stall:typed",
+                {"source": "monitor"},
+            )
+        ),
+    )
+    instrumentation.step_completed(
+        2,
+        SimpleNamespace(
+            recovery_signal=RecoverySignal(
+                RecoveryKind.STATE_OSCILLATION,
+                "state_oscillation:typed",
+                {"source": "monitor"},
+            )
+        ),
+    )
+
+    assert instrumentation.control_stall_count == 1
+    assert instrumentation.state_oscillation_count == 1
 
 
 def test_custom_metric_cannot_override_canonical_metric() -> None:

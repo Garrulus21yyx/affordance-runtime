@@ -82,7 +82,8 @@ def project_case_result(
     public_runtime_failure = canonical_runtime_failure.code if canonical_runtime_failure is not None else ""
     if (
         metadata is not None
-        and metadata.last_decision_kind == "abort"
+        and metadata.latest_control_owner
+        and metadata.latest_control_reason_code
         and not public_runtime_failure
     ):
         public_runtime_failure = metadata.latest_control_reason_code
@@ -197,6 +198,7 @@ def project_case_result(
         recovery_failure_codes=tuple(instrumentation.recovery_failure_codes),
         secondary_failure_codes=(cleanup_code,) if cleanup_code else (),
         terminal_failure_code=public_runtime_failure,
+        control_termination_owner=(metadata.latest_control_owner if metadata else ""),
         cleanup_diagnostic=instrumentation.cleanup_diagnostic,
         failure_facts=facts,
     )
@@ -275,6 +277,8 @@ def _metric_values(state, sent_unknown, snapshot) -> dict[str, int | float | Non
         "effective_input_limit": state.effective_input_limit,
         "context_capacity_rejections": state.context_capacity_rejections,
         "model_latency_ms": state.model_latency_ms,
+        "control_stall_count": state.control_stall_count,
+        "state_oscillation_count": state.state_oscillation_count,
         "cleanup_failures": state.cleanup_failures,
         "observation_contract_exceptions": int(
             state.failure_origin

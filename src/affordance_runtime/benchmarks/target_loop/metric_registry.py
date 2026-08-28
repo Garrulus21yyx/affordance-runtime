@@ -53,6 +53,8 @@ CANONICAL_METRICS = frozenset(
         "effective_input_limit",
         "context_capacity_rejections",
         "model_latency_ms",
+        "control_stall_count",
+        "state_oscillation_count",
         "ask_user_count",
         "wait_count",
         "page_request_count",

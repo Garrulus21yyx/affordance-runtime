@@ -175,11 +175,16 @@ def test_sync_hung_cleanup_does_not_block_loop_and_persists_report(monkeypatch, 
         if event["event"] == "benchmark_lifecycle_phase" and event["phase"] == "cleanup"
     )
     assert primary_index < cleanup_index
+    analysis_identity = events[primary_index]["analysis_identity"]
+    assert analysis_identity["run_id"] == result.run_id
+    assert analysis_identity["run_attempt_id"] == result.run_attempt_id
+    assert analysis_identity["case_id"] == case.case_id
     assert events[primary_index] == {
         "schema_version": "gui-agent-trace.v1",
         "run_id": events[primary_index]["run_id"],
         "sequence": events[primary_index]["sequence"],
         "event": "primary_result_available",
+        "analysis_identity": analysis_identity,
         "case_id": case.case_id,
         "checkpoint_id": checkpoint[0],
         "status": "done",
@@ -890,6 +895,9 @@ def test_terminal_case_event_is_exactly_once_after_finalization_and_before_viewe
     assert len(recorders) == 1
     assert [kind for kind, _ in recorders[0].order] == ["terminal", "viewer_close"]
     terminal = recorders[0].order[0][1]
+    analysis = terminal.pop("analysis")
+    assert analysis["identity"]["run_attempt_id"] == suite.identity.run_attempt_id
+    assert analysis["evaluator_truth"]["status"] == "done"
     assert terminal == {
         "case_id": case.case_id,
         "status": "done",
