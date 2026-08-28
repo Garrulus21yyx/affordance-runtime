@@ -1,0 +1,56 @@
+{
+  "arms": [
+    {
+      "arm_id": "compatibility",
+      "observation_tool_profile": "compatibility.v1",
+      "visual_provider_calls_expected": 0
+    },
+    {
+      "arm_id": "dynamic_visual",
+      "observation_tool_profile": "dynamic-visual.v1",
+      "visual_provider_calls_expected": "only_after_admitted_request_evidence"
+    }
+  ],
+  "content_filter_profile": "off",
+  "content_filter_ruleset_digest": null,
+  "live_authorization_required": true,
+  "manifest_digest": "sha256:3b1e73cc051fd6ada6391db1caed18c3445d7d9c758328953bde92941ad0baec",
+  "profile_id": "deepseek-v4-flash-vision-exp-general-visual.v1",
+  "schema_version": "visual-capability-evaluation.v1",
+  "stages": [
+    {
+      "kind": "provider_free",
+      "required_properties": [
+        "dynamic_offer_only_from_fresh_surface_capability",
+        "one_shared_capture_frame_per_acquisition",
+        "stale_request_zero_visual_provider_calls",
+        "typed_observed_unknown_failed_outcomes"
+      ],
+      "stage_id": "provider_free_contract"
+    },
+    {
+      "kind": "live_visual_provider",
+      "metric": "point_in_ground_truth_box_accuracy",
+      "stage_id": "screenspot_point_grounding"
+    },
+    {
+      "kind": "live_action_policy_and_visual_provider",
+      "metric": "native_task_success_by_paired_arm",
+      "stage_id": "miniwob_adaptive_vision"
+    },
+    {
+      "capabilities": [
+        "text_in_image",
+        "svg_target",
+        "same_name_controls",
+        "visual_selected_state",
+        "stale_coordinate_rejection",
+        "unknown_ambiguous_calibration"
+      ],
+      "kind": "live_visual_provider",
+      "stage_id": "controlled_visual_semantics"
+    }
+  ],
+  "visual_model": "deepseek-v4-flash-vision-exp",
+  "visual_provider": "deepseek"
+}

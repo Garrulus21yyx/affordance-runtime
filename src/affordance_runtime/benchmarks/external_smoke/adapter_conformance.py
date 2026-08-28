@@ -126,6 +126,7 @@ class _T1BrowserGymCapabilitySpec:
 class InstrumentedBrowserGymSurfaceAdapter:
     wrapped: BrowserGymCaseEnvironment
     instrumentation: object
+    include_visual_semantic_metrics: bool = False
 
     def __getattr__(self, name):
         return getattr(self.wrapped, name)
@@ -195,6 +196,15 @@ class InstrumentedBrowserGymSurfaceAdapter:
                 "official_success_count": self.wrapped.official_success_count,
                 "fallback_count": 0,
             }
+            if self.include_visual_semantic_metrics:
+                metrics.update({
+                    "visual_text_reader_calls": self.wrapped.visual_text_reader_calls,
+                    "visual_spatial_classifier_calls": self.wrapped.visual_spatial_classifier_calls,
+                    "visual_change_classifier_calls": self.wrapped.visual_change_classifier_calls,
+                    "visual_text_reading_failure_count": self.wrapped.visual_text_reading_failure_count,
+                    "visual_spatial_classification_failure_count": self.wrapped.visual_spatial_classification_failure_count,
+                    "visual_change_classification_failure_count": self.wrapped.visual_change_classification_failure_count,
+                })
             for name, value in metrics.items():
                 self.instrumentation.set_custom_metric(name, value)
 

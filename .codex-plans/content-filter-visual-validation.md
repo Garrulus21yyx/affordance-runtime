@@ -48,7 +48,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Add no-site-specialization source checks and provider-free regression gates.
 - Commit and push.
 
-### Phase 4 — visual capability evaluation matrix (`in_progress`)
+### Phase 4 — visual capability evaluation matrix (`done`)
 
 - Keep controlled visual evaluations on filtering `off` to avoid confounding.
 - Add/run provider-free fixture gates first, then the separately authorized live DeepSeek VLM arm.
@@ -90,6 +90,17 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   DOM, and screenshot across current and newly opened tabs. One earlier 3-minute smoke lease could not be explicitly
   released after a local Sync Playwright startup error and expired by its provider timeout; all subsequent leases were
   released in `finally`.
+- 2026-08-28: Phase 4 added the frozen, filter-off visual capability matrix and an explicit `run-visual-case` entry;
+  the existing `run-case` and formal campaign remain provider-compatible and never activate VLM roles merely because
+  `.env` contains a visual profile. The visual entry composes region, point, disambiguation, predicate, OCR, spatial,
+  and change roles over one DeepSeek PydanticAI inference owner, validates `dynamic-visual.v1` before any live call,
+  and persists a redacted provider/model/prompt/config identity with each cohort report. BrowserGym benchmark
+  composition now forwards and counts all seven visual roles. The committed matrix binds ScreenSpot point-in-box,
+  paired MiniWoB adaptive vision, and controlled text/SVG/same-name/selected/stale/unknown gates. Provider-free
+  focused gates: 50 passed. The isolated staged tree preserved the compatibility target-manifest digest exactly at
+  `f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`; its fixed-interpreter full suite reported
+  1,992 passed / 19 skipped and one unrelated missing archived trace fixture. No ScreenSpot, MiniWoB, or other live
+  VLM benchmark was run.
 
 ## Files changed by this plan
 
@@ -104,3 +115,6 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - `src/affordance_runtime/surfaces/dom/browser_session.py`
 - `src/affordance_runtime/surfaces/dom/thread_session.py`
 - `tests/unit/agent/test_browser_session.py`
+- `docs/benchmarks/visual-capability-evaluation-v1.json`
+- `src/affordance_runtime/benchmarks/visual_capability.py`
+- `src/affordance_runtime/surfaces/visual/role_set.py`

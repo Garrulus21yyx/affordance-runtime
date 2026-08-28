@@ -8,12 +8,14 @@ from affordance_runtime.benchmarks.external_breadth.campaign_contracts import Mi
 from affordance_runtime.benchmarks.external_breadth.contracts import MiniWobRegistryCensus
 from affordance_runtime.benchmarks.external_breadth.manifest import build_breadth_manifest
 from affordance_runtime.benchmarks.external_breadth.perception_ab import (
+    PerceptionArmOutcome,
     _adapter,
     _inconclusive_pairs,
     _write_progress,
     capability_covered_cases,
     readiness_cohorts,
     run_provider_cohort_arm,
+    write_provider_cohort_arm,
 )
 from affordance_runtime.model.policy import model_policy_from_environment
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
@@ -138,6 +140,34 @@ def test_provider_cohort_progress_is_atomically_persisted_per_case(tmp_path) -> 
     assert payload["complete"] is False
 
 
+def test_visual_provider_cohort_report_persists_resolved_config_identity(tmp_path) -> None:
+    identity = {
+        "manifest_digest": "sha256:manifest",
+        "resolved_config_digest": "sha256:config",
+        "content_filter_profile": "off",
+    }
+    report = write_provider_cohort_arm(
+        tmp_path / "visual-arm",
+        implementation_sha="abc123",
+        profile="visual-gate",
+        arm=PerceptionArmOutcome(
+            DecisionPerceptionProfile.STRUCTURE_FIRST,
+            (),
+            "deepseek",
+            "deepseek-v4-flash",
+            "grounded-tools.v2",
+            (),
+            0,
+            0,
+            0.0,
+        ),
+        visual_run_identity=identity,
+    )
+
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["visual_run_identity"] == identity
+
+
 def test_provider_cohort_forwards_goal_compiler_to_existing_target_composition(monkeypatch) -> None:
     from affordance_runtime.benchmarks.external_breadth import perception_ab
 
@@ -151,9 +181,15 @@ def test_provider_cohort_forwards_goal_compiler_to_existing_target_composition(m
     monkeypatch.setattr(perception_ab, "_run_arm", fake_run_arm)
     result = asyncio.run(run_provider_cohort_arm(
         object(), object(), DecisionPerceptionProfile.STRUCTURE_FIRST,
+        visual_text_reader="text-reader",
+        visual_spatial_classifier="spatial-classifier",
+        visual_change_classifier="change-classifier",
         goal_compiler="compiler",
     ))
 
     assert result is sentinel
     assert captured["goal_compiler"] == "compiler"
+    assert captured["visual_text_reader"] == "text-reader"
+    assert captured["visual_spatial_classifier"] == "spatial-classifier"
+    assert captured["visual_change_classifier"] == "change-classifier"
     assert captured["require_frozen_mistral"] is False

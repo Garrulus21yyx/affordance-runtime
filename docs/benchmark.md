@@ -1894,3 +1894,20 @@ ScreenSpot, or the shopping flagship improved or remained statistically unchange
 benchmark command was run in this work. That claim requires separately authorized paired baseline/candidate runs with
 the frozen runner profile, resolved configuration/tree attestation, compatibility tool-schema parity, and persisted
 per-case evidence described in `docs/supervised-gui-agent-ui-completion-plan.md`.
+
+## 2026-08-28 — Visual capability evaluation gate
+
+The committed `docs/benchmarks/visual-capability-evaluation-v1.json` freezes the evaluation order and keeps content
+filtering `off` so ad filtering cannot confound capability results. The provider-free contract gate precedes
+ScreenSpot point-in-box, paired MiniWoB adaptive vision, and controlled OCR/SVG/same-name/selected/stale/unknown
+checks. Live stages require separate authorization.
+
+`run-visual-case` is the only MiniWoB diagnostic entry that composes all seven visual roles. It requires DeepSeek
+`deepseek-v4-flash-vision-exp` and `dynamic-visual.v1` before provider activation, reuses one PydanticAI inference
+owner, and persists the redacted ActionPolicy/VLM/provider-host/perception/tool-profile/prompt identity plus a canonical
+config digest in the report. The existing `run-case` and formal campaign do not construct visual roles, so their
+VLM-call count remains zero independent of `.env`. Phase-4 provider-free focused gates passed `50` tests; no live VLM
+or benchmark command was run. The isolated staged tree's compatibility target-manifest digest remained exactly
+`f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`. Its fixed BrowserGym-interpreter full suite
+reported `1,992 passed, 19 skipped, 1 warning`; the sole failure was a pre-existing test dependency on an uncommitted
+archived trace path, not an exercised Runtime or benchmark-contract failure.

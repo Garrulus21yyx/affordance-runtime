@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from affordance_runtime.benchmarks.external_smoke.case_environment import external_dependency_status
@@ -40,3 +41,35 @@ def test_unknown_task_id_fails_closed_before_environment_use() -> None:
         assert "reviewed fixed manifest" in str(exc)
     else:
         raise AssertionError("unknown task ID was not rejected")
+
+
+def test_benchmark_case_wires_all_visual_role_ports_to_browsergym() -> None:
+    from affordance_runtime.benchmarks.external_smoke.case_environment import open_browsergym_case
+    from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+        FakeBrowserGym,
+        ax_node,
+        raw_observation,
+    )
+
+    ports = {name: object() for name in (
+        "visual_region_proposer",
+        "visual_point_grounder",
+        "visual_candidate_disambiguator",
+        "visual_predicate_classifier",
+        "visual_text_reader",
+        "visual_spatial_classifier",
+        "visual_change_classifier",
+    )}
+    fake = FakeBrowserGym(raw_observation(ax_node("button", "button", "Button")))
+    environment, _task = open_browsergym_case(
+        "browsergym/miniwob.click-button",
+        7,
+        gym_factory=lambda *_args, **_kwargs: fake,
+        **ports,
+    )
+    try:
+        surface = environment.surface
+        for name, port in ports.items():
+            assert getattr(surface, name) is port
+    finally:
+        asyncio.run(environment.close())

@@ -19,6 +19,11 @@ from affordance_runtime.surfaces.browsergym.environment import (
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
 from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.surfaces.visual.semantic_classification import (
+    VisualChangeClassifierPort,
+    VisualSpatialClassifierPort,
+    VisualTextReaderPort,
+)
 from affordance_runtime.task import (
     LoopBudget,
     NaturalLanguageTaskRequest,
@@ -174,6 +179,9 @@ def open_browsergym_case(
     visual_point_grounder: VisualGrounderPort | None = None,
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
+    visual_text_reader: VisualTextReaderPort | None = None,
+    visual_spatial_classifier: VisualSpatialClassifierPort | None = None,
+    visual_change_classifier: VisualChangeClassifierPort | None = None,
     marked_candidate_policy_available: bool = False,
 ) -> tuple[BrowserGymCaseEnvironment, TaskGoal]:
     """Admit one reviewed benchmark case and bind it to the generic surface."""
@@ -191,6 +199,9 @@ def open_browsergym_case(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        visual_text_reader=visual_text_reader,
+        visual_spatial_classifier=visual_spatial_classifier,
+        visual_change_classifier=visual_change_classifier,
         marked_candidate_policy_available=marked_candidate_policy_available,
     )
     try:

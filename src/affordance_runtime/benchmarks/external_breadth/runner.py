@@ -54,6 +54,11 @@ from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
 from affordance_runtime.surfaces.visual.grounding import VisualGrounderPort, VisualRegionProposerPort
 from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.surfaces.visual.semantic_classification import (
+    VisualChangeClassifierPort,
+    VisualSpatialClassifierPort,
+    VisualTextReaderPort,
+)
 
 REQUIRED_METRICS = (
     "observations",
@@ -126,6 +131,14 @@ REQUIRED_METRICS = (
     "cleanup_failures",
     "observation_contract_exceptions",
 )
+VISUAL_SEMANTIC_METRICS = (
+    "visual_text_reader_calls",
+    "visual_spatial_classifier_calls",
+    "visual_change_classifier_calls",
+    "visual_text_reading_failure_count",
+    "visual_spatial_classification_failure_count",
+    "visual_change_classification_failure_count",
+)
 _TERMINAL_STATUSES = tuple(
     item for item in RunStatus if item not in {RunStatus.RUNNING, RunStatus.PAUSED}
 )
@@ -141,6 +154,9 @@ async def run_breadth_campaign(
     visual_point_grounder: VisualGrounderPort | None = None,
     visual_candidate_disambiguator: VisualCandidateDisambiguatorPort | None = None,
     visual_predicate_classifier: VisualPredicateClassifierPort | None = None,
+    visual_text_reader: VisualTextReaderPort | None = None,
+    visual_spatial_classifier: VisualSpatialClassifierPort | None = None,
+    visual_change_classifier: VisualChangeClassifierPort | None = None,
     goal_compiler: GoalCompiler | None = None,
 ) -> MiniWobBreadthCampaignOutcome:
     if len(manifest.cases) != 60:
@@ -171,6 +187,9 @@ async def run_breadth_campaign(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        visual_text_reader=visual_text_reader,
+        visual_spatial_classifier=visual_spatial_classifier,
+        visual_change_classifier=visual_change_classifier,
         goal_compiler=goal_compiler,
     )
     harness_digest = target_manifest_digest(target_manifest)
@@ -233,8 +252,19 @@ def _target_manifest(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    visual_text_reader=None,
+    visual_spatial_classifier=None,
+    visual_change_classifier=None,
     goal_compiler=None,
 ) -> BenchmarkManifest:
+    visual_semantics_enabled = any(
+        item is not None
+        for item in (
+            visual_text_reader,
+            visual_spatial_classifier,
+            visual_change_classifier,
+        )
+    )
     cases = tuple(
         _target_case(
             item,
@@ -246,6 +276,10 @@ def _target_manifest(
             visual_point_grounder,
             visual_candidate_disambiguator,
             visual_predicate_classifier,
+            visual_text_reader,
+            visual_spatial_classifier,
+            visual_change_classifier,
+            visual_semantics_enabled,
             goal_compiler,
         )
         for item in manifest.cases
@@ -269,6 +303,10 @@ def _target_case(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    visual_text_reader=None,
+    visual_spatial_classifier=None,
+    visual_change_classifier=None,
+    visual_semantics_enabled=False,
     goal_compiler=None,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
@@ -285,10 +323,16 @@ def _target_case(
                 visual_point_grounder=visual_point_grounder,
                 visual_candidate_disambiguator=visual_candidate_disambiguator,
                 visual_predicate_classifier=visual_predicate_classifier,
+                visual_text_reader=visual_text_reader,
+                visual_spatial_classifier=visual_spatial_classifier,
+                visual_change_classifier=visual_change_classifier,
                 marked_candidate_policy_available=_marked_candidate_policy_available(base_policy),
             )
         except BaseException as exc:
-            _initialize_custom_metrics(instrumentation)
+            _initialize_custom_metrics(
+                instrumentation,
+                include_visual_semantics=visual_semantics_enabled,
+            )
             if isinstance(exc, Exception):
                 instrumentation.record_failure(
                     CaseFailureOrigin.ENVIRONMENT_RESET,
@@ -297,14 +341,21 @@ def _target_case(
                 )
             raise
         holder.update(environment=environment, task=task)
-        return _BreadthEnvironment(environment, instrumentation)
+        return _BreadthEnvironment(
+            environment,
+            instrumentation,
+            include_visual_semantic_metrics=visual_semantics_enabled,
+        )
 
     def task_factory():
         return holder["task"]
 
     def composition_factory(instrumentation):
         environment = holder["environment"]
-        _initialize_custom_metrics(instrumentation)
+        _initialize_custom_metrics(
+            instrumentation,
+            include_visual_semantics=visual_semantics_enabled,
+        )
         instrumentations.append(instrumentation)
         observer = ProgressEventObserver(instrumentation)
         paced = PacedAgentPolicy(
@@ -331,7 +382,7 @@ def _target_case(
         _TERMINAL_STATUSES,
         case.timeout_s,
         case.seed,
-        REQUIRED_METRICS,
+        REQUIRED_METRICS + (VISUAL_SEMANTIC_METRICS if visual_semantics_enabled else ()),
     )
 
 
@@ -372,8 +423,12 @@ class _BreadthEnvironment(InstrumentedBrowserGymSurfaceAdapter):
             )
 
 
-def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> None:
-    for name in (
+def _initialize_custom_metrics(
+    instrumentation: BenchmarkInstrumentation,
+    *,
+    include_visual_semantics: bool = False,
+) -> None:
+    names = (
         "browsergym_reset_calls",
         "browsergym_step_calls",
         "browsergym_probe_calls",
@@ -413,7 +468,10 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
         "fallback_count",
         "already_satisfied_suppressions",
         "no_progress_terminations",
-    ):
+    )
+    if include_visual_semantics:
+        names += VISUAL_SEMANTIC_METRICS
+    for name in names:
         if name not in instrumentation.custom_metrics:
             instrumentation.set_custom_metric(name, 0)
 
@@ -421,7 +479,7 @@ def _initialize_custom_metrics(instrumentation: BenchmarkInstrumentation) -> Non
 def _derived_metrics(result):
     values = {
         name: result.measurements[name]
-        for name in REQUIRED_METRICS
+        for name in REQUIRED_METRICS + VISUAL_SEMANTIC_METRICS
         if name != "no_progress_terminations" and name in result.measurements
     }
     values["no_progress_terminations"] = MetricMeasurement(

@@ -2166,3 +2166,10 @@ Provider-free implementation and live benchmark closure are deliberately separat
 `71245cc9` implements the bounded contract and preserves the DOM-only/default compatibility path; no live benchmark was
 launched. A paired live baseline/candidate run still requires explicit user authorization before any benchmark
 non-regression or capability-improvement claim.
+
+The visual evaluation composition is explicit rather than inferred from `.env`. Ordinary `run-case` and the formal
+MiniWoB campaign retain their existing provider-neutral ports. Only `run-visual-case` creates the seven DeepSeek
+visual roles, all over one `PydanticAIVisualInference`, validates `dynamic-visual.v1`, and then passes those ports into
+the BrowserGym Surface owner. Thus configuring a VLM cannot itself advertise a tool or cause a call. BrowserGym still
+derives the offer from the roles actually attached to the fresh Surface, and provider activation still follows one
+admitted `request_evidence` selected by the sole ActionPolicy.

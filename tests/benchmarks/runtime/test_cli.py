@@ -18,6 +18,7 @@ def test_benchmark_cli_exposes_only_retained_independent_commands() -> None:
     assert _command_names() == {
         "benchmark-screenspot",
         "benchmark-screenspot-grounder",
+        "write-visual-capability-manifest",
         "benchmark-workarena-preflight",
         "prepare-webarena-verified-subset",
         "evaluate-webarena-verified",

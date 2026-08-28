@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -135,6 +136,9 @@ async def run_provider_cohort_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    visual_text_reader=None,
+    visual_spatial_classifier=None,
+    visual_change_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
     goal_compiler=None,
@@ -150,6 +154,9 @@ async def run_provider_cohort_arm(
         visual_point_grounder=visual_point_grounder,
         visual_candidate_disambiguator=visual_candidate_disambiguator,
         visual_predicate_classifier=visual_predicate_classifier,
+        visual_text_reader=visual_text_reader,
+        visual_spatial_classifier=visual_spatial_classifier,
+        visual_change_classifier=visual_change_classifier,
         progress_dir=progress_dir,
         progress_profile=progress_profile,
         goal_compiler=goal_compiler,
@@ -166,6 +173,9 @@ async def _run_arm(
     visual_point_grounder=None,
     visual_candidate_disambiguator=None,
     visual_predicate_classifier=None,
+    visual_text_reader=None,
+    visual_spatial_classifier=None,
+    visual_change_classifier=None,
     progress_dir: Path | None = None,
     progress_profile: str = "",
     goal_compiler=None,
@@ -184,6 +194,9 @@ async def _run_arm(
         visual_point_grounder,
         visual_candidate_disambiguator,
         visual_predicate_classifier,
+        visual_text_reader,
+        visual_spatial_classifier,
+        visual_change_classifier,
         goal_compiler,
     )
     target = replace(
@@ -342,23 +355,29 @@ def write_provider_cohort_arm(
     implementation_sha: str,
     profile: str,
     arm: PerceptionArmOutcome,
+    visual_run_identity: Mapping[str, object] | None = None,
 ) -> Path:
     """Persist one provider-cohort diagnostic without an ad-hoc result schema."""
 
     output_dir.mkdir(parents=True, exist_ok=output_dir.exists())
     for record in arm.records:
+        case_payload = {
+            "profile": profile,
+            "perception_profile": arm.perception_profile.value,
+            "typed_outcome": record.outcome.value,
+            "policy_trace": record.diagnostic_trace,
+            "case": public_case_evidence(record.result),
+        }
+        if visual_run_identity is not None:
+            case_payload["visual_resolved_config_digest"] = visual_run_identity[
+                "resolved_config_digest"
+            ]
         _atomic_json(
             output_dir / f"{record.case_id}.json",
-            {
-                "profile": profile,
-                "perception_profile": arm.perception_profile.value,
-                "typed_outcome": record.outcome.value,
-                "policy_trace": record.diagnostic_trace,
-                "case": public_case_evidence(record.result),
-            },
+            case_payload,
         )
     report = output_dir / "report.json"
-    _atomic_json(report, {
+    report_payload = {
         "schema_version": SCHEMA_VERSION,
         "profile": profile,
         "implementation_sha": implementation_sha,
@@ -376,7 +395,10 @@ def write_provider_cohort_arm(
         "errors": arm.errors,
         "case_ids": tuple(record.case_id for record in arm.records),
         "generalization_claim_prohibited": True,
-    })
+    }
+    if visual_run_identity is not None:
+        report_payload["visual_run_identity"] = dict(visual_run_identity)
+    _atomic_json(report, report_payload)
     _write_progress(
         output_dir,
         profile=profile,

@@ -54,13 +54,19 @@ def main() -> int:
     run_case.add_argument("--profile", required=True)
     run_case.add_argument("--seed", type=int, required=True)
     run_case.add_argument("--output-dir", type=Path, required=True)
+    run_visual_case = commands.add_parser("run-visual-case")
+    run_visual_case.add_argument("--manifest", choices=(CAMPAIGN_ID,), required=True)
+    run_visual_case.add_argument("--case-id", required=True)
+    run_visual_case.add_argument("--profile", required=True)
+    run_visual_case.add_argument("--seed", type=int, required=True)
+    run_visual_case.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     census = load_registry_census()
     manifest = build_breadth_manifest(census)
     if args.command == "freeze-manifest":
         _write_frozen_evidence(args.output, census, manifest)
         return 0
-    if args.command == "run-case":
+    if args.command in {"run-case", "run-visual-case"}:
         selected = tuple(case for case in manifest.cases if case.case_id == args.case_id)
         errors = []
         if len(selected) != 1:
@@ -75,19 +81,57 @@ def main() -> int:
             print(json.dumps({"status": "NOT_RUN_INVALID_ARGUMENT", "errors": errors}, sort_keys=True))
             return 1
         roles = model_roles_from_environment()
-        arm = asyncio.run(run_provider_cohort_arm(
-            replace(manifest, cases=selected),
-            roles.action_policy,
-            DecisionPerceptionProfile(
-                os.environ.get(
-                    "LLM_DECISION_PERCEPTION",
-                    DecisionPerceptionProfile.STRUCTURE_FIRST.value,
-                )
-            ),
-            progress_dir=args.output_dir,
-            progress_profile=args.profile,
-            goal_compiler=roles.goal_compiler,
-        ))
+        visual_roles = None
+        visual_run_identity = None
+        visual_kwargs = {}
+        if args.command == "run-visual-case":
+            from affordance_runtime.benchmarks.visual_capability import (
+                resolved_visual_run_identity,
+                validate_visual_live_configuration,
+            )
+            from affordance_runtime.surfaces.visual.role_set import (
+                pydantic_ai_visual_roles_from_environment,
+            )
+
+            visual_roles = pydantic_ai_visual_roles_from_environment(os.environ)
+            visual_errors = validate_visual_live_configuration(
+                os.environ,
+                roles.action_policy.port,
+                visual_roles,
+            )
+            if visual_errors:
+                visual_roles.close()
+                print(json.dumps({
+                    "status": "NOT_RUN_UNAVAILABLE_CONFIG",
+                    "errors": visual_errors,
+                }, sort_keys=True))
+                return 1
+            visual_run_identity = resolved_visual_run_identity(
+                roles.action_policy.port,
+                visual_roles,
+            )
+            visual_kwargs = {
+                "visual_region_proposer": visual_roles.region_proposer,
+                "visual_point_grounder": visual_roles.point_grounder,
+                "visual_candidate_disambiguator": visual_roles.candidate_disambiguator,
+                "visual_predicate_classifier": visual_roles.predicate_classifier,
+                "visual_text_reader": visual_roles.text_reader,
+                "visual_spatial_classifier": visual_roles.spatial_classifier,
+                "visual_change_classifier": visual_roles.change_classifier,
+            }
+        try:
+            arm = asyncio.run(run_provider_cohort_arm(
+                replace(manifest, cases=selected),
+                roles.action_policy,
+                DecisionPerceptionProfile(roles.action_policy.port.perception_profile),
+                progress_dir=args.output_dir,
+                progress_profile=args.profile,
+                goal_compiler=roles.goal_compiler,
+                **visual_kwargs,
+            ))
+        finally:
+            if visual_roles is not None:
+                visual_roles.close()
         report = write_provider_cohort_arm(
             args.output_dir,
             implementation_sha=subprocess.check_output(
@@ -95,6 +139,7 @@ def main() -> int:
             ).strip(),
             profile=args.profile,
             arm=arm,
+            visual_run_identity=visual_run_identity,
         )
         evidence = json.loads(report.read_text(encoding="utf-8"))
         print(json.dumps({

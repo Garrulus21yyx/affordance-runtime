@@ -29,6 +29,16 @@ def build_parser() -> argparse.ArgumentParser:
     screenspot_grounder.add_argument("--images", type=Path, required=True)
     screenspot_grounder.add_argument("--output", type=Path, default=Path("screenspot-grounder-results"))
 
+    visual_manifest = subcommands.add_parser(
+        "write-visual-capability-manifest",
+        help="write the frozen general visual-capability evaluation matrix without provider calls",
+    )
+    visual_manifest.add_argument(
+        "--output",
+        type=Path,
+        default=Path("visual-capability-evaluation-v1.json"),
+    )
+
     workarena = subcommands.add_parser(
         "benchmark-workarena-preflight",
         help="inspect isolated WorkArena L1 prerequisites without loading credentials",
@@ -105,6 +115,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "write-visual-capability-manifest":
+        from affordance_runtime.benchmarks.visual_capability import (
+            write_visual_capability_manifest,
+        )
+
+        manifest = write_visual_capability_manifest(args.output)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
     if args.command == "benchmark-workarena-preflight":
         from affordance_runtime.benchmarks.workarena import write_workarena_preflight
 
