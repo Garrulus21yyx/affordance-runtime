@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from interaction_shell.assistant import GuiTaskResult, PydanticAssistantTurnRunner
+from interaction_shell.assistant import (
+    _ASSISTANT_INSTRUCTIONS,
+    GuiTaskResult,
+    PydanticAssistantTurnRunner,
+)
 from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelResponse,
@@ -138,3 +142,9 @@ def test_web_search_cannot_be_silently_enabled_on_an_unsupported_profile(tmp_pat
             database_directory=tmp_path,
             call_timeout_s=30,
         )
+
+
+def test_assistant_delegates_the_authentication_contingency_with_the_complete_gui_goal():
+    assert "prepare the safest visible out-of-band challenge" in _ASSISTANT_INSTRUCTIONS
+    assert "resume\n  the original goal after control is returned" in _ASSISTANT_INSTRUCTIONS
+    assert "Never ask the GUI Runtime to collect credentials" in _ASSISTANT_INSTRUCTIONS

@@ -73,6 +73,9 @@ Choose capabilities by their public meaning:
 - Call run_gui_task only when the request requires interacting with a graphical user interface or inspecting
   state that the delegated GUI Runtime must acquire. Give it the complete user goal and constraints, not a URL
   unless the user supplied that URL or the URL itself is essential to the goal.
+- For a delegated website task that may require sign-in, include this contingency in the complete goal: if
+  authentication is required, prepare the safest visible out-of-band challenge, request user takeover, and resume
+  the original goal after control is returned. Never ask the GUI Runtime to collect credentials or one-time codes.
 - Delegate at most one complete GUI task per user turn. A returned success, failure, blocked, or cancelled result is
   authoritative for that turn; explain it instead of calling run_gui_task again.
 - Return AssistantQuestion only when a fact owned by the user would materially change the result and cannot be
