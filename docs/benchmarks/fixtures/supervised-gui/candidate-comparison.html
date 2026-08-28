@@ -14,6 +14,9 @@
     article:nth-child(1) .swatch { background: #b73535; }
     article:nth-child(2) .swatch { background: #315d94; }
     article:nth-child(3) .swatch { background: #387653; }
+    article:nth-child(1) button { background: #8f2929; }
+    article:nth-child(2) button { background: #315d94; }
+    article:nth-child(3) button { background: #2e6847; }
     dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
     dt { color: #627069; } dd { margin: 0; font-weight: 650; }
     button { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 10px; color: white; background: #263e34; }
@@ -28,21 +31,22 @@
       <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Harbor jacket</h2>
       <dl><dt>Price</dt><dd>$68</dd><dt>Size</dt><dd>M</dd></dl>
-      <button type="button" aria-pressed="false">Choose</button>
+      <button id="choose-harbor" type="button" aria-pressed="false">Choose</button>
     </article>
     <article aria-label="Field jacket" data-selected="false">
       <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Field jacket</h2>
       <dl><dt>Price</dt><dd>$72</dd><dt>Size</dt><dd>M</dd></dl>
-      <button type="button" aria-pressed="false">Choose</button>
+      <button id="choose-field" type="button" aria-pressed="false">Choose</button>
     </article>
     <article aria-label="Cedar jacket" data-selected="false">
       <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Cedar jacket</h2>
       <dl><dt>Price</dt><dd>$64</dd><dt>Size</dt><dd>L only</dd></dl>
-      <button type="button" aria-pressed="false">Choose</button>
+      <button id="choose-cedar" type="button" aria-pressed="false">Choose</button>
     </article>
   </section>
+  <p id="selection-status" aria-live="polite">Selected: none</p>
 </main>
 <script>
   document.querySelectorAll('article button').forEach((button) => button.addEventListener('click', () => {
@@ -50,8 +54,10 @@
       card.dataset.selected = 'false';
       card.querySelector('button').setAttribute('aria-pressed', 'false');
     });
-    button.closest('article').dataset.selected = 'true';
+    const selected = button.closest('article');
+    selected.dataset.selected = 'true';
     button.setAttribute('aria-pressed', 'true');
+    document.querySelector('#selection-status').textContent = `Selected: ${selected.getAttribute('aria-label')}`;
   }));
 </script>
 </body>

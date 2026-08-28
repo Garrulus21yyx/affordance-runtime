@@ -56,6 +56,8 @@ def test_flagship_keeps_color_pixel_only_and_starts_without_a_selection() -> Non
     assert 'aria-label="Green fabric sample"' not in source
     assert source.count('data-selected="false"') == 3
     assert source.count('aria-pressed="false"') == 3
+    assert source.count('id="choose-') == 3
+    assert "Selected: none" in source
 
 
 def test_public_shadow_preflight_does_not_open_browser_or_network(tmp_path: Path) -> None:

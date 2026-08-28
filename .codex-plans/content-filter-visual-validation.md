@@ -276,6 +276,13 @@ authority or bypass.
   five policy turns and two GUI executions. All seven visual specialist call counters and image input tokens were
   zero. The formal run evidence is valid. This closes the specific deterministic multi-group reachability regression;
   it is one authorized flagship case, not a general live non-regression claim for the full benchmark suite.
+- 2026-08-28: Phase 8 scope was narrowed by the user to the controlled shopping flagship rather than broad live
+  non-regression. The committed runner serves the self-contained candidate page from a local HTTP owner and composes
+  the product BrowserSession visual bundle, single CoreAgentLoop, public interaction session, DeepSeek ActionPolicy,
+  shared PydanticAI VLM, generic GUI action, and evaluator-confirmed artifact path. The fixture keeps price/size and
+  candidate identity structural while its control color is pixel-only; all candidates start unselected, have stable
+  private locators, and publish a fresh visible selection result after dispatch. Provider-free runner/profile/report
+  gates and the four-fixture controlled validator pass; one live run remains.
 
 ## Files changed by this plan
 
@@ -298,6 +305,8 @@ authority or bypass.
 - `src/affordance_runtime/benchmarks/supervised_gui_acceptance.py`
 - `src/affordance_runtime/benchmarks/cli.py`
 - `tests/benchmarks/runtime/test_supervised_gui_acceptance.py`
+- `src/affordance_runtime/benchmarks/supervised_gui_flagship.py`
+- `tests/benchmarks/runtime/test_supervised_gui_flagship.py`
 - `tests/benchmarks/runtime/test_cli.py`
 - `src/affordance_runtime/benchmarks/external_breadth/runner.py`
 - `tests/benchmarks/runtime/test_miniwob_breadth_runner.py`
