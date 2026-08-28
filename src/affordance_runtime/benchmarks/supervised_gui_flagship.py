@@ -290,18 +290,18 @@ async def _run_flagship(
             "acceptance_errors": profile_errors,
         }
     output_directory.mkdir(parents=True, exist_ok=True)
+    model_identity = {
+        "scenario_id": "candidate_comparison_flagship",
+        "action_policy_provider": environment["LLM_ACTIVE_PROFILE"],
+        "action_policy_model": environment.get("LLM_DEEPSEEK_MODEL", ""),
+        "visual_provider": environment["LLM_VISUAL_PROFILE"],
+        "visual_model": environment["LLM_DEEPSEEK_VISION_MODEL"],
+        "observation_tool_profile": environment["LLM_OBSERVATION_TOOL_PROFILE"],
+        "interaction_tool_profile": environment["LLM_INTERACTION_TOOL_PROFILE"],
+    }
     trace = RunTraceRecorder(
         output_directory / "trace",
         run_id="controlled-shopping-flagship",
-        analysis_identity={
-            "scenario_id": "candidate_comparison_flagship",
-            "action_policy_provider": environment["LLM_ACTIVE_PROFILE"],
-            "action_policy_model": environment.get("LLM_DEEPSEEK_MODEL", ""),
-            "visual_provider": environment["LLM_VISUAL_PROFILE"],
-            "visual_model": environment["LLM_DEEPSEEK_VISION_MODEL"],
-            "observation_tool_profile": environment["LLM_OBSERVATION_TOOL_PROFILE"],
-            "interaction_tool_profile": environment["LLM_INTERACTION_TOOL_PROFILE"],
-        },
     )
     session: TargetRuntimeSession | None = None
     interaction: dict[str, object] = {}
@@ -373,7 +373,7 @@ async def _run_flagship(
         "fixture": fixture.name,
         "task": FLAGSHIP_TASK,
         "declared_user_choice": choice_title,
-        "model_identity": dict(trace.analysis_identity),
+        "model_identity": model_identity,
         "provider_usage": _provider_usage(trace_events),
         "interaction": interaction,
         "trace_segments": _trace_segments(trace_events, choice_title=choice_title),

@@ -283,6 +283,10 @@ authority or bypass.
   candidate identity structural while its control color is pixel-only; all candidates start unselected, have stable
   private locators, and publish a fresh visible selection result after dispatch. Provider-free runner/profile/report
   gates and the four-fixture controlled validator pass; one live run remains.
+- 2026-08-28: The first clean-tree runner launch stopped before browser/model activity because the runner had consumed
+  an uncommitted observability-side `analysis_identity` constructor extension from the dirty main worktree. The
+  benchmark runner now owns its redacted model identity directly and uses the committed `RunTraceRecorder` contract;
+  no Runtime, trace owner, or provider behavior changed. The failed startup report contains no trace or provider call.
 
 ## Files changed by this plan
 
