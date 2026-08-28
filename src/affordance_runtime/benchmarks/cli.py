@@ -30,6 +30,18 @@ def build_parser() -> argparse.ArgumentParser:
     screenspot_grounder.add_argument("--images", type=Path, required=True)
     screenspot_grounder.add_argument("--output", type=Path, default=Path("screenspot-grounder-results"))
 
+    screenspot_subset = subcommands.add_parser(
+        "prepare-screenspot-subset",
+        help="freeze a deterministic desktop/mobile/web and text/icon diagnostic subset",
+    )
+    screenspot_subset.add_argument("--desktop", type=Path, required=True)
+    screenspot_subset.add_argument("--mobile", type=Path, required=True)
+    screenspot_subset.add_argument("--web", type=Path, required=True)
+    screenspot_subset.add_argument("--images-archive", type=Path, required=True)
+    screenspot_subset.add_argument("--output-annotations", type=Path, required=True)
+    screenspot_subset.add_argument("--output-manifest", type=Path, required=True)
+    screenspot_subset.add_argument("--per-stratum", type=int, default=5)
+
     visual_manifest = subcommands.add_parser(
         "write-visual-capability-manifest",
         help="write the frozen general visual-capability evaluation matrix without provider calls",
@@ -151,6 +163,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if not report["acceptance_errors"] else 1
+    if args.command == "prepare-screenspot-subset":
+        from affordance_runtime.benchmarks.screenspot import (
+            prepare_screenspot_stratified_subset,
+        )
+
+        manifest = prepare_screenspot_stratified_subset(
+            {"desktop": args.desktop, "mobile": args.mobile, "web": args.web},
+            args.output_annotations,
+            args.output_manifest,
+            per_stratum=args.per_stratum,
+            source_images_archive=args.images_archive,
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
     if args.command == "write-visual-capability-manifest":
         from affordance_runtime.benchmarks.visual_capability import (
             write_visual_capability_manifest,

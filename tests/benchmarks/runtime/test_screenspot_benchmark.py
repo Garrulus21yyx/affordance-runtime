@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from pydantic_ai.models.function import FunctionModel
 
 from affordance_runtime.benchmarks.screenspot import (
     load_screenspot_predictions,
+    load_screenspot_samples,
+    prepare_screenspot_stratified_subset,
     run_screenspot_grounder_suite,
     run_screenspot_offline_suite,
 )
@@ -130,6 +133,126 @@ def test_screenspot_rejects_duplicate_prediction_ids(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate ScreenSpot prediction id"):
         load_screenspot_predictions(predictions)
+
+
+def test_official_annotations_with_repeated_image_receive_distinct_stable_ids(
+    tmp_path: Path,
+) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    Image.new("RGB", (100, 80), "white").save(images / "shared.png")
+    annotations = tmp_path / "annotations.json"
+    annotations.write_text(
+        json.dumps([
+            {
+                "img_filename": "shared.png",
+                "instruction": "click save",
+                "bbox": [10, 20, 30, 10],
+                "data_type": "text",
+                "data_source": "web",
+            },
+            {
+                "img_filename": "shared.png",
+                "instruction": "click icon",
+                "bbox": [40, 30, 10, 20],
+                "data_type": "icon",
+                "data_source": "web",
+            },
+        ]),
+        encoding="utf-8",
+    )
+
+    samples = load_screenspot_samples(annotations, images)
+
+    assert [item.sample_id for item in samples] == [
+        "annotation:0000:shared.png",
+        "annotation:0001:shared.png",
+    ]
+    assert [item.image_path for item in samples] == [images / "shared.png"] * 2
+
+
+def test_screenspot_subset_is_digest_bound_stratified_and_prompt_free(
+    tmp_path: Path,
+) -> None:
+    annotation_paths: dict[str, Path] = {}
+    for group in ("desktop", "mobile", "web"):
+        path = tmp_path / f"screenspot_{group}.json"
+        path.write_text(
+            json.dumps([
+                {
+                    "img_filename": f"{group}_{data_type}_{index}.png",
+                    "instruction": f"private instruction {group} {data_type} {index}",
+                    "bbox": [index, index + 1, 10, 10],
+                    "data_type": data_type,
+                    "data_source": group,
+                }
+                for data_type in ("icon", "text")
+                for index in range(2)
+            ]),
+            encoding="utf-8",
+        )
+        annotation_paths[group] = path
+    archive = tmp_path / "screenspot_imgs.tar"
+    archive.write_bytes(b"official archive fixture")
+
+    first = prepare_screenspot_stratified_subset(
+        annotation_paths,
+        tmp_path / "subset-one.json",
+        tmp_path / "manifest-one.json",
+        per_stratum=1,
+        source_images_archive=archive,
+    )
+    second = prepare_screenspot_stratified_subset(
+        annotation_paths,
+        tmp_path / "subset-two.json",
+        tmp_path / "manifest-two.json",
+        per_stratum=1,
+        source_images_archive=archive,
+    )
+
+    assert first == second
+    assert first["sample_count"] == 6
+    assert Counter(
+        (item["annotation_group"], item["data_type"])
+        for item in first["samples"]
+    ) == Counter({
+        (group, data_type): 1
+        for group in ("desktop", "mobile", "web")
+        for data_type in ("icon", "text")
+    })
+    assert first["source_images_archive_sha256"].startswith("sha256:")
+    assert first["manifest_digest"].startswith("sha256:")
+    encoded_manifest = (tmp_path / "manifest-one.json").read_text(encoding="utf-8")
+    assert "private instruction" not in encoded_manifest
+    assert '"bbox"' not in encoded_manifest
+    subset = json.loads((tmp_path / "subset-one.json").read_text(encoding="utf-8"))
+    assert len({item["sample_id"] for item in subset}) == 6
+
+
+def test_committed_screenspot_diagnostic_manifest_is_source_bound_and_prompt_free() -> None:
+    path = Path("docs/benchmarks/screenspot-stratified-diagnostic-v1.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "screenspot-stratified-diagnostic.v1"
+    assert payload["official_repository_commit"] == (
+        "0ef37ac4d7aaf37ba7b990e3e3c3ca77e1fb8f93"
+    )
+    assert payload["diagnostic_subset"] is True
+    assert payload["official_score_claimed"] is False
+    assert payload["sample_count"] == 30
+    assert Counter(
+        (sample["annotation_group"], sample["data_type"])
+        for sample in payload["samples"]
+    ) == Counter({
+        (group, data_type): 5
+        for group in ("desktop", "mobile", "web")
+        for data_type in ("icon", "text")
+    })
+    assert payload["source_images_archive_sha256"] == (
+        "sha256:76aeb06a56d86da2bd404bda31b3d240608da08064cdb2c945f03b562d0d9c69"
+    )
+    assert all("instruction" not in sample for sample in payload["samples"])
+    assert all("bbox" not in sample for sample in payload["samples"])
 
 
 def test_screenspot_rejects_annotation_image_path_outside_asset_root(tmp_path: Path) -> None:

@@ -18,6 +18,7 @@ def test_benchmark_cli_exposes_only_retained_independent_commands() -> None:
     assert _command_names() == {
         "benchmark-screenspot",
         "benchmark-screenspot-grounder",
+        "prepare-screenspot-subset",
         "write-visual-capability-manifest",
         "write-supervised-gui-acceptance-manifest",
         "validate-supervised-gui-fixtures",

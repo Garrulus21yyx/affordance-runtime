@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from affordance_runtime.goals import Failed, GoalPlanBoundary, GoalPlanProposal, Ready
 from affordance_runtime.goals.compiler import GoalCompilerRequest
 from affordance_runtime.model.goal_compiler import (
+    GOAL_COMPILER_INSTRUCTIONS,
     GOAL_COMPILER_PROMPT_VERSION,
     GoalCompilerModelResponse,
     ModelBackedGoalCompiler,
@@ -104,6 +105,13 @@ def test_initial_attempt_uses_independent_prompt_and_preserves_transcript() -> N
     assert "Describe outcomes, not internal" in port.messages[0][0].content
     assert "semantic_contract" not in port.messages[0][1].content
     assert compiler.last_generation_attempts[0].transcript["llm.output_messages"][0]["content"] == "raw:1"
+
+
+def test_needs_input_contract_reserves_environment_facts_for_action_policy() -> None:
+    assert GOAL_COMPILER_PROMPT_VERSION == "goal-plan-compiler.v6"
+    assert "user exclusively owns" in GOAL_COMPILER_INSTRUCTIONS
+    assert "GUI surface, screenshot, page, application, file" in GOAL_COMPILER_INSTRUCTIONS
+    assert "never ask the user to supply the requested result" in GOAL_COMPILER_INSTRUCTIONS
 
 
 def test_generation_attempt_records_role_thinking_contract() -> None:

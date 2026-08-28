@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -20,6 +21,10 @@ from affordance_runtime.surfaces.visual.grounding import (
     VisualGroundingPoint,
     VisualGroundingRequest,
 )
+
+SCREENSPOT_ORIGINAL_REPOSITORY = "https://github.com/njucckevin/SeeClick"
+SCREENSPOT_ORIGINAL_COMMIT = "0ef37ac4d7aaf37ba7b990e3e3c3ca77e1fb8f93"
+SCREENSPOT_SELECTION_NAMESPACE = "screenspot-stratified-diagnostic-v1"
 
 
 @dataclass(frozen=True)
@@ -64,7 +69,11 @@ def load_screenspot_samples(annotations_path: Path, images_root: Path) -> list[S
             raise ValueError(f"annotations[{index}] must be an object")
         filename = _required_text(item, "img_filename", index)
         instruction = _required_text(item, "instruction", index)
-        sample_id = str(item.get("sample_id") or item.get("id") or filename)
+        sample_id = str(
+            item.get("sample_id")
+            or item.get("id")
+            or f"annotation:{index:04d}:{filename}"
+        )
         if sample_id in seen:
             raise ValueError(f"duplicate ScreenSpot sample id: {sample_id}")
         seen.add(sample_id)
@@ -80,6 +89,115 @@ def load_screenspot_samples(annotations_path: Path, images_root: Path) -> list[S
             )
         )
     return samples
+
+
+def prepare_screenspot_stratified_subset(
+    annotation_paths: Mapping[str, Path],
+    output_annotations: Path,
+    output_manifest: Path,
+    *,
+    per_stratum: int = 5,
+    source_images_archive: Path | None = None,
+) -> dict[str, Any]:
+    """Freeze a diagnostic subset across desktop/mobile/web and text/icon strata."""
+
+    if set(annotation_paths) != {"desktop", "mobile", "web"}:
+        raise ValueError("ScreenSpot subset requires desktop, mobile, and web annotations")
+    if not 1 <= per_stratum <= 100:
+        raise ValueError("ScreenSpot per-stratum count must be within 1..100")
+    candidates: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+    source_annotations: dict[str, dict[str, object]] = {}
+    all_ids: set[str] = set()
+    for group, path in sorted(annotation_paths.items()):
+        raw_annotations = _load_list(path, f"{group} annotations")
+        source_annotations[group] = {
+            "path": path.name,
+            "sha256": _sha256_file(path),
+            "sample_count": len(raw_annotations),
+        }
+        for index, raw in enumerate(raw_annotations):
+            if not isinstance(raw, dict):
+                raise ValueError(f"{group} annotations[{index}] must be an object")
+            filename = _required_text(raw, "img_filename", index)
+            instruction = _required_text(raw, "instruction", index)
+            bbox = _bbox_xywh(raw.get("bbox"), index)
+            data_type = _required_text(raw, "data_type", index).casefold()
+            if data_type not in {"icon", "text"}:
+                raise ValueError(f"{group} annotations[{index}].data_type is unsupported")
+            sample_id = str(
+                raw.get("sample_id")
+                or raw.get("id")
+                or f"{group}:{index:04d}:{filename}"
+            )
+            if sample_id in all_ids:
+                raise ValueError(f"duplicate ScreenSpot sample id: {sample_id}")
+            all_ids.add(sample_id)
+            selected_annotation = {**raw, "sample_id": sample_id}
+            key_payload = {
+                "namespace": SCREENSPOT_SELECTION_NAMESPACE,
+                "sample_id": sample_id,
+                "instruction": instruction,
+                "bbox": bbox,
+                "data_type": data_type,
+                "data_source": str(raw.get("data_source") or "unknown"),
+            }
+            selection_key = hashlib.sha256(
+                json.dumps(key_payload, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            candidates[(group, data_type)].append((selection_key, selected_annotation))
+
+    selected: list[tuple[str, str, str, dict[str, Any]]] = []
+    for stratum in sorted(candidates):
+        entries = sorted(candidates[stratum], key=lambda item: item[0])
+        if len(entries) < per_stratum:
+            raise ValueError(f"ScreenSpot stratum {stratum} has insufficient samples")
+        group, data_type = stratum
+        selected.extend(
+            (group, data_type, selection_key, annotation)
+            for selection_key, annotation in entries[:per_stratum]
+        )
+    selected.sort(key=lambda item: (item[0], item[1], item[2]))
+    subset = [annotation for _group, _data_type, _key, annotation in selected]
+    output_annotations.parent.mkdir(parents=True, exist_ok=True)
+    output_annotations.write_text(
+        json.dumps(subset, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_payload: dict[str, Any] = {
+        "schema_version": "screenspot-stratified-diagnostic.v1",
+        "official_repository": SCREENSPOT_ORIGINAL_REPOSITORY,
+        "official_repository_commit": SCREENSPOT_ORIGINAL_COMMIT,
+        "selection_namespace": SCREENSPOT_SELECTION_NAMESPACE,
+        "per_stratum": per_stratum,
+        "diagnostic_subset": True,
+        "official_score_claimed": False,
+        "source_annotations": source_annotations,
+        "source_images_archive_sha256": (
+            _sha256_file(source_images_archive) if source_images_archive is not None else ""
+        ),
+        "subset_annotations_sha256": _sha256_file(output_annotations),
+        "sample_count": len(subset),
+        "samples": [
+            {
+                "sample_id": annotation["sample_id"],
+                "annotation_group": group,
+                "data_type": data_type,
+                "data_source": str(annotation.get("data_source") or "unknown"),
+                "img_filename": annotation["img_filename"],
+                "selection_key": selection_key,
+            }
+            for group, data_type, selection_key, annotation in selected
+        ],
+    }
+    manifest_payload["manifest_digest"] = "sha256:" + hashlib.sha256(
+        json.dumps(manifest_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    output_manifest.parent.mkdir(parents=True, exist_ok=True)
+    output_manifest.write_text(
+        json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_payload
 
 
 def load_screenspot_predictions(predictions_path: Path) -> dict[str, ScreenSpotPrediction]:

@@ -1,0 +1,272 @@
+{
+  "diagnostic_subset": true,
+  "manifest_digest": "sha256:c671eb4e94859928b2c504e4491942bbfdb4a96cf3ae03fcee30a226e426591e",
+  "official_repository": "https://github.com/njucckevin/SeeClick",
+  "official_repository_commit": "0ef37ac4d7aaf37ba7b990e3e3c3ca77e1fb8f93",
+  "official_score_claimed": false,
+  "per_stratum": 5,
+  "sample_count": 30,
+  "samples": [
+    {
+      "annotation_group": "desktop",
+      "data_source": "windows",
+      "data_type": "icon",
+      "img_filename": "pc_8ed762cb-06dd-493f-b770-7e02298433f8.png",
+      "sample_id": "desktop:0059:pc_8ed762cb-06dd-493f-b770-7e02298433f8.png",
+      "selection_key": "046a86ed6c64c9ffa82607e9ab85c27a1f325b55e0589e45062f19670db15e6e"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "macos",
+      "data_type": "icon",
+      "img_filename": "pc_2773ea59-8493-4c89-957a-d2ec661e6384.png",
+      "sample_id": "desktop:0218:pc_2773ea59-8493-4c89-957a-d2ec661e6384.png",
+      "selection_key": "0613d78a5b269dd7b99a0b9ca46b599a31bd60e50b477dec73f5d01473f27984"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "macos",
+      "data_type": "icon",
+      "img_filename": "pc_fe30b885-865a-442e-a8f5-0e9924f256fd.png",
+      "sample_id": "desktop:0255:pc_fe30b885-865a-442e-a8f5-0e9924f256fd.png",
+      "selection_key": "0bcb83564476183a91a8658192dfa78a58dea396b9346161172a393b35003c3a"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "windows",
+      "data_type": "icon",
+      "img_filename": "pc_2b40c066-2f8f-4389-8df8-e70e8dfc1309.png",
+      "sample_id": "desktop:0025:pc_2b40c066-2f8f-4389-8df8-e70e8dfc1309.png",
+      "selection_key": "0c6f73a8b420d88680ff4ec56e8cdc7c614100724f16130f485f7ab3519d86b4"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "windows",
+      "data_type": "icon",
+      "img_filename": "pc_4392332d-683f-4746-bbb2-e9287d9cdae0.png",
+      "sample_id": "desktop:0100:pc_4392332d-683f-4746-bbb2-e9287d9cdae0.png",
+      "selection_key": "0e00e0969925a2a5984c47fa9e334b85143b2cb179957836a65fc52f5678d9d9"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "macos",
+      "data_type": "text",
+      "img_filename": "pc_a4c60b7d-7f78-4255-8804-2dfbd297e09b.png",
+      "sample_id": "desktop:0187:pc_a4c60b7d-7f78-4255-8804-2dfbd297e09b.png",
+      "selection_key": "00f60afd24b9a55d8db9332f00ff8ab5f119c435f5fb3c1e8ae456934994fcc4"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "macos",
+      "data_type": "text",
+      "img_filename": "pc_cddf10f9-43a9-4cce-9b1b-df4aaf216f6d.png",
+      "sample_id": "desktop:0228:pc_cddf10f9-43a9-4cce-9b1b-df4aaf216f6d.png",
+      "selection_key": "02bb01ba3e80687a7f8cd4c7df6c7886280eb098792b3a0d6a662a4d21e05cc6"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "macos",
+      "data_type": "text",
+      "img_filename": "pc_f01bc231-56c4-4aba-9dd4-fd6271be0f8e.png",
+      "sample_id": "desktop:0272:pc_f01bc231-56c4-4aba-9dd4-fd6271be0f8e.png",
+      "selection_key": "05f43838cc71edb225e461fa76ac6af746bee577957bd027e321cfb9b41d4a05"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "windows",
+      "data_type": "text",
+      "img_filename": "pc_133ac2cd-3eb3-4d45-be35-255a83831f97.png",
+      "sample_id": "desktop:0022:pc_133ac2cd-3eb3-4d45-be35-255a83831f97.png",
+      "selection_key": "06bc8c77b1170667511fb1a0403d6dc5e3a988e55420fc65a625a0ba1bce7c57"
+    },
+    {
+      "annotation_group": "desktop",
+      "data_source": "windows",
+      "data_type": "text",
+      "img_filename": "pc_56c33426-0532-47dd-bf74-2a560c5a63f0.png",
+      "sample_id": "desktop:0151:pc_56c33426-0532-47dd-bf74-2a560c5a63f0.png",
+      "selection_key": "079d933e9811fc0551a3b0dff05a1719e14dfcfc5ef099af0a788ab7ab3f4d16"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "android",
+      "data_type": "icon",
+      "img_filename": "mobile_8ed6041f-f845-4495-8ca6-def7f40471fd.png",
+      "sample_id": "mobile:0355:mobile_8ed6041f-f845-4495-8ca6-def7f40471fd.png",
+      "selection_key": "00b99c362ac7681889d6eaa2efe8b9dd2d1ca427a8c2095508635186de1b5f51"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "icon",
+      "img_filename": "mobile_08782c89-65da-43ca-8eb6-8ca71e9f8ea7.png",
+      "sample_id": "mobile:0289:mobile_08782c89-65da-43ca-8eb6-8ca71e9f8ea7.png",
+      "selection_key": "04def65627acf3eb7ff6e49045632e29a8c5989cb43b8957c34c75e0d060aac7"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "icon",
+      "img_filename": "mobile_63cdee53-9026-46c9-9b69-639452091dcc.png",
+      "sample_id": "mobile:0283:mobile_63cdee53-9026-46c9-9b69-639452091dcc.png",
+      "selection_key": "05b7141d5f7dcf6e545b167475df333d509430d1d7153ca131f992ca4dbdf392"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "icon",
+      "img_filename": "mobile_6949b916-64c8-431f-8842-a29a9a557641.png",
+      "sample_id": "mobile:0005:mobile_6949b916-64c8-431f-8842-a29a9a557641.png",
+      "selection_key": "095034f611a4a64b19f2b4a268c7c2f59ccaa1d48105b44cbb6d19192d6a2f67"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "icon",
+      "img_filename": "mobile_3d3cacff-2019-4577-9395-21b45a0c548b.png",
+      "sample_id": "mobile:0285:mobile_3d3cacff-2019-4577-9395-21b45a0c548b.png",
+      "selection_key": "09f65f6250c0158851c03ce6b82da08b3ef91e6051fecec1ca90664eb9a035fc"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "android",
+      "data_type": "text",
+      "img_filename": "mobile_c346d616-ffcb-4638-a049-2fc45d665e91.png",
+      "sample_id": "mobile:0154:mobile_c346d616-ffcb-4638-a049-2fc45d665e91.png",
+      "selection_key": "03428ca940bc0192b404c8f48eca18b1186ea21b708881684704a68fb3b60724"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "text",
+      "img_filename": "mobile_70580ad8-f119-4db6-813b-81f950e0569e.png",
+      "sample_id": "mobile:0052:mobile_70580ad8-f119-4db6-813b-81f950e0569e.png",
+      "selection_key": "047e2fe2a0eabec4fd9742a7bb27cdff4ebd2ed3c1cff1707706c43f15ef1540"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "android",
+      "data_type": "text",
+      "img_filename": "mobile_4c2df330-55c0-4272-80c0-6e2cf8f96903.png",
+      "sample_id": "mobile:0224:mobile_4c2df330-55c0-4272-80c0-6e2cf8f96903.png",
+      "selection_key": "0486ee3d6c2336b7483bac9d73d9edbadd2299ce6140f973883ea7dd97e72249"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "ios",
+      "data_type": "text",
+      "img_filename": "mobile_db81809e-7672-4329-8453-f622d97fa7ca.png",
+      "sample_id": "mobile:0060:mobile_db81809e-7672-4329-8453-f622d97fa7ca.png",
+      "selection_key": "04ceae73ea5b2bb778bfcf84b1fa41d28ee114cd96908d5b2395aa615435c49b"
+    },
+    {
+      "annotation_group": "mobile",
+      "data_source": "android",
+      "data_type": "text",
+      "img_filename": "mobile_dc3bbcd3-d7bb-4ce2-be50-eb6f564d2ddc.png",
+      "sample_id": "mobile:0173:mobile_dc3bbcd3-d7bb-4ce2-be50-eb6f564d2ddc.png",
+      "selection_key": "04dd258e02560b269f62dcfd11d8729e235be8c8d7e7f153225d25e0248ae2aa"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "forum",
+      "data_type": "icon",
+      "img_filename": "web_e22bd6de-3985-4ccc-a316-eb383a03475f.png",
+      "sample_id": "web:0215:web_e22bd6de-3985-4ccc-a316-eb383a03475f.png",
+      "selection_key": "00951b43f62706e580713dbea09592f07179dcb422eba52e5f2e33637deb96c8"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "tool",
+      "data_type": "icon",
+      "img_filename": "web_78657904-325d-4ee2-b319-36dc1abe7e54.png",
+      "sample_id": "web:0385:web_78657904-325d-4ee2-b319-36dc1abe7e54.png",
+      "selection_key": "009f3ac1670462af8ccceb0875130f9dfeba591d3849a738963dc6c57d76f825"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "tool",
+      "data_type": "icon",
+      "img_filename": "web_2bda50e8-15d0-473a-a8cb-bd0777963756.png",
+      "sample_id": "web:0333:web_2bda50e8-15d0-473a-a8cb-bd0777963756.png",
+      "selection_key": "00bf6b68d2597b0e53cc2bfba2394416d144132811ed250f8f161f8377304712"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "tool",
+      "data_type": "icon",
+      "img_filename": "web_c95137ce-a84e-4c7c-9845-65157033e501.png",
+      "sample_id": "web:0325:web_c95137ce-a84e-4c7c-9845-65157033e501.png",
+      "selection_key": "00e4a30cd85ea0b1beaae017059b1ef803598ef440f11a988f2fd7fa86d3df73"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "shop",
+      "data_type": "icon",
+      "img_filename": "web_a8de66ff-c058-4617-9484-82662d95fbc1.png",
+      "sample_id": "web:0116:web_a8de66ff-c058-4617-9484-82662d95fbc1.png",
+      "selection_key": "01f209d893f34fa3f727bbe22ff31e620ccae2a6427a454caab00f20239ab2f4"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "forum",
+      "data_type": "text",
+      "img_filename": "web_626e849e-afe2-47c7-8e67-da7331497c25.png",
+      "sample_id": "web:0223:web_626e849e-afe2-47c7-8e67-da7331497c25.png",
+      "selection_key": "03229779ff0d36755bdf784a2c5fdebd40f82846ec0090931ca554c999d0bdac"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "gitlab",
+      "data_type": "text",
+      "img_filename": "web_fa9667b8-9bc1-4c58-b4ca-bd2d96780473.png",
+      "sample_id": "web:0057:web_fa9667b8-9bc1-4c58-b4ca-bd2d96780473.png",
+      "selection_key": "04326d6e01c8007961ea0c17373b0810b8c54fdade3f0f8156ae5822d1cff2dd"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "forum",
+      "data_type": "text",
+      "img_filename": "web_7e3c1de0-602b-48ec-bfb4-1215f33356f3.png",
+      "sample_id": "web:0246:web_7e3c1de0-602b-48ec-bfb4-1215f33356f3.png",
+      "selection_key": "0523309cb6c07ace8ea9c3d94b84d954638fa4a41da099947569ee4888102de4"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "shop",
+      "data_type": "text",
+      "img_filename": "web_d3f48983-3396-4249-990c-d1214fbed944.png",
+      "sample_id": "web:0111:web_d3f48983-3396-4249-990c-d1214fbed944.png",
+      "selection_key": "070a0b6b10d0e289b350b609abf6ee1d9779f5c9dbf6426fd729d10e3ad6cfce"
+    },
+    {
+      "annotation_group": "web",
+      "data_source": "shop",
+      "data_type": "text",
+      "img_filename": "web_e891e448-0f8e-4673-9122-405a48cabad3.png",
+      "sample_id": "web:0142:web_e891e448-0f8e-4673-9122-405a48cabad3.png",
+      "selection_key": "082000db289d70476230d348ae2d3a075890f310ab707bee014380759fa02ca6"
+    }
+  ],
+  "schema_version": "screenspot-stratified-diagnostic.v1",
+  "selection_namespace": "screenspot-stratified-diagnostic-v1",
+  "source_annotations": {
+    "desktop": {
+      "path": "screenspot_desktop.json",
+      "sample_count": 334,
+      "sha256": "sha256:d101500a238f2f7d7f00684279c0de4d8e046ea5fc410b609d86c8d15a600a0d"
+    },
+    "mobile": {
+      "path": "screenspot_mobile.json",
+      "sample_count": 502,
+      "sha256": "sha256:7ea52a90feb79c039560232e24ba0209824d21ec7adc3755c8a629343f54c0cd"
+    },
+    "web": {
+      "path": "screenspot_web.json",
+      "sample_count": 436,
+      "sha256": "sha256:0df1f5a55a2255f32e26314a8fa299a38449ccbac7c04457e7810923eba97352"
+    }
+  },
+  "source_images_archive_sha256": "sha256:76aeb06a56d86da2bd404bda31b3d240608da08064cdb2c945f03b562d0d9c69",
+  "subset_annotations_sha256": "sha256:9693b2280e7521c5f5550bab1a8d943ea804645207beacca2423fb52800ea53c"
+}

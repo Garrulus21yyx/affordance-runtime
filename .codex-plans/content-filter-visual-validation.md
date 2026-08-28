@@ -65,6 +65,17 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Keep public-page drift results separate from formal benchmark truth.
 - Commit and push code/manifests; run live only with explicit authorization.
 
+### Phase 6 — authorized live visual evidence (`in_progress`)
+
+- Treat the user's 2026-08-28 “继续” as authorization for the frozen live visual arm.
+- Run one controlled DeepSeek point-grounding smoke before any broader provider spend.
+- Acquire ScreenSpot only from the original SeeClick release, bind source commit/digests, and report point-in-box
+  accuracy separately from transport or structured-output failures.
+- Run the frozen MiniWoB `visual-addition` case through `run-visual-case`; retain the existing ActionPolicy and native
+  evaluator, and persist the redacted ActionPolicy/VLM configuration identity.
+- Keep public-page shadow navigation pending concrete user-supplied URLs; do not infer a shopping or content site.
+- Commit and push live manifests/results only after source and reporting validation.
+
 ## Progress log
 
 - 2026-08-28: Started from pushed feature branch. Detected unrelated dirty worktree; all phase commits will use
