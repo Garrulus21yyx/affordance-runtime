@@ -249,6 +249,13 @@ authority or bypass.
   9 restores the `58b1215e` contract at the Catalog owner: complete fresh ActorWorld groups remain batch-countable
   even when folded, truncated documents expose no count tool, and action routes remain Manifest-bound. This is not a
   VLM activation, CoreLoop, Fusion, compression, or provider-routing change.
+- 2026-08-28: Clean live run `phase9-clean11` at pushed commit `78de23d1` verified the restored owner contract end to
+  end. After two paginated `read_region` calls, the Catalog still offered both complete current ActorWorld groups;
+  ActionPolicy called `count_children(containers=[N17,N6])`, Runtime returned exact counts `{N17:2,N6:8}` and
+  `total=10`, the policy entered `10`, activated Submit, and the native evaluator returned `verified_success` after
+  five policy turns and two GUI executions. All seven visual specialist call counters and image input tokens were
+  zero. The formal run evidence is valid. This closes the specific deterministic multi-group reachability regression;
+  it is one authorized flagship case, not a general live non-regression claim for the full benchmark suite.
 
 ## Files changed by this plan
 
