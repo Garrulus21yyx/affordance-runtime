@@ -52,7 +52,6 @@ from affordance_runtime.world import (
     SemanticTarget,
     SourceAcquisitionStatus,
     SourceEntityEndpoint,
-    SourceRequirement,
     StateFact,
     SurfaceObservation,
     WorldFusion,
@@ -330,7 +329,7 @@ def test_candidate_plurality_does_not_trigger_visual_before_policy_intent() -> N
     assert [item.source for item in selected.plan.selections] == ["dom"]
 
 
-def test_typed_structural_truncation_adds_optional_visual_discovery() -> None:
+def test_typed_structural_truncation_does_not_infer_a_visual_query() -> None:
     structured = replace(_source("dom"), coverage=CoverageState.TRUNCATED)
     offers = (
         ObservationOffer("dom", "structural", "structural", "low"),
@@ -351,15 +350,12 @@ def test_typed_structural_truncation_adds_optional_visual_discovery() -> None:
     )
 
     assert selected.plan is not None
-    assert [item.source for item in selected.plan.selections] == ["dom", "visual"]
-    visual = selected.plan.selections[1]
-    assert visual.reason_code == "visual_entity_discovery"
-    assert visual.need_ids == ("residual:entity_discovery",)
-    assert visual.requirement is SourceRequirement.OPTIONAL
+    assert [item.source for item in selected.plan.selections] == ["dom"]
+    assert all(item.need_id != "residual:entity_discovery" for item in selected.plan.needs)
     assert all(not item.need_id.startswith("baseline:") for item in selected.plan.needs)
 
 
-def test_staged_post_action_refinement_reuses_the_acquired_structural_baseline() -> None:
+def test_staged_post_action_does_not_turn_generic_truncation_into_visual_fallback() -> None:
     async def scenario() -> None:
         dom = OfferedAdapter(
             "dom",
@@ -397,7 +393,6 @@ def test_staged_post_action_refinement_reuses_the_acquired_structural_baseline()
             for activation in acquired.activations
         } == {
             "dom": (verification.need_id,),
-            "visual": ("residual:entity_discovery",),
         }
         assert all(
             {item.need_id for item in activation.request.needs}

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from affordance_runtime.world.contracts import CoverageState, SurfaceObservation
+from affordance_runtime.world.contracts import SurfaceObservation
 
 
 class VisionEvidenceNeed(StrEnum):
@@ -39,11 +39,9 @@ def derive_visual_evidence_needs(
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
     if "unresolved_visual_layer_transition" in structured.artifacts:
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
-    # A bounded structural omission is a Runtime-owned fact. Candidate count,
-    # duplicate labels, and task-language similarity are not: they require the
-    # policy to first state what it intends to interact with. Consequently,
-    # single-target disambiguation is admitted only as an explicit typed need,
-    # never inferred here before the policy has selected an action intent.
-    if structured.coverage is CoverageState.TRUNCATED:
-        return (VisionEvidenceNeed.OPEN_WORLD_ENTITY_DISCOVERY,)
+    # Generic structural truncation records the limits of the current source;
+    # it does not identify a visual question.  The sole ActionPolicy must first
+    # request one bounded visual purpose.  Runtime may still add the explicit
+    # post-action layer obligation above because that is a typed transition
+    # fact, not a guess based on page size, candidate count, or task language.
     return ()

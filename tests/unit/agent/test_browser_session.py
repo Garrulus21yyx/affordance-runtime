@@ -188,6 +188,70 @@ def test_browser_session_observes_a_visible_geometric_overlay_without_calling_a_
     assert layer.member_keys == ("#save",)
 
 
+def test_browser_session_observes_child_frame_layer_in_main_viewport_coordinates() -> None:
+    class FrameElement:
+        def bounding_box(self) -> dict[str, float]:
+            return {"x": 240.0, "y": 120.0, "width": 400.0, "height": 320.0}
+
+    class ChildFrame:
+        def frame_element(self) -> FrameElement:
+            return FrameElement()
+
+        def evaluate(self, expression: str) -> object:
+            if "runtimeLayerProbe" not in expression:
+                return {}
+            return [
+                {
+                    "layer_id": "layer:0",
+                    "kind": "geometric_overlay",
+                    "role": "region",
+                    "label": "QR sign-in challenge",
+                    "text": "Scan to sign in",
+                    "modal": False,
+                    "bbox": [20, 30, 300, 220],
+                    "member_keys": [],
+                }
+            ]
+
+    page = FakePage()
+    child = ChildFrame()
+    page.main_frame = page
+    page.frames = (page, child)  # type: ignore[attr-defined]
+
+    snapshot = BrowserSession(page).capture(page_id="settings")
+
+    assert len(snapshot.layers) == 1
+    layer = snapshot.layers[0]
+    assert layer.layer_id == "layer:frame-1:layer:0"
+    assert layer.label == "QR sign-in challenge"
+    assert layer.bbox == (260.0, 150.0, 300.0, 220.0)
+
+
+def test_browser_session_geometric_layer_probe_includes_embedded_frame_content() -> None:
+    class EmbeddedOverlayPage(FakePage):
+        def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+            del args, kwargs
+            if "runtimeLayerProbe" in expression:
+                assert "iframe, frame, embed, object" in expression
+                return [
+                    {
+                        "layer_id": "layer:0",
+                        "kind": "geometric_overlay",
+                        "role": "region",
+                        "label": "Visible overlay",
+                        "text": "",
+                        "modal": False,
+                        "bbox": [200, 100, 400, 300],
+                        "member_keys": [],
+                    }
+                ]
+            return super().evaluate(expression)
+
+    snapshot = BrowserSession(EmbeddedOverlayPage()).capture(page_id="settings")
+
+    assert snapshot.layers[0].label == "Visible overlay"
+
+
 def test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload() -> None:
     accessibility_tree = {
         "role": "WebArea",

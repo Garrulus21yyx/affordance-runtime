@@ -451,41 +451,84 @@ def _visible_browser_layers(
     page: PageDriver,
     bindings: list[dict[str, str]],
 ) -> tuple[BrowserLayer, ...]:
-    """Observe current semantic layers and topmost fixed overlays without task inference."""
+    """Observe current semantic layers and topmost fixed overlays without task inference.
 
-    evaluator = getattr(page, "evaluate", None)
-    if not callable(evaluator):
-        return ()
-    serialized_bindings = json.dumps(bindings, separators=(",", ":"))
+    Playwright owns the frame tree, so acquisition traverses it here instead of
+    asking the DOM parser or the agent to infer that a cross-origin frame is a
+    separate visible layer.  Child-frame boxes are translated into the main
+    viewport coordinate space before they enter the World.
+    """
+
+    frames = getattr(page, "frames", None)
     try:
-        raw = evaluator(
-            """() => { const runtimeLayerProbe = true; const bindings = """
-            + serialized_bindings
-            + r"""; const viewportArea = Math.max(1, innerWidth * innerHeight); const visible = (element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; }; const explicit = Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="alert"], [aria-modal="true"]')).filter(visible); const explicitSet = new Set(explicit); const geometric = Array.from(document.body?.querySelectorAll('*') || []).filter((element) => { if (explicitSet.has(element) || explicit.some((item) => element.contains(item))) return false; const style = getComputedStyle(element); if (style.position !== 'fixed' || style.pointerEvents === 'none' || !visible(element)) return false; const z = Number.parseFloat(style.zIndex); if (!Number.isFinite(z) || z < 1) return false; const rect = element.getBoundingClientRect(); const ratio = rect.width * rect.height / viewportArea; if (ratio < 0.02 || ratio > 0.98) return false; const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2)); const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2)); const topmost = document.elementFromPoint(centerX, centerY); const intersectsCenter = rect.left <= innerWidth / 2 && rect.right >= innerWidth / 2 && rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2; const spansViewport = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.15; return Boolean(topmost && element.contains(topmost) && (intersectsCenter || spansViewport) && ((element.innerText || '').trim() || element.querySelector('button, input, select, textarea, a[href], [role="button"]'))); }); const candidates = [...explicit.map((element) => ({element, kind:'semantic'})), ...geometric.map((element) => ({element, kind:'geometric_overlay'}))]; return candidates.slice(0, 8).map(({element, kind}, index) => { const rect = element.getBoundingClientRect(); const authoredRole = (element.getAttribute('role') || '').toLowerCase(); const role = element.tagName.toLowerCase() === 'dialog' ? 'dialog' : ['alert','alertdialog','dialog'].includes(authoredRole) ? authoredRole : element.getAttribute('aria-modal') === 'true' ? 'dialog' : 'region'; const text = (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000); const label = (element.getAttribute('aria-label') || element.getAttribute('title') || text || 'Visible overlay').trim().slice(0, 160); const memberKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); return key && target && element.contains(target) ? [key] : []; } catch { return []; } }); return {layer_id:`layer:${index}`, kind, role, label, text, modal: element.getAttribute('aria-modal') === 'true' || element.tagName.toLowerCase() === 'dialog', bbox:[rect.x, rect.y, rect.width, rect.height], member_keys:memberKeys}; }); void runtimeLayerProbe; }"""
-        )
-    except Exception:
-        return ()
-    if not isinstance(raw, list | tuple):
-        return ()
+        owners = tuple(frames) if frames is not None else ()
+    except TypeError:
+        owners = ()
+    owners = owners or (page,)
+    main_frame = getattr(page, "main_frame", None)
     result: list[BrowserLayer] = []
-    for item in raw[:8]:
-        if not isinstance(item, Mapping):
+    for frame_index, owner in enumerate(owners):
+        evaluator = getattr(owner, "evaluate", None)
+        if not callable(evaluator):
             continue
+        offset_x = 0.0
+        offset_y = 0.0
+        is_main_document = owner is page or owner is main_frame
+        if not is_main_document:
+            frame_element = getattr(owner, "frame_element", None)
+            if not callable(frame_element):
+                continue
+            try:
+                element = frame_element()
+                bounding_box = getattr(element, "bounding_box", None)
+                frame_box = bounding_box() if callable(bounding_box) else None
+                if not isinstance(frame_box, Mapping):
+                    continue
+                offset_x = float(frame_box["x"])
+                offset_y = float(frame_box["y"])
+            except Exception:
+                continue
+        owner_bindings = bindings if is_main_document else []
+        serialized_bindings = json.dumps(owner_bindings, separators=(",", ":"))
         try:
-            result.append(
-                BrowserLayer(
-                    str(item["layer_id"]),
-                    BrowserLayerKind(str(item["kind"])),
-                    str(item["role"]),
-                    str(item["label"]),
-                    str(item.get("text") or "")[:1_000],
-                    item.get("modal") is True,
-                    tuple(item["bbox"]),
-                    tuple(str(value) for value in item.get("member_keys", ()) if str(value).strip()),
-                )
+            raw = evaluator(
+                """() => { const runtimeLayerProbe = true; const bindings = """
+                + serialized_bindings
+                + r"""; const viewportArea = Math.max(1, innerWidth * innerHeight); const visible = (element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; }; const explicit = Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="alert"], [aria-modal="true"]')).filter(visible); const explicitSet = new Set(explicit); const geometric = Array.from(document.body?.querySelectorAll('*') || []).filter((element) => { if (explicitSet.has(element) || explicit.some((item) => element.contains(item))) return false; const style = getComputedStyle(element); if (style.position !== 'fixed' || style.pointerEvents === 'none' || !visible(element)) return false; const z = Number.parseFloat(style.zIndex); if (!Number.isFinite(z) || z < 1) return false; const rect = element.getBoundingClientRect(); const ratio = rect.width * rect.height / viewportArea; if (ratio < 0.02 || ratio > 0.98) return false; const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2)); const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2)); const topmost = document.elementFromPoint(centerX, centerY); const intersectsCenter = rect.left <= innerWidth / 2 && rect.right >= innerWidth / 2 && rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2; const spansViewport = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.15; return Boolean(topmost && element.contains(topmost) && (intersectsCenter || spansViewport) && ((element.innerText || '').trim() || element.querySelector('button, input, select, textarea, a[href], [role="button"], iframe, frame, embed, object'))); }); const candidates = [...explicit.map((element) => ({element, kind:'semantic'})), ...geometric.map((element) => ({element, kind:'geometric_overlay'}))]; return candidates.slice(0, 8).map(({element, kind}, index) => { const rect = element.getBoundingClientRect(); const authoredRole = (element.getAttribute('role') || '').toLowerCase(); const role = element.tagName.toLowerCase() === 'dialog' ? 'dialog' : ['alert','alertdialog','dialog'].includes(authoredRole) ? authoredRole : element.getAttribute('aria-modal') === 'true' ? 'dialog' : 'region'; const text = (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000); const label = (element.getAttribute('aria-label') || element.getAttribute('title') || text || 'Visible overlay').trim().slice(0, 160); const memberKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); return key && target && element.contains(target) ? [key] : []; } catch { return []; } }); return {layer_id:`layer:${index}`, kind, role, label, text, modal: element.getAttribute('aria-modal') === 'true' || element.tagName.toLowerCase() === 'dialog', bbox:[rect.x, rect.y, rect.width, rect.height], member_keys:memberKeys}; }); void runtimeLayerProbe; }"""
             )
-        except (KeyError, TypeError, ValueError):
+        except Exception:
             continue
+        if not isinstance(raw, list | tuple):
+            continue
+        for item in raw:
+            if len(result) >= 8:
+                return tuple(result)
+            if not isinstance(item, Mapping):
+                continue
+            try:
+                local_bbox = tuple(float(value) for value in item["bbox"])
+                layer_id = str(item["layer_id"])
+                if not is_main_document:
+                    layer_id = f"layer:frame-{frame_index}:{layer_id}"
+                result.append(
+                    BrowserLayer(
+                        layer_id,
+                        BrowserLayerKind(str(item["kind"])),
+                        str(item["role"]),
+                        str(item["label"]),
+                        str(item.get("text") or "")[:1_000],
+                        item.get("modal") is True,
+                        (
+                            local_bbox[0] + offset_x,
+                            local_bbox[1] + offset_y,
+                            local_bbox[2],
+                            local_bbox[3],
+                        ),
+                        tuple(str(value) for value in item.get("member_keys", ()) if str(value).strip()),
+                    )
+                )
+            except (IndexError, KeyError, TypeError, ValueError):
+                continue
     return tuple(result)
 
 
