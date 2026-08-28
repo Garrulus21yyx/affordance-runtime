@@ -680,6 +680,7 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
     assert second.recovery_signal is not None
     assert third.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert second.recovery_signal.prohibited_attempt_signature == monitor.latest_attempt_signature
+    assert "entity_discovery" in second.recovery_signal.human_instruction
     assert monitor.same_attempt_streak == 3
     assert monitor.no_progress_count == 3
     assert monitor.latest_attempt_signature is not None

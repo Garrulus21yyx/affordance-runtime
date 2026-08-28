@@ -501,7 +501,9 @@ def _repeated_gui_result_signal(
         prohibited_attempt_signature=gui_signature,
         human_instruction=(
             "The same semantic GUI action has reached this public result before. Preserve current evidence and "
-            "choose a materially different offered control or observation route; do not replay this action."
+            "choose a materially different offered control or observation route; do not replay this action. If "
+            "structural coverage is partial and the expected content is still absent, use offered entity_discovery "
+            "once to inspect a visible blocker before trying alternate navigation."
         ),
         recovery_attempt=1,
     )
@@ -615,7 +617,8 @@ def _control_stall_instruction(result: StepResult) -> str:
         )
     return (
         "Use a materially different current control, relevant page content, or offered browser navigation action; "
-        "do not repeat the unchanged attempt."
+        "do not repeat the unchanged attempt. If structural coverage is partial and the expected content is still "
+        "absent, use offered entity_discovery once to inspect a visible blocker before alternate navigation."
     )
 
 
