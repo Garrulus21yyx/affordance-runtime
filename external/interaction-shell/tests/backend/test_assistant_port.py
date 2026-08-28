@@ -20,6 +20,7 @@ from interaction_shell.contracts import (
     Completion,
     CompletionBlock,
     ConversationTurn,
+    FailureBlock,
     GoalAcceptedBlock,
     ReviseTask,
     RevisionAppliedBlock,
@@ -47,16 +48,19 @@ class FakeAssistantRunner:
         run_gui_task,
     ):
         self.calls += 1
+        gui_results = ()
         if prompt == "ask":
             output = AssistantQuestion(prompt="Which city should I use?")
         elif prompt.startswith("gui:"):
             result = await run_gui_task(prompt.removeprefix("gui:"))
             output = f"GUI finished: {result.message}"
+            gui_results = (result,)
         else:
             output = f"Direct answer: {prompt}"
         return AssistantTurnResult(
             output=output,
             messages=(*message_history, (conversation_id, prompt, output)),
+            gui_results=gui_results,
         )
 
 
@@ -86,8 +90,14 @@ class FakeGuiHandle:
 
 
 class FakeGuiPort:
-    def __init__(self, *, wait_for_answer: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        wait_for_answer: bool = False,
+        terminal_outcome: str = "success",
+    ) -> None:
         self.wait_for_answer = wait_for_answer
+        self.terminal_outcome = terminal_outcome
         self.open_count = 0
         self.close_count = 0
         self.commands = []
@@ -170,16 +180,30 @@ class FakeGuiPort:
             else:
                 occurred_at = datetime.now(UTC)
                 completion = Completion(
-                    outcome="success",
-                    code="gui_done",
-                    message="the page operation completed",
+                    outcome=self.terminal_outcome,
+                    code=(
+                        "gui_done"
+                        if self.terminal_outcome == "success"
+                        else "gui_runtime_blocked"
+                    ),
+                    message=(
+                        "the page operation completed"
+                        if self.terminal_outcome == "success"
+                        else "the page operation stopped before completion"
+                    ),
                 )
+                terminal_status = {
+                    "success": RunStatus.DONE,
+                    "failure": RunStatus.FAILED,
+                    "blocked": RunStatus.BLOCKED,
+                    "cancelled": RunStatus.CANCELLED,
+                }[self.terminal_outcome]
                 snapshot = handle.snapshot.model_copy(
                     update={
                         "task_id": "gui-task",
                         "task_revision": 1,
                         "task_text": command.task,
-                        "run_status": RunStatus.DONE,
+                        "run_status": terminal_status,
                         "completion": completion,
                         "command_offers": (CloseSessionOffer(kind="close_session"),),
                     }
@@ -192,11 +216,25 @@ class FakeGuiPort:
                         task_revision=1,
                         summary=command.task,
                     ),
-                    CompletionBlock(
-                        kind="completion",
-                        block_id="inner-completion",
-                        occurred_at=occurred_at,
-                        completion=completion,
+                    *(
+                        (
+                            CompletionBlock(
+                                kind="completion",
+                                block_id="inner-completion",
+                                occurred_at=occurred_at,
+                                completion=completion,
+                            ),
+                        )
+                        if self.terminal_outcome == "success"
+                        else (
+                            FailureBlock(
+                                kind="failure",
+                                block_id="inner-failure",
+                                occurred_at=occurred_at,
+                                code=completion.code,
+                                message=completion.message,
+                            ),
+                        )
                     ),
                 )
         elif isinstance(command, AnswerQuestion):
@@ -317,6 +355,31 @@ async def test_gui_capability_is_lazy_and_returns_one_bounded_result_to_outer_ru
     assert completed.task_text == "gui:book the selected option"
     assert all(block.kind != "completion" or block.completion.code != "gui_done" for event in handle.events for block in event.feed_delta)
     assert any(block.kind == "goal_accepted" for event in handle.events for block in event.feed_delta)
+
+
+@pytest.mark.asyncio
+async def test_gui_failure_remains_authoritative_over_outer_assistant_text():
+    gui = FakeGuiPort(terminal_outcome="blocked")
+    port = AssistantSessionPort(FakeAssistantRunner(), gui)
+    handle = await port.open("assistant-gui-blocked", datetime.now(UTC) + timedelta(hours=1))
+
+    await port.command(handle, start(handle.snapshot, "gui:open the page"))
+    blocked = await wait_for_status(port, handle, RunStatus.BLOCKED)
+
+    assert blocked.completion is not None
+    assert blocked.completion.outcome == "blocked"
+    assert blocked.completion.code == "gui_runtime_blocked"
+    assert blocked.completion.message == "the page operation stopped before completion"
+    assert not any(
+        isinstance(block, CompletionBlock) and block.completion.code == "assistant_response"
+        for event in handle.events
+        for block in event.feed_delta
+    )
+    assert any(
+        isinstance(block, FailureBlock) and block.code == "gui_runtime_blocked"
+        for event in handle.events
+        for block in event.feed_delta
+    )
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,9 @@ async def test_pydantic_runner_preserves_one_complete_gui_tool_exchange():
     assert isinstance(result.output, str)
     assert result.output
     assert called_goals
+    assert len(result.gui_results) == 1
+    assert result.gui_results[0].outcome == "success"
+    assert result.gui_results[0].message == "GUI complete"
     assert is_provider_valid(list(result.messages))
     restored = ModelMessagesTypeAdapter.validate_json(
         ModelMessagesTypeAdapter.dump_json(list(result.messages))

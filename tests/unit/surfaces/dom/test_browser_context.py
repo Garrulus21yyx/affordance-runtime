@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import Any
 
 from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
-from affordance_runtime.execution import ActionError, DispatchStatus
+from affordance_runtime.evaluation import (
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+    ProductionActionOutcomeProjector,
+)
+from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
+from affordance_runtime.execution import ActionError, ActionResult, DispatchStatus
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.task import RiskProfile, TaskGoal
+from affordance_runtime.world import CoverageState, WorldFusion
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 
 
@@ -73,6 +82,66 @@ def test_dom_surface_projects_and_executes_unrestricted_browser_navigation() -> 
         )
         assert after_browser.state["open_tabs"][0]["route"] == "https://docs.example.test/guide"
         assert page.url == "https://docs.example.test/guide?private=query"
+
+    asyncio.run(scenario())
+
+
+def test_sent_unknown_navigation_uses_current_browser_context_on_truncated_page() -> None:
+    async def scenario() -> None:
+        page = NavigationPage()
+        environment = UnifiedWorldEnvironment(
+            (DomSurfaceAdapter(BrowserSession(page)),)  # type: ignore[arg-type]
+        )
+        acquired = await environment.reset(_task())
+        assert acquired.observation is not None
+        before = acquired.observation
+        goto = next(
+            item
+            for item in ActionSpaceBuilder().build(_task(), before).options
+            if item.semantic_action == "goto"
+        )
+        request = ActionBinder().bind(
+            ActionSpaceBuilder().admit(
+                goto,
+                {"url": "https://docs.example.test/guide"},
+            ),
+            before,
+            "context:goto-truncated",
+        )
+        execution = await environment.execute(request)
+        assert execution.post_acquisition is not None
+        assert execution.post_acquisition.observation is not None
+        captured = execution.post_acquisition.observation
+        fused = WorldFusion().fuse(
+            tuple(
+                replace(source, coverage=CoverageState.TRUNCATED)
+                for source in captured.sources
+            )
+        )
+        assert fused.observation is not None
+        after = fused.observation
+        assert all(source.coverage is CoverageState.TRUNCATED for source in after.sources)
+
+        outcome = await ProductionActionOutcomeProjector().evaluate(
+            _task(),
+            before,
+            request,
+            ActionResult(
+                request.request_id,
+                DispatchStatus.SENT_UNKNOWN,
+                "dom",
+                False,
+                ActionError.EXECUTION_FAILED,
+            ),
+            after,
+        )
+
+        assert outcome.observed_change is ObservedChange.CHANGED
+        assert outcome.local_postcondition is LocalPostconditionStatus.NOT_APPLICABLE
+        assert outcome.evidence_method is EvidenceMethod.STRUCTURAL
+        assert outcome.evidence["verification_profile"] == "structural_target_diff_v1"
+        assert outcome.evidence_refs
+        assert all(WorldEvidenceIndex.from_observation(after).resolve(ref) for ref in outcome.evidence_refs)
 
     asyncio.run(scenario())
 

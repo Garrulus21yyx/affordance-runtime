@@ -1728,6 +1728,18 @@ was repeated until the existing repetition guard blocked the run. The rule conta
 field, Runtime classifier, or second policy. This diagnostic and its focused prompt-contract test do not alter or
 restate any benchmark acceptance claim; the shopping flagship still requires a fresh post-repair live witness.
 
+The next shopping product attempt did not reach that policy rule. Its initial browser `goto` returned
+`sent_unknown` after Playwright's full-load wait timed out, even though the immediately acquired World showed a
+structural active-tab transition from `about:blank` to Taobao and 130 changed public records. Because the large DOM
+source was `truncated`, navigation verification rejected the otherwise current browser-context route/title facts and
+blocked. The owner repair admits `truncated` coverage only for exact current structural `browser_context` facts under
+the navigation verification family, changes direct navigation to wait for `DOMContentLoaded`, and retains fail-closed
+behavior for every unresolved `sent_unknown`. A separate Shell projection repair preserves delegated
+`blocked|failure|cancelled` as the outer session status instead of allowing later Assistant prose to overwrite it as
+success; internal evaluator code is no longer emitted as user text. Focused owner/consumer tests pass 27 with one
+existing skip, plus the full 106-test PydanticAI prompt integration file from the preceding policy phase. This remains
+provider-free repair evidence, not a successful shopping flagship or benchmark result.
+
 Task740 `run4` was an invalid launch attempt: Python multiprocessing could not spawn the BrowserGym child from a
 `<stdin>` main module, so no benchmark case began and it supplies no behavioral evidence. The file-backed `run5` did
 begin normally at commit `7bf34249` and crossed the GoalCompiler/final-response repair. The Agent found CMU and

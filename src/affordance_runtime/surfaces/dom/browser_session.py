@@ -550,7 +550,7 @@ class BrowserSession:
         )
 
     def open(self, url: str) -> None:
-        self._page.goto(url)
+        self._page.goto(url, wait_until="domcontentloaded")
 
     def go_back(self) -> None:
         self._page.go_back(wait_until="domcontentloaded")
@@ -620,7 +620,7 @@ class BrowserSession:
 
     def reset(self) -> None:
         if self._initial_url:
-            self._page.goto(self._initial_url)
+            self._page.goto(self._initial_url, wait_until="domcontentloaded")
 
     def provenance_descriptor(self) -> Mapping[str, Any]:
         """Expose stable acquisition configuration without page or owner state."""

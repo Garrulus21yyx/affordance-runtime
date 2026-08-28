@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -13,7 +14,12 @@ from affordance_runtime.app.interactive_environment import (
 from affordance_runtime.app.public_session import PublicSessionStatus, _completion
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
-from affordance_runtime.evaluation import TaskEvaluationStatus, TaskOutcomeKind
+from affordance_runtime.evaluation import (
+    TaskEvaluation,
+    TaskEvaluationStatus,
+    TaskOutcomeFact,
+    TaskOutcomeKind,
+)
 from affordance_runtime.execution import DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
 from affordance_runtime.task import TaskGoal
@@ -86,3 +92,29 @@ def test_interactive_environment_closes_the_existing_core_loop_without_a_second_
         assert completion.message == "The answer is 42."
 
     asyncio.run(scenario())
+
+
+def test_blocked_interactive_completion_does_not_expose_internal_running_code() -> None:
+    evaluation = TaskEvaluation(
+        "task:blocked",
+        "world:after",
+        TaskEvaluationStatus.INCOMPLETE,
+        "interactive_task_running",
+        outcome=TaskOutcomeFact(
+            TaskOutcomeKind.RUNNING_INCOMPLETE,
+            "interactive_task_running",
+        ),
+    )
+    state = SimpleNamespace(
+        current_task_evaluation=evaluation,
+        runtime_failure=None,
+        control_termination=None,
+    )
+
+    completion = _completion(state, PublicSessionStatus.BLOCKED)
+
+    assert completion is not None
+    assert completion.outcome == "blocked"
+    assert completion.code == "runtime_blocked"
+    assert completion.message == "The task stopped before completion."
+    assert "interactive_task_running" not in completion.message

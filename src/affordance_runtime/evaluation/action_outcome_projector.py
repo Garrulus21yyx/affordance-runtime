@@ -185,11 +185,19 @@ def _evaluate_navigation_context(
         after,
         request.intent.target_id,
     )
+    navigation_target = next(
+        (item for item in after.targets if item.target_id == request.intent.target_id),
+        None,
+    )
     target_refs = (
         _changed_fact_refs(
             public_world_delta,
             after,
             target_id=request.intent.target_id,
+            allow_truncated_source=(
+                navigation_target is not None
+                and navigation_target.role == "browser_context"
+            ),
         )
         if semantic_world_changed
         else ()
@@ -292,6 +300,7 @@ def _changed_fact_refs(
     after,
     *,
     target_id: str = "",
+    allow_truncated_source: bool = False,
 ) -> tuple[str, ...]:
     index = WorldEvidenceIndex.from_observation(after)
     changed_refs = {
@@ -306,7 +315,11 @@ def _changed_fact_refs(
         and record.evidence_ref in changed_refs
         and evidence_source_is_current(record, after)
         and assurance_satisfies(record.source_assurance, "structural")
-        and _source_coverage_complete(record.source_observation_id, after)
+        and _source_coverage_admits_current_fact(
+            record.source_observation_id,
+            after,
+            allow_truncated=allow_truncated_source,
+        )
     )
     return tuple(dict.fromkeys(refs))
 
@@ -348,16 +361,27 @@ def _fact_change_payload(change: PublicFactChange) -> dict[str, object]:
     return payload
 
 
-def _source_coverage_complete(source_observation_id: str, observation) -> bool:
+def _source_coverage_admits_current_fact(
+    source_observation_id: str,
+    observation,
+    *,
+    allow_truncated: bool,
+) -> bool:
     source = next(
         (item for item in observation.sources if item.observation_id == source_observation_id),
         None,
     )
+    admitted = (
+        {CoverageState.COMPLETE, CoverageState.TRUNCATED}
+        if allow_truncated
+        else {CoverageState.COMPLETE}
+    )
     return bool(
         source is not None
-        and source.coverage == CoverageState.COMPLETE
+        and source.coverage in admitted
         and any(
-            item.source_observation_id == source.observation_id and item.coverage == CoverageState.COMPLETE
+            item.source_observation_id == source.observation_id
+            and item.coverage in admitted
             for item in observation.source_manifest
         )
     )

@@ -385,7 +385,33 @@ class AssistantSessionPort:
             )
             handle.messages = result.messages
             occurred_at = datetime.now(UTC)
-            if isinstance(result.output, AssistantQuestion):
+            delegated = result.gui_results[-1] if result.gui_results else None
+            if delegated is not None and delegated.outcome != "success":
+                completion = Completion(
+                    outcome=delegated.outcome,
+                    code=delegated.code,
+                    message=delegated.message,
+                )
+                status = {
+                    "failure": RunStatus.FAILED,
+                    "blocked": RunStatus.BLOCKED,
+                    "cancelled": RunStatus.CANCELLED,
+                }[delegated.outcome]
+                snapshot = handle.snapshot.model_copy(
+                    update={
+                        "run_status": status,
+                        "completion": completion,
+                        "command_offers": (
+                            StartTaskOffer(kind="start_task"),
+                            CloseSessionOffer(kind="close_session"),
+                        ),
+                    }
+                )
+                # The inner Runtime failure/cancellation block is already
+                # projected into the shared feed. This event only installs
+                # its authoritative terminal outcome on the outer snapshot.
+                blocks = ()
+            elif isinstance(result.output, AssistantQuestion):
                 request_id = secrets.token_urlsafe(18)
                 request = InteractionRequest(
                     request_id=request_id,
@@ -512,7 +538,7 @@ class AssistantSessionPort:
                 completion = current.completion
                 if completion is None:
                     return GuiTaskResult(
-                        outcome=current.run_status.value,
+                        outcome="failure",
                         code="gui_completion_missing",
                         message="The GUI Runtime reached a terminal state without a completion payload.",
                     )

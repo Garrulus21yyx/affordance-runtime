@@ -549,6 +549,37 @@ policy repeated the search action twice and the existing repetition guard
 correctly ended the run as blocked. That trace is a pre-repair failure witness,
 not benchmark or post-repair acceptance evidence.
 
+The first post-prompt product attempt exposed a separate execution-evidence
+defect before authentication policy could run. `goto(https://www.taobao.com)`
+crossed the dispatch boundary and the fresh World proved that the active browser
+route and title changed from `about:blank` to Taobao, but Playwright timed out
+while waiting for the page's full load event. The DOM source was correctly
+marked `truncated` because the page exceeded document projection bounds;
+`ProductionActionOutcomeProjector` incorrectly treated that whole-document
+coverage as if it also made the independent browser-context facts incomplete.
+It therefore discarded the current route/title evidence and CoreLoop applied
+the existing fail-closed `sent_unknown` rule. The owner repair keeps ordinary
+page facts strict while allowing only the structural `browser_context` target
+of a navigation verification contract to use current `truncated` source facts.
+`BrowserSession.open/reset` now wait for `DOMContentLoaded`, matching the
+existing back/forward navigation contract and reducing false transport
+timeouts. No retry or replay was added: a true unresolved `sent_unknown` still
+blocks, while an exact fresh browser-context transition closes the local effect
+and lets the same loop continue.
+
+That run also exposed a projection bug outside CoreLoop. The inner Runtime
+correctly returned a typed blocked result, but the outer conversational model's
+subsequent text was always installed as a new successful Assistant completion.
+`AssistantTurnResult` now carries the ordered bounded `GuiTaskResult` values
+produced by its actual tool calls. `AssistantSessionPort` uses the last delegated
+terminal result as status authority; model prose cannot turn `blocked`,
+`failure`, or `cancelled` into green success. The inner Runtime failure block
+remains the single feed explanation, and the outer port only installs its exact
+terminal snapshot. Public completion text no longer exposes the internal
+`interactive_task_running` evaluator code. This sidecar observes the existing
+PydanticAI tool exchange; it is not a router, second Runtime state, or GUI
+completion evaluator.
+
 User ownership disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
 snapshot enables the authenticated same-origin proxy to Steel's native input
 WebSocket. A socket binds the Runtime lease active at connection; each incoming

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,7 +23,7 @@ class GuiTaskResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    outcome: str = Field(min_length=1, max_length=32)
+    outcome: Literal["success", "failure", "blocked", "cancelled"]
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(max_length=16_000)
     artifact_summary: str = Field(default="", max_length=2000)
@@ -38,6 +38,7 @@ GuiTaskCallable = Callable[[str], Awaitable[GuiTaskResult]]
 class AssistantTurnResult:
     output: AssistantOutput
     messages: tuple[Any, ...]
+    gui_results: tuple[GuiTaskResult, ...] = ()
 
 
 class AssistantTurnRunner(Protocol):
@@ -204,10 +205,14 @@ class PydanticAssistantTurnRunner:
         from pydantic_ai_harness.compaction import SummarizingCompaction
         from pydantic_ai_harness.step_persistence import StepPersistence
 
+        gui_results: list[GuiTaskResult] = []
+
         async def execute_gui_task(goal: str) -> GuiTaskResult:
             """Run one bounded GUI task in the existing Runtime and return its public result."""
 
-            return await run_gui_task(goal)
+            gui_result = await run_gui_task(goal)
+            gui_results.append(gui_result)
+            return gui_result
 
         capabilities: list[Any] = [
             StepPersistence(store=self.step_store, agent_name="interaction_shell_assistant"),
@@ -278,7 +283,11 @@ class PydanticAssistantTurnRunner:
         output = result.output
         if not isinstance(output, str | AssistantQuestion):
             raise TypeError("Assistant output algebra is not exhaustive")
-        return AssistantTurnResult(output=output, messages=tuple(result.all_messages()))
+        return AssistantTurnResult(
+            output=output,
+            messages=tuple(result.all_messages()),
+            gui_results=tuple(gui_results),
+        )
 
     async def latest_checkpoint(self, conversation_id: str) -> str | None:
         runs = await self.step_store.list_runs(conversation_id=conversation_id)

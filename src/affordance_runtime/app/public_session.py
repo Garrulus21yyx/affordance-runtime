@@ -3179,4 +3179,8 @@ def _completion(state: RunState | None, status: PublicSessionStatus) -> PublicCo
     control = state.control_termination
     if control is not None:
         return PublicCompletion("blocked", str(control.kind), "Runtime stopped before completion.")
-    return PublicCompletion("blocked", "runtime_blocked", evaluation.reason if evaluation else "Task blocked.")
+    return PublicCompletion(
+        "blocked",
+        "runtime_blocked",
+        "The task stopped before completion.",
+    )
