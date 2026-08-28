@@ -252,6 +252,31 @@ def test_browser_session_geometric_layer_probe_includes_embedded_frame_content()
     assert snapshot.layers[0].label == "Visible overlay"
 
 
+def test_browser_session_geometric_layer_probe_keeps_full_viewport_blocking_layer() -> None:
+    class FullViewportOverlayPage(FakePage):
+        def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+            del args, kwargs
+            if "runtimeLayerProbe" in expression:
+                assert "ratio > 0.98" not in expression
+                return [
+                    {
+                        "layer_id": "layer:0",
+                        "kind": "geometric_overlay",
+                        "role": "region",
+                        "label": "Visible overlay",
+                        "text": "",
+                        "modal": False,
+                        "bbox": [0, 0, 800, 600],
+                        "member_keys": [],
+                    }
+                ]
+            return super().evaluate(expression)
+
+    snapshot = BrowserSession(FullViewportOverlayPage()).capture(page_id="settings")
+
+    assert snapshot.layers[0].bbox == (0.0, 0.0, 800.0, 600.0)
+
+
 def test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload() -> None:
     accessibility_tree = {
         "role": "WebArea",
