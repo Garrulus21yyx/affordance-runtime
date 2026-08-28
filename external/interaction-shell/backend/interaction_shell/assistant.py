@@ -73,6 +73,8 @@ Choose capabilities by their public meaning:
 - Call run_gui_task only when the request requires interacting with a graphical user interface or inspecting
   state that the delegated GUI Runtime must acquire. Give it the complete user goal and constraints, not a URL
   unless the user supplied that URL or the URL itself is essential to the goal.
+- Delegate at most one complete GUI task per user turn. A returned success, failure, blocked, or cancelled result is
+  authoritative for that turn; explain it instead of calling run_gui_task again.
 - Return AssistantQuestion only when a fact owned by the user would materially change the result and cannot be
   obtained through an available capability. Do not ask the user to choose internal tools or provide routine URLs.
 
@@ -210,6 +212,8 @@ class PydanticAssistantTurnRunner:
         async def execute_gui_task(goal: str) -> GuiTaskResult:
             """Run one bounded GUI task in the existing Runtime and return its public result."""
 
+            if gui_results:
+                return gui_results[-1]
             gui_result = await run_gui_task(goal)
             gui_results.append(gui_result)
             return gui_result

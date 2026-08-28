@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 from interaction_shell.assistant import GuiTaskResult, PydanticAssistantTurnRunner
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+)
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai_harness.step_persistence import InMemoryStepStore, is_provider_valid
 
@@ -42,6 +48,55 @@ async def test_pydantic_runner_preserves_one_complete_gui_tool_exchange():
     )
     assert len(restored) == len(result.messages)
     assert is_provider_valid(restored)
+
+
+@pytest.mark.asyncio
+async def test_pydantic_runner_executes_at_most_one_gui_delegation_per_user_turn():
+    called_goals: list[str] = []
+
+    def call_gui_twice(messages, _info):
+        response_count = sum(isinstance(message, ModelResponse) for message in messages)
+        if response_count < 2:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "run_gui_task",
+                        {"goal": f"complete GUI task attempt {response_count + 1}"},
+                        tool_call_id=f"gui-call-{response_count + 1}",
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart("The GUI task needs user input.")])
+
+    runner = PydanticAssistantTurnRunner(
+        FunctionModel(call_gui_twice),
+        InMemoryStepStore(),
+    )
+
+    async def run_gui_task(goal: str) -> GuiTaskResult:
+        called_goals.append(goal)
+        return GuiTaskResult(
+            outcome="blocked",
+            code="needs_user",
+            message="The prepared interface needs user input.",
+        )
+
+    result = await runner.run(
+        "Use the GUI",
+        conversation_id="runner-single-gui-delegation",
+        message_history=(),
+        run_gui_task=run_gui_task,
+    )
+
+    assert len(called_goals) == 1
+    assert result.gui_results == (
+        GuiTaskResult(
+            outcome="blocked",
+            code="needs_user",
+            message="The prepared interface needs user input.",
+        ),
+    )
+    assert is_provider_valid(list(result.messages))
 
 
 def test_persistent_memory_is_opt_in_and_requires_an_explicit_namespace(tmp_path):
