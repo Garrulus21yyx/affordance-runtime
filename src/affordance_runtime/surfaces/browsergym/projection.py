@@ -5,10 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from io import BytesIO
 from urllib.parse import urlsplit, urlunsplit
-
-from PIL import Image
 
 from affordance_runtime.actions import (
     ActionBinding,
@@ -27,6 +24,10 @@ from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymNavigationBinding,
     BrowserGymPrivateBinding,
     BrowserGymViewportBinding,
+)
+from affordance_runtime.surfaces.browsergym.capture_frame import (
+    BrowserGymCaptureFrame,
+    browsergym_capture_frame,
 )
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
@@ -91,7 +92,14 @@ def project_browsergym_observation(
     entity_identity: BrowserGymEntityIdentityMap,
     browser_global_primitives: tuple[str, ...] = (),
     browser_navigation_locations: tuple[str, ...] | None = None,
+    capture_frame: BrowserGymCaptureFrame | None = None,
 ) -> BrowserGymProjection:
+    capture_frame = capture_frame or browsergym_capture_frame(
+        raw,
+        acquisition_root_id=observation_id,
+        page_identity=page_identity,
+        episode_identity=episode_identity,
+    )
     analysis = analyze_browsergym_semantics(raw)
     candidates = list(analysis.controls)
     # Action-bearing inventory is all-or-typed-capacity.  BrowserGym already
@@ -308,7 +316,7 @@ def project_browsergym_observation(
             "items": eligibility_diagnostics,
         }
     screenshot_media = _screenshot_media(
-        raw,
+        capture_frame,
         observation_id,
         _screenshot_grounding_regions(raw, tuple(projected), target_ids),
     )
@@ -1074,32 +1082,25 @@ def _owns_form_control(
 
 
 def _screenshot_media(
-    raw: dict[str, object],
+    capture_frame: BrowserGymCaptureFrame | None,
     observation_id: str,
     grounding_regions: tuple[ObservationGroundingRegion, ...],
 ) -> tuple[ObservationMedia, ...]:
-    screenshot = raw.get("screenshot")
-    if screenshot is None:
+    if capture_frame is None:
         return ()
-    try:
-        image = Image.fromarray(screenshot)  # type: ignore[arg-type]
-        output = BytesIO()
-        image.save(output, format="PNG", optimize=True)
-        return (
-            ObservationMedia(
-                "screenshot",
-                "screenshot",
-                "image/png",
-                output.getvalue(),
-                grounding_regions,
-                capture_group_id=str(raw.get("capture_group_id") or observation_id),
-                variant=ObservationMediaVariant.RAW,
-                dimensions=image.size,
-                coordinate_space_id="browsergym:viewport_pixels",
-            ),
-        )
-    except (AttributeError, TypeError, ValueError, OSError) as exc:
-        raise ValueError("BrowserGym screenshot could not be encoded") from exc
+    return (
+        ObservationMedia(
+            "screenshot",
+            "screenshot",
+            "image/png",
+            capture_frame.image_bytes,
+            grounding_regions,
+            capture_group_id=capture_frame.acquisition_root_id or observation_id,
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(capture_frame.image_width, capture_frame.image_height),
+            coordinate_space_id="browsergym:viewport_pixels",
+        ),
+    )
 
 
 def _screenshot_grounding_regions(

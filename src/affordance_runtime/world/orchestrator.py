@@ -90,6 +90,7 @@ class ObservationAcquisitionCoordinator:
 
     @property
     def observation_capabilities(self) -> ObservationCapabilities:
+        self._refresh_offers()
         independent = any(bool(getattr(adapter, "supports_independent_capture", True)) for adapter in self.adapters)
         return ObservationCapabilities(independent, True, self._offers)
 
@@ -171,6 +172,7 @@ class ObservationAcquisitionCoordinator:
         acquisition_id: str | None = None,
     ) -> ObservationAcquisition:
         acquisition_id = acquisition_id or self._next_acquisition_id()
+        self._refresh_offers()
         if plan is None:
             selection = self.observation_orchestrator.select(self._offers, request)
             if selection.plan is None:
@@ -191,8 +193,13 @@ class ObservationAcquisitionCoordinator:
             for item in all_initial_requests
             if ObservationModality(item.offer.modality) is ObservationModality.STRUCTURAL
         )
+        grouped_initial_owner = self._single_grouped_owner(all_initial_requests)
         stage_requests = (
-            structural_requests if structural_requests and len(all_initial_requests) > 1 else all_initial_requests
+            all_initial_requests
+            if grouped_initial_owner is not None
+            else structural_requests
+            if structural_requests and len(all_initial_requests) > 1
+            else all_initial_requests
         )
         try:
             provider_results = list(await self._acquire_selected(stage_requests))
@@ -490,6 +497,20 @@ class ObservationAcquisitionCoordinator:
                     )
         return tuple(results[item.source] for item in requests)
 
+    def _single_grouped_owner(
+        self,
+        requests: tuple[SelectedObservationRequest, ...],
+    ) -> GroupedObservationAdapter | None:
+        """Admit one coherent group without splitting its immutable frame."""
+
+        if len(requests) < 2 or len({item.acquisition_group for item in requests}) != 1:
+            return None
+        owners = tuple(self._source_owner(item.source) for item in requests)
+        owner = owners[0]
+        if all(item is owner for item in owners) and isinstance(owner, GroupedObservationAdapter):
+            return owner
+        return None
+
     @staticmethod
     def _conserve_provider_result(
         request: SelectedObservationRequest,
@@ -568,6 +589,18 @@ class ObservationAcquisitionCoordinator:
     def _next_acquisition_id(self) -> str:
         self._acquisition_sequence += 1
         return f"acquisition:{self._acquisition_sequence}"
+
+    def _refresh_offers(self) -> None:
+        registrations = tuple(
+            (offer, adapter) for adapter in self.adapters for offer in adapter.observation_offers
+        )
+        offers = tuple(offer for offer, _ in registrations)
+        if len({offer.source for offer in offers}) != len(offers):
+            raise ValueError("observation offer source identities must be unique")
+        if set(offers) and {offer.source for offer in offers} != set(self._source_owners):
+            raise ValueError("surface adapters cannot add or remove source identities after registration")
+        self._offers = offers
+        self._source_owners = {offer.source: adapter for offer, adapter in registrations}
 
     def _remember(self, acquisition: ObservationAcquisition) -> ObservationAcquisition:
         self.last_acquisition = acquisition

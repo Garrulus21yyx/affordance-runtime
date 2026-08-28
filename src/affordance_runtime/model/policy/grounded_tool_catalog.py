@@ -923,8 +923,7 @@ def _dynamic_purpose_applicable(
     if purpose == ObservationPurpose.POINT_GROUNDING.value:
         return bool(context.actor_world.media)
     if purpose == ObservationPurpose.VISUAL_CHANGE.value:
-        # The current Context has no typed before-frame lineage yet, so fail closed.
-        return False
+        return ref_count >= 1
     return False
 
 

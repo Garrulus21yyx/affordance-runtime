@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from io import BytesIO
-
-from PIL import Image
 
 from affordance_runtime.actions import (
     ActionBinding,
@@ -19,10 +15,13 @@ from affordance_runtime.actions.capabilities import (
 )
 from affordance_runtime.actions.classification import classify_surface_action
 from affordance_runtime.surfaces.browsergym.binding import BrowserGymVisualBinding
+from affordance_runtime.surfaces.browsergym.capture_frame import (
+    BrowserGymCaptureFrame,
+    browsergym_capture_frame,
+)
 from affordance_runtime.surfaces.visual.contracts import (
     VisualFrame,
     VisualRegionBinding,
-    VisualViewport,
     project_visual_semantic_state,
 )
 from affordance_runtime.surfaces.visual.grounding import (
@@ -63,6 +62,7 @@ class BrowserGymVisualProjection:
     point_grounding_attempted: bool = False
     point_grounding_succeeded: bool = False
     provider_failure: VisualProviderFailure | None = None
+    point_target_id: str = ""
 
 
 class VisualCorrespondenceStatus(StrEnum):
@@ -90,27 +90,21 @@ class VisualCorrespondenceDecision:
             raise ValueError("only matched correspondence carries a source-local candidate endpoint")
 
 
-def browsergym_visual_frame(raw: dict[str, object], observation_id: str) -> VisualFrame:
-    image_bytes, width, height = _encoded_screenshot(raw)
-    digest = "sha256:" + hashlib.sha256(image_bytes).hexdigest()
-    viewport = VisualViewport(
-        width,
-        height,
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        "landscape" if width >= height else "portrait",
+def browsergym_visual_frame(
+    raw: dict[str, object],
+    observation_id: str,
+    *,
+    capture_frame: BrowserGymCaptureFrame | None = None,
+) -> VisualFrame:
+    shared = capture_frame or browsergym_capture_frame(
+        raw,
+        acquisition_root_id=observation_id,
+        page_identity="legacy-page",
+        episode_identity="legacy-episode",
     )
-    return VisualFrame(
-        observation_id,
-        f"browsergym-screenshot:{observation_id}",
-        digest,
-        width,
-        height,
-        viewport,
-        image_bytes,
-    )
+    if shared is None:
+        raise ValueError("BrowserGym visual source requires a screenshot")
+    return shared.visual_frame(observation_id)
 
 
 def project_browsergym_screenshot_source(
@@ -118,10 +112,11 @@ def project_browsergym_screenshot_source(
     *,
     observation_id: str,
     acquisition_root_id: str,
+    capture_frame: BrowserGymCaptureFrame | None = None,
 ) -> SurfaceObservation:
     """Publish the captured viewport as evidence without inventing semantics or actions."""
 
-    frame = browsergym_visual_frame(raw, observation_id)
+    frame = browsergym_visual_frame(raw, observation_id, capture_frame=capture_frame)
     return SurfaceObservation(
         observation_id,
         "browsergym_visual",
@@ -159,19 +154,21 @@ def project_browsergym_visual_source(
     proposer: VisualRegionProposerPort | None,
     point_grounder: VisualGrounderPort | None,
     structured_source: SurfaceObservation,
+    capture_frame: BrowserGymCaptureFrame | None = None,
+    max_results: int = MAX_BROWSERGYM_VISUAL_REGIONS,
 ) -> BrowserGymVisualProjection:
     if proposer is None and point_grounder is None:
         raise ValueError("visual discovery requires a region or point provider")
     if not visual_query.strip() or len(visual_query) > 500:
         raise ValueError("visual projection requires one bounded atomic query")
-    frame = browsergym_visual_frame(raw, observation_id)
+    frame = browsergym_visual_frame(raw, observation_id, capture_frame=capture_frame)
     request = VisualRegionProposalRequest(
         observation_id,
         None,
         frame.image_bytes,
         (frame.image_width, frame.image_height),
         visual_query,
-        MAX_BROWSERGYM_VISUAL_REGIONS,
+        min(MAX_BROWSERGYM_VISUAL_REGIONS, max_results),
     )
     proposed = list(proposer.propose(request)) if proposer is not None else []
     if len(proposed) > request.max_regions:
@@ -319,6 +316,10 @@ def project_browsergym_visual_source(
         point_grounding_attempted=point_grounder is not None,
         point_grounding_succeeded=point_succeeded,
         provider_failure=provider_failure,
+        point_target_id=next(
+            (region.region_id for region in regions if region.primitive_action == "point_activate"),
+            "",
+        ),
     )
 
 
@@ -498,19 +499,6 @@ def _roles_compatible(left: str, right: str) -> bool:
 
 def _normalized_text(value: str) -> str:
     return " ".join(re.findall(r"[\w]+", value.casefold(), flags=re.UNICODE))
-
-
-def _encoded_screenshot(raw: dict[str, object]) -> tuple[bytes, int, int]:
-    screenshot = raw.get("screenshot")
-    if screenshot is None:
-        raise ValueError("BrowserGym visual source requires a screenshot")
-    try:
-        image = Image.fromarray(screenshot)  # type: ignore[arg-type]
-        output = BytesIO()
-        image.save(output, format="PNG", optimize=True)
-        return output.getvalue(), image.width, image.height
-    except (AttributeError, TypeError, ValueError, OSError) as exc:
-        raise ValueError("BrowserGym visual screenshot could not be encoded") from exc
 
 
 def _integer_bbox(

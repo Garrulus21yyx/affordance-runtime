@@ -657,11 +657,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
         ObservationToolExposureProfile.DYNAMIC_VISUAL,
     )
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
-    refs = tuple(
-        ref
-        for ref in context.grounding.private_subject_bindings()
-        if ref in delivery.manifest.exact_refs
-    )
+    refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
     arguments = {
         "purpose": "visual_property",
@@ -703,6 +699,50 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
             ),
             expected_context_id=context.context_id,
         )
+
+
+def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> None:
+    base = _context()
+    delivery = _delivery(base)
+
+    def catalog(lineage: bool):
+        context = replace(
+            base,
+            actor_world=replace(
+                base.actor_world,
+                observation_capabilities=(
+                    {
+                        "modality": "visual",
+                        "assurance": "weak",
+                        "purposes": ("visual_change",) if lineage else (),
+                    },
+                ),
+            ),
+        )
+        return compile_grounded_tool_catalog(
+            context,
+            GroundedToolPhase.ACTION_SELECTION,
+            delivery,
+            ObservationToolExposureProfile.DYNAMIC_VISUAL,
+        )
+
+    unavailable = catalog(False)
+    assert "request_evidence" not in {item.name for item in unavailable.specs}
+
+    available = catalog(True)
+    spec = next(item for item in available.specs if item.name == "request_evidence")
+    refs = tuple(ref for ref in base.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
+    assert (
+        validate_value_issue(
+            {
+                "purpose": "visual_change",
+                "subject_refs": [refs[0]],
+                "predicate": "appearance changed",
+            },
+            spec.input_schema,
+        )
+        is None
+    )
 
 
 def test_invalid_compact_arguments_make_only_one_provider_call() -> None:

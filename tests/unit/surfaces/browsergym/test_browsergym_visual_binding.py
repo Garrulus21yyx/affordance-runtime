@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
+import affordance_runtime.surfaces.browsergym.environment as browsergym_environment_module
 from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
@@ -30,6 +31,13 @@ from affordance_runtime.surfaces.visual.predicate_classification import (
     PredicateTruth,
     VisualPredicateClassification,
     VisualPredicateClassificationRequest,
+)
+from affordance_runtime.surfaces.visual.semantic_classification import (
+    VisualBooleanClassification,
+    VisualChangeClassificationRequest,
+    VisualSpatialClassificationRequest,
+    VisualTextReading,
+    VisualTextReadingRequest,
 )
 from affordance_runtime.world import (
     ObservationAssurance,
@@ -119,6 +127,35 @@ class _PredicateClassifier:
         )
 
 
+@dataclass
+class _TextReader:
+    texts: tuple[str | None, ...]
+    calls: list[VisualTextReadingRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def read(self, request: VisualTextReadingRequest) -> tuple[VisualTextReading, ...]:
+        self.calls.append(request)
+        return tuple(
+            VisualTextReading(candidate.ref, text, 0.9)
+            for candidate, text in zip(request.candidates, self.texts, strict=True)
+        )
+
+
+@dataclass
+class _BooleanClassifier:
+    truth: PredicateTruth
+    calls: list[VisualSpatialClassificationRequest | VisualChangeClassificationRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def classify(self, request):
+        self.calls.append(request)
+        return VisualBooleanClassification(self.truth, 0.9)
+
+
 def _raw(*, shade: int = 255):
     raw = raw_observation(goal="Click the visible target.")
     raw["screenshot"] = np.full((100, 200, 3), shade, dtype=np.uint8)
@@ -171,18 +208,12 @@ _RUNTIME_ROLES = {"viewport", "focused_context"}
 
 
 def _non_runtime_bindings(observation):
-    runtime_target_ids = {
-        target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES
-    }
-    return tuple(
-        binding for binding in observation.bindings if binding.target_id not in runtime_target_ids
-    )
+    runtime_target_ids = {target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES}
+    return tuple(binding for binding in observation.bindings if binding.target_id not in runtime_target_ids)
 
 
 def _non_runtime_options(task, observation):
-    runtime_target_ids = {
-        target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES
-    }
+    runtime_target_ids = {target.target_id for target in observation.targets if target.role in _RUNTIME_ROLES}
     return tuple(
         option
         for option in ActionSpaceBuilder().build(task, observation).options
@@ -247,6 +278,27 @@ def _predicate_request(subject_ids: tuple[str, ...]) -> WorldObservationRequest:
     )
 
 
+def _semantic_request(
+    purpose: ObservationPurpose,
+    subject_ids: tuple[str, ...],
+    query: str,
+) -> WorldObservationRequest:
+    return WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "bounded visual semantic query",
+        (
+            ObservationNeed(
+                need_id=f"observation-query:{purpose.value}",
+                purpose=purpose,
+                subject_ids=subject_ids,
+                required_modality=ObservationModality.VISUAL,
+                required_assurance=ObservationAssurance.WEAK,
+                query_text=query,
+            ),
+        ),
+    )
+
+
 def test_visual_predicate_batch_returns_partial_typed_outcome_and_aligned_fact() -> None:
     async def scenario() -> None:
         raw = _candidate_raw((10, 10, 30, 20), (60, 10, 30, 20))
@@ -261,13 +313,14 @@ def test_visual_predicate_batch_returns_partial_typed_outcome_and_aligned_fact()
         try:
             initial = await environment.reset(task)
             assert initial.observation is not None
-            subject_ids = tuple(
-                item.target_id for item in initial.observation.targets if item.role == "button"
-            )
+            subject_ids = tuple(item.target_id for item in initial.observation.targets if item.role == "button")
             assert len(subject_ids) == 2
-            assert ObservationPurpose.VISUAL_PROPERTY in next(
-                item for item in environment.observation_offers if item.source == "browsergym_visual"
-            ).supported_purposes
+            assert (
+                ObservationPurpose.VISUAL_PROPERTY
+                in next(
+                    item for item in environment.observation_offers if item.source == "browsergym_visual"
+                ).supported_purposes
+            )
 
             acquired = await environment.capture(_predicate_request(subject_ids))
         finally:
@@ -282,9 +335,7 @@ def test_visual_predicate_batch_returns_partial_typed_outcome_and_aligned_fact()
         assert tuple(item.target_id for item in classifier.calls[0].candidates) == subject_ids
         assert environment.visual_predicate_classifier_calls == 1
         assert environment.visual_predicate_assessment_count == 2
-        predicate_facts = tuple(
-            fact for fact in acquired.observation.facts if fact.predicate == "visually selected"
-        )
+        predicate_facts = tuple(fact for fact in acquired.observation.facts if fact.predicate == "visually selected")
         assert tuple((fact.subject_id, fact.value) for fact in predicate_facts) == (
             (outcome.observed_subject_ids[0], True),
         )
@@ -292,9 +343,159 @@ def test_visual_predicate_batch_returns_partial_typed_outcome_and_aligned_fact()
             fact.subject_id == subject_ids[1] and fact.predicate == "visually selected"
             for fact in acquired.observation.facts
         )
-        assert not any(
-            binding.surface == "browsergym_visual" for binding in acquired.observation.bindings
+        assert not any(binding.surface == "browsergym_visual" for binding in acquired.observation.bindings)
+
+    asyncio.run(scenario())
+
+
+def test_visual_text_batch_returns_observed_and_typed_unknown_without_actions() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (60, 10, 30, 20))
+        reader = _TextReader(("Alpha", None))
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_text_reader=reader,
         )
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            subject_ids = tuple(item.target_id for item in initial.observation.targets if item.role == "button")
+            acquired = await environment.capture(
+                _semantic_request(ObservationPurpose.TEXT_IN_IMAGE, subject_ids, "read each label")
+            )
+        finally:
+            await environment.close()
+
+        outcome = acquired.query_outcome("observation-query:text_in_image")
+        assert outcome is not None
+        assert outcome.disposition is ObservationQueryDisposition.PARTIAL
+        assert tuple(item.locator.input_indices for item in outcome.unknown_items) == ((1,),)
+        assert len(reader.calls) == 1
+        assert any(
+            fact.predicate == "text_in_image" and fact.value == "Alpha"
+            for fact in acquired.observation.facts  # type: ignore[union-attr]
+        )
+        assert not any(
+            binding.surface == "browsergym_visual"
+            for binding in acquired.observation.bindings  # type: ignore[union-attr]
+        )
+
+    asyncio.run(scenario())
+
+
+def test_visual_spatial_false_is_observed_without_inventing_gui_state() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (60, 10, 30, 20))
+        classifier = _BooleanClassifier(PredicateTruth.FALSE)
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_spatial_classifier=classifier,
+        )
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            subject_ids = tuple(item.target_id for item in initial.observation.targets if item.role == "button")
+            acquired = await environment.capture(
+                _semantic_request(
+                    ObservationPurpose.SPATIAL_RELATIONSHIP,
+                    subject_ids,
+                    "the first is left of the second",
+                )
+            )
+        finally:
+            await environment.close()
+
+        outcome = acquired.query_outcome("observation-query:spatial_relationship")
+        assert outcome is not None
+        assert outcome.disposition is ObservationQueryDisposition.OBSERVED
+        assert outcome.observed_subject_ids == subject_ids
+        assert len(classifier.calls) == 1
+        visual = next(
+            source
+            for source in acquired.observation.sources  # type: ignore[union-attr]
+            if source.surface == "browsergym_visual"
+        )
+        assert visual.facts == ()
+        assert visual.bindings == ()
+
+    asyncio.run(scenario())
+
+
+def test_visual_change_without_before_lineage_is_unknown_and_zero_provider_calls() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20))
+        classifier = _BooleanClassifier(PredicateTruth.TRUE)
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_change_classifier=classifier,
+        )
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            subject_id = next(item.target_id for item in initial.observation.targets if item.role == "button")
+            offer = next(item for item in environment.observation_offers if item.source == "browsergym_visual")
+            assert ObservationPurpose.VISUAL_CHANGE not in offer.supported_purposes
+            acquired = await environment.capture(
+                _semantic_request(
+                    ObservationPurpose.VISUAL_CHANGE,
+                    (subject_id,),
+                    "the visible appearance changed",
+                )
+            )
+        finally:
+            await environment.close()
+
+        assert acquired.status.value == "capability_unavailable"
+        assert acquired.query_outcome("observation-query:visual_change") is None
+        assert classifier.calls == []
+
+    asyncio.run(scenario())
+
+
+def test_point_grounding_uses_atomic_query_and_requires_next_policy_action() -> None:
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        grounder = _Grounder(VisualGroundingPoint((0.5, 0.5), normalized=True))
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_point_grounder=grounder,
+        )
+        try:
+            await environment.reset(task)
+            assert grounder.calls == []
+            acquired = await environment.capture(
+                WorldObservationRequest(
+                    ObservationRequestKind.POLICY_REQUEST,
+                    "ground one current point",
+                    (
+                        ObservationNeed(
+                            "observation-query:point",
+                            ObservationPurpose.POINT_GROUNDING,
+                            required_modality=ObservationModality.VISUAL,
+                            required_assurance=ObservationAssurance.WEAK,
+                            query_text="the small circular control in the center",
+                        ),
+                    ),
+                )
+            )
+        finally:
+            await environment.close()
+
+        outcome = acquired.query_outcome("observation-query:point")
+        assert outcome is not None
+        assert outcome.disposition is ObservationQueryDisposition.OBSERVED
+        assert len(grounder.calls) == 1
+        assert grounder.calls[0].instruction == "the small circular control in the center"
+        assert grounder.calls[0].instruction != task.instruction
+        assert fake.actions == []
 
     asyncio.run(scenario())
 
@@ -323,6 +524,51 @@ def test_disambiguation_candidates_are_current_viewport_scoped_and_clipped() -> 
             (190, 30, 10, 20),
         )
         assert environment.visual_provider_failure_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_typed_disambiguation_returns_chosen_candidate_without_selected_state() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (60, 10, 30, 20))
+        disambiguator = _CandidateDisambiguator("E2")
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(raw),
+            visual_candidate_disambiguator=disambiguator,
+        )
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            candidate_ids = tuple(item.target_id for item in initial.observation.targets if item.role == "button")
+            acquired = await environment.capture(
+                WorldObservationRequest(
+                    ObservationRequestKind.POLICY_REQUEST,
+                    "disambiguate current candidates",
+                    (
+                        ObservationNeed(
+                            "observation-query:disambiguation",
+                            ObservationPurpose.TARGET_DISAMBIGUATION,
+                            required_modality=ObservationModality.VISUAL,
+                            required_assurance=ObservationAssurance.WEAK,
+                            candidate_ids=candidate_ids,
+                            query_text="the visually emphasized candidate",
+                        ),
+                    ),
+                )
+            )
+        finally:
+            await environment.close()
+
+        outcome = acquired.query_outcome("observation-query:disambiguation")
+        assert outcome is not None
+        assert outcome.observed_subject_ids == (candidate_ids[1],)
+        assert len(disambiguator.calls) == 1
+        assert not any(
+            fact.predicate == "visually_selected"
+            for fact in acquired.observation.facts  # type: ignore[union-attr]
+        )
 
     asyncio.run(scenario())
 
@@ -399,6 +645,38 @@ def test_visual_only_evidence_mark_does_not_create_action_authority() -> None:
             assert len(context.image_inputs) == 1
             assert sum(item.marked for item in context.grounding.entities) == 1
             assert tuple(mark.ref for mark in context.image_inputs[0].marks) == ("N1",)
+        finally:
+            await environment.close()
+
+    asyncio.run(scenario())
+
+
+def test_grouped_browsergym_projection_encodes_one_shared_frame_per_acquisition(
+    monkeypatch,
+) -> None:
+    calls = 0
+    original = browsergym_environment_module.browsergym_capture_frame
+
+    def capture_frame(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(browsergym_environment_module, "browsergym_capture_frame", capture_frame)
+
+    async def scenario() -> None:
+        fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
+        environment, task = _open(fake, proposer, with_point=False)
+        try:
+            await environment.reset(task)
+            assert calls == 1
+            acquired = await environment.capture(_visual_request())
+            assert acquired.observation is not None
+            assert calls == 2
+            sources = {item.surface: item for item in acquired.observation.sources}
+            assert sources["browsergym"].media[0].sha256 == sources["browsergym_visual"].media[0].sha256
+            assert sources["browsergym"].media[0].dimensions == sources["browsergym_visual"].media[0].dimensions
         finally:
             await environment.close()
 

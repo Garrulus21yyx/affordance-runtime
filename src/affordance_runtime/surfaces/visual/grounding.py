@@ -21,6 +21,9 @@ class VisualProviderStage(StrEnum):
     REGION_PROPOSAL = "region_proposal"
     CANDIDATE_DISAMBIGUATION = "candidate_disambiguation"
     PREDICATE_CLASSIFICATION = "predicate_classification"
+    TEXT_READING = "text_reading"
+    SPATIAL_CLASSIFICATION = "spatial_classification"
+    CHANGE_CLASSIFICATION = "change_classification"
 
 
 class VisualProviderFailureCode(StrEnum):

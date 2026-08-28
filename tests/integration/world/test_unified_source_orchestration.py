@@ -1514,7 +1514,7 @@ def test_shared_acquisition_group_has_one_reset_owner_and_one_group_capture() ->
         )
 
         assert acquired.status is AcquisitionStatus.ACQUIRED
-        assert adapter.group_calls == 3  # reset grounding, then structural + residual visual
+        assert adapter.group_calls == 2  # reset grounding, then one coherent structural+visual group
         assert adapter.physical_capture_calls == 2
         assert adapter.acquisition_ids[-2:] == [
             adapter.acquisition_ids[-1],
