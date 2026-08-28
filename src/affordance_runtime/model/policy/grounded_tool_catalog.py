@@ -140,7 +140,9 @@ class _EvidenceBinding:
             max_results = raw_max_results
         elif purpose is ObservationPurpose.VISUAL_PROPERTY:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
-            predicate = str(arguments["predicate"]).strip()
+            property_name = str(arguments["property"]).strip()
+            expected_value = str(arguments["expected_value"]).strip()
+            predicate = f"{property_name} equals {expected_value}"
         elif purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
             candidate_ids = self._resolve_refs(arguments["candidate_refs"], purpose=purpose)
             atomic_query = str(arguments["selection_criterion"]).strip()
@@ -491,8 +493,8 @@ def compile_grounded_tool_catalog(
                             "Request missing current-world evidence; Runtime chooses how to obtain it."
                             if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
                             else "Acquire missing read-only visual evidence for the next decision. "
-                            "Use only when current structural evidence cannot answer the required visual fact; "
-                            "this never performs a GUI action."
+                            "Use deterministic read/count results when present; visual variants return only their "
+                            "declared per-subject evidence, never aggregates or GUI actions."
                         ),
                         schema,
                     ),
@@ -1261,17 +1263,33 @@ def _dynamic_evidence_request_schema(
             )
             required.extend(("entity_query", "max_results"))
         elif purpose == ObservationPurpose.VISUAL_PROPERTY.value:
-            purpose_schema["description"] = "classify one visible property for known subjects"
+            purpose_schema["description"] = "classify one visible attribute value for each known subject"
             properties.update(
                 {
                     "subject_refs": ref_array(purpose, 1),
-                    "predicate": {
-                        **bounded_text,
-                        "description": "one directly visible property to classify for every subject ref",
+                    "property": {
+                        "type": "string",
+                        "description": "supported visible attribute to classify independently per subject",
+                        "enum": [
+                            "appearance",
+                            "color",
+                            "icon",
+                            "selection_state",
+                            "visibility",
+                        ],
+                    },
+                    "expected_value": {
+                        "type": "string",
+                        "description": (
+                            "one expected attribute value; returns true, false, or unknown per subject; "
+                            "never use for counts, totals, enumeration, or comparison across subjects"
+                        ),
+                        "minLength": 1,
+                        "maxLength": 120,
                     },
                 }
             )
-            required.extend(("subject_refs", "predicate"))
+            required.extend(("subject_refs", "property", "expected_value"))
         elif purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
             purpose_schema["description"] = "choose among known visually ambiguous candidates"
             properties.update(

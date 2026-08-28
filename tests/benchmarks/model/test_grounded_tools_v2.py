@@ -667,7 +667,8 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     arguments = {
         "purpose": "visual_property",
         "subject_refs": list(refs[:2]),
-        "predicate": "visually selected",
+        "property": "selection_state",
+        "expected_value": "selected",
         "public_intent": "I will verify the visible selection state.",
     }
     assert validate_value_issue(arguments, spec.input_schema) is None
@@ -683,7 +684,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     assert isinstance(decision, RequestObservation)
     bindings = context.grounding.private_subject_bindings()
     assert decision.subject_ids == tuple(bindings[ref] for ref in refs[:2])
-    assert decision.predicate == "visually selected"
+    assert decision.predicate == "selection_state equals selected"
     assert decision.query_id.startswith("observation-query:")
     assert catalog.observation_tool_profile_id == "dynamic-visual.v1"
     assert catalog.observation_tool_profile_digest
@@ -760,7 +761,8 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         },
         "visual_property": {
             "subject_refs": [refs[0], refs[1]],
-            "predicate": "visually selected",
+            "property": "selection_state",
+            "expected_value": "selected",
         },
         "target_disambiguation": {
             "candidate_refs": [refs[0], refs[1]],
@@ -823,7 +825,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     assert isinstance(disambiguation, RequestObservation)
     assert disambiguation.candidate_ids == (bindings[refs[0]], bindings[refs[1]])
     assert disambiguation.atomic_query == "the candidate with the red outline"
-    assert "structural evidence cannot answer" in spec.description
+    assert "deterministic read/count results" in spec.description
     text_variant = next(
         variant
         for variant in spec.input_schema["oneOf"]
@@ -846,6 +848,18 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     assert "entity_query" in encoded_schema
     assert "target_description" in encoded_schema
     assert "atomic_query" not in encoded_schema
+    assert (
+        validate_value_issue(
+            {
+                "purpose": "visual_property",
+                "subject_refs": [refs[0]],
+                "property": "count",
+                "expected_value": "10",
+            },
+            spec.input_schema,
+        )
+        is not None
+    )
     assert (
         validate_value_issue(
             {

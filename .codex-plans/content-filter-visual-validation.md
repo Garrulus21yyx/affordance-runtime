@@ -168,6 +168,11 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   one exact complete-group count projection shared by `read_region` and `count_children`; read records include
   `direct_child_count` only with complete coverage. Real local `visual-addition` projection returns N6=8 and N17=2,
   while a truncated snapshot withholds the field.
+- 2026-08-28: Clean live run `phase7-clean6` proved the exact counts reached the provider input, but the open string
+  `visual_property.predicate` still admitted an aggregate counting request. The dynamic public contract now exposes a
+  closed per-subject property algebra (`appearance|color|icon|selection_state|visibility` plus `expected_value`) and
+  deterministically binds it to the existing internal boolean predicate. Aggregate count/enumeration is no longer
+  expressible through this purpose; compatibility profile remains unchanged.
 
 ## Files changed by this plan
 
