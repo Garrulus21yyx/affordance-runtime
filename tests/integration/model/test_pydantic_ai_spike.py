@@ -3082,6 +3082,17 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert pydantic_bridge._HISTORY_COMPACTION_MAX_OUTPUT_TOKENS == 1024
 
 
+def test_grounded_action_policy_prepares_user_owned_challenge_before_handoff() -> None:
+    prompt = MODEL_POLICY_INSTRUCTIONS
+
+    assert "prepare the current interface for immediate user completion" in prompt
+    assert "prefer a non-secret out-of-band method" in prompt
+    assert "use ask_user to request takeover" in prompt
+    assert "repeat a blocked task action" in prompt
+    assert "an action that only the user can safely complete" in prompt
+    assert "never enter, request, interpret, copy, or" in prompt
+
+
 def test_exact_link_identity_survives_destination_load_failure_compaction_boundary() -> None:
     history = list(_official_history_with_pending_actions(7))
     history[0] = ModelRequest(

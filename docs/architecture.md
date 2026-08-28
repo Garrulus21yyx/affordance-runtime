@@ -533,7 +533,23 @@ durable checkpoint and consumes that exact checkpoint before publishing user
 ownership; an already-paused command must still carry the exact checkpoint ID.
 This makes login/CAPTCHA/MFA assistance a single generic handoff without adding
 an authentication Agent, prompt classifier, frontend keyword branch, or second
-control path. User ownership disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
+control path. Prompt `grounded-agent-context.v41` closes the policy half of that
+handoff: when fresh World exposes a user-only authentication, CAPTCHA, MFA, or
+consent barrier, the single ActionPolicy first uses only offered low-risk GUI
+actions to make the current surface immediately usable by the user. If the
+surface offers multiple authentication methods, it prefers a non-secret
+out-of-band method such as a visible QR challenge or device approval, confirms
+only readiness, and then emits the existing `ask_user` interaction so the user
+can take over. It never reads or transmits the credential, code, QR contents, or
+biometric material. This is task-independent policy semantics; Runtime still
+does not classify login text, infer the site, click selectors, or grant control
+without the typed command. A 2026-08-28 real Taobao diagnostic exposed the
+missing policy rule: fresh World contained an executable login link, but the
+policy repeated the search action twice and the existing repetition guard
+correctly ended the run as blocked. That trace is a pre-repair failure witness,
+not benchmark or post-repair acceptance evidence.
+
+User ownership disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
 snapshot enables the authenticated same-origin proxy to Steel's native input
 WebSocket. A socket binds the Runtime lease active at connection; each incoming
 frame verifies current user ownership and exact lease equality, and that

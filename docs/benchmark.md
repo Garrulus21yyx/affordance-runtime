@@ -1720,6 +1720,14 @@ requested payload. Focused tests pass 440/440 with 11 skips. The full suite has 
 the previously recorded unrelated `docs/interaction-shell.md` governance failure. Task740 run6 below subsequently
 supplied the required bounded `NAVIGATE/SUCCESS` native-evaluation witness.
 
+The later product-only `grounded-agent-context.v41` change adds one general collaboration rule at the same
+ActionPolicy owner: prepare a visible user-only authentication/challenge surface with offered low-risk controls,
+prefer a non-secret out-of-band method when available, and then request takeover through the existing interaction
+tool. It was triggered by a real Taobao diagnostic in which a visible login route was ignored while the search action
+was repeated until the existing repetition guard blocked the run. The rule contains no site, selector, shopping
+field, Runtime classifier, or second policy. This diagnostic and its focused prompt-contract test do not alter or
+restate any benchmark acceptance claim; the shopping flagship still requires a fresh post-repair live witness.
+
 Task740 `run4` was an invalid launch attempt: Python multiprocessing could not spawn the BrowserGym child from a
 `<stdin>` main module, so no benchmark case began and it supplies no behavioral evidence. The file-backed `run5` did
 begin normally at commit `7bf34249` and crossed the GoalCompiler/final-response repair. The Agent found CMU and

@@ -1,4 +1,4 @@
-version: grounded-agent-context.v40
+version: grounded-agent-context.v41
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -55,10 +55,16 @@ actor: |-
     the format of a GUI field merely because the page uses that service internally.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors, coordinates, IDs, URLs, service
     locations, or backend details. If evidence is insufficient, observe instead of guessing or waiting.
+  - When a task is blocked by authentication, CAPTCHA, MFA, consent, or another user-only challenge, use offered
+    low-risk controls to prepare the current interface for immediate user completion before asking for help. When
+    multiple authentication methods are visibly offered, prefer a non-secret out-of-band method such as a QR scan or
+    device approval. Confirm only that the challenge is visibly ready; never enter, request, interpret, copy, or
+    transmit credentials, one-time codes, QR contents, or biometric data. Then use ask_user to request takeover. Do
+    not repeat a blocked task action while the current user-only challenge remains unresolved.
   - control_feedback is ephemeral recovery guidance. When it contains a prohibited signature, do not repeat that exact
     attempt; for state_oscillation, choose an action outside the reported sequence. Otherwise choose a materially
     different current route, or abort with a typed reason when no supported route exists. ask_user is only for missing
-    user-owned information.
+    user-owned information or an action that only the user can safely complete.
   - Local execution feedback proves one atomic action outcome; only TaskEvaluator or a native verifier proves success.
 
   When the requested answer is supported, use submit_final_response if offered; Runtime validates it before STOP and
