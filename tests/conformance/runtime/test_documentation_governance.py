@@ -13,6 +13,7 @@ CORE_DOCS = {
     DOCS / "interaction-shell-frontend-contract-governance.md",
     DOCS / "interaction-shell.md",
     DOCS / "single-action-policy-convergence.md",
+    DOCS / "supervised-gui-agent-ui-completion-plan.md",
 }
 
 

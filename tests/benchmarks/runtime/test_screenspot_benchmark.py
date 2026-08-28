@@ -455,3 +455,20 @@ def test_visual_factories_support_gemini_profile_without_exposing_key() -> None:
     assert grounder.model == proposer.model == "gemini-vision-test"
     assert "gemini-secret" not in repr(grounder)
     assert "gemini-secret" not in repr(proposer)
+
+
+def test_visual_factories_support_deepseek_vision_profile_without_exposing_key() -> None:
+    environment = {
+        "LLM_VISUAL_PROFILE": "deepseek",
+        "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+        "LLM_DEEPSEEK_API_KEY": "deepseek-secret",
+        "LLM_DEEPSEEK_VISION_MODEL": "deepseek-v4-flash-vision-exp",
+    }
+
+    grounder = visual_grounder_from_environment(environment)
+    proposer = visual_region_proposer_from_environment(environment)
+
+    assert grounder.provider == proposer.provider == "deepseek"
+    assert grounder.model == proposer.model == "deepseek-v4-flash-vision-exp"
+    assert "deepseek-secret" not in repr(grounder)
+    assert "deepseek-secret" not in repr(proposer)

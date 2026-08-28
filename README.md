@@ -80,8 +80,10 @@ The generated frontend contract and authority boundary is in
 [Interaction Shell frontend governance](docs/interaction-shell-frontend-contract-governance.md).
 The accepted control-path migration is in
 [Single-ActionPolicy Convergence](docs/single-action-policy-convergence.md).
+The proposed owner-first implementation and benchmark non-regression gates for the general supervised GUI Agent UI are in
+[Supervised GUI Agent UI Completion Plan](docs/supervised-gui-agent-ui-completion-plan.md).
 
-Durable implementation constraints are in [Project agent policy](AGENTS.md). These seven files are the maintained
+Durable implementation constraints are in [Project agent policy](AGENTS.md). These eight files are the maintained
 project documentation set; implementation evidence stays in reports and traces rather than new design documents.
 
 ## Install

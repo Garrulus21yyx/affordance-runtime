@@ -589,6 +589,13 @@ def _visual_profile_config(env: Mapping[str, str]) -> tuple[str, str, str, str]:
             env.get("LLM_GEMINI_VISION_MODEL", "").strip() or _required_env(env, "LLM_GEMINI_MODEL"),
             profile,
         )
+    if profile == "deepseek":
+        return (
+            _required_env(env, "LLM_DEEPSEEK_BASE_URL"),
+            _required_env(env, "LLM_DEEPSEEK_API_KEY"),
+            _required_env(env, "LLM_DEEPSEEK_VISION_MODEL"),
+            profile,
+        )
     raise ValueError(f"unsupported LLM_VISUAL_PROFILE: {profile}")
 
 
