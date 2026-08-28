@@ -81,8 +81,11 @@ def _validate_schema_node(schema: Mapping[str, Any], *, path: str, root: bool, d
 def _validate_union_schema(
     schema: Mapping[str, Any], *, path: str, root: bool, depth: int, union_key: str
 ) -> None:
-    if set(schema) - {union_key, "description"}:
+    allowed = {union_key, "description", "type"} if root else {union_key, "description"}
+    if set(schema) - allowed:
         raise ValueError(f"{path} union cannot combine sibling validation keywords")
+    if root and schema.get("type") != "object":
+        raise ValueError(f"{path} root union must declare type object")
     variants = schema[union_key]
     if (
         not isinstance(variants, Sequence)

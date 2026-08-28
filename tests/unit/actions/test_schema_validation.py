@@ -12,6 +12,7 @@ from affordance_runtime.model.policy.tool_contracts import ToolSpec
 
 def test_finite_schema_ast_accepts_bounded_containers_scalars_and_discriminated_union() -> None:
     schema = {
+        "type": "object",
         "oneOf": [
             {
                 "type": "object",
@@ -82,8 +83,30 @@ def test_finite_schema_ast_rejects_unknown_unbounded_ambiguous_or_nonfinite_shap
         validate_parameter_schema_contract(schema)
 
 
+def test_root_union_requires_provider_compatible_object_type() -> None:
+    branches = [
+        {
+            "type": "object",
+            "properties": {"kind": {"type": "string", "const": "one"}},
+            "required": ["kind"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {"kind": {"type": "string", "const": "two"}},
+            "required": ["kind"],
+            "additionalProperties": False,
+        },
+    ]
+
+    validate_parameter_schema_contract({"type": "object", "oneOf": branches})
+    with pytest.raises(ValueError, match="root union must declare type object"):
+        validate_parameter_schema_contract({"oneOf": branches})
+
+
 def test_schema_value_validation_rejects_union_cross_product_and_nonfinite_number() -> None:
     schema = {
+        "type": "object",
         "oneOf": [
             {
                 "type": "object",

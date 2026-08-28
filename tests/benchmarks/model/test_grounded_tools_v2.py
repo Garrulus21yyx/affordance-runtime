@@ -609,6 +609,7 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
     )
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
+    assert spec.input_schema["type"] == "object"
 
     assert (
         validate_value_issue(
@@ -660,6 +661,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
         ObservationToolExposureProfile.DYNAMIC_VISUAL,
     )
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
+    assert spec.input_schema["type"] == "object"
     refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
     arguments = {
@@ -1249,6 +1251,7 @@ def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding(
     compatibility_ask = next(item for item in compatibility.specs if item.name == "ask_user")
 
     assert "oneOf" in structured_ask.input_schema
+    assert structured_ask.input_schema["type"] == "object"
     assert "question" in compatibility_ask.input_schema["properties"]
     assert catalog.interaction_tool_profile_id == "structured-interaction.v1"
     outcome = _resolve_catalog_call(

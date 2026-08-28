@@ -912,6 +912,7 @@ def _structured_interaction_request_schema(
     intent = _public_intent_schema()
     common = {"prompt": prompt, "public_intent": intent}
     return {
+        "type": "object",
         "oneOf": [
             _object_schema(
                 {**common, "response_kind": {"type": "string", "enum": ["free_text"]}},
@@ -1138,7 +1139,7 @@ def _compatibility_evidence_request_schema(
         )
     if len(variants) == 1:
         return variants[0]
-    return {"oneOf": variants}
+    return {"type": "object", "oneOf": variants}
 
 
 def _dynamic_evidence_request_schema(
@@ -1220,7 +1221,7 @@ def _dynamic_evidence_request_schema(
         variants.append(_object_schema(properties, tuple(required)))
     if len(variants) == 1:
         return variants[0]
-    return {"oneOf": variants}
+    return {"type": "object", "oneOf": variants}
 
 
 def _observation_query_id(
