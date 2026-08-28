@@ -60,6 +60,7 @@ _SELECTOR_CONFIDENCE = {
     "positional": 0.55,
 }
 _CONTEXT_CONTAINER_TAGS = frozenset(["article", "dd", "div", "li", "section", "td", "tr"])
+_LAYER_SCOPE_ROLES = frozenset({"alert", "alertdialog", "dialog"})
 _DRAG_HANDLE_CLASSES = frozenset(["ui-draggable-handle", "ui-sortable-handle"])
 _DESCRIPTIVE_PROXY_TAGS = frozenset(["form", "label"])
 _LABELABLE_TAGS = frozenset(["input", "select", "textarea"])
@@ -583,12 +584,18 @@ def _semantic_scope(node: dict[str, Any]) -> tuple[str, str]:
     """Return the nearest explicitly named public structural container."""
 
     for ancestor in node.get("context_ancestors", ()):
-        if ancestor.get("tag") not in _CONTEXT_CONTAINER_TAGS:
-            continue
+        tag = str(ancestor.get("tag") or "").casefold()
         attributes = ancestor.get("attr", {})
+        authored_role = str(attributes.get("role") or "").casefold()
+        role = "dialog" if tag == "dialog" else authored_role
+        is_layer = role in _LAYER_SCOPE_ROLES or attributes.get("aria-modal", "").casefold() == "true"
+        if tag not in _CONTEXT_CONTAINER_TAGS and not is_layer:
+            continue
         label = str(attributes.get("aria-label") or "").strip()
+        if is_layer and not label:
+            label = " ".join(str(item) for item in ancestor.get("text_parts", ()) if str(item).strip()).strip()
         if label:
-            return str(attributes.get("role") or ancestor.get("tag") or "group"), label[:160]
+            return (role if role in _LAYER_SCOPE_ROLES else "dialog" if is_layer else tag or "group"), label[:160]
     return "", ""
 
 

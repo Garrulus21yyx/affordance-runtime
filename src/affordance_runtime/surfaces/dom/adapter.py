@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 MAX_VISIBLE_TEXT_RECORDS = 128
 MAX_VISIBLE_TEXT_RECORD_CHARS = 1_200
 _PUBLIC_WHITESPACE = re.compile(r"\s+")
+_ACTIVE_LAYER_ROLES = frozenset({"alert", "alertdialog", "dialog"})
 
 
 @dataclass
@@ -354,6 +355,31 @@ def _dom_structure(
     readable_node_ids = tuple(
         f"dom-readable-node:{index}" for index in range(len(readable_targets))
     )
+    layer_groups: dict[tuple[str, str], list[tuple[str, SemanticTarget]]] = {}
+    direct_control_nodes: list[str] = []
+    for structure_id, target in zip(control_node_ids, controls, strict=True):
+        scope_role = str(target.state.get("semantic_scope_role") or "").casefold()
+        scope_label = str(target.state.get("semantic_scope_label") or "").strip()
+        if scope_role in _ACTIVE_LAYER_ROLES and scope_label:
+            layer_groups.setdefault((scope_role, scope_label), []).append((structure_id, target))
+        else:
+            direct_control_nodes.append(structure_id)
+    layer_nodes = tuple(
+        ObservationStructureNode(
+            f"dom-layer-node:{index}",
+            role,
+            label,
+            {"active_layer": True},
+            parent_structure_id=controls_id,
+            child_structure_ids=tuple(structure_id for structure_id, _target in members),
+        )
+        for index, ((role, label), members) in enumerate(layer_groups.items())
+    )
+    layer_parent_by_control = {
+        structure_id: layer.structure_id
+        for layer, members in zip(layer_nodes, layer_groups.values(), strict=True)
+        for structure_id, _target in members
+    }
     root_children = (controls_id, *((readable_id,) if readable_targets else ()))
     return (
         ObservationStructureNode(
@@ -367,18 +393,19 @@ def _dom_structure(
             "region",
             "Interactive controls",
             parent_structure_id=root_id,
-            child_structure_ids=control_node_ids,
+            child_structure_ids=(*direct_control_nodes, *(item.structure_id for item in layer_nodes)),
         ),
         *(
             ObservationStructureNode(
                 structure_id,
                 target.role,
                 target.label,
-                parent_structure_id=controls_id,
+                parent_structure_id=layer_parent_by_control.get(structure_id, controls_id),
                 semantic_target_id=target.target_id,
             )
             for structure_id, target in zip(control_node_ids, controls, strict=True)
         ),
+        *layer_nodes,
         *(
             (
                 ObservationStructureNode(

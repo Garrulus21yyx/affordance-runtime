@@ -84,6 +84,15 @@ class FramedPage(InteractivePage):
     frames = (object(), object())
 
 
+class DialogPage(InteractivePage):
+    def content(self) -> str:
+        return (
+            '<main><button id="shared">Search</button></main>'
+            '<div role="dialog" aria-modal="true" aria-label="Sign in">'
+            '<button id="challenge">Show QR code</button></div>'
+        )
+
+
 def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> None:
     async def scenario() -> None:
         page = InteractivePage()
@@ -194,6 +203,42 @@ def test_dom_capture_order_disambiguates_identical_executable_controls() -> None
         assert len({node.structure_id for node in show_nodes}) == 2
         assert len(show_records) == 2
         assert len({record.ref for record in show_records}) == 2
+
+    asyncio.run(scenario())
+
+
+def test_dom_structure_preserves_active_dialog_layer_without_visual_provider() -> None:
+    async def scenario() -> None:
+        page = DialogPage()
+        task = TaskGoal(
+            "dialog-layer",
+            "Prepare the visible sign-in challenge",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment((
+            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+        )).reset(task)
+        assert acquired.observation is not None
+        source = acquired.observation.sources[0]
+        dialog = next(node for node in source.structure if node.role == "dialog")
+        challenge = next(target for target in source.targets if target.label == "Show QR code")
+        challenge_node = next(
+            node for node in source.structure if node.semantic_target_id == challenge.target_id
+        )
+        index = canonical_world(
+            acquired.observation,
+            ActionSpaceBuilder().build(task, acquired.observation),
+        )
+
+        assert dialog.label == "Sign in"
+        assert dialog.state["active_layer"] is True
+        assert challenge_node.parent_structure_id == dialog.structure_id
+        challenge_record = next(
+            record for record in index.ordered_target_records if record.target_id == challenge.target_id
+        )
+        assert any(region.role == "dialog" for region in index.ordered_region_records)
+        assert "dialog" in challenge_record.structural_slot
 
     asyncio.run(scenario())
 

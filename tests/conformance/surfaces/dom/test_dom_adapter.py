@@ -446,6 +446,22 @@ def test_dom_adapter_projects_nearest_explicit_accessible_scope_without_changing
     assert "container_context" not in button.state
 
 
+def test_dom_adapter_projects_standard_dialog_scope_without_requiring_an_authored_label() -> None:
+    model = DomAdapter().transduce(
+        '<main><button id="underlay">Search</button></main>'
+        '<div role="dialog" aria-modal="true"><h2>Sign in to continue</h2>'
+        '<button id="challenge">Show QR code</button></div>',
+        environment_revision="rev-1",
+    )
+
+    challenge = next(item for item in model.affordances if item.label == "Show QR code")
+    underlay = next(item for item in model.affordances if item.label == "Search")
+
+    assert challenge.state["semantic_scope_role"] == "dialog"
+    assert challenge.state["semantic_scope_label"] == "Sign in to continue Show QR code"
+    assert "semantic_scope_role" not in underlay.state
+
+
 def test_dom_adapter_normalizes_collection_positions() -> None:
     model = _authored_adapter().transduce(
         '<a data-result="2">third</a><button aria-posinset="4">fourth</button>',
