@@ -98,6 +98,13 @@ async def test_public_session_owns_resumable_state_and_projects_ordered_interrup
     assert tuple(event.cursor for event in events) == tuple(range(1, len(events) + 1))
     assert events[-1].snapshot == waiting
     assert events[-1].type == "RUN_FINISHED"
+    waiting_feed = tuple(source for event in events for source in event.feed_sources)
+    assert tuple(source.kind for source in waiting_feed) == (
+        "user_turn",
+        "goal_accepted",
+        "interaction_request",
+    )
+    assert len({source.source_id for source in waiting_feed}) == len(waiting_feed)
 
     with pytest.raises(PublicSessionConflict, match="interrupt_mismatch"):
         await handle.answer("ask:wrong", "primary")
@@ -109,6 +116,15 @@ async def test_public_session_owns_resumable_state_and_projects_ordered_interrup
     assert done.pending_question is None
     assert done.completion is not None
     assert done.completion.outcome == "success"
+    completed_feed = tuple(
+        source
+        for event in await handle.events(0)
+        for source in event.feed_sources
+    )
+    assert tuple(source.kind for source in completed_feed)[-2:] == (
+        "user_turn",
+        "completion",
+    )
 
     await handle.close()
     await handle.close()

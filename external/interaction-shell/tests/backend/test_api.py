@@ -59,7 +59,7 @@ async def test_lookup_is_live_first_and_uses_closed_result():
         )
     assert response.status_code == 200
     assert response.json()["kind"] == "live_session"
-    assert response.json()["snapshot"]["schema_version"] == "interaction-shell.v3"
+    assert response.json()["snapshot"]["schema_version"] == "interaction-shell.v4"
 
 
 @pytest.mark.asyncio
@@ -79,7 +79,7 @@ async def test_sse_schema_anchor_and_runtime_events_share_typed_envelope():
     events = await manager.events(session_id, created["session_key"], 0)
     assert schema_event["type"] == "CUSTOM"
     assert schema_event["name"] == "snapshot.updated"
-    assert events[0].schema_version == "interaction-shell.v3"
+    assert events[0].schema_version == "interaction-shell.v4"
     assert events[0].cursor == 1
 
 

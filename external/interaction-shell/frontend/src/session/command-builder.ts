@@ -1,9 +1,10 @@
-import type { SubmitCommandData } from "@/generated/types.gen";
+import type { InteractionResponse, SubmitCommandData } from "@/generated/types.gen";
 import type { CommandOffer, CommandOfferKind, Snapshot } from "./types";
 
 export type CommandIntent =
   | { kind: "start_task"; text: string }
   | { kind: "answer_question"; text: string }
+  | { kind: "respond_interaction"; response: InteractionResponse }
   | { kind: "confirm_action"; approved: boolean }
   | { kind: "cancel_task" }
   | { kind: "pause_task" }
@@ -44,6 +45,14 @@ export function buildCommand(
         request_id: offer.request_id,
         answer: textFrom(intent),
       };
+    case "respond_interaction":
+      if (intent.kind !== "respond_interaction") throw new Error("command_offer_intent_mismatch");
+      return {
+        ...base,
+        kind: "respond_interaction",
+        request_id: offer.request.request_id,
+        response: bindResponse(intent.response, offer.request.request_id),
+      };
     case "confirm_action":
       if (intent.kind !== "confirm_action") throw new Error("command_offer_intent_mismatch");
       return {
@@ -72,6 +81,19 @@ export function buildCommand(
       return { ...base, kind: "close_session" };
     default:
       return assertNever(offer);
+  }
+}
+
+function bindResponse(response: InteractionResponse, requestId: string): InteractionResponse {
+  switch (response.kind) {
+    case "free_text":
+      return { ...response, request_id: requestId };
+    case "single_select":
+      return { ...response, request_id: requestId };
+    case "multi_select":
+      return { ...response, request_id: requestId };
+    case "structured_fields":
+      return { ...response, request_id: requestId };
   }
 }
 

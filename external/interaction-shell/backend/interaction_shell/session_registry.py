@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from .contracts import ConversationTurn, RevisionConversationContext
+from .contracts import FEED_BLOCK_ADAPTER, ConversationTurn, RevisionConversationContext
 from .conversation import BoundedConversationProjection
 
 
@@ -234,11 +234,14 @@ def _verifier(salt: bytes, session_key: str) -> str:
 
 def _serialize_projection(projection: BoundedConversationProjection) -> str:
     payload = {
+        "feed": [block.model_dump(mode="json") for block in projection.feed],
         "revision_contexts": [
             context.model_dump(mode="json") for context in projection.revision_contexts
         ],
+        "source_event_cursor": projection.source_event_cursor,
+        "source_event_epoch": projection.source_event_epoch,
         "turns": [turn.model_dump(mode="json") for turn in projection.turns],
-        "version": 1,
+        "version": 2,
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -246,19 +249,37 @@ def _serialize_projection(projection: BoundedConversationProjection) -> str:
 def _deserialize_projection(raw: str) -> BoundedConversationProjection:
     try:
         payload = json.loads(raw)
-        if not isinstance(payload, dict) or payload.get("version") != 1:
+        if not isinstance(payload, dict) or payload.get("version") not in {1, 2}:
             raise ValueError("unsupported session recovery projection version")
-        if set(payload) != {"revision_contexts", "turns", "version"}:
+        expected = (
+            {"revision_contexts", "turns", "version"}
+            if payload["version"] == 1
+            else {
+                "feed",
+                "revision_contexts",
+                "source_event_cursor",
+                "source_event_epoch",
+                "turns",
+                "version",
+            }
+        )
+        if set(payload) != expected:
             raise ValueError("session recovery projection shape is invalid")
         raw_turns = payload["turns"]
         raw_contexts = payload["revision_contexts"]
         if not isinstance(raw_turns, list) or not isinstance(raw_contexts, list):
             raise TypeError("session recovery projection collections are invalid")
+        raw_feed = payload.get("feed", [])
+        if not isinstance(raw_feed, list):
+            raise TypeError("session recovery feed is invalid")
         return BoundedConversationProjection(
             turns=tuple(ConversationTurn.model_validate(turn) for turn in raw_turns),
             revision_contexts=tuple(
                 RevisionConversationContext.model_validate(context) for context in raw_contexts
             ),
+            feed=tuple(FEED_BLOCK_ADAPTER.validate_python(block) for block in raw_feed),
+            source_event_epoch=str(payload.get("source_event_epoch", "")),
+            source_event_cursor=int(payload.get("source_event_cursor", 0)),
         )
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise ValueError("session recovery projection is invalid") from exc

@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 def snapshot_payload() -> dict[str, object]:
     return {
-        "schema_version": "interaction-shell.v3",
+        "schema_version": "interaction-shell.v4",
         "session_id": "session-1",
         "event_epoch": "event-epoch-00000001",
         "expires_at": datetime.now(UTC).isoformat(),
@@ -30,7 +30,7 @@ def snapshot_payload() -> dict[str, object]:
     [
         (SHELL_COMMAND_ADAPTER, {"command_id": "c", "expected_task_revision": 0, "expected_run_status": "idle"}),
         (COMMAND_ADMISSION_ADAPTER, {"command_id": "c", "snapshot": snapshot_payload()}),
-        (SHELL_EVENT_ADAPTER, {"schema_version": "interaction-shell.v3", "session_id": "session-1", "event_epoch": "event-epoch-00000001", "cursor": 1, "snapshot": snapshot_payload()}),
+        (SHELL_EVENT_ADAPTER, {"schema_version": "interaction-shell.v4", "session_id": "session-1", "event_epoch": "event-epoch-00000001", "cursor": 1, "snapshot": snapshot_payload()}),
     ],
 )
 def test_closed_unions_require_discriminators(adapter, payload):

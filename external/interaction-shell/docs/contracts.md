@@ -1,6 +1,6 @@
 # Public shell contract
 
-Schema version: `interaction-shell.v3`.
+Schema version: `interaction-shell.v4`.
 
 FastAPI/Pydantic is the only public schema and operation authority. The checked-in
 OpenAPI document generates TypeScript DTOs, Valibot runtime validators, the named

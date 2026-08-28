@@ -7,7 +7,7 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 from typing_extensions import TypeAliasType
 
-SCHEMA_VERSION = "interaction-shell.v3"
+SCHEMA_VERSION = "interaction-shell.v4"
 REVISION_CONVERSATION_MAX_TURNS = 6
 REVISION_CONVERSATION_MAX_TEXT_BYTES = 16 * 1024
 
@@ -59,11 +59,177 @@ class ControlOwner(StrEnum):
     USER = "user"
 
 
+class InteractionAttribute(StrictModel):
+    label: str = Field(min_length=1, max_length=120)
+    value: str = Field(min_length=1, max_length=500)
+
+
+class InteractionField(StrictModel):
+    field_id: str = Field(min_length=1, max_length=128)
+    kind: Literal["text", "integer", "decimal", "boolean", "date"]
+    label: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    required: bool = True
+
+
+class InteractionOption(StrictModel):
+    option_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=240)
+    description: str = Field(default="", max_length=1000)
+    media_ref: str = Field(default="", max_length=512)
+    attributes: tuple[InteractionAttribute, ...] = Field(default=(), max_length=16)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+    uncertainties: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class InteractionRequest(StrictModel):
+    request_id: str = Field(min_length=1, max_length=128)
+    prompt: str = Field(min_length=1, max_length=1000)
+    response_kind: Literal[
+        "free_text",
+        "single_select",
+        "multi_select",
+        "structured_fields",
+    ]
+    fields: tuple[InteractionField, ...] = Field(default=(), max_length=32)
+    options: tuple[InteractionOption, ...] = Field(default=(), max_length=32)
+    public_intent: str = Field(default="", max_length=240)
+
+    @model_validator(mode="after")
+    def require_response_shape(self):
+        valid = (
+            self.response_kind == "free_text"
+            and not self.fields
+            and not self.options
+            or self.response_kind in {"single_select", "multi_select"}
+            and not self.fields
+            and bool(self.options)
+            or self.response_kind == "structured_fields"
+            and bool(self.fields)
+            and not self.options
+        )
+        if not valid:
+            raise ValueError("interaction request response shape is invalid")
+        if len({item.field_id for item in self.fields}) != len(self.fields):
+            raise ValueError("interaction field IDs must be unique")
+        if len({item.option_id for item in self.options}) != len(self.options):
+            raise ValueError("interaction option IDs must be unique")
+        return self
+
+
+class FreeTextInteractionResponse(StrictModel):
+    kind: Literal["free_text"]
+    request_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class SingleSelectInteractionResponse(StrictModel):
+    kind: Literal["single_select"]
+    request_id: str = Field(min_length=1, max_length=128)
+    option_id: str = Field(min_length=1, max_length=128)
+
+
+class MultiSelectInteractionResponse(StrictModel):
+    kind: Literal["multi_select"]
+    request_id: str = Field(min_length=1, max_length=128)
+    option_ids: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def require_unique_options(self):
+        if len(set(self.option_ids)) != len(self.option_ids):
+            raise ValueError("multi-select option IDs must be unique")
+        return self
+
+
+class TextInteractionFieldValue(StrictModel):
+    kind: Literal["text"]
+    field_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(max_length=8000)
+
+
+class IntegerInteractionFieldValue(StrictModel):
+    kind: Literal["integer"]
+    field_id: str = Field(min_length=1, max_length=128)
+    integer: int
+
+
+class DecimalInteractionFieldValue(StrictModel):
+    kind: Literal["decimal"]
+    field_id: str = Field(min_length=1, max_length=128)
+    decimal_string: str = Field(min_length=1, max_length=200)
+
+
+class BooleanInteractionFieldValue(StrictModel):
+    kind: Literal["boolean"]
+    field_id: str = Field(min_length=1, max_length=128)
+    boolean: bool
+
+
+class DateInteractionFieldValue(StrictModel):
+    kind: Literal["date"]
+    field_id: str = Field(min_length=1, max_length=128)
+    iso_date: str = Field(pattern=r"\d{4}-\d{2}-\d{2}")
+
+
+InteractionFieldValue = TypeAliasType(
+    "InteractionFieldValue",
+    Annotated[
+        TextInteractionFieldValue
+        | IntegerInteractionFieldValue
+        | DecimalInteractionFieldValue
+        | BooleanInteractionFieldValue
+        | DateInteractionFieldValue,
+        Field(discriminator="kind"),
+    ],
+)
+
+
+class StructuredFieldsInteractionResponse(StrictModel):
+    kind: Literal["structured_fields"]
+    request_id: str = Field(min_length=1, max_length=128)
+    values: tuple[InteractionFieldValue, ...] = Field(max_length=32)
+
+
+InteractionResponse = TypeAliasType(
+    "InteractionResponse",
+    Annotated[
+        FreeTextInteractionResponse
+        | SingleSelectInteractionResponse
+        | MultiSelectInteractionResponse
+        | StructuredFieldsInteractionResponse,
+        Field(discriminator="kind"),
+    ],
+)
+
+
+class ArtifactItem(StrictModel):
+    item_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=240)
+    summary: str = Field(default="", max_length=1000)
+    attributes: tuple[InteractionAttribute, ...] = Field(default=(), max_length=16)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class ArtifactLink(StrictModel):
+    title: str = Field(min_length=1, max_length=240)
+    artifact_ref: str = Field(min_length=1, max_length=512)
+
+
+class PublicArtifact(StrictModel):
+    artifact_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=240)
+    summary: str = Field(default="", max_length=2000)
+    items: tuple[ArtifactItem, ...] = Field(default=(), max_length=32)
+    links: tuple[ArtifactLink, ...] = Field(default=(), max_length=32)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+
+
 class Completion(StrictModel):
     outcome: Literal["success", "failure", "blocked", "cancelled"]
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(max_length=4000)
     evidence_refs: tuple[str, ...] = ()
+    artifact: PublicArtifact | None = None
 
 
 class UnavailableSurface(StrictModel):
@@ -112,6 +278,11 @@ class AnswerQuestionOffer(StrictModel):
     prompt: str = Field(min_length=1, max_length=2000)
 
 
+class RespondInteractionOffer(StrictModel):
+    kind: Literal["respond_interaction"]
+    request: InteractionRequest
+
+
 class ConfirmActionOffer(StrictModel):
     kind: Literal["confirm_action"]
     request_id: str = Field(min_length=1, max_length=128)
@@ -152,6 +323,7 @@ CommandOffer = TypeAliasType(
     Annotated[
         StartTaskOffer
         | AnswerQuestionOffer
+        | RespondInteractionOffer
         | ConfirmActionOffer
         | CancelTaskOffer
         | PauseTaskOffer
@@ -208,8 +380,112 @@ class EffectReconciliation(StrictModel):
     compensation_effect_ref: str = Field(default="", max_length=256)
 
 
+class UserTurnBlock(StrictModel):
+    kind: Literal["user_turn"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class GoalAcceptedBlock(StrictModel):
+    kind: Literal["goal_accepted"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    task_revision: int = Field(ge=1)
+    summary: str = Field(min_length=1, max_length=8000)
+    constraints: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class AgentIntentBlock(StrictModel):
+    kind: Literal["agent_intent"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    content: str = Field(min_length=1, max_length=240)
+
+
+class RuntimeActivityBlock(StrictModel):
+    kind: Literal["runtime_activity"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    status: Literal["started", "completed", "uncertain", "failed"]
+    label: str = Field(min_length=1, max_length=500)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class EvidenceSummaryBlock(StrictModel):
+    kind: Literal["evidence_summary"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    evidence_kind: Literal["structural", "visual", "mixed", "unknown"]
+    status: Literal["observed", "partial", "unknown", "failed", "stale"]
+    message: str = Field(min_length=1, max_length=500)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class InteractionRequestBlock(StrictModel):
+    kind: Literal["interaction_request"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    request: InteractionRequest
+
+
+class RevisionAppliedBlock(StrictModel):
+    kind: Literal["revision_applied"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    task_revision: int = Field(ge=2)
+    goal_description_changed: bool = False
+    added: tuple[str, ...] = Field(default=(), max_length=32)
+    removed: tuple[str, ...] = Field(default=(), max_length=32)
+    retained: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class ConfirmationRequiredBlock(StrictModel):
+    kind: Literal["confirmation_required"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    request_id: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=2000)
+    risk: str = Field(min_length=1, max_length=128)
+
+
+class CompletionBlock(StrictModel):
+    kind: Literal["completion"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    completion: Completion
+
+
+class FailureBlock(StrictModel):
+    kind: Literal["failure"]
+    block_id: str = Field(min_length=1, max_length=256)
+    occurred_at: datetime
+    code: str = Field(min_length=1, max_length=128)
+    message: str = Field(min_length=1, max_length=2000)
+
+
+FeedBlock = TypeAliasType(
+    "FeedBlock",
+    Annotated[
+        UserTurnBlock
+        | GoalAcceptedBlock
+        | AgentIntentBlock
+        | RuntimeActivityBlock
+        | EvidenceSummaryBlock
+        | InteractionRequestBlock
+        | RevisionAppliedBlock
+        | ConfirmationRequiredBlock
+        | CompletionBlock
+        | FailureBlock,
+        Field(discriminator="kind"),
+    ],
+)
+FEED_BLOCK_ADAPTER = TypeAdapter(FeedBlock)
+
+
 class RuntimeSessionSnapshot(StrictModel):
-    schema_version: Literal["interaction-shell.v3"]
+    schema_version: Literal["interaction-shell.v4"]
     session_id: str
     task_id: str | None = None
     task_revision: int = Field(default=0, ge=0)
@@ -224,6 +500,7 @@ class RuntimeSessionSnapshot(StrictModel):
         reason_code="surface_not_configured",
     )
     public_steps: tuple[PublicStep, ...] = ()
+    feed: tuple[FeedBlock, ...] = Field(default=(), max_length=128)
     checkpoint_id: str | None = Field(default=None, max_length=200)
     resume_eligible: bool = False
     last_control_outcome: ControlOutcome | None = None
@@ -237,6 +514,10 @@ class RuntimeSessionSnapshot(StrictModel):
         kinds = tuple(offer.kind for offer in self.command_offers)
         if len(kinds) != len(set(kinds)):
             raise ValueError("command offers must be unique by kind")
+        if len({block.block_id for block in self.feed}) != len(self.feed):
+            raise ValueError("feed block identities must be unique")
+        if any(block.occurred_at.tzinfo is None for block in self.feed):
+            raise ValueError("feed block timestamps must be timezone-aware")
         if self.control_owner is ControlOwner.AGENT:
             if self.control_lease_id is not None or isinstance(self.surface, InteractiveSurface):
                 raise ValueError("Agent control cannot retain interactive surface or user lease")
@@ -258,13 +539,14 @@ class RuntimeSessionSnapshot(StrictModel):
 
 
 class SnapshotUpdated(StrictModel):
-    schema_version: Literal["interaction-shell.v3"]
+    schema_version: Literal["interaction-shell.v4"]
     type: Literal["snapshot.updated"]
     session_id: str
     event_epoch: str = Field(min_length=16, max_length=128)
     cursor: int = Field(ge=1)
     emitted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     snapshot: RuntimeSessionSnapshot
+    feed_delta: tuple[FeedBlock, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def require_causal_snapshot(self):
@@ -272,6 +554,10 @@ class SnapshotUpdated(StrictModel):
             raise ValueError("event snapshot session identity mismatch")
         if self.snapshot.event_epoch != self.event_epoch or self.snapshot.event_cursor < self.cursor:
             raise ValueError("event snapshot currentness mismatch")
+        if len({block.block_id for block in self.feed_delta}) != len(self.feed_delta):
+            raise ValueError("event feed delta identities must be unique")
+        if any(block.occurred_at != self.emitted_at for block in self.feed_delta):
+            raise ValueError("event feed delta must share the source event timestamp")
         return self
 
 
@@ -300,6 +586,18 @@ class AnswerQuestion(CommandBase):
     kind: Literal["answer_question"]
     request_id: str = Field(min_length=1, max_length=128)
     answer: str = Field(min_length=1, max_length=4000)
+
+
+class RespondInteraction(CommandBase):
+    kind: Literal["respond_interaction"]
+    request_id: str = Field(min_length=1, max_length=128)
+    response: InteractionResponse
+
+    @model_validator(mode="after")
+    def require_matching_request(self):
+        if self.response.request_id != self.request_id:
+            raise ValueError("interaction command request identity mismatch")
+        return self
 
 
 class ApproveAction(CommandBase):
@@ -356,6 +654,7 @@ class CloseSession(CommandBase):
 ShellCommand: TypeAlias = Annotated[
     StartTask
     | AnswerQuestion
+    | RespondInteraction
     | ApproveAction
     | RejectAction
     | CancelTask
@@ -390,6 +689,7 @@ RejectedCode: TypeAlias = Literal[
     "command_persistence_failed",
     "command_projection_failed",
     "internal_contract_failure",
+    "interaction_response_invalid",
 ]
 
 

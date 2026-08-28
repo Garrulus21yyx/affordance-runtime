@@ -11,8 +11,11 @@ from interaction_shell.contracts import (
     RecoveryAttemptUnavailable,
     RunStatus,
     RuntimeSessionSnapshot,
+    SnapshotUpdated,
     StartTask,
+    UserTurnBlock,
 )
+from interaction_shell.conversation import BoundedConversation
 from interaction_shell.manager import RunSessionManager
 from interaction_shell.port import PortRecoverableCheckpoint, PortRecoveredHandle
 from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
@@ -20,7 +23,7 @@ from interaction_shell.session_registry import SQLiteSessionRecoveryRegistry
 
 def snapshot(session_id: str, expires_at: datetime) -> RuntimeSessionSnapshot:
     return RuntimeSessionSnapshot(
-        schema_version="interaction-shell.v3",
+        schema_version="interaction-shell.v4",
         session_id=session_id,
         event_epoch="manager-epoch-00001",
         expires_at=expires_at,
@@ -41,6 +44,7 @@ class FakePort:
             kind="recovery_unavailable",
             reason_code="checkpoint_not_found",
         )
+        self.feed_events = ()
 
     async def open(self, session_id, expires_at):
         handle = {"session_id": session_id, "expires_at": expires_at}
@@ -48,11 +52,13 @@ class FakePort:
         return handle
 
     async def snapshot(self, handle):
+        if self.feed_events:
+            return self.feed_events[-1].snapshot
         return snapshot(handle["session_id"], handle["expires_at"])
 
     async def events(self, handle, after):
-        del handle, after
-        return ()
+        del handle
+        return tuple(event for event in self.feed_events if event.cursor > after)
 
     async def forward_viewer_input(self, handle, control_lease_id, forward):
         del handle, control_lease_id
@@ -117,6 +123,39 @@ async def test_manager_serializes_calls_but_does_not_recompute_runtime_legality(
     assert port.command_calls == 4
     assert port.max_active_calls == 1
     assert {result.code for result in results} == {"stale_command"}
+
+
+@pytest.mark.asyncio
+async def test_manager_materializes_bounded_feed_once_across_snapshot_resync() -> None:
+    port = FakePort()
+    manager = RunSessionManager(port)
+    created = await manager.create()
+    occurred_at = datetime.now(UTC)
+    event_snapshot = created.snapshot.model_copy(update={"event_cursor": 1})
+    block = UserTurnBlock(
+        kind="user_turn",
+        block_id=f"feed:{created.snapshot.event_epoch}:1:0",
+        occurred_at=occurred_at,
+        content="Inspect the current page",
+    )
+    port.feed_events = (
+        SnapshotUpdated(
+            schema_version="interaction-shell.v4",
+            type="snapshot.updated",
+            session_id=created.snapshot.session_id,
+            event_epoch=created.snapshot.event_epoch,
+            cursor=1,
+            emitted_at=occurred_at,
+            snapshot=event_snapshot,
+            feed_delta=(block,),
+        ),
+    )
+
+    first = await manager.snapshot(created.snapshot.session_id, created.session_key)
+    replay = await manager.snapshot(created.snapshot.session_id, created.session_key)
+
+    assert first.feed == (block,)
+    assert replay.feed == first.feed
 
 
 @pytest.mark.asyncio
@@ -191,3 +230,32 @@ async def test_registry_schema_contains_only_auth_ttl_and_conversation_not_check
         connection.close()
     assert columns == {"session_id", "salt", "verifier", "expires_at", "projection_json"}
     assert not any("checkpoint" in name or "resume" in name for name in tables | columns)
+
+
+@pytest.mark.asyncio
+async def test_registry_round_trips_bounded_feed_projection(tmp_path) -> None:
+    registry = SQLiteSessionRecoveryRegistry(tmp_path / "registry.sqlite3")
+    await registry.register(
+        "session-feed",
+        "secret",
+        datetime.now(UTC) + timedelta(hours=1),
+    )
+    occurred_at = datetime.now(UTC)
+    block = UserTurnBlock(
+        kind="user_turn",
+        block_id="feed:event-epoch-0001:1:0",
+        occurred_at=occurred_at,
+        content="Inspect the current page",
+    )
+    conversation = BoundedConversation()
+    conversation.ingest_feed(
+        event_epoch="event-epoch-0001",
+        event_cursor=1,
+        blocks=(block,),
+    )
+
+    await registry.save_projection("session-feed", conversation.projection())
+    restored = await registry.load_projection("session-feed")
+
+    assert restored.feed == (block,)
+    assert restored.source_event_cursor == 1

@@ -6,7 +6,7 @@ import { projectShellView } from "@/session/view-model";
 import { EffectReconciliationNotice, LiveView, Progress } from "./shell-app";
 
 const base = () => parse(vRuntimeSessionSnapshot, {
-  schema_version: "interaction-shell.v3",
+  schema_version: "interaction-shell.v4",
   session_id: "session-1",
   event_epoch: "event-epoch-00000001",
   event_cursor: 0,

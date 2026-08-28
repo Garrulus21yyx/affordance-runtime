@@ -25,6 +25,41 @@
         "title": "Accepted",
         "type": "object"
       },
+      "AgentIntentBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "content": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "kind": {
+            "const": "agent_intent",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "content"
+        ],
+        "title": "AgentIntentBlock",
+        "type": "object"
+      },
       "AnswerQuestion": {
         "additionalProperties": false,
         "properties": {
@@ -137,6 +172,79 @@
           "request_id"
         ],
         "title": "ApproveAction",
+        "type": "object"
+      },
+      "ArtifactItem": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InteractionAttribute"
+            },
+            "maxItems": 16,
+            "title": "Attributes",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "item_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "title",
+          "summary",
+          "attributes",
+          "evidence_refs"
+        ],
+        "title": "ArtifactItem",
+        "type": "object"
+      },
+      "ArtifactLink": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_ref": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Artifact Ref",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "artifact_ref"
+        ],
+        "title": "ArtifactLink",
         "type": "object"
       },
       "BenchmarkLabCase": {
@@ -424,6 +532,33 @@
         "title": "BenchmarkLabRunSummary",
         "type": "object"
       },
+      "BooleanInteractionFieldValue": {
+        "additionalProperties": false,
+        "properties": {
+          "boolean": {
+            "title": "Boolean",
+            "type": "boolean"
+          },
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "boolean",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "field_id",
+          "boolean"
+        ],
+        "title": "BooleanInteractionFieldValue",
+        "type": "object"
+      },
       "CancelTask": {
         "additionalProperties": false,
         "properties": {
@@ -526,6 +661,7 @@
             "close_session": "#/components/schemas/CloseSessionOffer",
             "confirm_action": "#/components/schemas/ConfirmActionOffer",
             "pause_task": "#/components/schemas/PauseTaskOffer",
+            "respond_interaction": "#/components/schemas/RespondInteractionOffer",
             "resume_task": "#/components/schemas/ResumeTaskOffer",
             "return_control": "#/components/schemas/ReturnControlOffer",
             "revise_task": "#/components/schemas/ReviseTaskOffer",
@@ -540,6 +676,9 @@
           },
           {
             "$ref": "#/components/schemas/AnswerQuestionOffer"
+          },
+          {
+            "$ref": "#/components/schemas/RespondInteractionOffer"
           },
           {
             "$ref": "#/components/schemas/ConfirmActionOffer"
@@ -687,6 +826,16 @@
       "Completion": {
         "additionalProperties": false,
         "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicArtifact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "code": {
             "maxLength": 128,
             "minLength": 1,
@@ -721,9 +870,42 @@
           "outcome",
           "code",
           "message",
-          "evidence_refs"
+          "evidence_refs",
+          "artifact"
         ],
         "title": "Completion",
+        "type": "object"
+      },
+      "CompletionBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "completion": {
+            "$ref": "#/components/schemas/Completion"
+          },
+          "kind": {
+            "const": "completion",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "completion"
+        ],
+        "title": "CompletionBlock",
         "type": "object"
       },
       "ConfirmActionOffer": {
@@ -760,6 +942,55 @@
           "risk"
         ],
         "title": "ConfirmActionOffer",
+        "type": "object"
+      },
+      "ConfirmationRequiredBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "confirmation_required",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "risk": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Risk",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "request_id",
+          "summary",
+          "risk"
+        ],
+        "title": "ConfirmationRequiredBlock",
         "type": "object"
       },
       "Conflict": {
@@ -945,6 +1176,63 @@
         "title": "CreateSessionResponse",
         "type": "object"
       },
+      "DateInteractionFieldValue": {
+        "additionalProperties": false,
+        "properties": {
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "iso_date": {
+            "pattern": "\\d{4}-\\d{2}-\\d{2}",
+            "title": "Iso Date",
+            "type": "string"
+          },
+          "kind": {
+            "const": "date",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "field_id",
+          "iso_date"
+        ],
+        "title": "DateInteractionFieldValue",
+        "type": "object"
+      },
+      "DecimalInteractionFieldValue": {
+        "additionalProperties": false,
+        "properties": {
+          "decimal_string": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Decimal String",
+            "type": "string"
+          },
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "decimal",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "field_id",
+          "decimal_string"
+        ],
+        "title": "DecimalInteractionFieldValue",
+        "type": "object"
+      },
       "EffectReconciliation": {
         "additionalProperties": false,
         "properties": {
@@ -1010,6 +1298,259 @@
         "title": "EffectReconciliation",
         "type": "object"
       },
+      "EvidenceSummaryBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "evidence_kind": {
+            "enum": [
+              "structural",
+              "visual",
+              "mixed",
+              "unknown"
+            ],
+            "title": "Evidence Kind",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "kind": {
+            "const": "evidence_summary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "observed",
+              "partial",
+              "unknown",
+              "failed",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "evidence_kind",
+          "status",
+          "message",
+          "confidence",
+          "evidence_refs"
+        ],
+        "title": "EvidenceSummaryBlock",
+        "type": "object"
+      },
+      "FailureBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "kind": {
+            "const": "failure",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "code",
+          "message"
+        ],
+        "title": "FailureBlock",
+        "type": "object"
+      },
+      "FeedBlock": {
+        "discriminator": {
+          "mapping": {
+            "agent_intent": "#/components/schemas/AgentIntentBlock",
+            "completion": "#/components/schemas/CompletionBlock",
+            "confirmation_required": "#/components/schemas/ConfirmationRequiredBlock",
+            "evidence_summary": "#/components/schemas/EvidenceSummaryBlock",
+            "failure": "#/components/schemas/FailureBlock",
+            "goal_accepted": "#/components/schemas/GoalAcceptedBlock",
+            "interaction_request": "#/components/schemas/InteractionRequestBlock",
+            "revision_applied": "#/components/schemas/RevisionAppliedBlock",
+            "runtime_activity": "#/components/schemas/RuntimeActivityBlock",
+            "user_turn": "#/components/schemas/UserTurnBlock"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UserTurnBlock"
+          },
+          {
+            "$ref": "#/components/schemas/GoalAcceptedBlock"
+          },
+          {
+            "$ref": "#/components/schemas/AgentIntentBlock"
+          },
+          {
+            "$ref": "#/components/schemas/RuntimeActivityBlock"
+          },
+          {
+            "$ref": "#/components/schemas/EvidenceSummaryBlock"
+          },
+          {
+            "$ref": "#/components/schemas/InteractionRequestBlock"
+          },
+          {
+            "$ref": "#/components/schemas/RevisionAppliedBlock"
+          },
+          {
+            "$ref": "#/components/schemas/ConfirmationRequiredBlock"
+          },
+          {
+            "$ref": "#/components/schemas/CompletionBlock"
+          },
+          {
+            "$ref": "#/components/schemas/FailureBlock"
+          }
+        ]
+      },
+      "FreeTextInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "free_text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "text"
+        ],
+        "title": "FreeTextInteractionResponse",
+        "type": "object"
+      },
+      "GoalAcceptedBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "constraints": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Constraints",
+            "type": "array"
+          },
+          "kind": {
+            "const": "goal_accepted",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "task_revision": {
+            "minimum": 1.0,
+            "title": "Task Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "task_revision",
+          "summary",
+          "constraints"
+        ],
+        "title": "GoalAcceptedBlock",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1022,6 +1563,318 @@
         },
         "title": "HTTPValidationError",
         "type": "object"
+      },
+      "IntegerInteractionFieldValue": {
+        "additionalProperties": false,
+        "properties": {
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "integer": {
+            "title": "Integer",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "integer",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "field_id",
+          "integer"
+        ],
+        "title": "IntegerInteractionFieldValue",
+        "type": "object"
+      },
+      "InteractionAttribute": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "InteractionAttribute",
+        "type": "object"
+      },
+      "InteractionField": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "integer",
+              "decimal",
+              "boolean",
+              "date"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field_id",
+          "kind",
+          "label",
+          "description",
+          "required"
+        ],
+        "title": "InteractionField",
+        "type": "object"
+      },
+      "InteractionFieldValue": {
+        "discriminator": {
+          "mapping": {
+            "boolean": "#/components/schemas/BooleanInteractionFieldValue",
+            "date": "#/components/schemas/DateInteractionFieldValue",
+            "decimal": "#/components/schemas/DecimalInteractionFieldValue",
+            "integer": "#/components/schemas/IntegerInteractionFieldValue",
+            "text": "#/components/schemas/TextInteractionFieldValue"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TextInteractionFieldValue"
+          },
+          {
+            "$ref": "#/components/schemas/IntegerInteractionFieldValue"
+          },
+          {
+            "$ref": "#/components/schemas/DecimalInteractionFieldValue"
+          },
+          {
+            "$ref": "#/components/schemas/BooleanInteractionFieldValue"
+          },
+          {
+            "$ref": "#/components/schemas/DateInteractionFieldValue"
+          }
+        ]
+      },
+      "InteractionOption": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InteractionAttribute"
+            },
+            "maxItems": 16,
+            "title": "Attributes",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "media_ref": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Media Ref",
+            "type": "string"
+          },
+          "option_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Option Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "uncertainties": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Uncertainties",
+            "type": "array"
+          }
+        },
+        "required": [
+          "option_id",
+          "title",
+          "description",
+          "media_ref",
+          "attributes",
+          "evidence_refs",
+          "uncertainties"
+        ],
+        "title": "InteractionOption",
+        "type": "object"
+      },
+      "InteractionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InteractionField"
+            },
+            "maxItems": 32,
+            "title": "Fields",
+            "type": "array"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InteractionOption"
+            },
+            "maxItems": 32,
+            "title": "Options",
+            "type": "array"
+          },
+          "prompt": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "public_intent": {
+            "default": "",
+            "maxLength": 240,
+            "title": "Public Intent",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "response_kind": {
+            "enum": [
+              "free_text",
+              "single_select",
+              "multi_select",
+              "structured_fields"
+            ],
+            "title": "Response Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "prompt",
+          "response_kind",
+          "fields",
+          "options",
+          "public_intent"
+        ],
+        "title": "InteractionRequest",
+        "type": "object"
+      },
+      "InteractionRequestBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "interaction_request",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/InteractionRequest"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "request"
+        ],
+        "title": "InteractionRequestBlock",
+        "type": "object"
+      },
+      "InteractionResponse": {
+        "discriminator": {
+          "mapping": {
+            "free_text": "#/components/schemas/FreeTextInteractionResponse",
+            "multi_select": "#/components/schemas/MultiSelectInteractionResponse",
+            "single_select": "#/components/schemas/SingleSelectInteractionResponse",
+            "structured_fields": "#/components/schemas/StructuredFieldsInteractionResponse"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FreeTextInteractionResponse"
+          },
+          {
+            "$ref": "#/components/schemas/SingleSelectInteractionResponse"
+          },
+          {
+            "$ref": "#/components/schemas/MultiSelectInteractionResponse"
+          },
+          {
+            "$ref": "#/components/schemas/StructuredFieldsInteractionResponse"
+          }
+        ]
       },
       "InteractiveSurface": {
         "additionalProperties": false,
@@ -1087,6 +1940,38 @@
         "title": "LiveSession",
         "type": "object"
       },
+      "MultiSelectInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "multi_select",
+            "title": "Kind",
+            "type": "string"
+          },
+          "option_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Option Ids",
+            "type": "array"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "option_ids"
+        ],
+        "title": "MultiSelectInteractionResponse",
+        "type": "object"
+      },
       "PauseTask": {
         "additionalProperties": false,
         "properties": {
@@ -1132,6 +2017,66 @@
           "kind"
         ],
         "title": "PauseTaskOffer",
+        "type": "object"
+      },
+      "PublicArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactItem"
+            },
+            "maxItems": 32,
+            "title": "Items",
+            "type": "array"
+          },
+          "links": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactLink"
+            },
+            "maxItems": 32,
+            "title": "Links",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "title",
+          "summary",
+          "items",
+          "links",
+          "evidence_refs"
+        ],
+        "title": "PublicArtifact",
         "type": "object"
       },
       "PublicStep": {
@@ -1527,7 +2472,8 @@
               "command_processing_failed",
               "command_persistence_failed",
               "command_projection_failed",
-              "internal_contract_failure"
+              "internal_contract_failure",
+              "interaction_response_invalid"
             ],
             "title": "Code",
             "type": "string"
@@ -1552,6 +2498,68 @@
           "snapshot"
         ],
         "title": "Rejected",
+        "type": "object"
+      },
+      "RespondInteraction": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Command Id",
+            "type": "string"
+          },
+          "expected_run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "expected_task_revision": {
+            "minimum": 0.0,
+            "title": "Expected Task Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "respond_interaction",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/InteractionResponse"
+          }
+        },
+        "required": [
+          "command_id",
+          "expected_task_revision",
+          "expected_run_status",
+          "kind",
+          "request_id",
+          "response"
+        ],
+        "title": "RespondInteraction",
+        "type": "object"
+      },
+      "RespondInteractionOffer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "respond_interaction",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/InteractionRequest"
+          }
+        },
+        "required": [
+          "kind",
+          "request"
+        ],
+        "title": "RespondInteractionOffer",
         "type": "object"
       },
       "ResumeTask": {
@@ -1738,6 +2746,76 @@
         "title": "ReviseTaskOffer",
         "type": "object"
       },
+      "RevisionAppliedBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Added",
+            "type": "array"
+          },
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "goal_description_changed": {
+            "default": false,
+            "title": "Goal Description Changed",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "revision_applied",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "removed": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Removed",
+            "type": "array"
+          },
+          "retained": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Retained",
+            "type": "array"
+          },
+          "task_revision": {
+            "minimum": 2.0,
+            "title": "Task Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "task_revision",
+          "goal_description_changed",
+          "added",
+          "removed",
+          "retained"
+        ],
+        "title": "RevisionAppliedBlock",
+        "type": "object"
+      },
       "RevisionConversationContext": {
         "additionalProperties": false,
         "properties": {
@@ -1778,6 +2856,62 @@
         ],
         "title": "RunStatus",
         "type": "string"
+      },
+      "RuntimeActivityBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "kind": {
+            "const": "runtime_activity",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "started",
+              "completed",
+              "uncertain",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "status",
+          "label",
+          "evidence_refs"
+        ],
+        "title": "RuntimeActivityBlock",
+        "type": "object"
       },
       "RuntimeSessionSnapshot": {
         "additionalProperties": false,
@@ -1856,6 +2990,15 @@
             "title": "Expires At",
             "type": "string"
           },
+          "feed": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FeedBlock"
+            },
+            "maxItems": 128,
+            "title": "Feed",
+            "type": "array"
+          },
           "last_control_outcome": {
             "anyOf": [
               {
@@ -1884,7 +3027,7 @@
             "default": "idle"
           },
           "schema_version": {
-            "const": "interaction-shell.v3",
+            "const": "interaction-shell.v4",
             "title": "Schema Version",
             "type": "string"
           },
@@ -1961,6 +3104,7 @@
           "command_offers",
           "surface",
           "public_steps",
+          "feed",
           "checkpoint_id",
           "resume_eligible",
           "last_control_outcome",
@@ -1997,6 +3141,35 @@
         "title": "ShellEventEnvelope",
         "type": "object"
       },
+      "SingleSelectInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "single_select",
+            "title": "Kind",
+            "type": "string"
+          },
+          "option_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Option Id",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "option_id"
+        ],
+        "title": "SingleSelectInteractionResponse",
+        "type": "object"
+      },
       "SnapshotUpdated": {
         "additionalProperties": false,
         "properties": {
@@ -2016,8 +3189,17 @@
             "title": "Event Epoch",
             "type": "string"
           },
+          "feed_delta": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FeedBlock"
+            },
+            "maxItems": 16,
+            "title": "Feed Delta",
+            "type": "array"
+          },
           "schema_version": {
-            "const": "interaction-shell.v3",
+            "const": "interaction-shell.v4",
             "title": "Schema Version",
             "type": "string"
           },
@@ -2041,7 +3223,8 @@
           "event_epoch",
           "cursor",
           "emitted_at",
-          "snapshot"
+          "snapshot",
+          "feed_delta"
         ],
         "title": "SnapshotUpdated",
         "type": "object"
@@ -2100,6 +3283,37 @@
         "title": "StartTaskOffer",
         "type": "object"
       },
+      "StructuredFieldsInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "structured_fields",
+            "title": "Kind",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/InteractionFieldValue"
+            },
+            "maxItems": 32,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "request_id",
+          "values"
+        ],
+        "title": "StructuredFieldsInteractionResponse",
+        "type": "object"
+      },
       "TakeOver": {
         "additionalProperties": false,
         "properties": {
@@ -2152,6 +3366,34 @@
           "kind"
         ],
         "title": "TakeOverOffer",
+        "type": "object"
+      },
+      "TextInteractionFieldValue": {
+        "additionalProperties": false,
+        "properties": {
+          "field_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Field Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 8000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "field_id",
+          "text"
+        ],
+        "title": "TextInteractionFieldValue",
         "type": "object"
       },
       "UnavailableSurface": {
@@ -2207,6 +3449,41 @@
           "snapshot"
         ],
         "title": "Unsupported",
+        "type": "object"
+      },
+      "UserTurnBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "block_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Block Id",
+            "type": "string"
+          },
+          "content": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "kind": {
+            "const": "user_turn",
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "block_id",
+          "occurred_at",
+          "content"
+        ],
+        "title": "UserTurnBlock",
         "type": "object"
       },
       "ValidationError": {
@@ -2824,6 +4101,7 @@
                     "close_session": "#/components/schemas/CloseSession",
                     "pause_task": "#/components/schemas/PauseTask",
                     "reject_action": "#/components/schemas/RejectAction",
+                    "respond_interaction": "#/components/schemas/RespondInteraction",
                     "resume_task": "#/components/schemas/ResumeTask",
                     "return_control": "#/components/schemas/ReturnControl",
                     "revise_task": "#/components/schemas/ReviseTask",
@@ -2838,6 +4116,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/AnswerQuestion"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RespondInteraction"
                   },
                   {
                     "$ref": "#/components/schemas/ApproveAction"

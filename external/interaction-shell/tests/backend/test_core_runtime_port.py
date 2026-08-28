@@ -14,11 +14,13 @@ from interaction_shell.contracts import (
     ConversationTurn,
     PauseTask,
     RejectAction,
+    RespondInteraction,
     ResumeTask,
     ReturnControl,
     ReviseTask,
     RevisionConversationContext,
     RunStatus,
+    SingleSelectInteractionResponse,
     StartTask,
     TakeOver,
 )
@@ -26,6 +28,12 @@ from interaction_shell.core_runtime_port import CoreRuntimeSessionPort
 from interaction_shell.port import PortRecoveredHandle
 from interaction_shell.viewer import SurfaceChannelAvailable, SurfaceChannelUnavailable
 
+from affordance_runtime.agent.interactions import (
+    InteractionOption as RuntimeInteractionOption,
+)
+from affordance_runtime.agent.interactions import (
+    SingleSelectionResponse as RuntimeSingleSelectionResponse,
+)
 from affordance_runtime.app.public_session import (
     LiveCheckpointConflict,
     LiveCheckpointCurrent,
@@ -35,12 +43,15 @@ from affordance_runtime.app.public_session import (
     PublicCommandRejected,
     PublicCommandUnsupported,
     PublicConflictCode,
+    PublicInteractionRequest,
     PublicRejectedCode,
+    PublicRuntimeSessionEvent,
     PublicRuntimeSessionSnapshot,
     PublicSessionCommandCapability,
     PublicSessionCommandKind,
     PublicSessionControlOwner,
     PublicSessionStatus,
+    PublicUserTurn,
     RecoverableCheckpoint,
     RecoveryInspectionUnavailable,
     RuntimeRecovered,
@@ -66,6 +77,18 @@ COMMANDS = (
         expected_run_status=RunStatus.PAUSED,
         request_id="question-1",
         answer="Answer",
+    ),
+    RespondInteraction(
+        kind="respond_interaction",
+        command_id="respond",
+        expected_task_revision=2,
+        expected_run_status=RunStatus.PAUSED,
+        request_id="interaction-1",
+        response=SingleSelectInteractionResponse(
+            kind="single_select",
+            request_id="interaction-1",
+            option_id="option-1",
+        ),
     ),
     ApproveAction(
         kind="approve_action",
@@ -131,17 +154,20 @@ def runtime_snapshot(
     capabilities: tuple[PublicSessionCommandCapability, ...] = (),
     owner: PublicSessionControlOwner = PublicSessionControlOwner.AGENT,
     lease: str | None = None,
+    pending_interaction: PublicInteractionRequest | None = None,
+    event_cursor: int = 0,
 ) -> PublicRuntimeSessionSnapshot:
     return PublicRuntimeSessionSnapshot(
         session_id="session-1",
         expires_at=datetime.now(UTC),
         status=status,
         event_epoch="runtime-epoch-000001",
-        event_cursor=0,
+        event_cursor=event_cursor,
         command_capabilities=capabilities,
         task_revision=2,
         checkpoint_id="runtime-checkpoint:" + "a" * 64,
         resume_eligible=True,
+        pending_interaction=pending_interaction,
         control_owner=owner,
         control_lease_id=lease,
     )
@@ -154,6 +180,7 @@ class FakeHandle:
         admission=None,
         live=None,
         surface_input_admitted=False,
+        events=(),
     ):
         self.current = snapshot
         self.admission = admission
@@ -161,17 +188,19 @@ class FakeHandle:
         self.admit_calls = 0
         self.surface_input_admitted = surface_input_admitted
         self.surface_input_calls = 0
+        self.last_command = None
+        self.source_events = tuple(events)
 
     async def snapshot(self):
         return self.current
 
     async def admit(self, command):
         self.admit_calls += 1
+        self.last_command = command
         return self.admission or PublicCommandAccepted("accepted", command.command_id, self.current)
 
     async def events(self, after):
-        del after
-        return ()
+        return tuple(event for event in self.source_events if event.cursor > after)
 
     async def inspect_live_checkpoint(self, checkpoint_id):
         del checkpoint_id
@@ -236,6 +265,85 @@ async def test_command_offer_projection_is_sound_complete_unique_and_ref_preserv
     assert len(kinds) == len(set(kinds))
     assert projected.command_offers[0].request_id == "question-1"
     assert projected.command_offers[1].request_id == "confirmation-1"
+
+
+@pytest.mark.asyncio
+async def test_generic_interaction_offer_and_response_preserve_typed_ids() -> None:
+    request = PublicInteractionRequest(
+        "interaction:" + "a" * 32,
+        "Choose a candidate",
+        "single_select",
+        options=(
+            RuntimeInteractionOption(
+                "option:" + "b" * 32,
+                "Candidate A",
+            ),
+        ),
+    )
+    source = runtime_snapshot(
+        status=PublicSessionStatus.WAITING_USER,
+        capabilities=(
+            PublicSessionCommandCapability(
+                PublicSessionCommandKind.RESPOND_INTERACTION,
+                interaction_ref=request.request_id,
+                prompt=request.prompt,
+            ),
+        ),
+        pending_interaction=request,
+    )
+    handle = FakeHandle(source)
+    port = CoreRuntimeSessionPort(FakeFactory(), unavailable_surface)
+
+    projected = await port.snapshot(handle)
+    offer = projected.command_offers[0]
+    assert offer.kind == "respond_interaction"
+    assert offer.request.options[0].title == "Candidate A"
+
+    admission = await port.command(
+        handle,
+        RespondInteraction(
+            kind="respond_interaction",
+            command_id="respond-typed",
+            expected_task_revision=source.task_revision,
+            expected_run_status=RunStatus.WAITING_USER,
+            request_id=request.request_id,
+            response=SingleSelectInteractionResponse(
+                kind="single_select",
+                request_id=request.request_id,
+                option_id=request.options[0].option_id,
+            ),
+        ),
+    )
+
+    assert admission.kind == "accepted"
+    assert isinstance(handle.last_command.response, RuntimeSingleSelectionResponse)
+    assert handle.last_command.response.option_id == request.options[0].option_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_feed_source_projects_to_closed_shell_block_without_guessing() -> None:
+    snapshot = runtime_snapshot(event_cursor=1)
+    event = PublicRuntimeSessionEvent(
+        snapshot.session_id,
+        snapshot.event_epoch,
+        1,
+        "RUN_STARTED",
+        snapshot,
+        (
+            PublicUserTurn(
+                f"feed:{snapshot.event_epoch}:1:0",
+                "Compare the visible candidates",
+            ),
+        ),
+    )
+    port = CoreRuntimeSessionPort(FakeFactory(), unavailable_surface)
+
+    projected = await port.events(FakeHandle(snapshot, events=(event,)), 0)
+
+    assert len(projected) == 1
+    assert projected[0].feed_delta[0].kind == "user_turn"
+    assert projected[0].feed_delta[0].content == "Compare the visible candidates"
+    assert projected[0].feed_delta[0].block_id == event.feed_sources[0].source_id
 
 
 @pytest.mark.asyncio

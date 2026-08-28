@@ -20,6 +20,28 @@ export type Accepted = {
 };
 
 /**
+ * AgentIntentBlock
+ */
+export type AgentIntentBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Kind
+     */
+    kind: 'agent_intent';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+};
+
+/**
  * AnswerQuestion
  */
 export type AnswerQuestion = {
@@ -85,6 +107,46 @@ export type ApproveAction = {
      * Request Id
      */
     request_id: string;
+};
+
+/**
+ * ArtifactItem
+ */
+export type ArtifactItem = {
+    /**
+     * Attributes
+     */
+    attributes: Array<InteractionAttribute>;
+    /**
+     * Evidence Refs
+     */
+    evidence_refs: Array<string>;
+    /**
+     * Item Id
+     */
+    item_id: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
+ * ArtifactLink
+ */
+export type ArtifactLink = {
+    /**
+     * Artifact Ref
+     */
+    artifact_ref: string;
+    /**
+     * Title
+     */
+    title: string;
 };
 
 /**
@@ -264,6 +326,24 @@ export type BenchmarkLabRunSummary = {
 };
 
 /**
+ * BooleanInteractionFieldValue
+ */
+export type BooleanInteractionFieldValue = {
+    /**
+     * Boolean
+     */
+    boolean: boolean;
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Kind
+     */
+    kind: 'boolean';
+};
+
+/**
  * CancelTask
  */
 export type CancelTask = {
@@ -326,6 +406,8 @@ export type CommandOffer = ({
 } & StartTaskOffer) | ({
     kind: 'answer_question';
 } & AnswerQuestionOffer) | ({
+    kind: 'respond_interaction';
+} & RespondInteractionOffer) | ({
     kind: 'confirm_action';
 } & ConfirmActionOffer) | ({
     kind: 'cancel_task';
@@ -413,6 +495,7 @@ export type CompletedRunSummary = {
  * Completion
  */
 export type Completion = {
+    artifact: PublicArtifact | null;
     /**
      * Code
      */
@@ -432,6 +515,25 @@ export type Completion = {
 };
 
 /**
+ * CompletionBlock
+ */
+export type CompletionBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    completion: Completion;
+    /**
+     * Kind
+     */
+    kind: 'completion';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+};
+
+/**
  * ConfirmActionOffer
  */
 export type ConfirmActionOffer = {
@@ -439,6 +541,36 @@ export type ConfirmActionOffer = {
      * Kind
      */
     kind: 'confirm_action';
+    /**
+     * Request Id
+     */
+    request_id: string;
+    /**
+     * Risk
+     */
+    risk: string;
+    /**
+     * Summary
+     */
+    summary: string;
+};
+
+/**
+ * ConfirmationRequiredBlock
+ */
+export type ConfirmationRequiredBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Kind
+     */
+    kind: 'confirmation_required';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
     /**
      * Request Id
      */
@@ -547,6 +679,42 @@ export type CreateSessionResponse = {
 };
 
 /**
+ * DateInteractionFieldValue
+ */
+export type DateInteractionFieldValue = {
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Iso Date
+     */
+    iso_date: string;
+    /**
+     * Kind
+     */
+    kind: 'date';
+};
+
+/**
+ * DecimalInteractionFieldValue
+ */
+export type DecimalInteractionFieldValue = {
+    /**
+     * Decimal String
+     */
+    decimal_string: string;
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Kind
+     */
+    kind: 'decimal';
+};
+
+/**
  * EffectReconciliation
  */
 export type EffectReconciliation = {
@@ -581,6 +749,140 @@ export type EffectReconciliation = {
 };
 
 /**
+ * EvidenceSummaryBlock
+ */
+export type EvidenceSummaryBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Confidence
+     */
+    confidence: number | null;
+    /**
+     * Evidence Kind
+     */
+    evidence_kind: 'structural' | 'visual' | 'mixed' | 'unknown';
+    /**
+     * Evidence Refs
+     */
+    evidence_refs: Array<string>;
+    /**
+     * Kind
+     */
+    kind: 'evidence_summary';
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Status
+     */
+    status: 'observed' | 'partial' | 'unknown' | 'failed' | 'stale';
+};
+
+/**
+ * FailureBlock
+ */
+export type FailureBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Kind
+     */
+    kind: 'failure';
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+};
+
+export type FeedBlock = ({
+    kind: 'user_turn';
+} & UserTurnBlock) | ({
+    kind: 'goal_accepted';
+} & GoalAcceptedBlock) | ({
+    kind: 'agent_intent';
+} & AgentIntentBlock) | ({
+    kind: 'runtime_activity';
+} & RuntimeActivityBlock) | ({
+    kind: 'evidence_summary';
+} & EvidenceSummaryBlock) | ({
+    kind: 'interaction_request';
+} & InteractionRequestBlock) | ({
+    kind: 'revision_applied';
+} & RevisionAppliedBlock) | ({
+    kind: 'confirmation_required';
+} & ConfirmationRequiredBlock) | ({
+    kind: 'completion';
+} & CompletionBlock) | ({
+    kind: 'failure';
+} & FailureBlock);
+
+/**
+ * FreeTextInteractionResponse
+ */
+export type FreeTextInteractionResponse = {
+    /**
+     * Kind
+     */
+    kind: 'free_text';
+    /**
+     * Request Id
+     */
+    request_id: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * GoalAcceptedBlock
+ */
+export type GoalAcceptedBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Constraints
+     */
+    constraints: Array<string>;
+    /**
+     * Kind
+     */
+    kind: 'goal_accepted';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Task Revision
+     */
+    task_revision: number;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -589,6 +891,169 @@ export type HttpValidationError = {
      */
     detail?: Array<ValidationError>;
 };
+
+/**
+ * IntegerInteractionFieldValue
+ */
+export type IntegerInteractionFieldValue = {
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Integer
+     */
+    integer: number;
+    /**
+     * Kind
+     */
+    kind: 'integer';
+};
+
+/**
+ * InteractionAttribute
+ */
+export type InteractionAttribute = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * InteractionField
+ */
+export type InteractionField = {
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Kind
+     */
+    kind: 'text' | 'integer' | 'decimal' | 'boolean' | 'date';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Required
+     */
+    required: boolean;
+};
+
+export type InteractionFieldValue = ({
+    kind: 'text';
+} & TextInteractionFieldValue) | ({
+    kind: 'integer';
+} & IntegerInteractionFieldValue) | ({
+    kind: 'decimal';
+} & DecimalInteractionFieldValue) | ({
+    kind: 'boolean';
+} & BooleanInteractionFieldValue) | ({
+    kind: 'date';
+} & DateInteractionFieldValue);
+
+/**
+ * InteractionOption
+ */
+export type InteractionOption = {
+    /**
+     * Attributes
+     */
+    attributes: Array<InteractionAttribute>;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Evidence Refs
+     */
+    evidence_refs: Array<string>;
+    /**
+     * Media Ref
+     */
+    media_ref: string;
+    /**
+     * Option Id
+     */
+    option_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Uncertainties
+     */
+    uncertainties: Array<string>;
+};
+
+/**
+ * InteractionRequest
+ */
+export type InteractionRequest = {
+    /**
+     * Fields
+     */
+    fields: Array<InteractionField>;
+    /**
+     * Options
+     */
+    options: Array<InteractionOption>;
+    /**
+     * Prompt
+     */
+    prompt: string;
+    /**
+     * Public Intent
+     */
+    public_intent: string;
+    /**
+     * Request Id
+     */
+    request_id: string;
+    /**
+     * Response Kind
+     */
+    response_kind: 'free_text' | 'single_select' | 'multi_select' | 'structured_fields';
+};
+
+/**
+ * InteractionRequestBlock
+ */
+export type InteractionRequestBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Kind
+     */
+    kind: 'interaction_request';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    request: InteractionRequest;
+};
+
+export type InteractionResponse = ({
+    kind: 'free_text';
+} & FreeTextInteractionResponse) | ({
+    kind: 'single_select';
+} & SingleSelectInteractionResponse) | ({
+    kind: 'multi_select';
+} & MultiSelectInteractionResponse) | ({
+    kind: 'structured_fields';
+} & StructuredFieldsInteractionResponse);
 
 /**
  * InteractiveSurface
@@ -628,6 +1093,24 @@ export type LiveSession = {
 };
 
 /**
+ * MultiSelectInteractionResponse
+ */
+export type MultiSelectInteractionResponse = {
+    /**
+     * Kind
+     */
+    kind: 'multi_select';
+    /**
+     * Option Ids
+     */
+    option_ids: Array<string>;
+    /**
+     * Request Id
+     */
+    request_id: string;
+};
+
+/**
  * PauseTask
  */
 export type PauseTask = {
@@ -654,6 +1137,36 @@ export type PauseTaskOffer = {
      * Kind
      */
     kind: 'pause_task';
+};
+
+/**
+ * PublicArtifact
+ */
+export type PublicArtifact = {
+    /**
+     * Artifact Id
+     */
+    artifact_id: string;
+    /**
+     * Evidence Refs
+     */
+    evidence_refs: Array<string>;
+    /**
+     * Items
+     */
+    items: Array<ArtifactItem>;
+    /**
+     * Links
+     */
+    links: Array<ArtifactLink>;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Title
+     */
+    title: string;
 };
 
 /**
@@ -885,7 +1398,7 @@ export type Rejected = {
     /**
      * Code
      */
-    code: 'command_processing_failed' | 'command_persistence_failed' | 'command_projection_failed' | 'internal_contract_failure';
+    code: 'command_processing_failed' | 'command_persistence_failed' | 'command_projection_failed' | 'internal_contract_failure' | 'interaction_response_invalid';
     /**
      * Command Id
      */
@@ -895,6 +1408,41 @@ export type Rejected = {
      */
     kind: 'rejected';
     snapshot: RuntimeSessionSnapshot;
+};
+
+/**
+ * RespondInteraction
+ */
+export type RespondInteraction = {
+    /**
+     * Command Id
+     */
+    command_id: string;
+    expected_run_status: RunStatus;
+    /**
+     * Expected Task Revision
+     */
+    expected_task_revision: number;
+    /**
+     * Kind
+     */
+    kind: 'respond_interaction';
+    /**
+     * Request Id
+     */
+    request_id: string;
+    response: InteractionResponse;
+};
+
+/**
+ * RespondInteractionOffer
+ */
+export type RespondInteractionOffer = {
+    /**
+     * Kind
+     */
+    kind: 'respond_interaction';
+    request: InteractionRequest;
 };
 
 /**
@@ -1002,6 +1550,44 @@ export type ReviseTaskOffer = {
 };
 
 /**
+ * RevisionAppliedBlock
+ */
+export type RevisionAppliedBlock = {
+    /**
+     * Added
+     */
+    added: Array<string>;
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Goal Description Changed
+     */
+    goal_description_changed: boolean;
+    /**
+     * Kind
+     */
+    kind: 'revision_applied';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Removed
+     */
+    removed: Array<string>;
+    /**
+     * Retained
+     */
+    retained: Array<string>;
+    /**
+     * Task Revision
+     */
+    task_revision: number;
+};
+
+/**
  * RevisionConversationContext
  */
 export type RevisionConversationContext = {
@@ -1019,6 +1605,36 @@ export type RevisionConversationContext = {
  * RunStatus
  */
 export type RunStatus = 'idle' | 'running' | 'paused' | 'waiting_user' | 'waiting_confirmation' | 'done' | 'cancelled' | 'failed' | 'blocked';
+
+/**
+ * RuntimeActivityBlock
+ */
+export type RuntimeActivityBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Evidence Refs
+     */
+    evidence_refs: Array<string>;
+    /**
+     * Kind
+     */
+    kind: 'runtime_activity';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Status
+     */
+    status: 'started' | 'completed' | 'uncertain' | 'failed';
+};
 
 /**
  * RuntimeSessionSnapshot
@@ -1051,6 +1667,10 @@ export type RuntimeSessionSnapshot = {
      * Expires At
      */
     expires_at: string;
+    /**
+     * Feed
+     */
+    feed: Array<FeedBlock>;
     last_control_outcome: ControlOutcome | null;
     /**
      * Public Steps
@@ -1064,7 +1684,7 @@ export type RuntimeSessionSnapshot = {
     /**
      * Schema Version
      */
-    schema_version: 'interaction-shell.v3';
+    schema_version: 'interaction-shell.v4';
     /**
      * Session Id
      */
@@ -1109,6 +1729,24 @@ export type ShellEventEnvelope = {
 };
 
 /**
+ * SingleSelectInteractionResponse
+ */
+export type SingleSelectInteractionResponse = {
+    /**
+     * Kind
+     */
+    kind: 'single_select';
+    /**
+     * Option Id
+     */
+    option_id: string;
+    /**
+     * Request Id
+     */
+    request_id: string;
+};
+
+/**
  * SnapshotUpdated
  */
 export type SnapshotUpdated = {
@@ -1125,9 +1763,13 @@ export type SnapshotUpdated = {
      */
     event_epoch: string;
     /**
+     * Feed Delta
+     */
+    feed_delta: Array<FeedBlock>;
+    /**
      * Schema Version
      */
-    schema_version: 'interaction-shell.v3';
+    schema_version: 'interaction-shell.v4';
     /**
      * Session Id
      */
@@ -1173,6 +1815,24 @@ export type StartTaskOffer = {
 };
 
 /**
+ * StructuredFieldsInteractionResponse
+ */
+export type StructuredFieldsInteractionResponse = {
+    /**
+     * Kind
+     */
+    kind: 'structured_fields';
+    /**
+     * Request Id
+     */
+    request_id: string;
+    /**
+     * Values
+     */
+    values: Array<InteractionFieldValue>;
+};
+
+/**
  * TakeOver
  */
 export type TakeOver = {
@@ -1206,6 +1866,24 @@ export type TakeOverOffer = {
 };
 
 /**
+ * TextInteractionFieldValue
+ */
+export type TextInteractionFieldValue = {
+    /**
+     * Field Id
+     */
+    field_id: string;
+    /**
+     * Kind
+     */
+    kind: 'text';
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
  * UnavailableSurface
  */
 export type UnavailableSurface = {
@@ -1236,6 +1914,28 @@ export type Unsupported = {
      */
     kind: 'unsupported';
     snapshot: RuntimeSessionSnapshot;
+};
+
+/**
+ * UserTurnBlock
+ */
+export type UserTurnBlock = {
+    /**
+     * Block Id
+     */
+    block_id: string;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Kind
+     */
+    kind: 'user_turn';
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
 };
 
 /**
@@ -1663,6 +2363,8 @@ export type SubmitCommandData = {
     } & StartTask) | ({
         kind: 'answer_question';
     } & AnswerQuestion) | ({
+        kind: 'respond_interaction';
+    } & RespondInteraction) | ({
         kind: 'approve_action';
     } & ApproveAction) | ({
         kind: 'reject_action';

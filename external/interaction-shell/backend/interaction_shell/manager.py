@@ -26,6 +26,7 @@ from .contracts import (
     RuntimeSessionSnapshot,
     ShellCommand,
     ShellEvent,
+    SnapshotUpdated,
     StartTask,
 )
 from .conversation import BoundedConversation, ConversationTurn
@@ -224,7 +225,19 @@ class RunSessionManager:
         managed = self.authenticate(session_id, session_key)
         if await self._expire_if_needed(managed):
             raise SessionExpired(session_id)
-        return await self._port.events(managed.runtime_handle, after)
+        await self._sync_projection(managed)
+        events = await self._port.events(managed.runtime_handle, after)
+        feed = managed.conversation.feed
+        return tuple(
+            event.model_copy(
+                update={
+                    "snapshot": event.snapshot.model_copy(
+                        update={"feed": feed, "expires_at": managed.expires_at}
+                    )
+                }
+            )
+            for event in events
+        )
 
     async def forward_viewer_input(
         self,
@@ -294,7 +307,8 @@ class RunSessionManager:
                     logger.exception("accepted conversation projection could not be persisted")
                 else:
                     managed.conversation = candidate
-            return admission
+            projected = await self._sync_projection(managed, admission.snapshot)
+            return admission.model_copy(update={"snapshot": projected})
 
     async def expire(self) -> int:
         expired = 0
@@ -334,7 +348,39 @@ class RunSessionManager:
 
     async def _snapshot(self, managed: ManagedSession) -> RuntimeSessionSnapshot:
         snapshot = await self._port.snapshot(managed.runtime_handle)
-        return snapshot.model_copy(update={"expires_at": managed.expires_at})
+        return await self._sync_projection(managed, snapshot)
+
+    async def _sync_projection(
+        self,
+        managed: ManagedSession,
+        snapshot: RuntimeSessionSnapshot | None = None,
+    ) -> RuntimeSessionSnapshot:
+        source = snapshot or await self._port.snapshot(managed.runtime_handle)
+        after = managed.conversation.event_after(source.event_epoch)
+        events = await self._port.events(managed.runtime_handle, after)
+        candidate = managed.conversation.clone()
+        changed = False
+        for event in events:
+            if not isinstance(event, SnapshotUpdated):
+                raise TypeError("Shell event algebra is not exhaustive")
+            changed = candidate.ingest_feed(
+                event_epoch=event.event_epoch,
+                event_cursor=event.cursor,
+                blocks=event.feed_delta,
+            ) or changed
+        if changed:
+            try:
+                await self._save_conversation_projection(managed, candidate)
+            except RuntimeSessionUnavailable:
+                logger.exception("presentation feed projection could not be persisted")
+            managed.conversation = candidate
+        current = events[-1].snapshot if events else source
+        return current.model_copy(
+            update={
+                "feed": managed.conversation.feed,
+                "expires_at": managed.expires_at,
+            }
+        )
 
     async def _expire_if_needed(self, managed: ManagedSession) -> bool:
         if datetime.now(UTC) < managed.expires_at:

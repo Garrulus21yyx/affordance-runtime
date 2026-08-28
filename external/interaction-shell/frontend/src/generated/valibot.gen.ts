@@ -3,12 +3,30 @@
 import * as v from 'valibot';
 
 /**
+ * AgentIntentBlock
+ */
+export const vAgentIntentBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    content: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
+    kind: v.literal('agent_intent'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp())
+});
+
+/**
  * AnswerQuestionOffer
  */
 export const vAnswerQuestionOffer = v.strictObject({
     kind: v.literal('answer_question'),
     prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
     request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128))
+});
+
+/**
+ * ArtifactLink
+ */
+export const vArtifactLink = v.strictObject({
+    artifact_ref: v.pipe(v.string(), v.minLength(1), v.maxLength(512)),
+    title: v.pipe(v.string(), v.minLength(1), v.maxLength(240))
 });
 
 /**
@@ -92,6 +110,15 @@ export const vBenchmarkLabRunList = v.strictObject({
 });
 
 /**
+ * BooleanInteractionFieldValue
+ */
+export const vBooleanInteractionFieldValue = v.strictObject({
+    boolean: v.boolean(),
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    kind: v.literal('boolean')
+});
+
+/**
  * CancelTaskOffer
  */
 export const vCancelTaskOffer = v.strictObject({
@@ -127,25 +154,22 @@ export const vCompletedRunSummary = v.strictObject({
 });
 
 /**
- * Completion
- */
-export const vCompletion = v.strictObject({
-    code: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-    evidence_refs: v.optional(v.array(v.string()), []),
-    message: v.pipe(v.string(), v.maxLength(4000)),
-    outcome: v.picklist([
-        'success',
-        'failure',
-        'blocked',
-        'cancelled'
-    ])
-});
-
-/**
  * ConfirmActionOffer
  */
 export const vConfirmActionOffer = v.strictObject({
     kind: v.literal('confirm_action'),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    risk: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    summary: v.pipe(v.string(), v.minLength(1), v.maxLength(2000))
+});
+
+/**
+ * ConfirmationRequiredBlock
+ */
+export const vConfirmationRequiredBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    kind: v.literal('confirmation_required'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
     request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
     risk: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
     summary: v.pipe(v.string(), v.minLength(1), v.maxLength(2000))
@@ -201,6 +225,24 @@ export const vCreateSessionRequest = v.strictObject({
 });
 
 /**
+ * DateInteractionFieldValue
+ */
+export const vDateInteractionFieldValue = v.strictObject({
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    iso_date: v.pipe(v.string(), v.regex(/\d{4}-\d{2}-\d{2}/)),
+    kind: v.literal('date')
+});
+
+/**
+ * DecimalInteractionFieldValue
+ */
+export const vDecimalInteractionFieldValue = v.strictObject({
+    decimal_string: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    kind: v.literal('decimal')
+});
+
+/**
  * EffectReconciliation
  */
 export const vEffectReconciliation = v.strictObject({
@@ -223,6 +265,148 @@ export const vEffectReconciliation = v.strictObject({
 });
 
 /**
+ * EvidenceSummaryBlock
+ */
+export const vEvidenceSummaryBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    confidence: v.nullable(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
+    evidence_kind: v.picklist([
+        'structural',
+        'visual',
+        'mixed',
+        'unknown'
+    ]),
+    evidence_refs: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    kind: v.literal('evidence_summary'),
+    message: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
+    status: v.picklist([
+        'observed',
+        'partial',
+        'unknown',
+        'failed',
+        'stale'
+    ])
+});
+
+/**
+ * FailureBlock
+ */
+export const vFailureBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    code: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    kind: v.literal('failure'),
+    message: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp())
+});
+
+/**
+ * FreeTextInteractionResponse
+ */
+export const vFreeTextInteractionResponse = v.strictObject({
+    kind: v.literal('free_text'),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    text: v.pipe(v.string(), v.minLength(1), v.maxLength(8000))
+});
+
+/**
+ * GoalAcceptedBlock
+ */
+export const vGoalAcceptedBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    constraints: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    kind: v.literal('goal_accepted'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
+    summary: v.pipe(v.string(), v.minLength(1), v.maxLength(8000)),
+    task_revision: v.pipe(v.number(), v.integer(), v.minValue(1))
+});
+
+/**
+ * IntegerInteractionFieldValue
+ */
+export const vIntegerInteractionFieldValue = v.strictObject({
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    integer: v.pipe(v.number(), v.integer()),
+    kind: v.literal('integer')
+});
+
+/**
+ * InteractionAttribute
+ */
+export const vInteractionAttribute = v.strictObject({
+    label: v.pipe(v.string(), v.minLength(1), v.maxLength(120)),
+    value: v.pipe(v.string(), v.minLength(1), v.maxLength(500))
+});
+
+/**
+ * ArtifactItem
+ */
+export const vArtifactItem = v.strictObject({
+    attributes: v.optional(v.pipe(v.array(vInteractionAttribute), v.maxLength(16)), []),
+    evidence_refs: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    item_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    summary: v.optional(v.pipe(v.string(), v.maxLength(1000)), ''),
+    title: v.pipe(v.string(), v.minLength(1), v.maxLength(240))
+});
+
+/**
+ * InteractionField
+ */
+export const vInteractionField = v.strictObject({
+    description: v.optional(v.pipe(v.string(), v.maxLength(500)), ''),
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    kind: v.picklist([
+        'text',
+        'integer',
+        'decimal',
+        'boolean',
+        'date'
+    ]),
+    label: v.pipe(v.string(), v.minLength(1), v.maxLength(120)),
+    required: v.optional(v.boolean(), true)
+});
+
+/**
+ * InteractionOption
+ */
+export const vInteractionOption = v.strictObject({
+    attributes: v.optional(v.pipe(v.array(vInteractionAttribute), v.maxLength(16)), []),
+    description: v.optional(v.pipe(v.string(), v.maxLength(1000)), ''),
+    evidence_refs: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    media_ref: v.optional(v.pipe(v.string(), v.maxLength(512)), ''),
+    option_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    title: v.pipe(v.string(), v.minLength(1), v.maxLength(240)),
+    uncertainties: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), [])
+});
+
+/**
+ * InteractionRequest
+ */
+export const vInteractionRequest = v.strictObject({
+    fields: v.optional(v.pipe(v.array(vInteractionField), v.maxLength(32)), []),
+    options: v.optional(v.pipe(v.array(vInteractionOption), v.maxLength(32)), []),
+    prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(1000)),
+    public_intent: v.optional(v.pipe(v.string(), v.maxLength(240)), ''),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    response_kind: v.picklist([
+        'free_text',
+        'single_select',
+        'multi_select',
+        'structured_fields'
+    ])
+});
+
+/**
+ * InteractionRequestBlock
+ */
+export const vInteractionRequestBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    kind: v.literal('interaction_request'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
+    request: vInteractionRequest
+});
+
+/**
  * InteractiveSurface
  */
 export const vInteractiveSurface = v.strictObject({
@@ -239,10 +423,57 @@ export const vInteractiveSurface = v.strictObject({
 });
 
 /**
+ * MultiSelectInteractionResponse
+ */
+export const vMultiSelectInteractionResponse = v.strictObject({
+    kind: v.literal('multi_select'),
+    option_ids: v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(32)),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128))
+});
+
+/**
  * PauseTaskOffer
  */
 export const vPauseTaskOffer = v.strictObject({
     kind: v.literal('pause_task')
+});
+
+/**
+ * PublicArtifact
+ */
+export const vPublicArtifact = v.strictObject({
+    artifact_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    evidence_refs: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    items: v.optional(v.pipe(v.array(vArtifactItem), v.maxLength(32)), []),
+    links: v.optional(v.pipe(v.array(vArtifactLink), v.maxLength(32)), []),
+    summary: v.optional(v.pipe(v.string(), v.maxLength(2000)), ''),
+    title: v.pipe(v.string(), v.minLength(1), v.maxLength(240))
+});
+
+/**
+ * Completion
+ */
+export const vCompletion = v.strictObject({
+    artifact: v.nullable(vPublicArtifact),
+    code: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    evidence_refs: v.optional(v.array(v.string()), []),
+    message: v.pipe(v.string(), v.maxLength(4000)),
+    outcome: v.picklist([
+        'success',
+        'failure',
+        'blocked',
+        'cancelled'
+    ])
+});
+
+/**
+ * CompletionBlock
+ */
+export const vCompletionBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    completion: vCompletion,
+    kind: v.literal('completion'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp())
 });
 
 /**
@@ -366,6 +597,14 @@ export const vRecoveryUnsupported = v.strictObject({
 });
 
 /**
+ * RespondInteractionOffer
+ */
+export const vRespondInteractionOffer = v.strictObject({
+    kind: v.literal('respond_interaction'),
+    request: vInteractionRequest
+});
+
+/**
  * ResumeTaskOffer
  */
 export const vResumeTaskOffer = v.strictObject({
@@ -384,6 +623,20 @@ export const vReturnControlOffer = v.strictObject({
  */
 export const vReviseTaskOffer = v.strictObject({
     kind: v.literal('revise_task')
+});
+
+/**
+ * RevisionAppliedBlock
+ */
+export const vRevisionAppliedBlock = v.strictObject({
+    added: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    goal_description_changed: v.optional(v.boolean(), false),
+    kind: v.literal('revision_applied'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
+    removed: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    retained: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    task_revision: v.pipe(v.number(), v.integer(), v.minValue(2))
 });
 
 /**
@@ -509,6 +762,32 @@ export const vReviseTask = v.strictObject({
 });
 
 /**
+ * RuntimeActivityBlock
+ */
+export const vRuntimeActivityBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    evidence_refs: v.optional(v.pipe(v.array(v.string()), v.maxLength(32)), []),
+    kind: v.literal('runtime_activity'),
+    label: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp()),
+    status: v.picklist([
+        'started',
+        'completed',
+        'uncertain',
+        'failed'
+    ])
+});
+
+/**
+ * SingleSelectInteractionResponse
+ */
+export const vSingleSelectInteractionResponse = v.strictObject({
+    kind: v.literal('single_select'),
+    option_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128))
+});
+
+/**
  * StartTask
  */
 export const vStartTask = v.strictObject({
@@ -547,6 +826,7 @@ export const vTakeOverOffer = v.strictObject({
 export const vCommandOffer = v.variant('kind', [
     vStartTaskOffer,
     vAnswerQuestionOffer,
+    vRespondInteractionOffer,
     vConfirmActionOffer,
     vCancelTaskOffer,
     vPauseTaskOffer,
@@ -558,12 +838,80 @@ export const vCommandOffer = v.variant('kind', [
 ]);
 
 /**
+ * TextInteractionFieldValue
+ */
+export const vTextInteractionFieldValue = v.strictObject({
+    field_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    kind: v.literal('text'),
+    text: v.pipe(v.string(), v.maxLength(8000))
+});
+
+export const vInteractionFieldValue = v.variant('kind', [
+    vTextInteractionFieldValue,
+    vIntegerInteractionFieldValue,
+    vDecimalInteractionFieldValue,
+    vBooleanInteractionFieldValue,
+    vDateInteractionFieldValue
+]);
+
+/**
+ * StructuredFieldsInteractionResponse
+ */
+export const vStructuredFieldsInteractionResponse = v.strictObject({
+    kind: v.literal('structured_fields'),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    values: v.pipe(v.array(vInteractionFieldValue), v.maxLength(32))
+});
+
+export const vInteractionResponse = v.variant('kind', [
+    vFreeTextInteractionResponse,
+    vSingleSelectInteractionResponse,
+    vMultiSelectInteractionResponse,
+    vStructuredFieldsInteractionResponse
+]);
+
+/**
+ * RespondInteraction
+ */
+export const vRespondInteraction = v.strictObject({
+    command_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    expected_run_status: vRunStatus,
+    expected_task_revision: v.pipe(v.number(), v.integer(), v.minValue(0)),
+    kind: v.literal('respond_interaction'),
+    request_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    response: vInteractionResponse
+});
+
+/**
  * UnavailableSurface
  */
 export const vUnavailableSurface = v.strictObject({
     reason_code: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
     status: v.literal('unavailable')
 });
+
+/**
+ * UserTurnBlock
+ */
+export const vUserTurnBlock = v.strictObject({
+    block_id: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+    content: v.pipe(v.string(), v.minLength(1), v.maxLength(8000)),
+    kind: v.literal('user_turn'),
+    occurred_at: v.pipe(v.string(), v.isoTimestamp())
+});
+
+export const vFeedBlock = v.variant('kind', [
+    vUserTurnBlock,
+    vGoalAcceptedBlock,
+    vAgentIntentBlock,
+    vRuntimeActivityBlock,
+    vEvidenceSummaryBlock,
+    vInteractionRequestBlock,
+    vRevisionAppliedBlock,
+    vConfirmationRequiredBlock,
+    vCompletionBlock,
+    vFailureBlock
+]);
 
 /**
  * RuntimeSessionSnapshot
@@ -578,11 +926,12 @@ export const vRuntimeSessionSnapshot = v.strictObject({
     event_cursor: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0),
     event_epoch: v.pipe(v.string(), v.minLength(16), v.maxLength(128)),
     expires_at: v.pipe(v.string(), v.isoTimestamp()),
+    feed: v.optional(v.pipe(v.array(vFeedBlock), v.maxLength(128)), []),
     last_control_outcome: v.nullable(vControlOutcome),
     public_steps: v.optional(v.array(vPublicStep), []),
     resume_eligible: v.optional(v.boolean(), false),
     run_status: v.optional(vRunStatus, 'idle'),
-    schema_version: v.literal('interaction-shell.v3'),
+    schema_version: v.literal('interaction-shell.v4'),
     session_id: v.string(),
     surface: v.optional(v.variant('status', [
         vUnavailableSurface,
@@ -655,7 +1004,8 @@ export const vRejected = v.strictObject({
         'command_processing_failed',
         'command_persistence_failed',
         'command_projection_failed',
-        'internal_contract_failure'
+        'internal_contract_failure',
+        'interaction_response_invalid'
     ]),
     command_id: v.string(),
     kind: v.literal('rejected'),
@@ -669,7 +1019,8 @@ export const vSnapshotUpdated = v.strictObject({
     cursor: v.pipe(v.number(), v.integer(), v.minValue(1)),
     emitted_at: v.pipe(v.string(), v.isoTimestamp()),
     event_epoch: v.pipe(v.string(), v.minLength(16), v.maxLength(128)),
-    schema_version: v.literal('interaction-shell.v3'),
+    feed_delta: v.optional(v.pipe(v.array(vFeedBlock), v.maxLength(16)), []),
+    schema_version: v.literal('interaction-shell.v4'),
     session_id: v.string(),
     snapshot: vRuntimeSessionSnapshot,
     type: v.literal('snapshot.updated')
@@ -841,6 +1192,7 @@ export const vGetSessionResponse = v.variant('kind', [
 export const vSubmitCommandBody = v.variant('kind', [
     vStartTask,
     vAnswerQuestion,
+    vRespondInteraction,
     vApproveAction,
     vRejectAction,
     vCancelTask,

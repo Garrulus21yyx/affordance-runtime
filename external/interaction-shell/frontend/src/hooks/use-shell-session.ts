@@ -19,6 +19,7 @@ import {
 import { buildCommand, offerFor, type CommandIntent } from "@/session/command-builder";
 import { authenticatedShellClient, shellClient } from "@/session/client";
 import type { CommandAdmission, ConnectionState, ShellEventEnvelope, Snapshot } from "@/session/types";
+import type { InteractionResponse } from "@/generated/types.gen";
 import { projectShellView } from "@/session/view-model";
 
 export type CausalEventDecision = "apply" | "duplicate" | "resync" | "protocol_mismatch";
@@ -186,7 +187,29 @@ export function useShellSession() {
   const submitMessage = useCallback(async (text: string) => {
     const current = latestSnapshot.current;
     if (!current) return;
-    if (offerFor(current, "answer_question")) {
+    const interaction = offerFor(current, "respond_interaction");
+    if (interaction?.kind === "respond_interaction") {
+      const request = interaction.request;
+      if (request.response_kind === "free_text") {
+        await sendIntent({
+          kind: "respond_interaction",
+          response: { kind: "free_text", request_id: request.request_id, text },
+        });
+      } else if (
+        request.response_kind === "structured_fields"
+        && request.fields.length === 1
+        && request.fields[0].kind === "text"
+      ) {
+        await sendIntent({
+          kind: "respond_interaction",
+          response: {
+            kind: "structured_fields",
+            request_id: request.request_id,
+            values: [{ kind: "text", field_id: request.fields[0].field_id, text }],
+          },
+        });
+      }
+    } else if (offerFor(current, "answer_question")) {
       await sendIntent({ kind: "answer_question", text });
     } else if (offerFor(current, "start_task")) {
       await sendIntent({ kind: "start_task", text });
@@ -220,6 +243,10 @@ export function useShellSession() {
     notice,
     submitMessage,
     revise,
+    respondInteraction: (response: InteractionResponse) => sendIntent({
+      kind: "respond_interaction",
+      response,
+    }),
     confirm: (approved: boolean) => sendIntent({ kind: "confirm_action", approved }),
     cancel: () => sendIntent({ kind: "cancel_task" }),
     pause: () => sendIntent({ kind: "pause_task" }),

@@ -4,7 +4,7 @@ import { vRuntimeSessionSnapshot, vShellEventEnvelope } from "@/generated/valibo
 import { classifyEvent } from "./use-shell-session";
 
 const snapshot = parse(vRuntimeSessionSnapshot, {
-  schema_version: "interaction-shell.v3",
+  schema_version: "interaction-shell.v4",
   session_id: "session-1",
   event_epoch: "event-epoch-00000001",
   event_cursor: 4,
@@ -24,7 +24,7 @@ function event(cursor: number, epoch = snapshot.event_epoch) {
     type: "CUSTOM",
     name: "snapshot.updated",
     value: {
-      schema_version: "interaction-shell.v3",
+      schema_version: "interaction-shell.v4",
       type: "snapshot.updated",
       session_id: snapshot.session_id,
       event_epoch: epoch,

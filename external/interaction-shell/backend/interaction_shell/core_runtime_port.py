@@ -1,4 +1,4 @@
-"""Pure v3 projection from the public Runtime session boundary into Shell contracts."""
+"""Pure v4 projection from the public Runtime session boundary into Shell contracts."""
 
 from __future__ import annotations
 
@@ -14,6 +14,18 @@ from affordance_runtime.app.public_session import (
     PublicCommandConflict,
     PublicCommandRejected,
     PublicCommandUnsupported,
+    PublicAgentIntent,
+    PublicCompletionBlock,
+    PublicEvidenceSummary,
+    PublicFailure,
+    PublicGoalAccepted,
+    PublicInteractionRequest as RuntimePublicInteractionRequest,
+    PublicArtifact as RuntimePublicArtifact,
+    PublicInteractionRequested,
+    PublicRevisionApplied,
+    PublicRuntimeActivity,
+    PublicConfirmationRequired,
+    PublicUserTurn,
     PublicRevisionConversationContext,
     PublicRevisionConversationTurn,
     PublicRuntimeSessionEvent,
@@ -32,12 +44,16 @@ from affordance_runtime.app.public_session import (
     RuntimeRecoveryConflict as RuntimeAttemptConflict,
     RuntimeRecoveryFailed as RuntimeAttemptFailed,
     RuntimeRecoveryUnavailable as RuntimeAttemptUnavailable,
+    public_interaction_response_from_value,
 )
 
 from .contracts import (
     Accepted,
+    AgentIntentBlock,
     AnswerQuestion,
     AnswerQuestionOffer,
+    ArtifactItem,
+    ArtifactLink,
     ApproveAction,
     CancelTask,
     CancelTaskOffer,
@@ -45,15 +61,25 @@ from .contracts import (
     CloseSessionOffer,
     CommandAdmission,
     Completion,
+    CompletionBlock,
     ConfirmActionOffer,
     Conflict,
     ControlOutcome,
     ControlOwner,
     EffectReconciliation,
+    EvidenceSummaryBlock,
+    FailureBlock,
+    GoalAcceptedBlock,
+    InteractionAttribute,
+    InteractionField,
+    InteractionOption,
+    InteractionRequest,
+    InteractionRequestBlock,
     InteractiveSurface,
     PauseTask,
     PauseTaskOffer,
     PublicStep,
+    PublicArtifact,
     ReadOnlySurface,
     Recovered,
     RecoveryAttempt,
@@ -62,10 +88,13 @@ from .contracts import (
     RecoveryFailed,
     Rejected,
     RejectAction,
+    RespondInteraction,
+    RespondInteractionOffer,
     ResumeTask,
     ResumeTaskOffer,
     ReturnControl,
     ReturnControlOffer,
+    RevisionAppliedBlock,
     ReviseTask,
     ReviseTaskOffer,
     RevisionConversationContext,
@@ -82,6 +111,9 @@ from .contracts import (
     TakeOverOffer,
     UnavailableSurface,
     Unsupported,
+    RuntimeActivityBlock,
+    UserTurnBlock,
+    ConfirmationRequiredBlock,
 )
 from .port import (
     PortRecoverableCheckpoint,
@@ -247,6 +279,12 @@ def _runtime_command(
             interaction_ref=command.request_id,
             answer=command.answer,
         )
+    if isinstance(command, RespondInteraction):
+        return PublicSessionCommand(
+            **common,
+            interaction_ref=command.request_id,
+            response=_runtime_interaction_response(command),
+        )
     if isinstance(command, (ApproveAction, RejectAction)):
         return PublicSessionCommand(**common, interaction_ref=command.request_id)
     if isinstance(command, (ResumeTask, TakeOver)):
@@ -314,12 +352,7 @@ def _snapshot(
         event_epoch=source.event_epoch,
         event_cursor=source.event_cursor,
         completion=(
-            Completion(
-                outcome=source.completion.outcome,
-                code=source.completion.code,
-                message=source.completion.message,
-                evidence_refs=source.completion.evidence_refs,
-            )
+            _completion(source.completion)
             if source.completion is not None
             else None
         ),
@@ -380,6 +413,16 @@ def _command_offers(
                     kind="answer_question",
                     request_id=cast(str, capability.interaction_ref),
                     prompt=capability.prompt,
+                )
+            )
+        elif kind is PublicSessionCommandKind.RESPOND_INTERACTION:
+            pending = source.pending_interaction
+            if pending is None or pending.request_id != capability.interaction_ref:
+                raise TypeError("Runtime interaction offer does not match its pending request")
+            offers.append(
+                RespondInteractionOffer(
+                    kind="respond_interaction",
+                    request=_interaction_request(pending),
                 )
             )
         elif kind in {
@@ -449,7 +492,162 @@ def _native_input_available(availability: SurfaceAvailability) -> bool:
     )
 
 
+def _runtime_interaction_response(command: RespondInteraction):
+    return public_interaction_response_from_value(
+        command.response.model_dump(mode="python")
+    )
+
+
+def _interaction_request(source: RuntimePublicInteractionRequest) -> InteractionRequest:
+    return InteractionRequest(
+        request_id=source.request_id,
+        prompt=source.prompt,
+        response_kind=source.response_kind,  # type: ignore[arg-type]
+        fields=tuple(
+            InteractionField(
+                field_id=item.field_id,
+                kind=item.kind.value,
+                label=item.label,
+                description=item.description,
+                required=item.required,
+            )
+            for item in source.fields
+        ),
+        options=tuple(
+            InteractionOption(
+                option_id=item.option_id,
+                title=item.title,
+                description=item.description,
+                media_ref=item.media_ref,
+                attributes=tuple(
+                    InteractionAttribute(label=attribute.label, value=attribute.value)
+                    for attribute in item.attributes
+                ),
+                evidence_refs=item.evidence_refs,
+                uncertainties=item.uncertainties,
+            )
+            for item in source.options
+        ),
+        public_intent=source.public_intent,
+    )
+
+
+def _public_artifact(source: RuntimePublicArtifact) -> PublicArtifact:
+    return PublicArtifact(
+        artifact_id=source.artifact_id,
+        title=source.title,
+        summary=source.summary,
+        items=tuple(
+            ArtifactItem(
+                item_id=item.item_id,
+                title=item.title,
+                summary=item.summary,
+                attributes=tuple(
+                    InteractionAttribute(label=attribute.label, value=attribute.value)
+                    for attribute in item.attributes
+                ),
+                evidence_refs=item.evidence_refs,
+            )
+            for item in source.items
+        ),
+        links=tuple(
+            ArtifactLink(title=item.title, artifact_ref=item.artifact_ref)
+            for item in source.links
+        ),
+        evidence_refs=source.evidence_refs,
+    )
+
+
+def _completion(source) -> Completion:  # type: ignore[no-untyped-def]
+    return Completion(
+        outcome=source.outcome,
+        code=source.code,
+        message=source.message,
+        evidence_refs=source.evidence_refs,
+        artifact=(
+            _public_artifact(source.artifact)
+            if source.artifact is not None
+            else None
+        ),
+    )
+
+
+def _feed_block(source, occurred_at):  # type: ignore[no-untyped-def]
+    common = {"block_id": source.source_id, "occurred_at": occurred_at}
+    if isinstance(source, PublicUserTurn):
+        return UserTurnBlock(kind="user_turn", content=source.content, **common)
+    if isinstance(source, PublicGoalAccepted):
+        return GoalAcceptedBlock(
+            kind="goal_accepted",
+            task_revision=source.task_revision,
+            summary=source.summary,
+            constraints=source.constraints,
+            **common,
+        )
+    if isinstance(source, PublicAgentIntent):
+        return AgentIntentBlock(kind="agent_intent", content=source.content, **common)
+    if isinstance(source, PublicRuntimeActivity):
+        return RuntimeActivityBlock(
+            kind="runtime_activity",
+            status=source.status,
+            label=source.label,
+            evidence_refs=source.evidence_refs,
+            **common,
+        )
+    if isinstance(source, PublicEvidenceSummary):
+        return EvidenceSummaryBlock(
+            kind="evidence_summary",
+            evidence_kind=source.evidence_kind,
+            status=source.status,
+            message=source.message,
+            confidence=source.confidence,
+            evidence_refs=source.evidence_refs,
+            **common,
+        )
+    if isinstance(source, PublicInteractionRequested):
+        return InteractionRequestBlock(
+            kind="interaction_request",
+            request=_interaction_request(source.request),
+            **common,
+        )
+    if isinstance(source, PublicRevisionApplied):
+        return RevisionAppliedBlock(
+            kind="revision_applied",
+            task_revision=source.task_revision,
+            goal_description_changed=source.goal_description_changed,
+            added=source.added,
+            removed=source.removed,
+            retained=source.retained,
+            **common,
+        )
+    if isinstance(source, PublicConfirmationRequired):
+        return ConfirmationRequiredBlock(
+            kind="confirmation_required",
+            request_id=source.confirmation.interrupt_id,
+            summary=source.confirmation.summary,
+            risk=source.confirmation.risk,
+            **common,
+        )
+    if isinstance(source, PublicCompletionBlock):
+        return CompletionBlock(
+            kind="completion",
+            completion=_completion(source.completion),
+            **common,
+        )
+    assert isinstance(source, PublicFailure)
+    return FailureBlock(
+        kind="failure",
+        code=source.code,
+        message=source.message,
+        **common,
+    )
+
+
 def _event(source: PublicRuntimeSessionEvent, availability: SurfaceAvailability) -> ShellEvent:
+    feed_delta = tuple(
+        _feed_block(item, source.emitted_at)
+        for item in source.feed_sources
+    )
     return SnapshotUpdated(
         schema_version=SCHEMA_VERSION,
         type="snapshot.updated",
@@ -458,4 +656,5 @@ def _event(source: PublicRuntimeSessionEvent, availability: SurfaceAvailability)
         cursor=source.cursor,
         emitted_at=source.emitted_at,
         snapshot=_snapshot(source.snapshot, availability),
+        feed_delta=feed_delta,
     )

@@ -6,6 +6,10 @@ import { buildCommand, offerFor, type CommandIntent } from "./command-builder";
 const intents: CommandIntent[] = [
   { kind: "start_task", text: "start" },
   { kind: "answer_question", text: "answer" },
+  {
+    kind: "respond_interaction",
+    response: { kind: "single_select", request_id: "stale", option_id: "option-1" },
+  },
   { kind: "confirm_action", approved: true },
   { kind: "cancel_task" },
   { kind: "pause_task" },
@@ -17,7 +21,7 @@ const intents: CommandIntent[] = [
 ];
 
 const snapshot = parse(vRuntimeSessionSnapshot, {
-  schema_version: "interaction-shell.v3",
+  schema_version: "interaction-shell.v4",
   session_id: "session-1",
   event_epoch: "event-epoch-00000001",
   expires_at: "2026-08-27T12:00:00Z",
@@ -34,6 +38,15 @@ const snapshot = parse(vRuntimeSessionSnapshot, {
   command_offers: [
     { kind: "start_task" },
     { kind: "answer_question", request_id: "question-1", prompt: "Question?" },
+    {
+      kind: "respond_interaction",
+      request: {
+        request_id: "interaction-1",
+        prompt: "Choose",
+        response_kind: "single_select",
+        options: [{ option_id: "option-1", title: "First" }],
+      },
+    },
     { kind: "confirm_action", request_id: "confirmation-1", summary: "Confirm", risk: "medium" },
     { kind: "cancel_task" }, { kind: "pause_task" }, { kind: "resume_task" },
     { kind: "revise_task" }, { kind: "take_over" }, { kind: "return_control" }, { kind: "close_session" },
@@ -53,6 +66,7 @@ describe("typed command builder", () => {
 
   it("copies interaction refs, checkpoint and lease only from owner offers/snapshot", () => {
     expect(buildCommand(snapshot, offerFor(snapshot, "answer_question")!, { kind: "answer_question", text: "yes" }, "c1")).toMatchObject({ request_id: "question-1" });
+    expect(buildCommand(snapshot, offerFor(snapshot, "respond_interaction")!, intents[2], "c-interaction")).toMatchObject({ request_id: "interaction-1", response: { request_id: "interaction-1", option_id: "option-1" } });
     expect(buildCommand(snapshot, offerFor(snapshot, "take_over")!, { kind: "take_over" }, "c2")).toMatchObject({ checkpoint_id: "checkpoint-1" });
     expect(buildCommand(snapshot, offerFor(snapshot, "return_control")!, { kind: "return_control" }, "c3")).toMatchObject({ control_lease_id: snapshot.control_lease_id });
   });

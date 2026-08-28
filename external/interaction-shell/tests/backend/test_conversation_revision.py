@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from interaction_shell.contracts import REVISION_CONVERSATION_MAX_TEXT_BYTES
+from interaction_shell.contracts import (
+    REVISION_CONVERSATION_MAX_TEXT_BYTES,
+    InteractionRequest,
+    InteractionRequestBlock,
+    UserTurnBlock,
+)
 from interaction_shell.conversation import BoundedConversation, ConversationTurn
 
 
@@ -82,3 +90,56 @@ def test_restart_projection_keeps_only_the_bounded_revision_identity_window() ->
     )
     assert restored.revision_context("revise:69", "Use option 69") == contexts[-1]
     assert restored.projection() == projection
+
+
+def test_feed_replay_is_idempotent_and_only_language_blocks_enter_revision_context() -> None:
+    conversation = BoundedConversation()
+    occurred_at = datetime.now(UTC)
+    blocks = (
+        UserTurnBlock(
+            kind="user_turn",
+            block_id="feed:epoch:1:0",
+            occurred_at=occurred_at,
+            content="Compare both candidates",
+        ),
+        InteractionRequestBlock(
+            kind="interaction_request",
+            block_id="feed:epoch:1:1",
+            occurred_at=occurred_at,
+            request=InteractionRequest(
+                request_id="interaction-1",
+                prompt="Which candidate should I use?",
+                response_kind="free_text",
+            ),
+        ),
+    )
+
+    assert conversation.ingest_feed(
+        event_epoch="event-epoch-0001",
+        event_cursor=1,
+        blocks=blocks,
+    )
+    assert not conversation.ingest_feed(
+        event_epoch="event-epoch-0001",
+        event_cursor=1,
+        blocks=blocks,
+    )
+    context = conversation.revision_context("revise:feed", "Also inspect the next page")
+    assert tuple(turn.role for turn in context.turns) == ("user", "assistant", "user")
+
+    restored = BoundedConversation.from_projection(conversation.projection())
+    assert restored.feed == blocks
+    assert restored.event_after("event-epoch-0001") == 1
+
+    conflicting = UserTurnBlock(
+        kind="user_turn",
+        block_id=blocks[0].block_id,
+        occurred_at=occurred_at,
+        content="Different content",
+    )
+    with pytest.raises(ValueError, match="identity was reused"):
+        restored.ingest_feed(
+            event_epoch="event-epoch-0001",
+            event_cursor=2,
+            blocks=(conflicting,),
+        )
