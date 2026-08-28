@@ -39,6 +39,7 @@ from affordance_runtime.surfaces.browser_bundle import (
     BrowserSessionSurfaceBundle,
     browser_surface_from_environment,
 )
+from affordance_runtime.surfaces.dom.browser_session import BrowserSession
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
 from affordance_runtime.task import LoopBudget, NaturalLanguageTaskRequest, RiskProfile, TaskBoundary
 from affordance_runtime.world.environment import WorldEnvironment
@@ -307,7 +308,7 @@ async def _run_flagship(
     interaction: dict[str, object] = {}
     with _served_fixture(fixture) as url:
         browser = ThreadBoundBrowserSession.launch(url, headless=True, lease_ttl_ms=900_000)
-        surface = browser_surface_from_environment(browser, environment)
+        surface = browser_surface_from_environment(cast(BrowserSession, browser), environment)
         if not isinstance(surface, BrowserSessionSurfaceBundle):
             browser.close()
             raise RuntimeError("shopping flagship requires the configured browser visual bundle")
@@ -351,7 +352,7 @@ async def _run_flagship(
                 "status": waiting.status.value,
                 "request_id": request.request_id if request is not None else "",
                 "prompt": request.prompt if request is not None else "",
-                "response_kind": request.response_kind.value if request is not None else "",
+                "response_kind": request.response_kind if request is not None else "",
                 "option_count": len(request.options) if request is not None else 0,
                 "options": to_json_compatible(request.options) if request is not None else [],
                 "selected_title": option.title if option is not None else choice_title,
