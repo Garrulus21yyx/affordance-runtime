@@ -301,6 +301,7 @@ export const vEvidenceSummaryBlock = v.strictObject({
     evidence_kind: v.picklist([
         'structural',
         'visual',
+        'frame_change',
         'mixed',
         'unknown'
     ]),

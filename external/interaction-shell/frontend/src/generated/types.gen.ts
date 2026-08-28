@@ -787,7 +787,7 @@ export type EvidenceSummaryBlock = {
     /**
      * Evidence Kind
      */
-    evidence_kind: 'structural' | 'visual' | 'mixed' | 'unknown';
+    evidence_kind: 'structural' | 'visual' | 'frame_change' | 'mixed' | 'unknown';
     /**
      * Evidence Refs
      */

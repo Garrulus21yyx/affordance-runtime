@@ -49,6 +49,12 @@ describe("generic collaboration components", () => {
     expect(screen.queryByText(/selector|coordinate|prompt|provider/i)).not.toBeInTheDocument();
   });
 
+  it("distinguishes a provider-free frame change from semantic visual evidence", () => {
+    render(<EvidenceBadge kind="frame_change" status="observed" confidence={null} count={1} />);
+    expect(screen.getByTestId("evidence-badge")).toHaveTextContent("画面变化 · 已确认");
+    expect(screen.getByTestId("evidence-badge")).not.toHaveTextContent("视觉证据");
+  });
+
   it("submits the selected generic option as a typed interaction response", () => {
     const respond = vi.fn(async () => null);
     render(<InteractionRequestPanel request={{

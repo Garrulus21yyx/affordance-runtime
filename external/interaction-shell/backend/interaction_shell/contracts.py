@@ -416,7 +416,7 @@ class EvidenceSummaryBlock(StrictModel):
     kind: Literal["evidence_summary"]
     block_id: str = Field(min_length=1, max_length=256)
     occurred_at: datetime
-    evidence_kind: Literal["structural", "visual", "mixed", "unknown"]
+    evidence_kind: Literal["structural", "visual", "frame_change", "mixed", "unknown"]
     status: Literal["observed", "partial", "unknown", "failed", "stale"]
     message: str = Field(min_length=1, max_length=500)
     confidence: float | None = Field(default=None, ge=0, le=1)

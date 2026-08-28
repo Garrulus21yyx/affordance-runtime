@@ -1382,6 +1382,7 @@
             "enum": [
               "structural",
               "visual",
+              "frame_change",
               "mixed",
               "unknown"
             ],

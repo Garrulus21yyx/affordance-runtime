@@ -57,6 +57,25 @@ staged source lineage. It does not claim broad Web benchmark accuracy or close t
 Task426 acceptance gate. Expanded Action/World/CoreLoop verification reports 343 passed and 3 skipped, including an
 eight-test DOM conformance suite with an honest-truncation witness.
 
+### 2026-08-28 structural layer and selective visual fallback checkpoint
+
+Commits `2fed9684`, `42a9c400`, and `51ea53a3` add a general layer-observation path for the product browser Surface.
+Standard HTML/ARIA dialogs and current topmost fixed overlays are projected through the structural World first. A
+Runtime-only PydanticAI before/after observer is selected once only when a dispatched action introduces a new
+geometric overlay whose visual meaning remains unresolved. There is no site, login-text, Taobao, benchmark-case,
+control-stall, or task-keyword branch, and no change to CoreLoop, ActionPolicy, Binder, ToolCatalog, or Executor.
+
+Provider-free gates for the implementation recorded `254 passed, 8 skipped` across the Surface/World selection and
+fusion cohort. The focused layer chain passed positive, provider-unknown, viewport-drift, ordinary-zero-call, and
+pre-existing-overlay deduplication cases; changed-source targeted mypy and Ruff passed. Shell projection separately
+passed `48` public-session/backend tests and `8` collaboration-component tests, with TypeScript, ESLint, and generated
+OpenAPI/TypeScript/Valibot consistency green. Provider-free screenshot digest evidence is now rendered as
+`frame_change`; semantic `visual` remains reserved for an actual visual observation.
+
+These are implementation and provider-free contract results only. No live Taobao task, VLM call, ScreenSpot,
+MiniWoB, WebArena, or non-regression campaign was run for this checkpoint. The next product gate is the user-requested
+real flagship task and trace analysis, not a claim of broad benchmark non-regression.
+
 ### 2026-08-27 Task426 environment invalidation
 
 Task426 is presently environment-invalid and cannot serve as a planning, recovery, efficiency, or end-to-end

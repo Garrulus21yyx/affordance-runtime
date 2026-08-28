@@ -2287,6 +2287,27 @@ or Gemini is selected only by provider configuration. The grouped browser Surfac
 projects structural and visual evidence from the same screenshot digest, viewport, page generation, and episode
 lineage.
 
+Visible stacking semantics are structural-first. `BrowserSession` observes current native/ARIA
+`dialog | alertdialog | alert | aria-modal` containers and a bounded set of genuinely visible, topmost fixed
+overlays from DOM/CSS geometry. `DomSurfaceAdapter` projects those containers into the existing
+`ObservationStructureNode` tree and relates contained controls to their current layer; it does not infer task meaning,
+publish selectors, or call a model. The compact World already prioritizes dialog regions, so the single ActionPolicy
+receives a newly active standard layer without a new planner or loop.
+
+A configured product visual profile adds one Runtime-only layer-transition observer over the same PydanticAI visual
+inference boundary. It is not another model-visible tool. A provider call is admitted only after a dispatched action
+causes a new geometric overlay that was absent from the preceding current layer set. The grouped Surface captures one
+private before frame, reuses the post-action structural acquisition, validates the same viewport and candidate
+lineage, and then issues one residual `EFFECT_VERIFICATION`. The observer compares only the bounded before/after marks
+and returns a typed visual role, description, occlusion fact, confidence, or `unknown`; Fusion attaches accepted facts
+to the same fresh World. Ordinary structural actions, pre-existing overlays, standard semantic dialogs, stale
+viewports, screenshot churn without an admitted layer transition, and repeated control stalls make zero layer-observer
+calls. This path adds no TaskGoal keyword branch and cannot select or dispatch a GUI action.
+
+Provider-free screenshot digest change remains `EvidenceMethod.VISUAL_DIFF`, but the public collaboration feed now
+projects it as `frame_change`, not semantic `visual` evidence. The latter label is reserved for an admitted visual
+observation result. Thus the Shell can say that pixels changed without claiming the VLM understood what changed.
+
 User interaction follows draft → Runtime admission → typed response. Runtime assigns request/option/field identities,
 validates evidence/currentness, and keeps the sole pending interaction. `PublicArtifact` is evaluator-confirmed
 presentation sidecar data; it never changes the native final-response bytes or evaluator order. PublicSession emits a

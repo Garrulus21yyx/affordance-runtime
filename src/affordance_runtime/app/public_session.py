@@ -518,7 +518,7 @@ class PublicRuntimeActivity:
 class PublicEvidenceSummary:
     kind: Literal["evidence_summary"] = field(default="evidence_summary", init=False)
     source_id: str
-    evidence_kind: Literal["structural", "visual", "mixed", "unknown"]
+    evidence_kind: Literal["structural", "visual", "frame_change", "mixed", "unknown"]
     status: Literal["observed", "partial", "unknown", "failed", "stale"]
     message: str
     confidence: float | None = None
@@ -3064,7 +3064,7 @@ def _action_feed_sources(
             return activity, None
         evidence_kind = {
             EvidenceMethod.STRUCTURAL: "structural",
-            EvidenceMethod.VISUAL_DIFF: "visual",
+            EvidenceMethod.VISUAL_DIFF: "frame_change",
             EvidenceMethod.NATIVE: "structural",
             EvidenceMethod.NONE: "unknown",
         }[outcome.evidence_method]
@@ -3076,9 +3076,16 @@ def _action_feed_sources(
         def evidence(source_id: str) -> PublicFeedSource:
             return PublicEvidenceSummary(
                 source_id,
-                cast(Literal["structural", "visual", "mixed", "unknown"], evidence_kind),
+                cast(
+                    Literal["structural", "visual", "frame_change", "mixed", "unknown"],
+                    evidence_kind,
+                ),
                 cast(Literal["observed", "partial", "unknown", "failed", "stale"], evidence_status),
-                "Evidence was recorded for the interface action.",
+                (
+                    "The visible frame changed; its meaning was not semantically interpreted."
+                    if evidence_kind == "frame_change"
+                    else "Evidence was recorded for the interface action."
+                ),
                 evidence_refs=refs,
             )
 

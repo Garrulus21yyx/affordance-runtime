@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,9 +22,14 @@ from affordance_runtime.app.public_session import (
     PublicSessionStatus,
     RuntimeEnvironmentLease,
     TargetRuntimeSessionFactory,
+    _action_feed_sources,
 )
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
     TaskOutcomeFact,
@@ -45,6 +51,27 @@ async def _wait_for_status(handle, expected: PublicSessionStatus):
             return snapshot
         await asyncio.sleep(0)
     raise AssertionError(f"public session did not reach {expected}")
+
+
+def test_public_action_feed_does_not_present_raw_frame_diff_as_visual_semantics() -> None:
+    result = SimpleNamespace(action_outcome=ActionOutcome(
+        "request:frame-change",
+        "world:before",
+        "world:after",
+        ObservedChange.CHANGED,
+        LocalPostconditionStatus.UNKNOWN,
+        EvidenceMethod.VISUAL_DIFF,
+        "the screenshot digest changed",
+        ("artifact:dom:screenshot_semantic_state",),
+    ))
+
+    _activity, evidence_factory = _action_feed_sources(result)
+
+    assert evidence_factory is not None
+    evidence = evidence_factory("feed:frame-change")
+    assert evidence.kind == "evidence_summary"
+    assert evidence.evidence_kind == "frame_change"
+    assert evidence.message == "The visible frame changed; its meaning was not semantically interpreted."
 
 
 @pytest.mark.asyncio

@@ -33,4 +33,4 @@ def test_product_visual_roles_share_one_pydantic_ai_inference_owner() -> None:
     ).read_text(encoding="utf-8")
 
     assert bundle.count("pydantic_ai_visual_inference_from_environment(environment)") == 1
-    assert bundle.count("inference=inference") == 7
+    assert bundle.count("inference=inference") == 8

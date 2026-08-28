@@ -43,6 +43,7 @@ from affordance_runtime.app.public_session import (
     PublicCommandRejected,
     PublicCommandUnsupported,
     PublicConflictCode,
+    PublicEvidenceSummary,
     PublicInteractionRequest,
     PublicRejectedCode,
     PublicRuntimeSessionEvent,
@@ -345,6 +346,34 @@ async def test_runtime_feed_source_projects_to_closed_shell_block_without_guessi
     assert projected[0].feed_delta[0].kind == "user_turn"
     assert projected[0].feed_delta[0].content == "Compare the visible candidates"
     assert projected[0].feed_delta[0].block_id == event.feed_sources[0].source_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_feed_preserves_provider_free_frame_change_kind() -> None:
+    snapshot = runtime_snapshot(event_cursor=1)
+    source = PublicEvidenceSummary(
+        f"feed:{snapshot.event_epoch}:1:0",
+        "frame_change",
+        "observed",
+        "The visible frame changed; its meaning was not semantically interpreted.",
+        evidence_refs=("artifact:dom:screenshot_semantic_state",),
+    )
+    event = PublicRuntimeSessionEvent(
+        snapshot.session_id,
+        snapshot.event_epoch,
+        1,
+        "STEP_COMPLETED",
+        snapshot,
+        (source,),
+    )
+    port = CoreRuntimeSessionPort(FakeFactory(), unavailable_surface)
+
+    projected = await port.events(FakeHandle(snapshot, events=(event,)), 0)
+
+    block = projected[0].feed_delta[0]
+    assert block.kind == "evidence_summary"
+    assert block.evidence_kind == "frame_change"
+    assert block.message == source.message
 
 
 @pytest.mark.asyncio

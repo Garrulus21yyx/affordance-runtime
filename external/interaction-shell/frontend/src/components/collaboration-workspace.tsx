@@ -81,6 +81,7 @@ export function GoalSummary({ goal }: { goal: GoalBlock }) {
 const evidenceNames = {
   structural: "结构证据",
   visual: "视觉证据",
+  frame_change: "画面变化",
   mixed: "结构 + 视觉证据",
   unknown: "证据状态",
 } as const;
