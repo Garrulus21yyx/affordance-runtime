@@ -17,6 +17,7 @@ from affordance_runtime.actions.classification import classify_dom_action
 from affordance_runtime.actions.effect_authority import EffectClass, Externality
 from affordance_runtime.actions.effect_policy import semantics_for_operation
 from affordance_runtime.actions.effect_semantics import Reversibility
+from affordance_runtime.actions.grounding import GroundingSource
 from affordance_runtime.actions.space_contracts import ActionRisk
 from affordance_runtime.execution.contracts import (
     ActionError,
@@ -47,6 +48,7 @@ from affordance_runtime.world.contracts import (
     StateFact,
     SurfaceObservation,
 )
+from affordance_runtime.world.observation import CoverageCompleteness
 
 if TYPE_CHECKING:
     from affordance_runtime.actions.contracts import Affordance
@@ -161,6 +163,14 @@ class DomSurfaceAdapter:
         self._observation_id = observation_id
         self._source_revision = snapshot.observation.page_revision
         media = _snapshot_media(snapshot, action_targets)
+        dom_coverage = next(
+            (item for item in snapshot.source_coverage if item.source is GroundingSource.DOM),
+            None,
+        )
+        dom_scope_truncated = bool(
+            dom_coverage is not None
+            and dom_coverage.completeness is not CoverageCompleteness.COMPLETE
+        )
         observation = SurfaceObservation(
             observation_id,
             self.surface,
@@ -171,7 +181,9 @@ class DomSurfaceAdapter:
             bindings,
             (
                 CoverageState.TRUNCATED
-                if text_projection_truncated or (document_enabled and document.truncated)
+                if dom_scope_truncated
+                or text_projection_truncated
+                or (document_enabled and document.truncated)
                 else CoverageState.COMPLETE
             ),
             {

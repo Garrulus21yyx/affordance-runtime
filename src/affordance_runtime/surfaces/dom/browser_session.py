@@ -135,6 +135,7 @@ def _browser_source_coverage(
     screenshot_ref: str,
     perception_requirements: PerceptionRequirements | None,
     exhaustive_sources: frozenset[GroundingSource] = frozenset(),
+    main_document_scope_complete: bool = True,
 ) -> tuple[SourceCoverage, ...]:
     """Describe what each browser adapter actually acquired in this epoch."""
 
@@ -152,7 +153,7 @@ def _browser_source_coverage(
     budget = perception_requirements.observation_budget if perception_requirements is not None else 1
     result: list[SourceCoverage] = []
     for source in GroundingSource:
-        if source == GroundingSource.DOM and source in observed:
+        if source == GroundingSource.DOM and source in observed and main_document_scope_complete:
             result.append(
                 SourceCoverage.complete(
                     source,
@@ -161,6 +162,23 @@ def _browser_source_coverage(
                     acquisition_epoch_ref=snapshot_id,
                     source_scope="current-document-controls",
                     adapter_version="dom-adapter@v1",
+                )
+            )
+            continue
+        if source == GroundingSource.DOM and source in observed:
+            result.append(
+                SourceCoverage(
+                    source=source,
+                    capture_policy_id="dom-main-document-only@v1",
+                    captured_item_count=counts[source],
+                    truncated=True,
+                    omitted_item_count_estimate=None,
+                    completeness=CoverageCompleteness.BOUNDED,
+                    status=CoverageStatus.ACQUISITION_TRUNCATED,
+                    acquisition_epoch_ref=snapshot_id,
+                    source_scope="current-main-document-controls",
+                    adapter_version="dom-adapter@v1",
+                    termination_reason=CoverageTermination.LIMIT_REACHED,
                 )
             )
             continue
@@ -233,6 +251,18 @@ def _bounded_node_count(value: object) -> int:
     if isinstance(value, (list, tuple)):
         return sum(_bounded_node_count(item) for item in value)
     return 0
+
+
+def _main_document_scope_is_complete(page: PageDriver) -> bool:
+    """Report whether the main-document projection covers the whole page frame tree."""
+
+    frames = getattr(page, "frames", None)
+    if frames is None:
+        return True
+    try:
+        return len(tuple(frames)) <= 1
+    except TypeError:
+        return False
 
 
 def _image_size(
@@ -1306,6 +1336,7 @@ class BrowserSession:
                     )
                     else frozenset()
                 ),
+                main_document_scope_complete=_main_document_scope_is_complete(self._page),
             ),
             visual_frame=visual_frame,
         )

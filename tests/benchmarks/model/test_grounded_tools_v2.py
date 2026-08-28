@@ -734,6 +734,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         grounding=grounding,
         actor_world=replace(
             base.actor_world,
+            media=(),
             sources=tuple(
                 replace(source, projection_coverage="truncated") if source.modality == "structural" else source
                 for source in base.actor_world.sources

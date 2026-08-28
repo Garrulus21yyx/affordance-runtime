@@ -80,6 +80,10 @@ class TruncatedReadablePage(ReadablePage):
         return super().evaluate(expression)
 
 
+class FramedPage(InteractivePage):
+    frames = (object(), object())
+
+
 def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> None:
     async def scenario() -> None:
         page = InteractivePage()
@@ -245,6 +249,25 @@ def test_dom_visible_text_reports_honest_source_and_record_truncation() -> None:
         assert source.coverage.value == "truncated"
         assert readable
         assert readable[-1].state["semantic.accessible_name.truncated"] is True
+
+    asyncio.run(scenario())
+
+
+def test_dom_main_document_reports_partial_coverage_when_child_frames_are_unprojected() -> None:
+    async def scenario() -> None:
+        task = TaskGoal(
+            "framed-page",
+            "Use a control that may be inside a child frame",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment((
+            DomSurfaceAdapter(BrowserSession(FramedPage())),  # type: ignore[arg-type]
+        )).reset(task)
+        assert acquired.observation is not None
+
+        source = acquired.observation.sources[0]
+        assert source.coverage.value == "truncated"
 
     asyncio.run(scenario())
 
