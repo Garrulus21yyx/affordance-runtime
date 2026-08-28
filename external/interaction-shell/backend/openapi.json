@@ -3376,10 +3376,17 @@
         "additionalProperties": false,
         "properties": {
           "checkpoint_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Checkpoint Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
           },
           "command_id": {
             "maxLength": 128,
@@ -3405,8 +3412,7 @@
           "command_id",
           "expected_task_revision",
           "expected_run_status",
-          "kind",
-          "checkpoint_id"
+          "kind"
         ],
         "title": "TakeOver",
         "type": "object"

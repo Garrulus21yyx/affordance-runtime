@@ -837,7 +837,7 @@ export const vStartTaskOffer = v.strictObject({
  * TakeOver
  */
 export const vTakeOver = v.strictObject({
-    checkpoint_id: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+    checkpoint_id: v.nullish(v.pipe(v.string(), v.minLength(1), v.maxLength(200))),
     command_id: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
     expected_run_status: vRunStatus,
     expected_task_revision: v.pipe(v.number(), v.integer(), v.minValue(0)),

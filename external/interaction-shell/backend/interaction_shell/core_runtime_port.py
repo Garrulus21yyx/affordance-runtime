@@ -288,7 +288,7 @@ def _runtime_command(
     if isinstance(command, (ApproveAction, RejectAction)):
         return PublicSessionCommand(**common, interaction_ref=command.request_id)
     if isinstance(command, (ResumeTask, TakeOver)):
-        return PublicSessionCommand(**common, checkpoint_id=command.checkpoint_id)
+        return PublicSessionCommand(**common, checkpoint_id=command.checkpoint_id or "")
     if isinstance(command, ReturnControl):
         return PublicSessionCommand(**common, control_lease_id=command.control_lease_id)
     if isinstance(command, ReviseTask):

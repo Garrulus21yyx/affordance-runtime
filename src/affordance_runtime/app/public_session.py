@@ -278,7 +278,6 @@ class PublicSessionCommand:
             PublicSessionCommandKind.APPROVE_ACTION: (bool(self.interaction_ref.strip()),),
             PublicSessionCommandKind.REJECT_ACTION: (bool(self.interaction_ref.strip()),),
             PublicSessionCommandKind.RESUME_TASK: (bool(self.checkpoint_id.strip()),),
-            PublicSessionCommandKind.TAKE_OVER: (bool(self.checkpoint_id.strip()),),
             PublicSessionCommandKind.RETURN_CONTROL: (bool(self.control_lease_id.strip()),),
             PublicSessionCommandKind.REVISE_TASK: (self.revision is not None,),
         }
@@ -785,7 +784,11 @@ class PublicRuntimeSessionHandle(Protocol):
     async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def resume(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot: ...
-    async def take_over(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
+    async def take_over(
+        self,
+        command_id: str,
+        checkpoint_id: str = "",
+    ) -> PublicRuntimeSessionSnapshot: ...
     async def return_control(self, command_id: str, control_lease_id: str) -> PublicRuntimeSessionSnapshot: ...
     async def admit(self, command: PublicSessionCommand) -> PublicCommandAdmission: ...
     async def close(self) -> None: ...
@@ -1299,13 +1302,14 @@ class TargetRuntimeSession:
     async def take_over(
         self,
         command_id: str,
-        checkpoint_id: str,
+        checkpoint_id: str = "",
     ) -> PublicRuntimeSessionSnapshot:
-        """Consume one durable pause and grant one process-local user control lease."""
+        """Reach one durable pause and grant one process-local user control lease."""
 
         async with self._lock:
             self._require_agent_control()
-            self._require_open()
+            if self._closed:
+                raise PublicSessionConflict("session_closed", self._project())
             store = self.checkpoint_store
             if store is None:
                 raise PublicSessionConflict("takeover_unavailable", self._project())
@@ -1318,13 +1322,24 @@ class TargetRuntimeSession:
                     raise PublicSessionConflict("takeover_command_consumed", self._project())
                 raise PublicSessionConflict("takeover_command_conflict", self._project())
             state = self._state
+            already_paused = state is not None and state.status is RunStatus.PAUSED
+            if already_paused:
+                if not checkpoint_id or self._checkpoint_id != checkpoint_id:
+                    raise PublicSessionConflict("checkpoint_mismatch", self._project())
+            else:
+                if checkpoint_id:
+                    raise PublicSessionConflict("checkpoint_mismatch", self._project())
+                await self._ensure_durable_pause(_takeover_pause_command_id(command_id))
+                state = self._state
+                checkpoint_id = self._checkpoint_id or ""
             if (
                 state is None
                 or state.status is not RunStatus.PAUSED
+                or not checkpoint_id
                 or self._checkpoint_id != checkpoint_id
                 or state.durable_checkpoint_id != checkpoint_id
             ):
-                raise PublicSessionConflict("checkpoint_mismatch", self._project())
+                raise PublicSessionConflict("takeover_pause_failed", self._project())
             try:
                 await store.commit_resume(
                     RuntimeCheckpointResumeOutcome(
@@ -1663,10 +1678,12 @@ class TargetRuntimeSession:
             return self._project()
 
     async def _ensure_revision_pause(self, command_id: str) -> None:
+        await self._ensure_durable_pause(_revision_pause_command_id(command_id))
+
+    async def _ensure_durable_pause(self, pause_id: str) -> None:
         state = self._state
         if state is not None and state.status is RunStatus.PAUSED:
             return
-        pause_id = _revision_pause_command_id(command_id)
         admission = self.runtime.request_control(pause_id, RunControlKind.PAUSE)
         if admission.outcome is RunControlAdmissionKind.CONFLICT:
             raise PublicSessionConflict("control_request_conflict", self._project())
@@ -2119,8 +2136,17 @@ class TargetRuntimeSession:
                     {PublicSessionCapability.TAKE_OVER}
                     if (
                         self.checkpoint_store is not None
-                        and status is PublicSessionStatus.PAUSED
-                        and self._checkpoint_id is not None
+                        and status
+                        in {
+                            PublicSessionStatus.RUNNING,
+                            PublicSessionStatus.WAITING_USER,
+                            PublicSessionStatus.WAITING_CONFIRMATION,
+                            PublicSessionStatus.PAUSED,
+                        }
+                        and (
+                            status is not PublicSessionStatus.PAUSED
+                            or self._checkpoint_id is not None
+                        )
                     )
                     else set()
                 )
@@ -2568,6 +2594,7 @@ def _convert_public_session_conflict(
     if code in {
         "control_boundary_failed",
         "revision_pause_failed",
+        "takeover_pause_failed",
         "user_control_currentness_unavailable",
     }:
         return PublicCommandRejected(
@@ -2658,7 +2685,17 @@ def _v3_command_capabilities(
         capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.REVISE_TASK))
     if status is PublicSessionStatus.PAUSED and resume_eligible and checkpoint_id is not None:
         capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.RESUME_TASK))
-    if checkpoint_store_available and status is PublicSessionStatus.PAUSED and checkpoint_id is not None:
+    if (
+        checkpoint_store_available
+        and status
+        in {
+            PublicSessionStatus.RUNNING,
+            PublicSessionStatus.WAITING_USER,
+            PublicSessionStatus.WAITING_CONFIRMATION,
+            PublicSessionStatus.PAUSED,
+        }
+        and (status is not PublicSessionStatus.PAUSED or checkpoint_id is not None)
+    ):
         capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.TAKE_OVER))
     capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION))
     kinds = tuple(capability.kind for capability in capabilities)
@@ -2670,6 +2707,11 @@ def _v3_command_capabilities(
 def _revision_pause_command_id(command_id: str) -> str:
     digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
     return f"revision-pause:{digest}"
+
+
+def _takeover_pause_command_id(command_id: str) -> str:
+    digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
+    return f"takeover-pause:{digest}"
 
 
 def _public_effect_reconciliation(

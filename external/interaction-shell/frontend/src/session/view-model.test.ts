@@ -59,6 +59,19 @@ describe("projectShellView", () => {
     expect(view.actions.revise).toBe(true);
   });
 
+  it("offers generic live-surface takeover directly at a waiting-user boundary", () => {
+    const view = projectShellView({
+      ...base(),
+      run_status: "waiting_user",
+      task_revision: 1,
+      command_offers: [{ kind: "take_over" }, { kind: "close_session" }],
+      surface: { status: "read_only", surface_kind: "web", presentation: "live_media", protected_path: "/viewer/session-view-model" },
+    });
+
+    expect(view.actions.takeOver).toBe(true);
+    expect(view.snapshot?.checkpoint_id).toBeNull();
+  });
+
   it("does not invent a confirmation or text action from run status", () => {
     const view = projectShellView({
       ...base(),

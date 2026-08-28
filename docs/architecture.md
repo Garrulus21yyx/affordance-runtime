@@ -526,9 +526,14 @@ provider locator in the delivered HTML, and exact lease release. The strict CSP
 was not weakened; acceptance used Python-side polling because Playwright string
 `wait_for_function` requires `unsafe-eval`. No second media path or retry branch
 was added. Phase 8 now places one Runtime-owned `agent|user` authority and opaque
-process-local lease on that same session. `TakeOver` is admitted only against an
-exact durable paused checkpoint, consumes it before publishing user ownership,
-and disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
+process-local lease on that same session. A current `TakeOver` offered while the
+Agent owns a running, waiting-user, waiting-confirmation, or already-paused run
+first reaches the existing cooperative pause boundary. Runtime commits the
+durable checkpoint and consumes that exact checkpoint before publishing user
+ownership; an already-paused command must still carry the exact checkpoint ID.
+This makes login/CAPTCHA/MFA assistance a single generic handoff without adding
+an authentication Agent, prompt classifier, frontend keyword branch, or second
+control path. User ownership disables ordinary Resume/Revise and Agent dispatch. Only the user-owned
 snapshot enables the authenticated same-origin proxy to Steel's native input
 WebSocket. A socket binds the Runtime lease active at connection; each incoming
 frame verifies current user ownership and exact lease equality, and that

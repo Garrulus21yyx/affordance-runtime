@@ -71,6 +71,24 @@ describe("typed command builder", () => {
     expect(buildCommand(snapshot, offerFor(snapshot, "return_control")!, { kind: "return_control" }, "c3")).toMatchObject({ control_lease_id: snapshot.control_lease_id });
   });
 
+  it("builds a direct waiting-user takeover without inventing a checkpoint", () => {
+    const waiting = parse(vRuntimeSessionSnapshot, {
+      ...snapshot,
+      run_status: "waiting_user",
+      checkpoint_id: null,
+      control_owner: "agent",
+      control_lease_id: null,
+      command_offers: [{ kind: "take_over" }, { kind: "close_session" }],
+      surface: { status: "read_only", surface_kind: "web", presentation: "live_media", protected_path: "/viewer/session-1" },
+    });
+
+    expect(buildCommand(waiting, offerFor(waiting, "take_over")!, { kind: "take_over" }, "direct")).toMatchObject({
+      kind: "take_over",
+      checkpoint_id: null,
+      expected_run_status: "waiting_user",
+    });
+  });
+
   it("rejects an intent that does not match the selected offer", () => {
     expect(() => buildCommand(snapshot, offerFor(snapshot, "pause_task")!, { kind: "cancel_task" }, "c1")).toThrow("command_offer_intent_mismatch");
   });

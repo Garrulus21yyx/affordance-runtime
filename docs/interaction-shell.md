@@ -140,7 +140,7 @@ The following states must not be collapsed into one label such as "implemented":
 | Running-task revision | Implemented with bounded single-effect reconciliation | One `RuntimeSessionPort.revise` call reuses cooperative pause, compiles and validates a complete consecutive goal, revises the same environment, captures fresh World, compiles one new GoalPlan, atomically commits the new checkpoint/outcome, and remains `PAUSED`. Shell recovery restores the exact bounded command context, so lost-response retries retain the Runtime digest across Shell restart. One retained known effect is either kept by fresh complete evaluation or attached to revision `n+1` as pending compensation; uncertain, irreversible, missing, or multiple effect truth fails closed without replacing revision `n`. |
 | Model/Runtime analysis export | Partially deployed, non-blocking | Benchmark runs load the root environment and currently publish Runtime JSONL plus Langfuse observations. The standalone Shell deployment still lacks a fully verified native PydanticAI recording `TracerProvider + exporter`, and the current Langfuse projection needs standard model/cost/latency field correction. Neither gap affects Runtime truth. |
 | Effect reconciliation/compensation | Implemented for one retained known effect | Runtime preserves the original receipt, classifies typed reversibility, and exposes only semantic lineage. A reversible/compensatable conflict remains `PAUSED`; separate Resume uses the same ActionPolicy and ordinary current action pipeline on the same resource. Risk/confirmation stays authoritative, fresh local postcondition closes the compensation receipt, and another Resume continues the revised goal. `SENT_UNKNOWN`, irreversible, missing, multiple, unavailable, mismatched, or unverified cases stay typed and paused; no rollback is claimed. |
-| Exclusive user takeover/return | Implemented and verified for Steel | Runtime owns one `agent|user` authority and opaque process-local lease. `TakeOver` consumes the exact durable paused checkpoint before user ownership; only that snapshot enables native Steel input. A WebSocket binds that lease and every frame verifies exact current equality under the session command lock. `ReturnControl` revokes the lease before fresh capture. Capture failure grants a new user lease, so old sockets never revive; restart revokes the lease and cannot reuse the consumed checkpoint. |
+| Exclusive user takeover/return | Implemented and verified for Steel | Runtime owns one `agent|user` authority and opaque process-local lease. A current `TakeOver` from running, waiting-user, or waiting-confirmation reaches the existing durable pause boundary internally; an already-paused takeover retains exact checkpoint admission. Runtime consumes the committed checkpoint before user ownership, so Shell can offer one generic handoff for login/CAPTCHA/MFA without classifying page text. Only the user-owned snapshot enables native Steel input. A WebSocket binds that lease and every frame verifies exact current equality under the session command lock. `ReturnControl` revokes the lease before fresh capture. Capture failure grants a new user lease, so old sockets never revive; restart revokes the lease and cannot reuse the consumed checkpoint. |
 | Real end-to-end deployment witness | Verified | A real API/UI task reached native success through dispatch, fresh World, snapshot/SSE/UI, explicit close, and cleanup. |
 | Delivery hygiene | Full Web control release profile verified; frontend-governance v3 implementation verified provider-free | Phase 0–9 contracts, Runtime authority, sole Shell v3 projection, deterministic OpenAPI plus generated DTO/Valibot/SDK/event artifacts, provider-free tests, docs, and protected Steel control agree. Viewer evidence includes a no-model/no-action CDP reset, native H.264 playback, the authenticated WHEP/video path, and a no-model takeover/return chain that fenced an old socket during blocked capture, changed the same page once, and closed from fresh World without a second policy call. No live compensation action or benchmark was run. |
 
@@ -1584,8 +1584,9 @@ return-control produces fresh World lineage.
 
 Implementation status (2026-08-27): verified. `TargetRuntimeSession` owns one
 ephemeral `agent|user` authority and opaque lease. `TakeOver` is a dedicated
-typed command admitted only against the exact durable `PAUSED` checkpoint; it
-consumes that checkpoint before projecting user ownership and disables ordinary
+typed command. From running or waiting boundaries it reuses cooperative pause
+and checkpoint persistence inside the Runtime owner; from `PAUSED` it still
+requires the exact checkpoint. It consumes that checkpoint before projecting user ownership and disables ordinary
 Resume/Revise and Agent dispatch. Steel sessions are created input-capable, but
 the protected document remains read-only under Agent ownership. Only the
 user-owned Runtime snapshot can install the authenticated same-origin proxy to
@@ -1601,6 +1602,17 @@ pre-takeover checkpoint remains unusable. Provider-free owner/state/fault tests,
 Shell/API/WebSocket tests, generated contracts, frontend controls, and the
 no-model live same-page witness pass. No second executor, custom input protocol,
 model call, compensation action, or benchmark was added to this evidence.
+
+Implementation extension (2026-08-28): the Shell now receives the same
+`take_over` offer directly at current running/waiting boundaries when native
+Steel input and checkpoint persistence are available. The public command omits
+the checkpoint only before Runtime has produced it; Runtime derives an internal
+pause command, waits for the existing safe boundary, atomically commits and
+consumes the resulting checkpoint, and then grants the unchanged lease. A
+pause-persistence failure never grants control. Generated OpenAPI/TypeScript/
+Valibot, Runtime owner tests, Shell port tests, and frontend command/view tests
+cover both this direct path and the old exact-paused path. No site, login string,
+credential, selector, VLM, or extra loop participates.
 
 ### Phase 9 — release and closure review
 

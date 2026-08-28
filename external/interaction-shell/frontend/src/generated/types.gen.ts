@@ -1863,7 +1863,7 @@ export type TakeOver = {
     /**
      * Checkpoint Id
      */
-    checkpoint_id: string;
+    checkpoint_id?: string | null;
     /**
      * Command Id
      */

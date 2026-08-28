@@ -376,6 +376,9 @@ async def test_v3_runtime_command_capabilities_are_state_correct_unique_and_ref_
     assert waiting.pending_interaction is not None
     assert answer.interaction_ref == waiting.pending_interaction.request_id
     assert answer.prompt == waiting.pending_interaction.prompt
+    assert PublicSessionCommandKind.TAKE_OVER not in {
+        capability.kind for capability in waiting.command_capabilities
+    }
     assert len({capability.kind for capability in waiting.command_capabilities}) == len(waiting.command_capabilities)
     await handle.close()
 

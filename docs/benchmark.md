@@ -24,6 +24,19 @@ product smoke are the appropriate acceptance evidence; no live benchmark was aut
 
 ### 2026-08-28 held-out public-Web Interaction Shell witness
 
+Before the live Taobao login witness, the generic human-handoff path was closed
+provider-free at its Runtime owner. `TakeOver` can now be offered directly while
+the Agent owns a running, waiting-user, or waiting-confirmation run. Runtime
+reuses its existing cooperative safe pause and checkpoint transaction, consumes
+that exact checkpoint, and only then grants the existing Steel input lease; the
+already-paused path still rejects a missing or wrong checkpoint. Return-control
+and fresh-World semantics are unchanged. Tests cover direct waiting takeover,
+running-policy safe-boundary waiting, exact paused admission, pause-persistence
+failure without a lease, Shell transport of an absent pre-pause checkpoint, and
+frontend offer/command projection. This is control-plane evidence only: it adds
+no Taobao/login branch, does not call a VLM, and does not claim benchmark
+non-regression or completion of the live flagship task.
+
 Real Interaction Shell session `GZ5_Ccm4CXBzAo4v4fwreWVD` used the existing Steel-backed browser profile for:
 
 ```text

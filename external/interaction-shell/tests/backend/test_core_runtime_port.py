@@ -156,6 +156,7 @@ def runtime_snapshot(
     lease: str | None = None,
     pending_interaction: PublicInteractionRequest | None = None,
     event_cursor: int = 0,
+    checkpoint_id: str | None = CHECKPOINT_ID,
 ) -> PublicRuntimeSessionSnapshot:
     return PublicRuntimeSessionSnapshot(
         session_id="session-1",
@@ -165,8 +166,8 @@ def runtime_snapshot(
         event_cursor=event_cursor,
         command_capabilities=capabilities,
         task_revision=2,
-        checkpoint_id="runtime-checkpoint:" + "a" * 64,
-        resume_eligible=True,
+        checkpoint_id=checkpoint_id,
+        resume_eligible=checkpoint_id is not None,
         pending_interaction=pending_interaction,
         control_owner=owner,
         control_lease_id=lease,
@@ -364,6 +365,32 @@ async def test_takeover_fresh_deployment_race_returns_unsupported_without_runtim
     assert admission.kind == "unsupported"
     assert admission.code == "deployment_capability_unavailable"
     assert handle.admit_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_waiting_user_takeover_reaches_runtime_without_a_preexisting_checkpoint():
+    source = runtime_snapshot(
+        status=PublicSessionStatus.WAITING_USER,
+        capabilities=(PublicSessionCommandCapability(PublicSessionCommandKind.TAKE_OVER),),
+        checkpoint_id=None,
+    )
+    handle = FakeHandle(source)
+    port = CoreRuntimeSessionPort(FakeFactory(), native_surface)
+
+    admission = await port.command(
+        handle,
+        TakeOver(
+            kind="take_over",
+            command_id="takeover-direct",
+            expected_task_revision=source.task_revision,
+            expected_run_status=RunStatus.WAITING_USER,
+        ),
+    )
+
+    assert admission.kind == "accepted"
+    assert handle.admit_calls == 1
+    assert handle.last_command.kind is PublicSessionCommandKind.TAKE_OVER
+    assert handle.last_command.checkpoint_id == ""
 
 
 @pytest.mark.asyncio

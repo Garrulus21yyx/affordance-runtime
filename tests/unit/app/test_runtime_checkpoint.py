@@ -23,6 +23,7 @@ from affordance_runtime.app.checkpoint import (
 )
 from affordance_runtime.app.public_session import (
     PublicSessionCapability,
+    PublicSessionCommandKind,
     PublicSessionConflict,
     PublicSessionControlOwner,
     PublicSessionOpenError,
@@ -741,6 +742,114 @@ async def test_takeover_consumes_checkpoint_and_return_refreshes_before_policy(t
 
 
 @pytest.mark.asyncio
+async def test_waiting_user_takeover_reuses_pause_checkpoint_and_grants_control_in_one_command(
+    tmp_path,
+) -> None:
+    handle, store = await _waiting_checkpoint_session(tmp_path)
+    waiting = await handle.snapshot()
+
+    assert waiting.status is PublicSessionStatus.WAITING_USER
+    assert waiting.checkpoint_id is None
+    assert PublicSessionCapability.TAKE_OVER in waiting.capabilities
+    assert PublicSessionCommandKind.TAKE_OVER in {
+        capability.kind for capability in waiting.command_capabilities
+    }
+
+    controlled = await handle.take_over("takeover:direct")
+
+    assert controlled.status is PublicSessionStatus.PAUSED
+    assert controlled.control_owner is PublicSessionControlOwner.USER
+    assert controlled.control_lease_id is not None
+    assert controlled.checkpoint_id is not None
+    assert controlled.last_control_outcome is not None
+    assert controlled.last_control_outcome.outcome == "user_control_granted"
+    assert controlled.last_control_outcome.checkpoint_id == controlled.checkpoint_id
+    assert await store.checkpoint_resume_outcome(
+        "session:checkpoint",
+        controlled.checkpoint_id,
+    ) == RuntimeCheckpointResumeOutcome(
+        "session:checkpoint",
+        "takeover:direct",
+        controlled.checkpoint_id,
+    )
+    assert tuple(event.type for event in await handle.events(0))[-3:] == (
+        "CONTROL_REQUESTED",
+        "RUN_PAUSED",
+        "USER_CONTROL_GRANTED",
+    )
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_running_takeover_waits_for_the_existing_safe_pause_boundary(tmp_path) -> None:
+    class BlockingAskPolicy(RecoverableAskPolicy):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def decide(self, context):
+            self.entered.set()
+            await self.release.wait()
+            return await super().decide(context)
+
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "running-takeover.sqlite3")
+    policy = BlockingAskPolicy()
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            ScriptedEnvironment(initial_observation=_world())
+        ),
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:running-takeover",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    await asyncio.wait_for(policy.entered.wait(), timeout=1)
+    running = await handle.snapshot()
+    assert running.status is PublicSessionStatus.RUNNING
+    assert PublicSessionCommandKind.TAKE_OVER in {
+        capability.kind for capability in running.command_capabilities
+    }
+
+    takeover = asyncio.create_task(handle.take_over("takeover:running"))
+    for _ in range(100):
+        if any(event.type == "CONTROL_REQUESTED" for event in await handle.events(0)):
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("direct takeover did not request the Runtime pause boundary")
+    assert not takeover.done()
+
+    policy.release.set()
+    controlled = await asyncio.wait_for(takeover, timeout=1)
+
+    assert controlled.status is PublicSessionStatus.PAUSED
+    assert controlled.control_owner is PublicSessionControlOwner.USER
+    assert controlled.control_lease_id is not None
+    assert controlled.checkpoint_id is not None
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_paused_takeover_still_requires_the_exact_checkpoint(tmp_path) -> None:
+    handle, _store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
+        tmp_path
+    )
+
+    with pytest.raises(PublicSessionConflict, match="checkpoint_mismatch"):
+        await handle.take_over("takeover:missing-checkpoint")
+    with pytest.raises(PublicSessionConflict, match="checkpoint_mismatch"):
+        await handle.take_over("takeover:wrong-checkpoint", "runtime-checkpoint:" + "0" * 64)
+
+    controlled = await handle.take_over("takeover:exact-checkpoint", checkpoint_id)
+    assert controlled.control_owner is PublicSessionControlOwner.USER
+    await handle.close()
+
+
+@pytest.mark.asyncio
 async def test_return_revokes_input_lease_before_blocking_fresh_world_capture(tmp_path) -> None:
     @dataclass
     class BlockingReturnEnvironment(ScriptedEnvironment):
@@ -922,6 +1031,44 @@ async def test_model_step_persistence_failure_never_publishes_paused(tmp_path) -
     assert outcome.last_control_outcome is not None
     assert outcome.last_control_outcome.code == "pause_persistence_failed"
     assert await store.load_latest("session:step-failure") is None
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_direct_takeover_never_grants_control_when_pause_persistence_fails(tmp_path) -> None:
+    store = SQLiteRuntimeCheckpointStore(tmp_path / "takeover-step-failure.sqlite3")
+    policy = FailingStepPersistenceAskPolicy()
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(policy),
+        lambda _session_id: RuntimeEnvironmentLease(
+            ScriptedEnvironment(
+                initial_observation=_world(),
+                independent_observations=(_world(),),
+            ),
+            reconnect_reference="browser-lease:takeover-step-failure",
+        ),
+        checkpoint_store=store,
+    )
+    handle = await factory.open(
+        "session:takeover-step-failure",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+    await handle.start("Inspect the selected account")
+    for _ in range(100):
+        if (await handle.snapshot()).status is PublicSessionStatus.WAITING_USER:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        raise AssertionError("takeover persistence fixture did not reach waiting-user")
+
+    with pytest.raises(PublicSessionConflict, match="takeover_pause_failed"):
+        await handle.take_over("takeover:step-failure")
+
+    current = await handle.snapshot()
+    assert current.control_owner is PublicSessionControlOwner.AGENT
+    assert current.control_lease_id is None
+    assert current.checkpoint_id is None
+    assert await store.load_latest("session:takeover-step-failure") is None
     await handle.close()
 
 

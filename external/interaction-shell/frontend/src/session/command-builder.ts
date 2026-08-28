@@ -74,7 +74,7 @@ export function buildCommand(
         text: textFrom(intent),
       };
     case "take_over":
-      return { ...base, kind: "take_over", checkpoint_id: requiredCheckpoint(snapshot) };
+      return { ...base, kind: "take_over", checkpoint_id: snapshot.checkpoint_id };
     case "return_control":
       return { ...base, kind: "return_control", control_lease_id: requiredLease(snapshot) };
     case "close_session":
