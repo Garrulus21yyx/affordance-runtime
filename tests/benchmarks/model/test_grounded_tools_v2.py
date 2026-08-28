@@ -721,6 +721,10 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         base,
         actor_world=replace(
             base.actor_world,
+            sources=tuple(
+                replace(source, projection_coverage="truncated") if source.modality == "structural" else source
+                for source in base.actor_world.sources
+            ),
             observation_capabilities=(
                 {
                     "modality": "visual",
@@ -825,6 +829,44 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         )
         is not None
     )
+
+
+def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None:
+    base = _context()
+
+    def catalog(*, projection_coverage: str):
+        context = replace(
+            base,
+            actor_world=replace(
+                base.actor_world,
+                sources=tuple(
+                    replace(source, projection_coverage=projection_coverage)
+                    if source.modality == "structural"
+                    else source
+                    for source in base.actor_world.sources
+                ),
+                observation_capabilities=(
+                    {
+                        "modality": "visual",
+                        "assurance": "weak",
+                        "purposes": ("entity_discovery",),
+                    },
+                ),
+            ),
+        )
+        return compile_grounded_tool_catalog(
+            context,
+            GroundedToolPhase.ACTION_SELECTION,
+            _delivery(context),
+            ObservationToolExposureProfile.DYNAMIC_VISUAL,
+        )
+
+    complete = catalog(projection_coverage="complete")
+    incomplete = catalog(projection_coverage="truncated")
+
+    assert "request_evidence" not in {item.name for item in complete.specs}
+    spec = next(item for item in incomplete.specs if item.name == "request_evidence")
+    assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
 
 
 def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> None:

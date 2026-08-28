@@ -1331,10 +1331,10 @@ def _dynamic_purpose_applicable(
     del delivery  # refs were already intersected with this exact manifest
     ref_count = len(refs)
     if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
-        # The outer capability gate already established that current visual
-        # evidence is missing or incomplete. Structural projection completeness
-        # does not imply that pixel-only entities have been represented.
-        return bool(context.actor_world.media)
+        return bool(context.actor_world.media) and (
+            any(document.truncated for document in context.actor_world.documents)
+            or any(source.projection_coverage != "complete" for source in context.actor_world.sources)
+        )
     if purpose in {
         ObservationPurpose.VISUAL_PROPERTY.value,
         ObservationPurpose.TEXT_IN_IMAGE.value,

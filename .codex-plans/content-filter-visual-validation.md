@@ -152,6 +152,11 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   fixed and pushed. The latest GUI run itself ended blocked after the ActionPolicy repeatedly requested point
   grounding for a structure-readable counting question, with zero GUI executions. Phase 7 now protects the original
   structure-first zero-VLM invariant and forbids using that witness to broaden visual availability.
+- 2026-08-28: Phase 7 replaced the dynamic observation tool's shared `atomic_query` with purpose-specific public
+  fields while keeping one `request_evidence` tool and one internal `RequestObservation` binding. A legal point request
+  now calls only the point grounder; entity discovery remains a separate ActionPolicy decision. A post-commit audit
+  caught and removed an accidental media-only entity-discovery applicability relaxation before live rerun; complete
+  structural projection continues to suppress that purpose, and the provider-free regression records the boundary.
 
 ## Files changed by this plan
 
