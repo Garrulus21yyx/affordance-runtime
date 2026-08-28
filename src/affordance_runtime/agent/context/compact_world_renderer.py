@@ -17,7 +17,6 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldSnapshot,
     actor_source_refs,
     actor_world_for_delivery,
-    complete_homogeneous_child_counts,
 )
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
@@ -676,7 +675,6 @@ def inspect_actor_world(
                 grounding,
                 verbs_by_ref,
             )
-            items = _attach_complete_child_counts(items, snapshot)
             return _page_region_items(
                 items,
                 cursor,
@@ -1675,24 +1673,6 @@ def _region_items(
             )
         )
     return tuple(items)
-
-
-def _attach_complete_child_counts(
-    items: tuple[Mapping[str, object], ...],
-    snapshot: ActorWorldSnapshot,
-) -> tuple[Mapping[str, object], ...]:
-    counts = complete_homogeneous_child_counts(snapshot)
-    enriched: list[Mapping[str, object]] = []
-    for item in items:
-        public_ref = str(item.get("node_ref") or item.get("target_ref") or "")
-        if public_ref not in counts:
-            enriched.append(item)
-            continue
-        record = dict(item)
-        record["direct_child_count"] = counts[public_ref]
-        record["direct_child_count_coverage"] = "complete"
-        enriched.append(record)
-    return tuple(enriched)
 
 
 def _repeated_item_records(

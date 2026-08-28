@@ -640,11 +640,8 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
 
 def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     base = _context()
-    entities = list(base.grounding.entities)
-    entities[:2] = [replace(item, role="option") for item in entities[:2]]
     context = replace(
         base,
-        grounding=replace(base.grounding, entities=tuple(entities)),
         actor_world=replace(
             base.actor_world,
             observation_capabilities=(
@@ -670,7 +667,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     arguments = {
         "purpose": "visual_property",
         "subject_refs": list(refs[:2]),
-        "property_query": {"property": "selection_state", "expected": "selected"},
+        "predicate": "visually selected",
         "public_intent": "I will verify the visible selection state.",
     }
     assert validate_value_issue(arguments, spec.input_schema) is None
@@ -686,7 +683,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     assert isinstance(decision, RequestObservation)
     bindings = context.grounding.private_subject_bindings()
     assert decision.subject_ids == tuple(bindings[ref] for ref in refs[:2])
-    assert decision.predicate == "selection_state equals selected"
+    assert decision.predicate == "visually selected"
     assert decision.query_id.startswith("observation-query:")
     assert catalog.observation_tool_profile_id == "dynamic-visual.v1"
     assert catalog.observation_tool_profile_digest
@@ -712,12 +709,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
 def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> None:
     base = _context()
     entities = list(base.grounding.entities)
-    executable_indices = [index for index, item in enumerate(entities) if item.ref.startswith("E")]
-    assert len(executable_indices) >= 2
-    first_candidate, second_candidate = executable_indices[:2]
-    entities[first_candidate] = replace(entities[first_candidate], role="option", label="Same choice")
-    entities[second_candidate] = replace(entities[second_candidate], role="option", label="Same choice")
-    pixel_index = next(index for index in range(len(entities)) if index not in executable_indices[:2])
+    pixel_index = 0
     entities[pixel_index] = replace(entities[pixel_index], role="image")
     pixel_ref = entities[pixel_index].ref
     grounding = replace(
@@ -761,7 +753,6 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
     refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
-    candidate_refs = (entities[first_candidate].ref, entities[second_candidate].ref)
     calls = {
         "entity_discovery": {
             "entity_query": "visible blocks in both groups",
@@ -769,10 +760,10 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         },
         "visual_property": {
             "subject_refs": [refs[0], refs[1]],
-            "property_query": {"property": "selection_state", "expected": "selected"},
+            "predicate": "visually selected",
         },
         "target_disambiguation": {
-            "candidate_refs": list(candidate_refs),
+            "candidate_refs": [refs[0], refs[1]],
             "selection_criterion": "the candidate with the red outline",
         },
         "point_grounding": {
@@ -780,15 +771,15 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         },
         "text_in_image": {
             "subject_refs": [pixel_ref],
-            "read_mode": "all_visible_text",
+            "text_query": "the text rendered inside the image",
         },
         "spatial_relationship": {
             "subject_refs": [refs[0], refs[1]],
-            "relation": "left_of",
+            "relation": "the first subject is left of the second",
         },
         "visual_change": {
             "subject_refs": [refs[0]],
-            "changed_property": "appearance",
+            "change_predicate": "the visible appearance changed",
         },
     }
     bindings = context.grounding.private_subject_bindings()
@@ -830,7 +821,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(disambiguation, RequestObservation)
-    assert disambiguation.candidate_ids == tuple(bindings[ref] for ref in candidate_refs)
+    assert disambiguation.candidate_ids == (bindings[refs[0]], bindings[refs[1]])
     assert disambiguation.atomic_query == "the candidate with the red outline"
     text = _resolve_catalog_call(
         catalog,
@@ -838,7 +829,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(text, RequestObservation)
-    assert text.atomic_query == "transcribe all visible text inside each supplied subject"
+    assert text.atomic_query == "the text rendered inside the image"
     spatial = _resolve_catalog_call(
         catalog,
         ToolCall(
@@ -848,15 +839,15 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(spatial, RequestObservation)
-    assert spatial.predicate == "first_subject left_of second_subject"
+    assert spatial.predicate == "the first subject is left of the second"
     change = _resolve_catalog_call(
         catalog,
         ToolCall("request_evidence", {"purpose": "visual_change", **calls["visual_change"]}),
         expected_context_id=context.context_id,
     ).decision
     assert isinstance(change, RequestObservation)
-    assert change.predicate == "appearance changed between frames"
-    assert "deterministic read/count results" in spec.description
+    assert change.predicate == "the visible appearance changed"
+    assert "structural evidence cannot answer" in spec.description
     text_variant = next(
         variant
         for variant in spec.input_schema["oneOf"]
@@ -869,7 +860,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
             {
                 "purpose": "text_in_image",
                 "subject_refs": [non_pixel_ref],
-                "read_mode": "all_visible_text",
+                "text_query": "visible text",
             },
             spec.input_schema,
         )
@@ -879,19 +870,6 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     assert "entity_query" in encoded_schema
     assert "target_description" in encoded_schema
     assert "atomic_query" not in encoded_schema
-    assert "text_query" not in encoded_schema
-    assert "change_predicate" not in encoded_schema
-    assert (
-        validate_value_issue(
-            {
-                "purpose": "visual_property",
-                "subject_refs": [refs[0]],
-                "property_query": {"property": "color", "expected": "10 blocks"},
-            },
-            spec.input_schema,
-        )
-        is not None
-    )
     assert (
         validate_value_issue(
             {
@@ -902,70 +880,6 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         )
         is not None
     )
-
-
-@pytest.mark.parametrize(
-    ("purpose", "arguments"),
-    (
-        (
-            "text_in_image",
-            {"subject_refs": ["PIXEL_REF"], "text_query": "How many blocks are visible?"},
-        ),
-        (
-            "spatial_relationship",
-            {"subject_refs": ["FIRST_REF", "SECOND_REF"], "relation": "How many blocks are visible?"},
-        ),
-        (
-            "visual_change",
-            {"subject_refs": ["FIRST_REF"], "change_predicate": "How many blocks appeared?"},
-        ),
-    ),
-)
-def test_dynamic_specialist_variants_cannot_encode_arbitrary_screenshot_questions(
-    purpose: str,
-    arguments: dict[str, object],
-) -> None:
-    base = _context()
-    entities = list(base.grounding.entities)
-    entities[0] = replace(entities[0], role="image")
-    entities[1] = replace(entities[1], role="option")
-    context = replace(
-        base,
-        grounding=replace(base.grounding, entities=tuple(entities)),
-        actor_world=replace(
-            base.actor_world,
-            observation_capabilities=(
-                {
-                    "modality": "visual",
-                    "assurance": "weak",
-                    "purposes": (purpose,),
-                },
-            ),
-        ),
-    )
-    delivery = _delivery(context)
-    catalog = compile_grounded_tool_catalog(
-        context,
-        GroundedToolPhase.ACTION_SELECTION,
-        delivery,
-        ObservationToolExposureProfile.DYNAMIC_VISUAL,
-    )
-    spec = next(item for item in catalog.specs if item.name == "request_evidence")
-    refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
-    pixel_ref = entities[0].ref
-    rewritten = {
-        key: (
-            [pixel_ref]
-            if value == ["PIXEL_REF"]
-            else [refs[0], refs[1]]
-            if value == ["FIRST_REF", "SECOND_REF"]
-            else [refs[0]]
-            if value == ["FIRST_REF"]
-            else value
-        )
-        for key, value in arguments.items()
-    }
-    assert validate_value_issue({"purpose": purpose, **rewritten}, spec.input_schema) is not None
 
 
 def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None:
@@ -1004,76 +918,6 @@ def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None
     assert "request_evidence" not in {item.name for item in complete.specs}
     spec = next(item for item in incomplete.specs if item.name == "request_evidence")
     assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
-
-
-def test_dynamic_visual_tool_is_absent_on_complete_generic_form_without_visual_subjects() -> None:
-    base = _context()
-    context = replace(
-        base,
-        actor_world=replace(
-            base.actor_world,
-            observation_capabilities=(
-                {
-                    "modality": "visual",
-                    "assurance": "weak",
-                    "purposes": (
-                        "entity_discovery",
-                        "point_grounding",
-                        "spatial_relationship",
-                        "target_disambiguation",
-                        "text_in_image",
-                        "visual_property",
-                    ),
-                },
-            ),
-        ),
-    )
-    catalog = compile_grounded_tool_catalog(
-        context,
-        GroundedToolPhase.ACTION_SELECTION,
-        _delivery(context),
-        ObservationToolExposureProfile.DYNAMIC_VISUAL,
-    )
-
-    assert "request_evidence" not in {item.name for item in catalog.specs}
-
-
-def test_dynamic_point_grounding_is_hidden_when_structure_already_exposes_action_targets() -> None:
-    base = _context()
-
-    def catalog(*, projection_coverage: str):
-        context = replace(
-            base,
-            actor_world=replace(
-                base.actor_world,
-                sources=tuple(
-                    replace(source, projection_coverage=projection_coverage)
-                    if source.modality == "structural"
-                    else source
-                    for source in base.actor_world.sources
-                ),
-                observation_capabilities=(
-                    {
-                        "modality": "visual",
-                        "assurance": "weak",
-                        "purposes": ("point_grounding",),
-                    },
-                ),
-            ),
-        )
-        return compile_grounded_tool_catalog(
-            context,
-            GroundedToolPhase.ACTION_SELECTION,
-            _delivery(context),
-            ObservationToolExposureProfile.DYNAMIC_VISUAL,
-        )
-
-    complete = catalog(projection_coverage="complete")
-    incomplete = catalog(projection_coverage="truncated")
-
-    assert "request_evidence" not in {item.name for item in complete.specs}
-    spec = next(item for item in incomplete.specs if item.name == "request_evidence")
-    assert spec.input_schema["properties"]["purpose"]["enum"] == ("point_grounding",)
 
 
 def test_dynamic_text_in_image_excludes_non_pixel_container_refs() -> None:
@@ -1137,7 +981,7 @@ def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> 
             {
                 "purpose": "visual_change",
                 "subject_refs": [refs[0]],
-                "changed_property": "appearance",
+                "change_predicate": "appearance changed",
             },
             spec.input_schema,
         )
@@ -1935,9 +1779,8 @@ def test_grounded_catalog_does_not_expose_propose_done() -> None:
     assert "propose_done" not in {item.name for item in catalog.specs}
 
 
-def test_grounded_catalog_counts_complete_current_children_without_mutating_world() -> None:
+def test_read_region_does_not_duplicate_actor_world_child_counts() -> None:
     context = _nested_context()
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     group_ref = next(
         item.ref for item in context.grounding.entities if item.role == "generic" and item.label == "Choices"
     )
@@ -1957,35 +1800,10 @@ def test_grounded_catalog_counts_complete_current_children_without_mutating_worl
         region_ref=region_ref,
     )
     assert opened.items
-    group_record = next(item for item in opened.items if item.get("node_ref") == group_ref)
-    assert group_record["direct_child_count"] == 2
-    assert group_record["direct_child_count_coverage"] == "complete"
-    document = context.actor_world.documents[0]
-    incomplete_snapshot = replace(
-        context.actor_world,
-        documents=(
-            replace(
-                document,
-                total_node_count=document.retained_node_count + 1,
-                truncated=True,
-            ),
-        ),
-    )
-    incomplete_opened = inspect_actor_world(
-        incomplete_snapshot,
-        context.grounding,
-        region_index=context.region_index,
-        canonical_world=context.canonical_world,
-        observation=context.current_observation,
-        action="read_region",
-        region_ref=region_ref,
-    )
-    incomplete_group = next(
-        item for item in incomplete_opened.items if item.get("node_ref") == group_ref
-    )
-    assert "direct_child_count" not in incomplete_group
-    assert "count_children" not in {item.name for item in catalog.specs}
+    assert all("direct_child_count" not in item for item in opened.items)
     root = context.actor_world.documents[0].roots[0]
+    assert root.ref == group_ref
+    assert len(root.children) == 2
     assert "member_count" not in root.state
 
 

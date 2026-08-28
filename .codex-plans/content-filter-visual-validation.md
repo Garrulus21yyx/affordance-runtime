@@ -223,6 +223,17 @@ authority or bypass.
   once. Catalog now intersects property and spatial variants with stable role domains that match those specialists'
   declared evidence shapes. A complete generic/textbox/button page therefore advertises no dynamic visual tool even
   when all providers are configured; no task wording or benchmark identity participates in that decision.
+- 2026-08-28: Clean live run `phase7-clean9` falsified the growing Catalog restrictions as the right abstraction. The
+  visual tool was absent and every visual provider counter stayed at zero, but the ActionPolicy still failed after
+  ordinary `read_region`/`count_children` use. The run therefore demonstrates a policy-use failure, not a missing
+  Runtime/VLM gate. Phase 8 removes the compensating role allowlists, closed visual vocabularies, point-target
+  heuristic, duplicate ActorWorld cardinality owner, and `read_region.direct_child_count` sidecar. It restores the
+  pre-existing open atomic visual query fields and pre-existing Catalog-owned `count_children`; the existing
+  ActorWorld tree remains the single structural authority. OCR retains only its purpose-intrinsic pixel-container
+  domain and entity discovery retains only the existing structural-projection-gap applicability rule. CoreLoop,
+  World acquisition/fusion, model turn compression, provider routing, and execution are unchanged. Provider-free
+  cleanup gates passed 65 grounded-Catalog tests plus 110 World/BrowserGym/visual/conformance tests; one clean live
+  rerun remains the final diagnostic and must not trigger another task-specific Runtime branch.
 
 ## Files changed by this plan
 
@@ -249,6 +260,8 @@ authority or bypass.
 - `src/affordance_runtime/benchmarks/external_breadth/runner.py`
 - `tests/benchmarks/runtime/test_miniwob_breadth_runner.py`
 - `src/affordance_runtime/model/policy/grounded_tool_catalog.py`
+- `src/affordance_runtime/agent/context/actor_world_snapshot.py`
+- `src/affordance_runtime/agent/context/compact_world_renderer.py`
 - `src/affordance_runtime/surfaces/browsergym/environment.py`
 - `src/affordance_runtime/surfaces/browsergym/visual_projection.py`
 - `src/affordance_runtime/surfaces/visual/grounding.py`
