@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
-from dotenv import load_dotenv
-
 from affordance_runtime.agent.decision_capability import GROUNDED_ACTION_DECISION_CAPABILITIES
 from affordance_runtime.agent.observability import RunTraceSink, trace_recorder_from_environment
 from affordance_runtime.app.checkpoint import SQLiteRuntimeCheckpointStore
@@ -43,15 +41,17 @@ from affordance_runtime.task import (
     RiskProfile,
     TaskBoundary,
 )
-from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from affordance_runtime.world.environment import WorldEnvironment
+from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
+from dotenv import load_dotenv
 
 from .api import create_app
 from .completed_runs import CompletedRunSummaryResolver
+from .content_filtering import ContentFilterProfile
 from .core_runtime_port import CoreRuntimeSessionPort, unavailable_viewer
 from .manager import RunSessionManager
 from .session_registry import SQLiteSessionRecoveryRegistry
-from .steel_viewer import SteelBrowserLease, SteelViewerGateway
+from .steel_viewer import SteelBrowserLease, SteelViewerGateway, SteelViewerUnavailable
 
 if TYPE_CHECKING:
     from pydantic_ai_harness.step_persistence import StepStore
@@ -110,6 +110,16 @@ class BrowserDeploymentSettings:
     max_turns: int
     call_timeout_s: float
     browser_provider: str = "local"
+    content_filter_profile: ContentFilterProfile = ContentFilterProfile.OFF
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.content_filter_profile, ContentFilterProfile):
+            raise TypeError("content filter profile must be typed")
+        if (
+            self.browser_provider == "local"
+            and self.content_filter_profile is not ContentFilterProfile.OFF
+        ):
+            raise ValueError("local browser provider supports content filtering off only")
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> BrowserDeploymentSettings:
@@ -139,7 +149,24 @@ class BrowserDeploymentSettings:
         )
         if browser_provider not in {"local", "steel"}:
             raise ValueError("INTERACTION_SHELL_BROWSER_PROVIDER must be local or steel")
-        return cls(initial_url, max_turns, call_timeout_s, browser_provider)
+        configured_filter_profile = environment.get(
+            "INTERACTION_SHELL_CONTENT_FILTER_PROFILE",
+            ContentFilterProfile.OFF.value,
+        ).strip()
+        try:
+            content_filter_profile = ContentFilterProfile(configured_filter_profile)
+        except ValueError as exc:
+            supported = ", ".join(profile.value for profile in ContentFilterProfile)
+            raise ValueError(
+                f"INTERACTION_SHELL_CONTENT_FILTER_PROFILE must be one of: {supported}"
+            ) from exc
+        return cls(
+            initial_url,
+            max_turns,
+            call_timeout_s,
+            browser_provider,
+            content_filter_profile,
+        )
 
 
 @dataclass(frozen=True)
@@ -219,6 +246,12 @@ class BrowserDeploymentSessionFactory:
                     raise
             except PublicSessionOpenError:
                 raise
+            except SteelViewerUnavailable as exc:
+                await cleanup.close()
+                raise PublicSessionOpenError(
+                    PublicSessionOpenStage.ENVIRONMENT,
+                    exc.code,
+                ) from exc
             except Exception as exc:
                 await cleanup.close()
                 logger.exception(
@@ -518,6 +551,7 @@ viewer_gateway = (
             60_000,
             86_400_000,
         ),
+        content_filter_profile=settings.content_filter_profile,
     )
     if settings.browser_provider == "steel" and _viewer_key
     else None

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from interaction_shell import deployment_app
+from interaction_shell.content_filtering import ContentFilterProfile
 from interaction_shell.steel_viewer import SteelViewerGateway
 from interaction_shell.viewer import ViewerHTTPResponse
 
@@ -55,11 +56,13 @@ class FakeTrace:
 class FakeSteelTransport:
     def __init__(self) -> None:
         self.created: list[int] = []
+        self.block_ads: list[bool] = []
         self.released: list[str] = []
 
-    async def create_session(self, api_key: str, *, timeout_ms: int):
+    async def create_session(self, api_key: str, *, timeout_ms: int, block_ads: bool):
         assert api_key == "viewer-key"
         self.created.append(timeout_ms)
+        self.block_ads.append(block_ads)
         serial = len(self.created)
         return (
             f"provider-{serial}",
@@ -138,6 +141,38 @@ def _patch_composition(
     else:
         monkeypatch.setattr(deployment_app, "compose_target_runtime", lambda *_args, **_kwargs: _runtime())
     return surfaces, traces
+
+
+def test_deployment_filter_profile_defaults_off_and_is_typed() -> None:
+    settings = deployment_app.BrowserDeploymentSettings.from_environment({})
+
+    assert settings.content_filter_profile is ContentFilterProfile.OFF
+
+
+def test_deployment_accepts_network_filter_only_for_steel() -> None:
+    settings = deployment_app.BrowserDeploymentSettings.from_environment(
+        {
+            "INTERACTION_SHELL_BROWSER_PROVIDER": "steel",
+            "INTERACTION_SHELL_CONTENT_FILTER_PROFILE": "network_ads.v1",
+        }
+    )
+
+    assert settings.content_filter_profile is ContentFilterProfile.NETWORK_ADS
+
+    with pytest.raises(ValueError, match="local browser provider"):
+        deployment_app.BrowserDeploymentSettings.from_environment(
+            {"INTERACTION_SHELL_CONTENT_FILTER_PROFILE": "network_ads.v1"}
+        )
+
+
+def test_deployment_rejects_unknown_filter_profile() -> None:
+    with pytest.raises(ValueError, match="INTERACTION_SHELL_CONTENT_FILTER_PROFILE"):
+        deployment_app.BrowserDeploymentSettings.from_environment(
+            {
+                "INTERACTION_SHELL_BROWSER_PROVIDER": "steel",
+                "INTERACTION_SHELL_CONTENT_FILTER_PROFILE": "best-effort",
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -244,12 +279,44 @@ async def test_steel_profile_binds_runtime_and_viewer_to_one_lease_and_cleans_on
     assert len(browser_open_calls) == 1
     assert browser_open_calls[0][0] is gateway
     assert browser_open_calls[0][1].provider_session_id == "provider-1"
+    assert transport.block_ads == [False]
     await session.close()
     await session.close()
     assert [surface.close_count for surface in surfaces] == [1]
     assert [trace.flush_count for trace in traces] == [1]
     assert transport.released == ["provider-1"]
     assert gateway.project(session).kind == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_strict_filter_unavailability_is_preserved_at_public_session_open(monkeypatch):
+    surfaces, traces = _patch_composition(monkeypatch)
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=ContentFilterProfile.ADS_AND_COSMETIC,
+    )
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        deployment_app.BrowserDeploymentSettings(
+            "about:blank",
+            10,
+            90,
+            "steel",
+            ContentFilterProfile.ADS_AND_COSMETIC,
+        ),
+        {},
+        viewer_gateway=gateway,
+    )
+
+    with pytest.raises(PublicSessionOpenError) as raised:
+        await factory.open("session:strict-filter", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert raised.value.stage is PublicSessionOpenStage.ENVIRONMENT
+    assert raised.value.code == "content_filter_unavailable"
+    assert transport.created == []
+    assert surfaces == []
+    assert [trace.flush_count for trace in traces] == [1]
 
 
 @pytest.mark.asyncio

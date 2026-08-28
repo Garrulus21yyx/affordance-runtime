@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from interaction_shell.content_filtering import ContentFilterProfile
 from interaction_shell.steel_viewer import (
+    HTTPXSteelViewerTransport,
     SteelBrowserLease,
     SteelViewerGateway,
 )
@@ -14,6 +16,7 @@ from interaction_shell.viewer import ViewerHTTPResponse, ViewerUnavailable
 class FakeSteelTransport:
     def __init__(self) -> None:
         self.created: list[int] = []
+        self.block_ads: list[bool] = []
         self.released: list[str] = []
         self.ice_calls: list[tuple[str, str]] = []
         self.whep_calls: list[tuple[str, str, bytes, str, str]] = []
@@ -21,9 +24,10 @@ class FakeSteelTransport:
         self.ice_status = 200
         self.document_modes: list[bool] = []
 
-    async def create_session(self, api_key: str, *, timeout_ms: int):
+    async def create_session(self, api_key: str, *, timeout_ms: int, block_ads: bool):
         assert api_key == "viewer-key"
         self.created.append(timeout_ms)
+        self.block_ads.append(block_ads)
         serial = len(self.created)
         return (
             f"provider-{serial}",
@@ -148,6 +152,87 @@ async def test_gateway_adapts_long_shell_ttl_to_provider_session_limit() -> None
     assert lease.expires_at < shell_expiry
     assert before_open + timedelta(milliseconds=900_000) <= lease.expires_at
     assert lease.expires_at <= after_open + timedelta(milliseconds=900_000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("profile", "expected_block_ads"),
+    [
+        (ContentFilterProfile.OFF, False),
+        (ContentFilterProfile.NETWORK_ADS, True),
+    ],
+)
+async def test_gateway_maps_filter_profile_to_explicit_steel_network_policy(
+    profile: ContentFilterProfile,
+    expected_block_ads: bool,
+) -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=profile,
+    )
+
+    await gateway.open("shell-session", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert transport.block_ads == [expected_block_ads]
+
+
+@pytest.mark.asyncio
+async def test_strict_filter_profile_fails_before_steel_provider_activation() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=ContentFilterProfile.ADS_AND_COSMETIC,
+    )
+
+    with pytest.raises(ViewerUnavailable) as raised:
+        await gateway.open("shell-session", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert raised.value.code == "content_filter_unavailable"
+    assert transport.created == []
+    assert transport.block_ads == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("block_ads", [False, True])
+async def test_http_transport_never_relies_on_steel_block_ads_default(
+    monkeypatch,
+    block_ads: bool,
+) -> None:
+    transport = HTTPXSteelViewerTransport()
+    request_bodies: list[object] = []
+
+    async def request(method, url, **kwargs):
+        assert method == "POST"
+        assert url == "https://api.steel.dev/v1/sessions"
+        request_bodies.append(kwargs["json"])
+        return SimpleNamespace(
+            status_code=201,
+            json=lambda: {
+                "id": "provider-session",
+                "websocketUrl": "wss://connect.steel.dev?sessionId=provider-session",
+                "debugUrl": "https://api.steel.dev/v1/sessions/provider-session/debug",
+            },
+        )
+
+    monkeypatch.setattr(transport, "_request", request)
+
+    await transport.create_session(
+        "viewer-key",
+        timeout_ms=90_000,
+        block_ads=block_ads,
+    )
+
+    assert request_bodies == [
+        {
+            "debugConfig": {"interactive": True, "systemCursor": False},
+            "timeout": 90_000,
+            "inactivityTimeout": 90_000,
+            "blockAds": block_ads,
+        }
+    ]
 
 
 def test_gateway_rejects_provider_timeout_below_supported_minimum() -> None:

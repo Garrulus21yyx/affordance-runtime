@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import httpx
 from affordance_runtime.app.public_session import PublicRuntimeSessionHandle
 
+from .content_filtering import ContentFilterProfile
 from .viewer import (
     SurfaceAvailability,
     SurfaceChannelAvailable,
@@ -70,6 +71,7 @@ class SteelViewerTransport(Protocol):
         api_key: str,
         *,
         timeout_ms: int,
+        block_ads: bool,
     ) -> tuple[str, str, str]: ...
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None: ...
@@ -108,6 +110,7 @@ class HTTPXSteelViewerTransport:
         api_key: str,
         *,
         timeout_ms: int,
+        block_ads: bool,
     ) -> tuple[str, str, str]:
         response = await self._request(
             "POST",
@@ -117,6 +120,7 @@ class HTTPXSteelViewerTransport:
                 "debugConfig": {"interactive": True, "systemCursor": False},
                 "timeout": timeout_ms,
                 "inactivityTimeout": min(timeout_ms, 300_000),
+                "blockAds": block_ads,
             },
         )
         if response.status_code != 201:
@@ -229,24 +233,34 @@ class SteelViewerGateway:
         transport: SteelViewerTransport | None = None,
         *,
         maximum_session_timeout_ms: int = _STEEL_DEFAULT_MAX_SESSION_TIMEOUT_MS,
+        content_filter_profile: ContentFilterProfile = ContentFilterProfile.OFF,
     ) -> None:
         if not api_key.strip():
             raise ValueError("Steel viewer requires a nonempty API key")
         if maximum_session_timeout_ms < 60_000:
             raise ValueError("Steel maximum session timeout must be at least 60000 ms")
+        if not isinstance(content_filter_profile, ContentFilterProfile):
+            raise TypeError("Steel content filter profile must be typed")
         self.__api_key = api_key
         self._transport = transport or HTTPXSteelViewerTransport()
         self._maximum_session_timeout_ms = maximum_session_timeout_ms
+        self._content_filter_profile = content_filter_profile
         self._leases: dict[str, SteelBrowserLease] = {}
         self._handle_sessions: dict[int, str] = {}
 
     async def open(self, session_id: str, expires_at: datetime) -> SteelBrowserLease:
+        if self._content_filter_profile.requires_cosmetic_filtering:
+            # Strict mode is admitted only after a pinned extension can be
+            # activated and attested before navigation. Never degrade it to
+            # Steel's network-only blocker.
+            raise SteelViewerUnavailable("content_filter_unavailable")
         now = datetime.now(UTC)
         remaining_ms = max(60_000, int((expires_at - now).total_seconds() * 1000))
         provider_timeout_ms = min(remaining_ms, self._maximum_session_timeout_ms)
         provider_session_id, websocket_url, debug_url = await self._transport.create_session(
             self.__api_key,
             timeout_ms=provider_timeout_ms,
+            block_ads=self._content_filter_profile.blocks_ad_networks,
         )
         provider_expires_at = now + timedelta(milliseconds=provider_timeout_ms)
         return SteelBrowserLease(
