@@ -234,6 +234,18 @@ authority or bypass.
   World acquisition/fusion, model turn compression, provider routing, and execution are unchanged. Provider-free
   cleanup gates passed 65 grounded-Catalog tests plus 110 World/BrowserGym/visual/conformance tests; one clean live
   rerun remains the final diagnostic and must not trigger another task-specific Runtime branch.
+- 2026-08-28: Clean live run `phase8-clean10` at pushed commit `5ab057b1` stopped after three policy turns with typed
+  `invalid_tool_arguments`; formal evidence remained valid and every visual provider call/image-input counter was
+  zero. The policy read page 1 and page 2 of the complete 24-record region, then requested one batched
+  `visual_property` over 21 accumulated N-refs. By that turn the exact Catalog admitted only the four N-refs returned
+  by page 2 (plus current E-refs), so the first call was stale/oversized. Representation repair reduced the operands
+  to those four current N-refs, but the existing semantic-conservation gate correctly rejected that as more than a
+  representation-only repair. The causal gap is therefore bounded: paginated same-World ToolReturns remain visible
+  in model history while `ModelTurnDelivery` grants Catalog admission only to the latest pending ToolReturn. This can
+  strand a later batched observation or `count_children` over refs from an earlier page. It is not a VLM activation,
+  CoreLoop, Fusion, compression, or provider-routing failure. No production change follows from this diagnostic in
+  Phase 8; the next design review must resolve the same-World paginated-ref lifetime at the
+  `ModelTurnDelivery`/DeliveryManifest owner or explicitly require page-local processing before continuation.
 
 ## Files changed by this plan
 
