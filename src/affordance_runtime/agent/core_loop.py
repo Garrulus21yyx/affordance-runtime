@@ -529,11 +529,11 @@ class CoreAgentLoop:
         )
         evaluation = await self._validated_task_evaluation(task, after, after_projection)
         decision = RequestObservation(
-            "context:runtime:pause-persistence-recovery",
-            ObservationPurpose.CRITERION_VERIFICATION.value,
-            task.task_id,
-            "",
-            "refresh currentness after pause persistence failure",
+            context_id="context:runtime:pause-persistence-recovery",
+            query_id="observation-query:pause-persistence-recovery",
+            purpose=ObservationPurpose.CRITERION_VERIFICATION,
+            subject_ids=(task.task_id,),
+            public_intent="refresh currentness after pause persistence failure",
         )
         result = StepResult(
             decision,
@@ -583,11 +583,11 @@ class CoreAgentLoop:
         )
         evaluation = await self._validated_task_evaluation(task, after, after_projection)
         decision = RequestObservation(
-            "context:runtime:user-control-return",
-            ObservationPurpose.CRITERION_VERIFICATION.value,
-            task.task_id,
-            "",
-            "refresh currentness after user control",
+            context_id="context:runtime:user-control-return",
+            query_id="observation-query:user-control-return",
+            purpose=ObservationPurpose.CRITERION_VERIFICATION,
+            subject_ids=(task.task_id,),
+            public_intent="refresh currentness after user control",
         )
         result = StepResult(
             decision,
@@ -1733,28 +1733,55 @@ class CoreAgentLoop:
         decision: RequestObservation,
     ) -> StepResult:
         purpose = ObservationPurpose(decision.purpose)
-        modality = (
-            ObservationModality.VISUAL
-            if purpose in {ObservationPurpose.VISUAL_PROPERTY, ObservationPurpose.TEXT_IN_IMAGE}
-            else None
-        )
+        agent_visual_purposes = {
+            ObservationPurpose.ENTITY_DISCOVERY,
+            ObservationPurpose.TARGET_DISAMBIGUATION,
+            ObservationPurpose.VISUAL_PROPERTY,
+            ObservationPurpose.POINT_GROUNDING,
+            ObservationPurpose.TEXT_IN_IMAGE,
+            ObservationPurpose.SPATIAL_RELATIONSHIP,
+            ObservationPurpose.VISUAL_CHANGE,
+        }
+        modality = ObservationModality.VISUAL if purpose in agent_visual_purposes else None
+        assurance_subject = (decision.subject_ids or decision.candidate_ids or (task.task_id,))[0]
         need = ObservationNeed(
-            f"agent:{state.context_generation}",
-            purpose,
-            (decision.subject_id,),
-            modality,
-            _criterion_assurance(
+            need_id=decision.query_id,
+            purpose=purpose,
+            subject_ids=decision.subject_ids,
+            required_modality=modality,
+            required_assurance=(
+                ObservationAssurance.WEAK
+                if purpose in agent_visual_purposes
+                else _criterion_assurance(
                 task,
                 state.current_task_evaluation,
                 purpose,
-                decision.subject_id,
+                    assurance_subject,
+                )
             ),
             evidence_property=decision.evidence_property,
+            candidate_ids=decision.candidate_ids,
+            query_text=decision.atomic_query or decision.predicate,
+            max_results=decision.max_results,
         )
         acquisition = await environment.capture(
             WorldObservationRequest(ObservationRequestKind.POLICY_REQUEST, decision.reason, (need,))
         )
         if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
+            outcome = acquisition.query_outcome(decision.query_id)
+            if outcome is not None:
+                return StepResult(
+                    decision,
+                    state.current_world,
+                    state.current_world,
+                    state.current_task_evaluation,
+                    RunStatus.RUNNING,
+                    feedback=f"observation_{outcome.disposition.value}",
+                    before_public_world=state.canonical_world,
+                    after_public_world=state.canonical_world,
+                    after_delivery_index=state.delivery_index,
+                    observation_outcome=outcome,
+                )
             return _same_world_step(
                 state,
                 decision,
@@ -1780,6 +1807,7 @@ class CoreAgentLoop:
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
             after_delivery_index=after_index,
+            observation_outcome=acquisition.query_outcome(decision.query_id),
         )
 
     async def _select(

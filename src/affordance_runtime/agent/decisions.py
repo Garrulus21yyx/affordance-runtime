@@ -22,6 +22,8 @@ _AGENT_EVIDENCE_PURPOSES = frozenset(
         ObservationPurpose.SPATIAL_RELATIONSHIP,
         ObservationPurpose.TEXT_IN_IMAGE,
         ObservationPurpose.CRITERION_VERIFICATION,
+        ObservationPurpose.POINT_GROUNDING,
+        ObservationPurpose.VISUAL_CHANGE,
     }
 )
 MAX_FINAL_RESPONSE_CHARS = 8_000
@@ -98,30 +100,92 @@ class SelectAction:
 class RequestObservation:
     kind: ClassVar[DecisionKind] = DecisionKind.REQUEST_OBSERVATION
     context_id: str
-    purpose: str
-    subject_id: str
-    evidence_property: str
-    reason: str
-    cursor: str = ""
+    query_id: str
+    purpose: ObservationPurpose
+    subject_ids: tuple[str, ...] = ()
+    candidate_ids: tuple[str, ...] = ()
+    atomic_query: str = ""
+    predicate: str = ""
+    max_results: int = 1
+    public_intent: str = ""
     tool_call_id: str = ""
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
         _require_tool_call_id(self.tool_call_id)
-        _require_bounded(self.subject_id, 240, "observation subject")
-        if len(self.evidence_property) > 120:
-            raise ValueError("observation evidence property exceeds its bound")
-        _require_bounded(self.reason, _MAX_REASON, "observation reason")
-        if len(self.cursor) > 512:
-            raise ValueError("observation cursor exceeds its bound")
+        _require_bounded(self.query_id, 240, "observation query identity")
         try:
             purpose = ObservationPurpose(self.purpose)
         except ValueError as exc:
             raise ValueError("observation request requires a supported evidence purpose") from exc
+        object.__setattr__(self, "purpose", purpose)
         if purpose not in _AGENT_EVIDENCE_PURPOSES:
             raise ValueError("observation purpose is not admitted for Agent requests")
-        if (purpose is ObservationPurpose.VISUAL_PROPERTY) != bool(self.evidence_property):
-            raise ValueError("visual property requests require exactly one evidence property")
+        object.__setattr__(self, "subject_ids", tuple(self.subject_ids))
+        object.__setattr__(self, "candidate_ids", tuple(self.candidate_ids))
+        _require_collection(self.subject_ids, "observation subjects", item_limit=240)
+        _require_collection(self.candidate_ids, "observation candidates", item_limit=240)
+        if len(set(self.subject_ids)) != len(self.subject_ids):
+            raise ValueError("observation subjects cannot repeat")
+        if len(set(self.candidate_ids)) != len(self.candidate_ids):
+            raise ValueError("observation candidates cannot repeat")
+        if len(self.atomic_query) > 500 or len(self.predicate) > 500:
+            raise ValueError("observation query text exceeds its bound")
+        if len(self.public_intent) > 240:
+            raise ValueError("observation public intent exceeds its bound")
+        if not 1 <= self.max_results <= _MAX_COLLECTION:
+            raise ValueError("observation max results must be in [1, 32]")
+        self._validate_purpose_shape(purpose)
+
+    def _validate_purpose_shape(self, purpose: ObservationPurpose) -> None:
+        subjects = len(self.subject_ids)
+        candidates = len(self.candidate_ids)
+        atomic = bool(self.atomic_query.strip())
+        predicate = bool(self.predicate.strip())
+        if purpose is ObservationPurpose.ENTITY_DISCOVERY:
+            valid = not subjects and not candidates and atomic and not predicate
+        elif purpose is ObservationPurpose.VISUAL_PROPERTY:
+            valid = 1 <= subjects <= 32 and not candidates and not atomic and predicate
+        elif purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+            valid = not subjects and 2 <= candidates <= 32 and atomic and not predicate
+        elif purpose is ObservationPurpose.POINT_GROUNDING:
+            valid = not subjects and candidates <= 32 and atomic and not predicate
+        elif purpose is ObservationPurpose.TEXT_IN_IMAGE:
+            valid = 1 <= subjects <= 32 and not candidates and atomic and not predicate
+        elif purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
+            valid = 2 <= subjects <= 32 and not candidates and not atomic and predicate
+        elif purpose is ObservationPurpose.VISUAL_CHANGE:
+            valid = 1 <= subjects <= 32 and not candidates and not atomic and predicate
+        elif purpose is ObservationPurpose.CRITERION_VERIFICATION:
+            valid = 1 <= subjects <= 32 and not candidates and not atomic and not predicate
+        else:
+            valid = False
+        if not valid:
+            raise ValueError(f"observation request fields do not match purpose {purpose.value}")
+
+    @property
+    def subject_id(self) -> str:
+        """Read-only compatibility projection for bounded history consumers."""
+
+        return (self.subject_ids or self.candidate_ids or ("",))[0]
+
+    @property
+    def evidence_property(self) -> str:
+        """Read-only compatibility projection; the canonical field is ``predicate``."""
+
+        return self.predicate if self.purpose is ObservationPurpose.VISUAL_PROPERTY else ""
+
+    @property
+    def reason(self) -> str:
+        """Deterministic acquisition description, never a second query authority."""
+
+        return self.public_intent.strip() or f"agent requested {self.purpose.value} evidence"
+
+    @property
+    def cursor(self) -> str:
+        """Observation queries are atomic and do not carry paging cursors."""
+
+        return ""
 
 
 @dataclass(frozen=True)

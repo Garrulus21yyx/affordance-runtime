@@ -80,7 +80,7 @@ def project_step_result(
         )
     target_id = ""
     if isinstance(decision, RequestObservation):
-        target_id = decision.subject_id
+        target_id = (decision.subject_ids or decision.candidate_ids or ("",))[0]
     summary = dict(project_decision_summary(decision))
     if information_delta is not None:
         summary["information_delta"] = information_delta.kind.value
@@ -213,10 +213,14 @@ def _historical_value(value: object) -> object:
 def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
     if isinstance(decision, RequestObservation):
         return {
-            "subject_id": _bounded(decision.subject_id),
-            "purpose": decision.purpose,
-            "evidence_property": decision.evidence_property,
-            "reason": _bounded(decision.reason),
+            "query_id": _bounded(decision.query_id),
+            "purpose": decision.purpose.value,
+            "subject_ids": tuple(_bounded(item) for item in decision.subject_ids),
+            "candidate_ids": tuple(_bounded(item) for item in decision.candidate_ids),
+            "atomic_query": _bounded(decision.atomic_query),
+            "predicate": _bounded(decision.predicate),
+            "max_results": decision.max_results,
+            "public_intent": _bounded(decision.public_intent),
         }
     if isinstance(decision, RequestActionPage):
         return {"query": decision.query}

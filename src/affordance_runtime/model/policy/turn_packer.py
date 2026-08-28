@@ -18,7 +18,10 @@ from affordance_runtime.model.policy.canonical_provider_envelope import (
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.grounded_tool_catalog import compile_grounded_action_catalog
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import (
+    DecisionPerceptionProfile,
+    ObservationToolExposureProfile,
+)
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
 from affordance_runtime.model.policy.request_admission import (
     AdmittedProviderEnvelope,
@@ -68,6 +71,7 @@ class TurnPacker:
         call_profile: ActionPolicyCallProfile,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
+        observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
         request_timeout_s: float | None = None,
         history_messages: tuple[object, ...] = (),
         pending_tool_call_id: str = "",
@@ -93,6 +97,7 @@ class TurnPacker:
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
+            observation_tool_profile=observation_tool_profile,
             request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=0,
@@ -155,6 +160,7 @@ class TurnPacker:
                 include_images=include_images,
                 supports_multimodal=supports_multimodal,
                 perception_profile=perception_profile,
+                observation_tool_profile=observation_tool_profile,
                 request_timeout_s=request_timeout_s,
                 admitted_records=required,
                 backoff_count=0,
@@ -188,6 +194,7 @@ class TurnPacker:
                         include_images=include_images,
                         supports_multimodal=supports_multimodal,
                         perception_profile=perception_profile,
+                        observation_tool_profile=observation_tool_profile,
                         request_timeout_s=request_timeout_s,
                         admitted_records=tentative,
                         backoff_count=0,
@@ -222,6 +229,7 @@ class TurnPacker:
             include_images=include_images,
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
+            observation_tool_profile=observation_tool_profile,
             request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=backoffs,
@@ -250,6 +258,7 @@ class TurnPacker:
         include_images: bool,
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
+        observation_tool_profile: ObservationToolExposureProfile,
         request_timeout_s: float | None,
         admitted_records: dict[str, int],
         backoff_count: int,
@@ -267,7 +276,11 @@ class TurnPacker:
             pending_tool_call_id=pending_tool_call_id,
             pending_tool_name=pending_tool_name,
         )
-        catalog = compile_grounded_action_catalog(request.agent_context, delivery)
+        catalog = compile_grounded_action_catalog(
+            request.agent_context,
+            delivery,
+            observation_tool_profile,
+        )
         envelope = binder.bind(
             request,
             delivery,

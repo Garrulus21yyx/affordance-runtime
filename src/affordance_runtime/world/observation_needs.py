@@ -18,6 +18,8 @@ class ObservationPurpose(StrEnum):
     VISUAL_PROPERTY = "visual_property"
     SPATIAL_RELATIONSHIP = "spatial_relationship"
     TEXT_IN_IMAGE = "text_in_image"
+    POINT_GROUNDING = "point_grounding"
+    VISUAL_CHANGE = "visual_change"
 
 
 class FreshnessRequirement(StrEnum):
@@ -34,6 +36,9 @@ class ObservationNeed:
     required_assurance: ObservationAssurance = ObservationAssurance.WEAK
     freshness: FreshnessRequirement = FreshnessRequirement.FRESH_ACQUISITION
     evidence_property: str = ""
+    candidate_ids: tuple[str, ...] = ()
+    query_text: str = ""
+    max_results: int = 1
 
     def __post_init__(self) -> None:
         if not self.need_id.strip() or len(self.need_id) > 240:
@@ -45,6 +50,11 @@ class ObservationNeed:
             raise ValueError("observation need subjects must be bounded identities")
         if len(set(self.subject_ids)) != len(self.subject_ids):
             raise ValueError("observation need subjects cannot repeat")
+        object.__setattr__(self, "candidate_ids", tuple(self.candidate_ids))
+        if any(not item.strip() or len(item) > 240 for item in self.candidate_ids):
+            raise ValueError("observation need candidates must be bounded identities")
+        if len(set(self.candidate_ids)) != len(self.candidate_ids):
+            raise ValueError("observation need candidates cannot repeat")
         if self.required_modality is not None and not isinstance(
             self.required_modality, ObservationModality
         ):
@@ -55,6 +65,10 @@ class ObservationNeed:
             raise TypeError("observation freshness requirement must be typed")
         if len(self.evidence_property) > 120:
             raise ValueError("observation evidence property exceeds its bound")
+        if len(self.query_text) > 500:
+            raise ValueError("observation query text exceeds its bound")
+        if not 1 <= self.max_results <= 32:
+            raise ValueError("observation max results must be in [1, 32]")
         if (
             self.purpose is ObservationPurpose.VISUAL_PROPERTY
         ) != bool(self.evidence_property):

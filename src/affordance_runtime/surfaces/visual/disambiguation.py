@@ -121,7 +121,7 @@ class OpenAICompatibleVisualCandidateDisambiguator:
                             "type": "text",
                             "text": (
                                 f"Selection mode: {request.evidence_need.value}. "
-                                f"Overall goal: {json.dumps(request.instruction, ensure_ascii=False)}. "
+                                f"Atomic visual query: {json.dumps(request.instruction, ensure_ascii=False)}. "
                                 f"Candidates: {json.dumps(inventory, ensure_ascii=False, separators=(',', ':'))}. "
                                 "Return one supplied ref for the current atomic "
                                 "interaction, or null."

@@ -26,6 +26,11 @@ from affordance_runtime.surfaces.visual.grounding import (
     VisualRegion,
     VisualRegionProposalRequest,
 )
+from affordance_runtime.surfaces.visual.predicate_classification import (
+    PredicateTruth,
+    VisualPredicateClassification,
+    VisualPredicateClassificationRequest,
+)
 from affordance_runtime.world import (
     ObservationAssurance,
     ObservationModality,
@@ -35,6 +40,7 @@ from affordance_runtime.world import (
     SourceAcquisitionStatus,
     WorldObservationRequest,
 )
+from affordance_runtime.world.observation_outcomes import ObservationQueryDisposition
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -92,6 +98,25 @@ class _CandidateDisambiguator:
     def choose(self, request: VisualCandidateDisambiguationRequest) -> str | None:
         self.calls.append(request)
         return self.selected_ref
+
+
+@dataclass
+class _PredicateClassifier:
+    truths: tuple[PredicateTruth, ...]
+    calls: list[VisualPredicateClassificationRequest] = field(default_factory=list)
+    provider: str = "fixture"
+    model: str = "fixture"
+    prompt_version: str = "fixture-v1"
+
+    def classify(
+        self,
+        request: VisualPredicateClassificationRequest,
+    ) -> tuple[VisualPredicateClassification, ...]:
+        self.calls.append(request)
+        return tuple(
+            VisualPredicateClassification(candidate.ref, truth, 0.9)
+            for candidate, truth in zip(request.candidates, self.truths, strict=True)
+        )
 
 
 def _raw(*, shade: int = 255):
@@ -202,6 +227,76 @@ def _candidate_raw(*boxes: tuple[int, int, int, int]) -> dict[str, object]:
         assert isinstance(item, dict)
         item["bbox"] = list(bbox)
     return raw
+
+
+def _predicate_request(subject_ids: tuple[str, ...]) -> WorldObservationRequest:
+    return WorldObservationRequest(
+        ObservationRequestKind.POLICY_REQUEST,
+        "verify the current visual state",
+        (
+            ObservationNeed(
+                need_id="observation-query:predicate",
+                purpose=ObservationPurpose.VISUAL_PROPERTY,
+                subject_ids=subject_ids,
+                required_modality=ObservationModality.VISUAL,
+                required_assurance=ObservationAssurance.WEAK,
+                evidence_property="visually selected",
+                query_text="visually selected",
+            ),
+        ),
+    )
+
+
+def test_visual_predicate_batch_returns_partial_typed_outcome_and_aligned_fact() -> None:
+    async def scenario() -> None:
+        raw = _candidate_raw((10, 10, 30, 20), (60, 10, 30, 20))
+        fake = FakeBrowserGym(raw)
+        classifier = _PredicateClassifier((PredicateTruth.TRUE, PredicateTruth.UNKNOWN))
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: fake,
+            visual_predicate_classifier=classifier,
+        )
+        try:
+            initial = await environment.reset(task)
+            assert initial.observation is not None
+            subject_ids = tuple(
+                item.target_id for item in initial.observation.targets if item.role == "button"
+            )
+            assert len(subject_ids) == 2
+            assert ObservationPurpose.VISUAL_PROPERTY in next(
+                item for item in environment.observation_offers if item.source == "browsergym_visual"
+            ).supported_purposes
+
+            acquired = await environment.capture(_predicate_request(subject_ids))
+        finally:
+            await environment.close()
+
+        assert acquired.observation is not None
+        outcome = acquired.query_outcome("observation-query:predicate")
+        assert outcome is not None
+        assert outcome.disposition is ObservationQueryDisposition.PARTIAL
+        assert tuple(item.locator.input_indices for item in outcome.unknown_items) == ((1,),)
+        assert len(classifier.calls) == 1
+        assert tuple(item.target_id for item in classifier.calls[0].candidates) == subject_ids
+        assert environment.visual_predicate_classifier_calls == 1
+        assert environment.visual_predicate_assessment_count == 2
+        predicate_facts = tuple(
+            fact for fact in acquired.observation.facts if fact.predicate == "visually selected"
+        )
+        assert tuple((fact.subject_id, fact.value) for fact in predicate_facts) == (
+            (outcome.observed_subject_ids[0], True),
+        )
+        assert not any(
+            fact.subject_id == subject_ids[1] and fact.predicate == "visually selected"
+            for fact in acquired.observation.facts
+        )
+        assert not any(
+            binding.surface == "browsergym_visual" for binding in acquired.observation.bindings
+        )
+
+    asyncio.run(scenario())
 
 
 def test_disambiguation_candidates_are_current_viewport_scoped_and_clipped() -> None:
@@ -595,7 +690,8 @@ def test_visual_observation_capability_remains_explicitly_requestable() -> None:
             assert isinstance(decision, GroundedActionResolution)
             assert isinstance(decision.decision, RequestObservation)
             assert decision.decision.purpose == "entity_discovery"
-            assert decision.decision.subject_id == "current_world"
+            assert decision.decision.subject_ids == ()
+            assert decision.decision.atomic_query == "discover relevant visible entities"
         finally:
             await environment.close()
 

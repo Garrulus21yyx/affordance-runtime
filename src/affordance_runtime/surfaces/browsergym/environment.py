@@ -90,7 +90,10 @@ from affordance_runtime.surfaces.browsergym.visual_projection import (
     project_browsergym_visual_source,
 )
 from affordance_runtime.surfaces.visual.currentness import visual_binding_is_current
-from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
+from affordance_runtime.surfaces.visual.disambiguation import (
+    VisualCandidate,
+    VisualCandidateDisambiguatorPort,
+)
 from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
     VisualProviderFailure,
@@ -99,19 +102,40 @@ from affordance_runtime.surfaces.visual.grounding import (
     VisualRegionProposerPort,
     classify_visual_provider_failure,
 )
-from affordance_runtime.surfaces.visual.predicate_classification import VisualPredicateClassifierPort
+from affordance_runtime.surfaces.visual.predicate_classification import (
+    PredicateTruth,
+    VisualPredicateClassification,
+    VisualPredicateClassificationRequest,
+    VisualPredicateClassifierPort,
+)
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
+    CoverageState,
+    EntityAlignmentBasis,
+    EntityAlignmentProposal,
     ObservationOffer,
     ObservationPurpose,
     SelectedObservationRequest,
     SelectedObservationResult,
+    SemanticTarget,
     SourceAcquisitionStatus,
+    SourceEntityEndpoint,
+    StateFact,
+    SurfaceObservation,
     VisionEvidenceNeed,
 )
 from affordance_runtime.world.finalization import (
     PLAIN_TEXT_FINAL_RESPONSE_CODEC,
     FinalResponseCodec,
+)
+from affordance_runtime.world.observation_outcomes import (
+    InputLocator,
+    ObservationObservedItem,
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+    ObservationUnknownItem,
+    VisualQueryFailureReason,
+    VisualUnknownReason,
 )
 
 
@@ -344,6 +368,10 @@ class BrowserGymSurfaceAdapter:
             )
         if self.visual_candidate_disambiguator is not None or self.marked_candidate_policy_available:
             visual_purposes.append(ObservationPurpose.TARGET_DISAMBIGUATION)
+        if self.visual_predicate_classifier is not None:
+            visual_purposes.append(ObservationPurpose.VISUAL_PROPERTY)
+        if self.visual_point_grounder is not None:
+            visual_purposes.append(ObservationPurpose.POINT_GROUNDING)
         return (
             ObservationOffer("browsergym", "structural", "structural", "medium", group),
             ObservationOffer(
@@ -941,7 +969,11 @@ class BrowserGymSurfaceAdapter:
                     self._pending_raw,
                     observation_id=visual_observation_id,
                     acquisition_root_id=self._pending_observation_id,
-                    instruction=self._task.instruction,
+                    instruction=_visual_query_text(
+                        request,
+                        ObservationPurpose.TARGET_DISAMBIGUATION,
+                        "disambiguate the supplied current candidates",
+                    ),
                     structured_source=projection.source,
                     disambiguator=self.visual_candidate_disambiguator,
                     evidence_need=VisionEvidenceNeed.SINGLE_TARGET_DISAMBIGUATION,
@@ -954,6 +986,11 @@ class BrowserGymSurfaceAdapter:
                 if target_disambiguated:
                     self.visual_disambiguator_selection_count += 1
                     self.visual_correspondence_matched_count += 1
+            elif visual_purpose is ObservationPurpose.VISUAL_PROPERTY:
+                assert self.visual_predicate_classifier is not None
+                result = self._project_visual_predicate_request(request, projection)
+                self.visual_source_acquired_count += 1
+                return result
             else:
                 if self.visual_region_proposer is not None:
                     self.visual_proposer_calls += 1
@@ -964,14 +1001,26 @@ class BrowserGymSurfaceAdapter:
                     page_identity=self._page_identity,
                     episode_identity=self._episode_identity,
                     task=self._task,
+                    visual_query=_visual_query_text(
+                        request,
+                        visual_purpose,
+                        "inspect the current visible interface",
+                    ),
                     proposer=self.visual_region_proposer,
-                    point_grounder=None,
+                    point_grounder=(
+                        self.visual_point_grounder
+                        if visual_purpose is ObservationPurpose.POINT_GROUNDING
+                        else None
+                    ),
                     structured_source=projection.source,
                 )
                 visual_source = visual.source
                 visual_private_bindings = visual.private_bindings
                 if visual.provider_failure is not None:
                     self._record_visual_provider_failure(visual.provider_failure)
+                if visual.point_grounding_attempted:
+                    self.visual_point_grounder_calls += 1
+                    self.visual_point_grounder_success_count += int(visual.point_grounding_succeeded)
                 self._record_correspondence_metrics(visual.correspondence_decisions)
             if visual_private_bindings:
                 self.bindings.replace((*self.bindings.values, *visual_private_bindings))
@@ -1002,17 +1051,180 @@ class BrowserGymSurfaceAdapter:
                 and not disambiguation_provider_invoked
             ):
                 self.visual_disambiguator_calls += 1
+            purpose = self._visual_purpose(request)
             stage = (
                 VisualProviderStage.CANDIDATE_DISAMBIGUATION
-                if self._visual_purpose(request) is ObservationPurpose.TARGET_DISAMBIGUATION
+                if purpose is ObservationPurpose.TARGET_DISAMBIGUATION
                 and self.visual_candidate_disambiguator is not None
+                else VisualProviderStage.PREDICATE_CLASSIFICATION
+                if purpose is ObservationPurpose.VISUAL_PROPERTY
+                else VisualProviderStage.POINT_GROUNDING
+                if purpose is ObservationPurpose.POINT_GROUNDING
                 else VisualProviderStage.REGION_PROPOSAL
             )
             failure = classify_visual_provider_failure(stage, exc)
             self._record_visual_provider_failure(failure)
-            return SelectedObservationResult.failed(
-                request, SourceAcquisitionStatus.FAILED, failure.reason_code
+            failed_outcomes = tuple(
+                ObservationQueryOutcome(
+                    item.need_id,
+                    item.purpose,
+                    ObservationQueryDisposition.FAILED,
+                    failure_reason=_query_failure_reason(failure.code),
+                )
+                for item in request.needs
+                if item.purpose in {
+                    ObservationPurpose.ENTITY_DISCOVERY,
+                    ObservationPurpose.TARGET_DISAMBIGUATION,
+                    ObservationPurpose.VISUAL_PROPERTY,
+                    ObservationPurpose.POINT_GROUNDING,
+                    ObservationPurpose.TEXT_IN_IMAGE,
+                    ObservationPurpose.SPATIAL_RELATIONSHIP,
+                    ObservationPurpose.VISUAL_CHANGE,
+                }
             )
+            return SelectedObservationResult.failed(
+                request,
+                SourceAcquisitionStatus.FAILED,
+                failure.reason_code,
+                query_outcomes=failed_outcomes,
+            )
+
+    def _project_visual_predicate_request(
+        self,
+        request: SelectedObservationRequest,
+        projection: BrowserGymProjection,
+    ) -> SelectedObservationResult:
+        assert self._pending_raw is not None and self.visual_predicate_classifier is not None
+        classifier = self.visual_predicate_classifier
+        needs = tuple(item for item in request.needs if item.purpose is ObservationPurpose.VISUAL_PROPERTY)
+        if len(needs) != 1:
+            raise ValueError("visual predicate acquisition requires one typed query")
+        need = needs[0]
+        observation_id = f"{self._pending_observation_id}:visual-predicate"
+        frame = browsergym_visual_frame(self._pending_raw, observation_id)
+        structured_targets = {item.target_id: item for item in projection.source.targets}
+        boxes = {
+            region.target_id: region.bbox
+            for media in projection.source.media
+            for region in media.grounding_regions
+        }
+        candidates: list[VisualCandidate] = []
+        input_index_by_ref: dict[str, int] = {}
+        for index, subject_id in enumerate(need.subject_ids):
+            target = structured_targets.get(subject_id)
+            bbox = boxes.get(subject_id)
+            if target is None or bbox is None:
+                continue
+            ref = f"E{len(candidates) + 1}"
+            candidates.append(
+                VisualCandidate(ref, subject_id, target.role, target.label, bbox, target.state)
+            )
+            input_index_by_ref[ref] = index
+
+        assessments: tuple[VisualPredicateClassification, ...] = ()
+        if candidates:
+            self.visual_predicate_classifier_calls += 1
+            assessments = classifier.classify(
+                VisualPredicateClassificationRequest(
+                    need.need_id,
+                    frame.image_bytes,
+                    (frame.image_width, frame.image_height),
+                    need.evidence_property,
+                    tuple(candidates),
+                )
+            )
+            self.visual_predicate_assessment_count += len(assessments)
+        by_ref = {item.ref: item for item in assessments}
+        observed_items: list[ObservationObservedItem] = []
+        unknown_items: list[ObservationUnknownItem] = []
+        visual_targets: list[SemanticTarget] = []
+        facts: list[StateFact] = []
+        proposals: list[EntityAlignmentProposal] = []
+        candidate_by_ref = {item.ref: item for item in candidates}
+        visible_indices = set(input_index_by_ref.values())
+        for index, _subject_id in enumerate(need.subject_ids):
+            if index not in visible_indices:
+                unknown_items.append(
+                    ObservationUnknownItem(
+                        InputLocator((index,)),
+                        VisualUnknownReason.PROPERTY_NOT_OBSERVABLE,
+                    )
+                )
+        for ref, index in input_index_by_ref.items():
+            candidate = candidate_by_ref[ref]
+            assessment = by_ref[ref]
+            if assessment.truth is PredicateTruth.UNKNOWN:
+                unknown_items.append(
+                    ObservationUnknownItem(
+                        InputLocator((index,)),
+                        VisualUnknownReason.PROPERTY_NOT_OBSERVABLE,
+                    )
+                )
+                continue
+            local_id = f"visual-predicate:{index}"
+            value = assessment.truth is PredicateTruth.TRUE
+            fact_id = f"fact:{observation_id}:{index}:{need.evidence_property}"
+            visual_targets.append(
+                SemanticTarget(local_id, candidate.role, candidate.label, {need.evidence_property: value})
+            )
+            facts.append(StateFact(fact_id, local_id, need.evidence_property, value, observation_id))
+            proposals.append(
+                EntityAlignmentProposal(
+                    f"proposal:{observation_id}:{index}",
+                    SourceEntityEndpoint(observation_id, local_id),
+                    SourceEntityEndpoint(projection.source.observation_id, candidate.target_id),
+                    EntityAlignmentBasis.EXPLICIT_PROVIDER_CORRESPONDENCE,
+                    (fact_id,),
+                    assessment.confidence,
+                )
+            )
+            observed_items.append(
+                ObservationObservedItem(
+                    InputLocator((index,)),
+                    (candidate.target_id,),
+                    (fact_id,),
+                )
+            )
+
+        screenshot = project_browsergym_screenshot_source(
+            self._pending_raw,
+            observation_id=observation_id,
+            acquisition_root_id=self._pending_observation_id,
+        )
+        source = SurfaceObservation(
+            observation_id,
+            "browsergym_visual",
+            frame.source_revision,
+            screenshot.source_profile,
+            tuple(visual_targets),
+            tuple(facts),
+            (),
+            CoverageState.COMPLETE,
+            {"screenshot_semantic_state": {"public_summary": "Bounded visual predicate evidence."}},
+            media=screenshot.media,
+            acquisition_root_id=self._pending_observation_id,
+            alignment_proposals=tuple(proposals),
+        )
+        disposition = (
+            ObservationQueryDisposition.PARTIAL
+            if observed_items and unknown_items
+            else ObservationQueryDisposition.OBSERVED
+            if observed_items
+            else ObservationQueryDisposition.UNKNOWN
+        )
+        outcome = ObservationQueryOutcome(
+            need.need_id,
+            need.purpose,
+            disposition,
+            tuple(observed_items),
+            tuple(unknown_items),
+        )
+        return SelectedObservationResult.acquired(
+            request,
+            source,
+            fulfilled_need_ids=(need.need_id,),
+            query_outcomes=(outcome,),
+        )
 
     @staticmethod
     def _fulfilled_visual_needs(
@@ -1054,6 +1266,8 @@ class BrowserGymSurfaceAdapter:
         purposes = {need.purpose for need in request.needs}
         for purpose in (
             ObservationPurpose.TARGET_DISAMBIGUATION,
+            ObservationPurpose.VISUAL_PROPERTY,
+            ObservationPurpose.POINT_GROUNDING,
             ObservationPurpose.ENTITY_DISCOVERY,
             ObservationPurpose.EFFECT_VERIFICATION,
             ObservationPurpose.CRITERION_VERIFICATION,
@@ -1391,3 +1605,26 @@ def _focused_bid_is_current(raw: dict[str, object], private_bid: str) -> bool:
     except (BrowserGymSemanticError, RuntimeError):
         return False
     return bool(live and dict(live.public_state).get("focused") is True)
+
+
+def _query_failure_reason(code: VisualProviderFailureCode) -> VisualQueryFailureReason:
+    if code is VisualProviderFailureCode.TRANSPORT:
+        return VisualQueryFailureReason.TRANSPORT
+    if code is VisualProviderFailureCode.STRUCTURED_OUTPUT:
+        return VisualQueryFailureReason.STRUCTURED_OUTPUT
+    return VisualQueryFailureReason.PROVIDER_ERROR
+
+
+def _visual_query_text(
+    request: SelectedObservationRequest,
+    purpose: ObservationPurpose,
+    fallback: str,
+) -> str:
+    return next(
+        (
+            item.query_text.strip()
+            for item in request.needs
+            if item.purpose is purpose and item.query_text.strip()
+        ),
+        fallback,
+    )

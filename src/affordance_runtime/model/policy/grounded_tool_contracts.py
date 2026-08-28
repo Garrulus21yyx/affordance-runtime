@@ -71,6 +71,8 @@ class GroundedToolCatalog:
     delivery_index: WorldDeliveryIndex
     tools: tuple[RegisteredGroundedTool, ...]
     serialized_bytes: int
+    observation_tool_profile_id: str = "compatibility.v1"
+    observation_tool_profile_digest: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -89,6 +91,8 @@ class GroundedToolCatalog:
             or self.serialized_bytes <= 0
         ):
             raise ValueError("grounded catalog registrations are invalid")
+        if not self.observation_tool_profile_id.strip():
+            raise ValueError("grounded catalog requires an observation tool profile")
         object.__setattr__(self, "tools", tuple(self.tools))
 
     @property

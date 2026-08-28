@@ -39,6 +39,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
     RegisteredGroundedTool,
 )
+from affordance_runtime.model.policy.perception import ObservationToolExposureProfile
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
@@ -74,18 +75,34 @@ class _FindControlsBinding:
 class _EvidenceBinding:
     purposes: tuple[str, ...]
     subjects: Mapping[str, str]
+    profile: ObservationToolExposureProfile
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
-        purpose = str(arguments["purpose"])
-        subject_ref = str(arguments["subject"])
-        evidence_property = str(arguments.get("property", ""))
+        purpose = ObservationPurpose(str(arguments["purpose"]))
         try:
+            if purpose.value not in self.purposes:
+                raise ValueError("observation purpose was not offered by this Catalog")
+            query_id = _observation_query_id(context_id, tool_call_id, arguments)
+            if self.profile is ObservationToolExposureProfile.COMPATIBILITY:
+                return self._resolve_compatibility(
+                    arguments,
+                    context_id=context_id,
+                    query_id=query_id,
+                    purpose=purpose,
+                    tool_call_id=tool_call_id,
+                )
+            subject_ids = self._resolve_refs(arguments.get("subject_refs", ()))
+            candidate_ids = self._resolve_refs(arguments.get("candidate_refs", ()))
             return RequestObservation(
-                context_id,
-                purpose,
-                self.subjects[subject_ref],
-                evidence_property,
-                f"agent declared {purpose} evidence gap",
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                subject_ids=subject_ids,
+                candidate_ids=candidate_ids,
+                atomic_query=str(arguments.get("atomic_query", "")).strip(),
+                predicate=str(arguments.get("predicate", "")).strip(),
+                max_results=int(arguments.get("max_results", 1)),
+                public_intent=str(arguments.get("public_intent", "")).strip(),
                 tool_call_id=tool_call_id,
             )
         except (KeyError, ValueError) as exc:
@@ -93,6 +110,82 @@ class _EvidenceBinding:
                 GroundedToolResolutionCode.INVALID_ARGUMENTS,
                 str(exc),
             ) from exc
+
+    def _resolve_refs(self, raw_refs: object) -> tuple[str, ...]:
+        if not isinstance(raw_refs, list | tuple):
+            raise ValueError("observation refs must be an array")
+        refs = tuple(str(item) for item in raw_refs)
+        if len(set(refs)) != len(refs) or any(item not in self.subjects for item in refs):
+            raise ValueError("observation refs must be unique current DeliveryManifest refs")
+        return tuple(self.subjects[item] for item in refs)
+
+    def _resolve_compatibility(
+        self,
+        arguments: Mapping[str, object],
+        *,
+        context_id: str,
+        query_id: str,
+        purpose: ObservationPurpose,
+        tool_call_id: str,
+    ) -> RequestObservation:
+        subject_ref = str(arguments["subject"])
+        subject_id = self.subjects[subject_ref]
+        if purpose is ObservationPurpose.ENTITY_DISCOVERY:
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                atomic_query="discover relevant visible entities",
+                max_results=1,
+                tool_call_id=tool_call_id,
+            )
+        if purpose is ObservationPurpose.VISUAL_PROPERTY:
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                subject_ids=(subject_id,),
+                predicate=str(arguments["property"]),
+                tool_call_id=tool_call_id,
+            )
+        if purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
+            candidates = tuple(value for ref, value in self.subjects.items() if ref != "current_world")
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                candidate_ids=candidates,
+                atomic_query="disambiguate the current visible candidates",
+                tool_call_id=tool_call_id,
+            )
+        if purpose is ObservationPurpose.TEXT_IN_IMAGE:
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                subject_ids=(subject_id,),
+                atomic_query="read relevant visible text",
+                tool_call_id=tool_call_id,
+            )
+        if purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
+            subjects = tuple(value for ref, value in self.subjects.items() if ref != "current_world")
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                subject_ids=subjects,
+                predicate="determine the relevant spatial relationship",
+                tool_call_id=tool_call_id,
+            )
+        if purpose is ObservationPurpose.CRITERION_VERIFICATION:
+            return RequestObservation(
+                context_id=context_id,
+                query_id=query_id,
+                purpose=purpose,
+                subject_ids=(subject_id,),
+                tool_call_id=tool_call_id,
+            )
+        raise ValueError("purpose is unavailable in compatibility observation schema")
 
 
 @dataclass(frozen=True)
@@ -237,6 +330,7 @@ def compile_grounded_tool_catalog(
     context: AgentContext,
     phase: GroundedToolPhase,
     delivery: ModelTurnDelivery,
+    observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
 ) -> GroundedToolCatalog:
     if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -254,12 +348,16 @@ def compile_grounded_tool_catalog(
             GroundedToolResolutionCode.STALE_CATALOG,
             "ModelTurnDelivery belongs to another World",
         )
+    observation_tool_profile = ObservationToolExposureProfile(observation_tool_profile)
     registered: list[RegisteredGroundedTool] = []
 
     purposes: set[str] = set()
     for capability in context.actor_world.observation_capabilities:
         if _observation_tool_needed(context, capability):
-            purposes.update(set(capability["purposes"]) & _AGENT_PURPOSES)
+            purposes.update(
+                set(capability["purposes"])
+                & _purposes_for_exposure_profile(observation_tool_profile)
+            )
     if purposes:
         refs = {
             ref: subject
@@ -268,16 +366,28 @@ def compile_grounded_tool_catalog(
         }
         subjects = {"current_world": "current_world", **refs}
         ordered_purposes = tuple(sorted(purposes))
-        registered.append(
-            RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.REQUEST_EVIDENCE.value,
-                    "Request missing current-world evidence; Runtime chooses how to obtain it.",
-                    _evidence_request_schema(ordered_purposes, subjects),
-                ),
-                _EvidenceBinding(ordered_purposes, subjects),
+        if observation_tool_profile is ObservationToolExposureProfile.DYNAMIC_VISUAL:
+            ordered_purposes = tuple(
+                item
+                for item in ordered_purposes
+                if _dynamic_purpose_applicable(item, context, delivery, refs)
             )
-        )
+        if ordered_purposes:
+            schema = (
+                _compatibility_evidence_request_schema(ordered_purposes, subjects)
+                if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
+                else _dynamic_evidence_request_schema(ordered_purposes, refs)
+            )
+            registered.append(
+                RegisteredGroundedTool(
+                    ToolSpec(
+                        GroundedLocalToolName.REQUEST_EVIDENCE.value,
+                        "Request missing current-world evidence; Runtime chooses how to obtain it.",
+                        schema,
+                    ),
+                    _EvidenceBinding(ordered_purposes, subjects, observation_tool_profile),
+                )
+            )
 
     registered.extend(
         RegisteredGroundedTool(
@@ -503,13 +613,20 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
-    return _catalog_from_registrations(context, delivery, tuple(registered))
+    return _catalog_from_registrations(
+        context,
+        delivery,
+        tuple(registered),
+        observation_tool_profile=observation_tool_profile,
+    )
 
 
 def _catalog_from_registrations(
     context: AgentContext,
     delivery: ModelTurnDelivery,
     registered: tuple[RegisteredGroundedTool, ...],
+    *,
+    observation_tool_profile: ObservationToolExposureProfile,
 ) -> GroundedToolCatalog:
     names = tuple(tool.spec.name for tool in registered)
     if len(names) != len(set(names)):
@@ -530,7 +647,9 @@ def _catalog_from_registrations(
     encoded_bytes = len(encoded.encode())
     if len(specs) > MAX_GROUNDED_TOOL_COUNT:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
-    digest = hashlib.sha256(f"{context.context_id}\0{delivery.delivery_id}\0{encoded}".encode()).hexdigest()[:32]
+    digest = hashlib.sha256(
+        f"{context.context_id}\0{delivery.delivery_id}\0{observation_tool_profile.digest}\0{encoded}".encode()
+    ).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
     return GroundedToolCatalog(
         catalog_id,
@@ -540,17 +659,21 @@ def _catalog_from_registrations(
         context.region_index,
         registered,
         encoded_bytes,
+        observation_tool_profile.value,
+        observation_tool_profile.digest,
     )
 
 
 def compile_grounded_action_catalog(
     context: AgentContext,
     delivery: ModelTurnDelivery,
+    observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
 ) -> GroundedToolCatalog:
     return compile_grounded_tool_catalog(
         context,
         GroundedToolPhase.ACTION_SELECTION,
         delivery,
+        observation_tool_profile,
     )
 
 
@@ -625,7 +748,7 @@ def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
 
 
-def _evidence_request_schema(
+def _compatibility_evidence_request_schema(
     purposes: tuple[str, ...],
     subjects: Mapping[str, str],
 ) -> Mapping[str, object]:
@@ -676,6 +799,135 @@ def _evidence_request_schema(
     return {"oneOf": variants}
 
 
+def _dynamic_evidence_request_schema(
+    purposes: tuple[str, ...],
+    subjects: Mapping[str, str],
+) -> Mapping[str, object]:
+    refs = sorted(subjects)
+    ref_items = {
+        "type": "string",
+        "description": "current readable E/N ref from this delivery",
+        "enum": refs,
+    }
+    public_intent = {
+        "type": "string",
+        "description": "optional short user-visible intent",
+        "minLength": 1,
+        "maxLength": 240,
+    }
+    atomic_query = {
+        "type": "string",
+        "description": "one bounded visual question, never the overall task goal",
+        "minLength": 1,
+        "maxLength": 500,
+    }
+    predicate = {
+        "type": "string",
+        "description": "one bounded observable predicate",
+        "minLength": 1,
+        "maxLength": 500,
+    }
+
+    def ref_array(minimum: int) -> Mapping[str, object]:
+        return {
+            "type": "array",
+            "description": "ordered unique current refs",
+            "items": ref_items,
+            "minItems": minimum,
+            "maxItems": min(32, len(refs)),
+        }
+
+    variants: list[Mapping[str, object]] = []
+    for purpose in purposes:
+        purpose_schema = {"type": "string", "enum": [purpose]}
+        properties: dict[str, object] = {
+            "purpose": purpose_schema,
+            "public_intent": public_intent,
+        }
+        required = ["purpose"]
+        if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
+            properties.update(
+                {
+                    "atomic_query": atomic_query,
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 32},
+                }
+            )
+            required.extend(("atomic_query", "max_results"))
+        elif purpose == ObservationPurpose.VISUAL_PROPERTY.value:
+            properties.update({"subject_refs": ref_array(1), "predicate": predicate})
+            required.extend(("subject_refs", "predicate"))
+        elif purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
+            properties.update({"candidate_refs": ref_array(2), "atomic_query": atomic_query})
+            required.extend(("candidate_refs", "atomic_query"))
+        elif purpose == ObservationPurpose.POINT_GROUNDING.value:
+            properties["atomic_query"] = atomic_query
+            if refs:
+                properties["candidate_refs"] = ref_array(1)
+            required.append("atomic_query")
+        elif purpose == ObservationPurpose.TEXT_IN_IMAGE.value:
+            properties.update({"subject_refs": ref_array(1), "atomic_query": atomic_query})
+            required.extend(("subject_refs", "atomic_query"))
+        elif purpose == ObservationPurpose.SPATIAL_RELATIONSHIP.value:
+            properties.update({"subject_refs": ref_array(2), "predicate": predicate})
+            required.extend(("subject_refs", "predicate"))
+        elif purpose == ObservationPurpose.VISUAL_CHANGE.value:
+            properties.update({"subject_refs": ref_array(1), "predicate": predicate})
+            required.extend(("subject_refs", "predicate"))
+        else:  # pragma: no cover - guarded by the typed exposure set
+            raise ValueError(f"unsupported dynamic observation purpose: {purpose}")
+        variants.append(_object_schema(properties, tuple(required)))
+    if len(variants) == 1:
+        return variants[0]
+    return {"oneOf": variants}
+
+
+def _observation_query_id(
+    context_id: str,
+    tool_call_id: str,
+    arguments: Mapping[str, object],
+) -> str:
+    encoded = json.dumps(to_json_compatible(arguments), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = hashlib.sha256(f"{context_id}\0{tool_call_id}\0{encoded}".encode()).hexdigest()[:24]
+    return f"observation-query:{digest}"
+
+
+def _purposes_for_exposure_profile(profile: ObservationToolExposureProfile) -> frozenset[str]:
+    if profile is ObservationToolExposureProfile.COMPATIBILITY:
+        return _COMPATIBILITY_AGENT_PURPOSES
+    return _DYNAMIC_VISUAL_PURPOSES
+
+
+def _dynamic_purpose_applicable(
+    purpose: str,
+    context: AgentContext,
+    delivery: ModelTurnDelivery,
+    refs: Mapping[str, str],
+) -> bool:
+    del delivery  # refs were already intersected with this exact manifest
+    ref_count = len(refs)
+    if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
+        return bool(context.actor_world.media) and (
+            any(document.truncated for document in context.actor_world.documents)
+            or any(source.projection_coverage != "complete" for source in context.actor_world.sources)
+        )
+    if purpose in {
+        ObservationPurpose.VISUAL_PROPERTY.value,
+        ObservationPurpose.TEXT_IN_IMAGE.value,
+    }:
+        return ref_count >= 1
+    if purpose in {
+        ObservationPurpose.TARGET_DISAMBIGUATION.value,
+        ObservationPurpose.SPATIAL_RELATIONSHIP.value,
+    }:
+        return ref_count >= 2
+    if purpose == ObservationPurpose.POINT_GROUNDING.value:
+        return bool(context.actor_world.media)
+    if purpose == ObservationPurpose.VISUAL_CHANGE.value:
+        # The current Context has no typed before-frame lineage yet, so fail closed.
+        return False
+    return False
+
+
 def _observation_tool_needed(context: AgentContext, capability) -> bool:
     current = tuple(
         source
@@ -687,7 +939,7 @@ def _observation_tool_needed(context: AgentContext, capability) -> bool:
     )
 
 
-_AGENT_PURPOSES = frozenset(
+_COMPATIBILITY_AGENT_PURPOSES = frozenset(
     {
         ObservationPurpose.ENTITY_DISCOVERY.value,
         ObservationPurpose.TARGET_DISAMBIGUATION.value,
@@ -695,6 +947,18 @@ _AGENT_PURPOSES = frozenset(
         ObservationPurpose.SPATIAL_RELATIONSHIP.value,
         ObservationPurpose.TEXT_IN_IMAGE.value,
         ObservationPurpose.CRITERION_VERIFICATION.value,
+    }
+)
+
+_DYNAMIC_VISUAL_PURPOSES = frozenset(
+    {
+        ObservationPurpose.ENTITY_DISCOVERY.value,
+        ObservationPurpose.TARGET_DISAMBIGUATION.value,
+        ObservationPurpose.VISUAL_PROPERTY.value,
+        ObservationPurpose.SPATIAL_RELATIONSHIP.value,
+        ObservationPurpose.TEXT_IN_IMAGE.value,
+        ObservationPurpose.POINT_GROUNDING.value,
+        ObservationPurpose.VISUAL_CHANGE.value,
     }
 )
 

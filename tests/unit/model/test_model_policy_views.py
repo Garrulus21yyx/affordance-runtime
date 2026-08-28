@@ -298,7 +298,15 @@ def test_parameter_schema_projection_rejects_unsupported_or_malformed_shapes(sch
 @pytest.mark.parametrize(
     ("decision", "expected"),
     (
-        (RequestObservation("context:1", "entity_discovery", "target:1", "", "inspect"), "subject_id"),
+        (
+            RequestObservation(
+                context_id="context:1",
+                query_id="observation-query:1",
+                purpose="entity_discovery",
+                atomic_query="inspect",
+            ),
+            "atomic_query",
+        ),
         (RequestActionPage("context:1", query="find"), "query"),
         (AskUser("context:1", "Which account?", ("account",)), "question"),
         (Wait("context:1", "settle", 25), "max_wait_ms"),

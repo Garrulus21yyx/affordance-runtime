@@ -69,7 +69,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 from affordance_runtime.model.policy.grounded_tool_rejection import (
     grounded_tool_rejection_decision,
 )
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import (
+    DecisionPerceptionProfile,
+    ObservationToolExposureProfile,
+)
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.policy import _build_request as _action_request
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -631,6 +634,77 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
     )
 
 
+def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
+    base = _context()
+    context = replace(
+        base,
+        actor_world=replace(
+            base.actor_world,
+            observation_capabilities=(
+                {
+                    "modality": "visual",
+                    "assurance": "weak",
+                    "purposes": ("visual_property",),
+                },
+            ),
+        ),
+    )
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+        ObservationToolExposureProfile.DYNAMIC_VISUAL,
+    )
+    spec = next(item for item in catalog.specs if item.name == "request_evidence")
+    refs = tuple(
+        ref
+        for ref in context.grounding.private_subject_bindings()
+        if ref in delivery.manifest.exact_refs
+    )
+    assert len(refs) >= 2
+    arguments = {
+        "purpose": "visual_property",
+        "subject_refs": list(refs[:2]),
+        "predicate": "visually selected",
+        "public_intent": "I will verify the visible selection state.",
+    }
+    assert validate_value_issue(arguments, spec.input_schema) is None
+
+    resolution = _resolve_catalog_call(
+        catalog,
+        ToolCall("request_evidence", arguments, call_id="call:batch-visual"),
+        expected_context_id=context.context_id,
+        expected_catalog_id=catalog.catalog_id,
+    )
+
+    decision = resolution.decision
+    assert isinstance(decision, RequestObservation)
+    bindings = context.grounding.private_subject_bindings()
+    assert decision.subject_ids == tuple(bindings[ref] for ref in refs[:2])
+    assert decision.predicate == "visually selected"
+    assert decision.query_id.startswith("observation-query:")
+    assert catalog.observation_tool_profile_id == "dynamic-visual.v1"
+    assert catalog.observation_tool_profile_digest
+    assert (
+        validate_value_issue(
+            {**arguments, "subject_refs": [refs[0], refs[0]]},
+            spec.input_schema,
+        )
+        is None
+    )
+    with pytest.raises(GroundedToolResolutionError, match="unique current"):
+        _resolve_catalog_call(
+            catalog,
+            ToolCall(
+                "request_evidence",
+                {**arguments, "subject_refs": [refs[0], refs[0]]},
+                call_id="call:duplicate-visual",
+            ),
+            expected_context_id=context.context_id,
+        )
+
+
 def test_invalid_compact_arguments_make_only_one_provider_call() -> None:
     @dataclass
     class InvalidArgumentsPort:
@@ -890,6 +964,8 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
         "delivery_index",
         "tools",
         "serialized_bytes",
+        "observation_tool_profile_id",
+        "observation_tool_profile_digest",
     }
     assert tuple(item.spec for item in catalog.tools) == catalog.specs
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings

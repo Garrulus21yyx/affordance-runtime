@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from enum import StrEnum
 
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
@@ -13,6 +14,17 @@ class DecisionPerceptionProfile(StrEnum):
     TEXT_ONLY = "text-only.v1"
     SCREENSHOT_AX = "screenshot-ax.v1"
     STRUCTURE_FIRST = "structure-first.v1"
+
+
+class ObservationToolExposureProfile(StrEnum):
+    """Frozen per-session rollout contract for the model-facing evidence tool."""
+
+    COMPATIBILITY = "compatibility.v1"
+    DYNAMIC_VISUAL = "dynamic-visual.v1"
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.value.encode()).hexdigest()[:16]
 
 
 def perception_uses_images(

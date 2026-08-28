@@ -50,11 +50,10 @@ def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(
     decisions = (
         SelectAction("context:test", "action:one"),
         RequestObservation(
-            "context:test",
-            "entity_discovery",
-            "target:one",
-            "",
-            "inspect",
+            context_id="context:test",
+            query_id="observation-query:test",
+            purpose="entity_discovery",
+            atomic_query="inspect",
         ),
         RequestActionPage("context:test", query="controls"),
         AskUser("context:test", "Which value?"),

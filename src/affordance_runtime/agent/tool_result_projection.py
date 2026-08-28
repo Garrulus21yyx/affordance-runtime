@@ -24,6 +24,11 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.immutable import freeze_json, to_json_compatible
+from affordance_runtime.world.observation_outcomes import (
+    InputLocator,
+    QueryScopeLocator,
+    ResultLocator,
+)
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.run_state import StepResult
@@ -128,7 +133,41 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
             }
         return freeze_json(common)
     if isinstance(decision, RequestObservation):
-        common.update({"kind": "observation", "purpose": decision.purpose})
+        outcome = step.observation_outcome
+        if outcome is None:
+            common.update({"kind": "observation", "purpose": decision.purpose.value})
+            return freeze_json(common)
+        observed_items = tuple(_public_observed_item(step, item) for item in outcome.observed_items)
+        public_evidence_refs = tuple(
+            dict.fromkeys(
+                ref
+                for item in observed_items
+                for ref in _public_string_tuple(item.get("evidence_refs", ()))
+                if isinstance(ref, str)
+            )
+        )
+        common["run_status"] = common.pop("status")
+        common.update(
+            {
+                "kind": "observation",
+                "query_id": outcome.query_id,
+                "purpose": outcome.purpose.value,
+                "status": outcome.disposition.value,
+                "observed_items": observed_items,
+                "unknown_items": tuple(
+                    {
+                        "locator": _public_locator(item.locator),
+                        "reason": item.reason.value,
+                    }
+                    for item in outcome.unknown_items
+                ),
+                "evidence_refs": public_evidence_refs,
+            }
+        )
+        if outcome.failure_reason is not None:
+            common["reason_code"] = outcome.failure_reason.value
+        if any(item.get("target_ref") and item.get("verbs") for item in observed_items):
+            common["executable_grounding"] = "attached_to_returned_readable_targets"
         return freeze_json(common)
     if isinstance(decision, RequestActionPage):
         result = step.action_page_result
@@ -148,6 +187,59 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
         common.update({"kind": "abort", "category": decision.category})
         return freeze_json(common)
     assert_never(decision)
+
+
+def _public_locator(locator: InputLocator | QueryScopeLocator | ResultLocator) -> Mapping[str, object]:
+    if isinstance(locator, InputLocator):
+        return {"kind": locator.kind, "input_indices": locator.input_indices}
+    if isinstance(locator, ResultLocator):
+        return {"kind": locator.kind, "result_index": locator.result_index}
+    return {"kind": locator.kind}
+
+
+def _public_string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, tuple | list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
+
+
+def _public_observed_item(step: StepResult, item) -> Mapping[str, object]:
+    projection = step.after_public_world
+    target_refs = projection.target_refs if projection is not None else {}
+    fact_refs = projection.fact_refs if projection is not None else {}
+    private_fact_refs = projection.private_fact_id_refs if projection is not None else {}
+    public_targets = tuple(
+        target_refs[subject]
+        for subject in item.subject_ids
+        if subject in target_refs
+    )
+    public_evidence = tuple(
+        dict.fromkeys(
+            public
+            for evidence in item.evidence_refs
+            for public in (
+                private_fact_refs.get(evidence, fact_refs.get(evidence, "")),
+            )
+            if public
+        )
+    )
+    result: dict[str, object] = {
+        "locator": _public_locator(item.locator),
+        "evidence_refs": public_evidence,
+    }
+    if len(public_targets) == 1:
+        target_ref = public_targets[0]
+        result["target_ref"] = target_ref
+        if projection is not None:
+            record = next(
+                (candidate for candidate in projection.ordered_target_records if candidate.ref == target_ref),
+                None,
+            )
+            if record is not None and record.verbs:
+                result["verbs"] = record.verbs
+    elif public_targets:
+        result["target_refs"] = public_targets
+    return freeze_json(result)
 
 
 def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:

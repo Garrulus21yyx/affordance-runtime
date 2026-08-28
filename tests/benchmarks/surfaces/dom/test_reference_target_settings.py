@@ -44,11 +44,11 @@ class SettingsPolicy:
             assert len(context.actions.options) == 1
             return SelectAction(context.context_id, context.actions.options[0].action_id)
         return RequestObservation(
-            context.context_id,
-            "criterion_verification",
-            "settings",
-            "",
-            "verify that notification settings were persisted",
+            context_id=context.context_id,
+            query_id="observation-query:settings",
+            purpose="criterion_verification",
+            subject_ids=("settings",),
+            public_intent="verify that notification settings were persisted",
         )
 
 

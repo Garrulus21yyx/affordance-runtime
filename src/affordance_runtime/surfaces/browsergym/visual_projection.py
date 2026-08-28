@@ -155,19 +155,22 @@ def project_browsergym_visual_source(
     page_identity: str,
     episode_identity: str,
     task: TaskGoal,
+    visual_query: str,
     proposer: VisualRegionProposerPort | None,
     point_grounder: VisualGrounderPort | None,
     structured_source: SurfaceObservation,
 ) -> BrowserGymVisualProjection:
     if proposer is None and point_grounder is None:
         raise ValueError("visual discovery requires a region or point provider")
+    if not visual_query.strip() or len(visual_query) > 500:
+        raise ValueError("visual projection requires one bounded atomic query")
     frame = browsergym_visual_frame(raw, observation_id)
     request = VisualRegionProposalRequest(
         observation_id,
         None,
         frame.image_bytes,
         (frame.image_width, frame.image_height),
-        task.instruction,
+        visual_query,
         MAX_BROWSERGYM_VISUAL_REGIONS,
     )
     proposed = list(proposer.propose(request)) if proposer is not None else []
@@ -186,7 +189,7 @@ def project_browsergym_visual_source(
                 None,
                 frame.image_bytes,
                 (frame.image_width, frame.image_height),
-                _atomic_point_instruction(task.instruction),
+                visual_query,
             ))
             proposed = point_grounded_visual_regions(proposed, point, request.image_size)
             if len(proposed) > request.max_regions:
@@ -316,16 +319,6 @@ def project_browsergym_visual_source(
         point_grounding_attempted=point_grounder is not None,
         point_grounding_succeeded=point_succeeded,
         provider_failure=provider_failure,
-    )
-
-
-def _atomic_point_instruction(overall_goal: str) -> str:
-    return (
-        "Select exactly one currently visible control for the next atomic interaction that "
-        "advances the overall goal. If the final target is hidden behind a menu, dialog, or "
-        "panel, select the visible control that reveals it first. Do not point to a hidden "
-        "later target and do not solve multiple interactions at once. Overall goal: "
-        + overall_goal
     )
 
 

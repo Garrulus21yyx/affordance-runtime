@@ -599,10 +599,12 @@ def _same_world_attempt_signature(result: StepResult) -> PublicAttemptSignature:
     elif isinstance(decision, RequestObservation):
         operation = "request_observation"
         parameters = {
-            "purpose": decision.purpose,
-            "subject_id": decision.subject_id,
-            "evidence_property": decision.evidence_property,
-            "cursor": decision.cursor,
+            "purpose": decision.purpose.value,
+            "subject_ids": decision.subject_ids,
+            "candidate_ids": decision.candidate_ids,
+            "atomic_query": decision.atomic_query,
+            "predicate": decision.predicate,
+            "max_results": decision.max_results,
         }
     else:
         operation = getattr(getattr(decision, "kind", None), "value", "policy_failure")

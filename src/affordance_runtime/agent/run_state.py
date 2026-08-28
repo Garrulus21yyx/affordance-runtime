@@ -55,6 +55,7 @@ from affordance_runtime.execution.contracts import (
 from affordance_runtime.goals.plan import GoalPlanResolution, Ready
 from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.observation_outcomes import ObservationQueryOutcome
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
@@ -146,6 +147,7 @@ class StepResult:
     after_delivery_index: WorldDeliveryIndex | None = field(
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
+    observation_outcome: ObservationQueryOutcome | None = None
 
     def __post_init__(self) -> None:
         delta = self.public_world_delta
@@ -197,6 +199,18 @@ class StepResult:
                 raise TypeError("step after-World delivery index must be typed")
             if self.after_delivery_index.world_observation_id != self.after_world.observation_id:
                 raise ValueError("step after-World delivery index belongs to another World")
+        if self.observation_outcome is not None:
+            from affordance_runtime.agent.decisions import RequestObservation
+
+            if not isinstance(self.observation_outcome, ObservationQueryOutcome):
+                raise TypeError("step observation outcome must be typed")
+            if not isinstance(self.decision, RequestObservation):
+                raise ValueError("only an observation decision may carry a query outcome")
+            if (
+                self.observation_outcome.query_id != self.decision.query_id
+                or self.observation_outcome.purpose is not self.decision.purpose
+            ):
+                raise ValueError("step observation outcome must match its exact request")
         if self.waited_ms < 0:
             raise ValueError("step wait duration cannot be negative")
         if self.task_evaluation is not None and self.task_evaluation.observation_id != self.after_world.observation_id:

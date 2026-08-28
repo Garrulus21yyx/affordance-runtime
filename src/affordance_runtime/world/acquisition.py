@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from affordance_runtime.world.contracts import SurfaceObservation, WorldObservation
 from affordance_runtime.world.fusion import FusionStatus, WorldFusionResult
 from affordance_runtime.world.observation_needs import ObservationNeed, ObservationPurpose
+from affordance_runtime.world.observation_outcomes import ObservationQueryOutcome
 from affordance_runtime.world.source_profile import AcquisitionCost, ObservationAssurance, ObservationModality
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
@@ -256,6 +257,7 @@ class ObservationNeedResult:
     need_id: str
     status: ObservationNeedSatisfactionStatus
     reason_code: str
+    query_outcome: ObservationQueryOutcome | None = None
 
     def __post_init__(self) -> None:
         if not self.need_id.strip():
@@ -263,6 +265,11 @@ class ObservationNeedResult:
         if not isinstance(self.status, ObservationNeedSatisfactionStatus):
             raise TypeError("observation need result status must be typed")
         _validate_reason_code(self.reason_code)
+        if self.query_outcome is not None:
+            if not isinstance(self.query_outcome, ObservationQueryOutcome):
+                raise TypeError("observation need query outcome must be typed")
+            if self.query_outcome.query_id != self.need_id:
+                raise ValueError("observation need/query outcome identity mismatch")
 
 
 @dataclass(frozen=True)
@@ -310,11 +317,15 @@ class SelectedObservationResult:
         *,
         fulfilled_need_ids: tuple[str, ...],
         unfulfilled_reason_code: str = "need_unresolved",
+        query_outcomes: tuple[ObservationQueryOutcome, ...] = (),
     ) -> SelectedObservationResult:
         fulfilled = frozenset(fulfilled_need_ids)
         expected = {item.need_id for item in request.needs}
         if not fulfilled <= expected:
             raise ValueError("fulfilled need IDs must belong to the selected request")
+        outcomes = {item.query_id: item for item in query_outcomes}
+        if len(outcomes) != len(query_outcomes) or set(outcomes) - expected:
+            raise ValueError("query outcomes must uniquely belong to the selected request")
         return cls(
             request.source,
             SourceAcquisitionStatus.ACQUIRED,
@@ -327,6 +338,7 @@ class SelectedObservationResult:
                     if item.need_id in fulfilled
                     else ObservationNeedSatisfactionStatus.UNFULFILLED,
                     "need_fulfilled" if item.need_id in fulfilled else unfulfilled_reason_code,
+                    outcomes.get(item.need_id),
                 )
                 for item in request.needs
             ),
@@ -338,6 +350,8 @@ class SelectedObservationResult:
         request: SelectedObservationRequest,
         status: SourceAcquisitionStatus,
         reason_code: str,
+        *,
+        query_outcomes: tuple[ObservationQueryOutcome, ...] = (),
     ) -> SelectedObservationResult:
         if status not in {
             SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
@@ -345,6 +359,10 @@ class SelectedObservationResult:
             SourceAcquisitionStatus.CANCELLED,
         }:
             raise ValueError("selected observation failure requires a failure status")
+        outcomes = {item.query_id: item for item in query_outcomes}
+        expected = {item.need_id for item in request.needs}
+        if len(outcomes) != len(query_outcomes) or set(outcomes) - expected:
+            raise ValueError("failed query outcomes must uniquely belong to the selected request")
         return cls(
             request.source,
             status,
@@ -357,6 +375,7 @@ class SelectedObservationResult:
                     if status is SourceAcquisitionStatus.CANCELLED
                     else ObservationNeedSatisfactionStatus.UNFULFILLED,
                     reason_code,
+                    outcomes.get(item.need_id),
                 )
                 for item in request.needs
             ),
@@ -475,6 +494,44 @@ class ObservationAcquisition:
         if self.selection_plan is None:
             return ()
         return tuple(by_id[item.need_id] for item in self.selection_plan.needs if item.need_id in by_id)
+
+    def query_outcome(self, query_id: str) -> ObservationQueryOutcome | None:
+        outcome = next(
+            (
+                item.query_outcome
+                for item in self.per_need_outcomes
+                if item.need_id == query_id and item.query_outcome is not None
+            ),
+            None,
+        )
+        if outcome is None or self.observation is None:
+            return outcome
+        canonical_ids = {item.target_id for item in self.observation.targets}
+        by_source_target: dict[str, set[str]] = {}
+        for link in self.observation.entity_source_links:
+            by_source_target.setdefault(link.source_target_id, set()).add(link.canonical_target_id)
+
+        def current_subject(subject_id: str) -> str | None:
+            if subject_id in canonical_ids:
+                return subject_id
+            candidates = by_source_target.get(subject_id, set())
+            return next(iter(candidates)) if len(candidates) == 1 else None
+
+        return replace(
+            outcome,
+            observed_items=tuple(
+                replace(
+                    item,
+                    subject_ids=tuple(
+                        current
+                        for subject in item.subject_ids
+                        for current in (current_subject(subject),)
+                        if current is not None
+                    ),
+                )
+                for item in outcome.observed_items
+            ),
+        )
 
     @property
     def source_results(self) -> tuple[SourceAcquisitionResult, ...]:

@@ -76,7 +76,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 from affordance_runtime.model.policy.grounded_tool_rejection import (
     grounded_tool_rejection_decision,
 )
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import (
+    DecisionPerceptionProfile,
+    ObservationToolExposureProfile,
+)
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.prompt import MODEL_POLICY_EVIDENCE_STATUS
 from affordance_runtime.model.policy.provider_call_normalizer import (
@@ -249,6 +252,7 @@ class PydanticAIGroundedDecisionPort:
     step_conversation_id: str = field(default="", repr=False)
     tracer_provider: object | None = field(default=None, repr=False)
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
+    observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY
     transport_timeout_s: float = 85.0
     policy_timeout_s: float | None = None
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
@@ -300,6 +304,11 @@ class PydanticAIGroundedDecisionPort:
         if self.step_store is not None and not self.step_conversation_id.strip():
             raise ValueError("step persistence requires one conversation identity")
         object.__setattr__(self, "perception_profile", DecisionPerceptionProfile(self.perception_profile))
+        object.__setattr__(
+            self,
+            "observation_tool_profile",
+            ObservationToolExposureProfile(self.observation_tool_profile),
+        )
 
     def close_deferred_call(self, step: object) -> None:
         """Pair the pending provider call after Runtime closes it without another model turn."""
@@ -920,6 +929,7 @@ class PydanticAIGroundedDecisionPort:
                 call_profile=call_profile,
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
+                observation_tool_profile=self.observation_tool_profile,
                 request_timeout_s=request_timeout_s,
                 history_messages=messages,
                 pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
@@ -1908,6 +1918,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    observation_tool_profile: ObservationToolExposureProfile | str | None = None,
     step_store: StepStore | None = None,
     conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
@@ -1920,6 +1931,13 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     selected_perception = DecisionPerceptionProfile(
         perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
+    selected_observation_tools = ObservationToolExposureProfile(
+        observation_tool_profile
+        or env.get(
+            "LLM_OBSERVATION_TOOL_PROFILE",
+            ObservationToolExposureProfile.COMPATIBILITY.value,
+        )
+    )
     compaction_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(call_timeout_s)
     port = PydanticAIGroundedDecisionPort(
         model=configured.model,
@@ -1930,6 +1948,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         step_store=step_store,
         step_conversation_id=conversation_id,
         perception_profile=selected_perception,
+        observation_tool_profile=selected_observation_tools,
         transport_timeout_s=transport_timeout_s,
         policy_timeout_s=call_timeout_s,
         provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
@@ -2112,6 +2131,7 @@ def zhipu_pydantic_ai_policy_from_environment(
     *,
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
+    observation_tool_profile: ObservationToolExposureProfile | str | None = None,
     step_store: StepStore | None = None,
     conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
@@ -2121,6 +2141,7 @@ def zhipu_pydantic_ai_policy_from_environment(
         environment,
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
+        observation_tool_profile=observation_tool_profile,
         step_store=step_store,
         conversation_id=conversation_id,
     )
@@ -2293,10 +2314,12 @@ def _reject_prohibited_recovery_replay(
             "",
             "",
             {
-                "purpose": decision.purpose,
-                "subject_id": decision.subject_id,
-                "evidence_property": decision.evidence_property,
-                "cursor": decision.cursor,
+                "purpose": decision.purpose.value,
+                "subject_ids": decision.subject_ids,
+                "candidate_ids": decision.candidate_ids,
+                "atomic_query": decision.atomic_query,
+                "predicate": decision.predicate,
+                "max_results": decision.max_results,
             },
             context.current_observation,
         )

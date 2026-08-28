@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.decisions import (
     Abort,
     AskUser,
@@ -27,7 +29,16 @@ from affordance_runtime.execution import (
     ExecutionReceiptBatch,
 )
 from affordance_runtime.world.observation_needs import ObservationPurpose
-from tests.support.agent.core_loop_support import _world
+from affordance_runtime.world.observation_outcomes import (
+    InputLocator,
+    ObservationObservedItem,
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+    ObservationUnknownItem,
+    QueryScopeLocator,
+    VisualUnknownReason,
+)
+from tests.support.agent.core_loop_support import _task, _world
 
 
 def _evaluation(observation_id: str) -> TaskEvaluation:
@@ -50,11 +61,10 @@ def _step(decision, *, waited_ms: int = 0) -> StepResult:
     "decision",
     (
         RequestObservation(
-            "context:fixture",
-            ObservationPurpose.ENTITY_DISCOVERY.value,
-            "subject",
-            "",
-            "inspect",
+            context_id="context:fixture",
+            query_id="observation-query:fixture",
+            purpose=ObservationPurpose.ENTITY_DISCOVERY,
+            atomic_query="inspect",
             tool_call_id="call:observe",
         ),
         RequestActionPage("context:fixture", "query", tool_call_id="call:discover"),
@@ -68,6 +78,104 @@ def test_supported_nonlocal_decisions_have_one_call_correlated_public_projection
 
     assert committed_tool_call_id(step) == decision.tool_call_id
     assert project_committed_tool_return(step) is not None
+
+
+def test_observation_outcome_projects_current_public_ref_without_private_subject_id() -> None:
+    world = _world("tool-result-observed", False)
+    task = _task()
+    evaluation = TaskEvaluation(
+        task.task_id,
+        world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "fixture",
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        evaluation,
+    )
+    decision = RequestObservation(
+        context_id=context.context_id,
+        query_id="observation-query:observed",
+        purpose=ObservationPurpose.VISUAL_PROPERTY,
+        subject_ids=("shared-toggle",),
+        predicate="selected",
+        tool_call_id="call:observed",
+    )
+    outcome = ObservationQueryOutcome(
+        decision.query_id,
+        decision.purpose,
+        ObservationQueryDisposition.OBSERVED,
+        (
+            ObservationObservedItem(
+                InputLocator((0,)),
+                ("shared-toggle",),
+                (world.facts[0].fact_id,),
+            ),
+        ),
+    )
+    step = StepResult(
+        decision,
+        world,
+        world,
+        evaluation,
+        feedback="observation_acquired",
+        before_public_world=context.canonical_world,
+        after_public_world=context.canonical_world,
+        after_delivery_index=context.region_index,
+        observation_outcome=outcome,
+    )
+
+    projected = project_committed_tool_return(step)
+
+    assert projected is not None
+    assert projected["status"] == "observed"
+    assert projected["query_id"] == decision.query_id
+    assert projected["executable_grounding"] == "attached_to_returned_readable_targets"
+    assert projected["observed_items"][0]["target_ref"].startswith("E")
+    assert "activate" in projected["observed_items"][0]["verbs"]
+    assert "shared-toggle" not in repr(projected)
+
+
+def test_scope_unknown_projects_no_ref_or_executable_grounding() -> None:
+    decision = RequestObservation(
+        context_id="context:fixture",
+        query_id="observation-query:unknown",
+        purpose=ObservationPurpose.ENTITY_DISCOVERY,
+        atomic_query="find the visible chart legend",
+        tool_call_id="call:unknown",
+    )
+    outcome = ObservationQueryOutcome(
+        decision.query_id,
+        decision.purpose,
+        ObservationQueryDisposition.UNKNOWN,
+        unknown_items=(
+            ObservationUnknownItem(
+                QueryScopeLocator(),
+                VisualUnknownReason.TARGET_NOT_VISIBLE,
+            ),
+        ),
+    )
+    base = _step(decision)
+    step = StepResult(
+        decision,
+        base.before_world,
+        base.after_world,
+        base.task_evaluation,
+        feedback="observation_unknown",
+        observation_outcome=outcome,
+    )
+
+    projected = project_committed_tool_return(step)
+
+    assert projected is not None
+    assert projected["status"] == "unknown"
+    assert projected["unknown_items"] == (
+        {"locator": {"kind": "query_scope"}, "reason": "target_not_visible"},
+    )
+    assert "target_ref" not in repr(projected)
+    assert "executable_grounding" not in projected
 
 
 @pytest.mark.parametrize(
