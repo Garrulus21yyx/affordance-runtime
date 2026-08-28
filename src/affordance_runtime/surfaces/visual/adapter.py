@@ -220,7 +220,15 @@ class VisualSurfaceAdapter:
             CoverageState.COMPLETE
             if bool(getattr(self.proposer, "acquisition_exhaustive", False))
             else CoverageState.TRUNCATED,
-            {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
+            {
+                "screenshot_ref": frame.screenshot_ref,
+                "unsupported_actions": unsupported,
+                "screenshot_semantic_state": {
+                    "public_summary": (
+                        "Current screenshot state for bounded before/after effect comparison."
+                    ),
+                },
+            },
             media=media,
             acquisition_root_id=acquisition_root_id or f"browser:{frame.source_revision}",
             visual_only_target_ids=tuple(region.region_id for region in regions),
