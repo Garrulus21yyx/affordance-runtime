@@ -244,6 +244,7 @@ class BrowserSessionSurfaceBundle:
                 request,
                 frame,
                 atomic_query=query,
+                use_region_proposer=purpose is ObservationPurpose.ENTITY_DISCOVERY,
                 use_point_grounder=purpose is ObservationPurpose.POINT_GROUNDING,
                 acquisition_root_id=acquisition_root_id,
                 max_results=need.max_results if need is not None else 16,

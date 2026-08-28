@@ -12,7 +12,7 @@ from affordance_runtime.surfaces.browser_bundle import (
 )
 from affordance_runtime.surfaces.dom import DomSurfaceAdapter
 from affordance_runtime.surfaces.dom.browser_session import BrowserSession
-from affordance_runtime.surfaces.visual.grounding import VisualRegion
+from affordance_runtime.surfaces.visual.grounding import VisualGroundingPoint, VisualRegion
 from affordance_runtime.surfaces.visual.predicate_classification import (
     PredicateTruth,
     VisualPredicateClassification,
@@ -111,6 +111,15 @@ class _Predicate:
         return tuple(VisualPredicateClassification(item.ref, PredicateTruth.TRUE, 0.91) for item in request.candidates)
 
 
+@dataclass
+class _Grounder:
+    calls: list[object] = field(default_factory=list)
+
+    def ground(self, request):
+        self.calls.append(request)
+        return VisualGroundingPoint((0.5, 0.5), normalized=True)
+
+
 def _task() -> TaskGoal:
     return TaskGoal(
         "shared",
@@ -163,6 +172,65 @@ def test_grouped_browser_bundle_uses_one_reset_and_one_shared_frame() -> None:
         outcome = acquired.query_outcome("observation-query:product-predicate")
         assert outcome is not None
         assert outcome.observed_subject_ids
+
+    asyncio.run(scenario())
+
+
+def test_grouped_world_screenshot_does_not_invoke_semantic_visual_provider() -> None:
+    async def scenario() -> None:
+        page, proposer = _Page(), _Proposer()
+        world = UnifiedWorldEnvironment((BrowserSessionSurfaceBundle(_Session(page), proposer),))
+        await world.reset(_task())
+
+        acquired = await world.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "capture auxiliary screenshot evidence",
+                (
+                    ObservationNeed(
+                        "observation-query:world-screenshot",
+                        ObservationPurpose.WORLD_GROUNDING,
+                        required_modality=ObservationModality.VISUAL,
+                    ),
+                ),
+            )
+        )
+
+        assert acquired.observation is not None
+        assert proposer.calls == []
+        visual = next(item for item in acquired.observation.sources if item.surface == "visual")
+        assert visual.targets == ()
+        assert len(visual.media) == 1
+
+    asyncio.run(scenario())
+
+
+def test_grouped_point_grounding_invokes_only_the_point_provider() -> None:
+    async def scenario() -> None:
+        page, proposer, grounder = _Page(), _Proposer(), _Grounder()
+        bundle = BrowserSessionSurfaceBundle(_Session(page), proposer, point_grounder=grounder)
+        world = UnifiedWorldEnvironment((bundle,))
+        await world.reset(_task())
+
+        acquired = await world.capture(
+            WorldObservationRequest(
+                ObservationRequestKind.POLICY_REQUEST,
+                "locate one visible target",
+                (
+                    ObservationNeed(
+                        "observation-query:point",
+                        ObservationPurpose.POINT_GROUNDING,
+                        required_modality=ObservationModality.VISUAL,
+                        query_text="the visible shared control",
+                    ),
+                ),
+            )
+        )
+
+        assert acquired.observation is not None
+        assert proposer.calls == []
+        assert len(grounder.calls) == 1
+        assert acquired.query_outcome("observation-query:point") is not None
 
     asyncio.run(scenario())
 

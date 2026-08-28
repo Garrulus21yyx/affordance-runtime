@@ -121,6 +121,7 @@ class VisualSurfaceAdapter:
         *,
         atomic_query: str,
         use_point_grounder: bool,
+        use_region_proposer: bool = True,
         acquisition_root_id: str = "",
         max_results: int = 16,
     ) -> SelectedObservationResult:
@@ -137,9 +138,13 @@ class VisualSurfaceAdapter:
             atomic_query,
             max_results,
         )
-        proposed = tuple(
-            replace(region, primitive_action="observe_only", action_point_xy=None)
-            for region in self.proposer.propose(proposal_request)
+        proposed = (
+            tuple(
+                replace(region, primitive_action="observe_only", action_point_xy=None)
+                for region in self.proposer.propose(proposal_request)
+            )
+            if use_region_proposer
+            else ()
         )
         if use_point_grounder:
             if self.point_grounder is None:
