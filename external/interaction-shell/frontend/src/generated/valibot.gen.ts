@@ -485,7 +485,7 @@ export const vCompletion = v.strictObject({
     artifact: v.nullable(vPublicArtifact),
     code: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
     evidence_refs: v.optional(v.array(v.string()), []),
-    message: v.pipe(v.string(), v.maxLength(4000)),
+    message: v.pipe(v.string(), v.maxLength(16000)),
     outcome: v.picklist([
         'success',
         'failure',

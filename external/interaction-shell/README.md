@@ -84,12 +84,18 @@ set +a
 export PYTHONPATH="$PWD/src:$PWD/external/interaction-shell/backend"
 export INTERACTION_SHELL_BROWSER_INITIAL_URL=about:blank
 export INTERACTION_SHELL_CHECKPOINT_DB="$PWD/.runtime/interaction-shell-checkpoints.sqlite3"
+# Optional: select a separate outer Assistant profile. Gemini enables PydanticAI's
+# provider-native WebSearchTool; profiles without native search remain fail-closed.
+export INTERACTION_SHELL_ASSISTANT_PROFILE=gemini
+export INTERACTION_SHELL_ASSISTANT_WEB_SEARCH=auto
 "$DEPLOYMENT_PYTHON" -m uvicorn interaction_shell.deployment_app:app \
   --host 127.0.0.1 --port 8200
 ```
 
-`/health` reports `runtime_execution`, `viewer`, `durable_pause`, and
-`durable_resume` independently. The safe default real profile uses local
+`/health` reports `assistant`, `runtime_execution`, `viewer`, `durable_pause`, and
+`durable_resume` independently. Creating an ordinary session starts only the
+outer PydanticAI conversation; Playwright/Steel opens lazily if that Assistant
+calls `run_gui_task`. The safe default real GUI profile uses local
 Playwright and keeps Viewer typed unavailable. Runtime-private SQLite
 WAL checkpoints make cooperative pause durable and provide the reconnectable-
 lease restart/resume contract; the local profile still cannot reconnect its
@@ -159,7 +165,12 @@ SHELL_BACKEND_URL=http://127.0.0.1:8200 npm run dev -- --port 3100
 ```
 
 Open `http://127.0.0.1:3100` for the only Console. The main task thread combines
-ordinary conversation/HITL, Runtime progress, completion, and the live surface.
+ordinary conversation/HITL, Runtime progress, completion, and a live surface only
+while a GUI capability owns one. Direct answers never open a browser. The outer
+Assistant uses PydanticAI message history plus Harness StepPersistence and
+SummarizingCompaction; optional Harness Memory stays off unless deployment sets
+`INTERACTION_SHELL_ASSISTANT_MEMORY=sqlite` together with an explicit
+`INTERACTION_SHELL_ASSISTANT_MEMORY_NAMESPACE`.
 The surface is read-only unless Runtime projects the current user-control lease.
 The Labs drawer contains the formal benchmark launcher, Bad Cases, completed-run
 summaries, raw local evidence, and runner output. Ordinary task rendering does not

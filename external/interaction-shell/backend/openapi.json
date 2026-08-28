@@ -909,7 +909,7 @@
             "type": "array"
           },
           "message": {
-            "maxLength": 4000,
+            "maxLength": 16000,
             "title": "Message",
             "type": "string"
           },

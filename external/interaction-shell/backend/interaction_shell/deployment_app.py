@@ -46,6 +46,8 @@ from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from dotenv import load_dotenv
 
 from .api import create_app
+from .assistant import PydanticAssistantTurnRunner
+from .assistant_port import AssistantSessionPort
 from .completed_runs import CompletedRunSummaryResolver
 from .content_filtering import (
     PINNED_UBOL_COMPLETE_PATCH_ID,
@@ -604,18 +606,41 @@ session_factory = BrowserDeploymentSessionFactory(
     SQLiteRuntimeCheckpointStore(_checkpoint_path),
     viewer_gateway,
 )
-runtime_port = CoreRuntimeSessionPort(
+gui_runtime_port = CoreRuntimeSessionPort(
     session_factory,
     surface_projector=(
         viewer_gateway.project if viewer_gateway is not None else unavailable_viewer
     ),
 )
+assistant_runner = PydanticAssistantTurnRunner.from_environment(
+    _deployment_environment,
+    database_directory=_checkpoint_path.parent
+    / (_checkpoint_path.name + ".assistant"),
+    call_timeout_s=settings.call_timeout_s,
+)
+runtime_port = AssistantSessionPort(assistant_runner, gui_runtime_port)
+
+
+def _deployment_health() -> Mapping[str, object]:
+    health = dict(session_factory.health())
+    health["assistant"] = {
+        "status": "available",
+        "profile": (
+            _deployment_environment.get("INTERACTION_SHELL_ASSISTANT_PROFILE", "").strip()
+            or _deployment_environment.get("LLM_ACTIVE_PROFILE", "").strip()
+        ),
+        "native_web_search": assistant_runner.native_web_search,
+        "persistent_memory": assistant_runner.memory_store is not None,
+    }
+    return health
+
+
 app = create_app(
     RunSessionManager(
         runtime_port,
         SQLiteSessionRecoveryRegistry(_checkpoint_path),
     ),
-    health_provider=session_factory.health,
+    health_provider=_deployment_health,
     viewer_gateway=viewer_gateway,
     completed_run_resolver=CompletedRunSummaryResolver.from_environment(_deployment_environment),
     evidence_access_key=_deployment_environment.get("INTERACTION_SHELL_EVIDENCE_ACCESS_KEY", ""),

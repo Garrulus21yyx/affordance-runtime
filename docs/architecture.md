@@ -23,6 +23,47 @@ launch, public activity, digest-verified Runtime frames, Bad Cases, raw local ev
 write Runtime state or create another agent loop. FastAPI/Pydantic remains the public schema authority and the frontend
 uses regenerated named SDK operations and validators for both surfaces.
 
+### 2026-08-28 capability-agnostic Assistant Shell
+
+The ordinary product surface is now a general natural-language Assistant rather than an implicit browser launcher.
+This is a composition change outside the benchmark/CoreLoop boundary:
+
+```text
+natural user turn
+→ AssistantSessionPort
+→ one outer PydanticAI Agent
+   ├─ direct user-facing answer
+   ├─ provider-native Web Search, when the configured Assistant model supports it
+   └─ run_gui_task
+      → existing CoreRuntimeSessionPort
+      → TaskGoal + fresh World + GoalPlan + ActionPolicy + Binder + Executor
+→ polished CompletionBlock
+```
+
+Creating a Shell session no longer opens Playwright or Steel. The browser and Viewer lease are created lazily only
+when PydanticAI selects `run_gui_task`; the tool receives one complete goal and returns one bounded typed
+`GuiTaskResult`. During that pending tool call, the wrapper projects the delegated Runtime's current public surface,
+progress, AskUser/confirmation, pause/resume, takeover, and effect-reconciliation contracts. It forwards the existing
+typed commands to the same inner public session. In particular, GUI revision still goes through the sole
+TaskRevisionCompiler → consecutive TaskGoal → fresh World → GoalCompiler path, and cancellation remains a Runtime
+control command rather than model prose. The delegated TaskGoal may be more operationally explicit, but it remains a
+visible intent block and cannot replace the outer conversation's user-authored request identity.
+
+The outer Assistant owns general conversation and final wording only. PydanticAI owns its exact message/tool-call
+history, and Harness `StepPersistence(SqliteStepStore)` plus `ModelMessagesTypeAdapter` own restart restoration;
+`SummarizingCompaction` compresses only pair-safe expired history. The GUI ActionPolicy retains its independent
+Runtime-owned PydanticAI history. Shell feed/conversation remains a bounded presentation and revision projection and
+is never reconstructed into either model history. Optional Harness Memory is off by default, requires an explicit
+namespace, and is instructed to store only preferences the user explicitly asks to remember—not task progress,
+browser state, credentials, inferred traits, or evidence.
+
+Web search is capability-driven, not inferred from task text. The Gemini Assistant profile uses PydanticAI's native
+`WebSearchTool`; a profile without native search either operates without that capability or fails configuration when
+search is explicitly required. No custom search engine, intent router, Manager/Worker hierarchy, second World,
+second GUI loop, cursor, or evidence delivery path was added. The frontend is one ordinary conversation column until
+a real GUI surface exists; only then does the live browser column appear. Labs remains a separate benchmark workspace
+and benchmark model/tool profiles are unchanged.
+
 ### 2026-08-28 real-browser observation/currentness closure
 
 The Interaction Shell's existing Steel profile now completes a held-out public-Web task through the same

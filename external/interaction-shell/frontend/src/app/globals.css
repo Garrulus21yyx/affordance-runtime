@@ -43,6 +43,11 @@ svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: 
   gap: 10px;
 }
 
+.app-shell.without-surface {
+  grid-template-columns: 232px minmax(0, 920px);
+  justify-content: center;
+}
+
 .sidebar, .conversation, .browser-panel {
   min-height: calc(100vh - 24px);
   overflow: hidden;
@@ -390,6 +395,7 @@ select, input { width: 100%; min-width: 0; min-height: 42px; padding: 0 11px; ov
 
 @media (max-width: 1180px) {
   .app-shell { grid-template-columns: 84px minmax(430px, .9fr) minmax(500px, 1.1fr); }
+  .app-shell.without-surface { grid-template-columns: 84px minmax(0, 820px); }
   .brand strong, .new-task span:first-child, .nav-label, .session b, .session small, .utility-link span, .session-placeholder { display: none; }
   .brand, .new-task, .utility-link { justify-content: center; }
   .brand { padding-inline: 0; }
@@ -399,6 +405,7 @@ select, input { width: 100%; min-width: 0; min-height: 42px; padding: 0 11px; ov
 @media (max-width: 880px) {
   body { overflow: auto; }
   .app-shell { grid-template-columns: 72px 1fr; }
+  .app-shell.without-surface { grid-template-columns: 72px minmax(0, 1fr); }
   .browser-panel { grid-column: 2; min-height: 620px; }
   .sidebar { grid-row: 1 / span 2; }
   .conversation { min-height: 720px; }

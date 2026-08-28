@@ -17,7 +17,7 @@ traces/
 .env.*
 
 # Local browser automation artifacts
-/.playwright-cli/
+.playwright-cli/
 
 # Runtime-local checkpoints and databases
 /.runtime/

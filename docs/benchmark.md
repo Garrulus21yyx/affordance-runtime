@@ -13,6 +13,15 @@ This is a presentation and control-surface consolidation, not benchmark-result e
 ActionPolicy, World, ToolReturn, evaluator, or formal runner semantics, and no live benchmark was launched for it.
 Provider-free manager/API/schema/frontend/browser tests are its acceptance evidence.
 
+### 2026-08-28 general Assistant wrapper is outside benchmark policy
+
+The ordinary Shell now has one outer PydanticAI Assistant that may answer directly, use a provider-native search
+capability, or lazily call the existing GUI Runtime through `run_gui_task`. Formal benchmark/Labs runs do not pass
+through this wrapper: they continue to invoke the frozen GUI ActionPolicy, World, Catalog, Binder, Executor, and
+native evaluator directly. Therefore the product composition changes no benchmark tool availability, scoring,
+completion authority, or prior trace interpretation. Provider-free Assistant/Shell tests and a separate natural
+product smoke are the appropriate acceptance evidence; no live benchmark was authorized or launched for this change.
+
 ### 2026-08-28 held-out public-Web Interaction Shell witness
 
 Real Interaction Shell session `GZ5_Ccm4CXBzAo4v4fwreWVD` used the existing Steel-backed browser profile for:

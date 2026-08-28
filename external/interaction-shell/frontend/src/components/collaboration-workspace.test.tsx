@@ -185,7 +185,7 @@ describe("generic collaboration components", () => {
         { block_id: "b6", kind: "interaction_request", occurred_at: "2026-08-28T10:00:05Z", request: { request_id: "request-feed", prompt: "请选择候选", response_kind: "free_text", public_intent: "我需要你的补充。", fields: [], options: [] } },
         { block_id: "b7", kind: "revision_applied", occurred_at: "2026-08-28T10:00:06Z", task_revision: 2, removed: [], added: ["检查下一页"], retained: ["不要提交"], goal_description_changed: true },
         { block_id: "b8", kind: "confirmation_required", occurred_at: "2026-08-28T10:00:07Z", request_id: "confirmation-old", summary: "提交表单", risk: "会产生外部效果" },
-        { block_id: "b9", kind: "completion", occurred_at: "2026-08-28T10:00:08Z", completion: { outcome: "success", code: "done", message: "比较完成", evidence_refs: [], artifact: null } },
+        { block_id: "b9", kind: "completion", occurred_at: "2026-08-28T10:00:08Z", completion: { outcome: "success", code: "done", message: "**比较完成**", evidence_refs: [], artifact: null } },
         { block_id: "b10", kind: "failure", occurred_at: "2026-08-28T10:00:09Z", code: "later_failure", message: "后续运行失败" },
       ],
     });
@@ -193,6 +193,7 @@ describe("generic collaboration components", () => {
     expect(screen.getByTestId("conversation-feed")).toHaveTextContent("我先检查当前页面中可见的候选");
     expect(screen.getByTestId("conversation-feed")).toHaveTextContent("结构 + 视觉证据");
     expect(screen.getByTestId("conversation-feed")).toHaveTextContent("比较完成");
+    expect(screen.getByTestId("completion")).not.toHaveTextContent("**");
     expect(screen.queryByText(/token|raw trace|provider|json/i)).not.toBeInTheDocument();
   });
 });

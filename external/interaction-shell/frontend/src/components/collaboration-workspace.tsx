@@ -21,6 +21,7 @@ import {
   Square,
 } from "lucide-react";
 import { FormEvent, ReactNode, useState } from "react";
+import { Streamdown } from "streamdown";
 import type {
   FeedBlock,
   InteractionFieldValue,
@@ -42,6 +43,16 @@ function readableTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function AssistantMessage({ children }: { children: string }) {
+  return (
+    <div className="assistant-prose">
+      <Streamdown mode="static">
+        {children}
+      </Streamdown>
+    </div>
+  );
 }
 
 type GoalBlock = Extract<FeedBlock, { kind: "goal_accepted" }>;
@@ -390,7 +401,7 @@ function FeedBlockView({
     case "goal_accepted":
       return <GoalSummary goal={block} />;
     case "agent_intent":
-      return <article className="feed-turn agent"><span className="agent-monogram">A</span><div><small>Agent 正在处理</small><p>{block.content}</p></div></article>;
+      return <article className="feed-turn agent"><span className="agent-monogram">A</span><div><small>Assistant</small><p>{block.content}</p></div></article>;
     case "runtime_activity":
       return <ActivityTimeline blocks={[block]} />;
     case "evidence_summary":
@@ -402,7 +413,7 @@ function FeedBlockView({
     case "confirmation_required":
       return <ConfirmationPanel summary={block.summary} risk={block.risk} active={view.confirmation?.request_id === block.request_id} confirm={confirm} />;
     case "completion":
-      return <article className={`completion-panel ${block.completion.outcome}`} data-testid="completion"><div className="feed-card-heading"><span className="feed-icon completion"><CheckCircle2 size={15} /></span><div><small>任务结果</small><h3>{block.completion.message}</h3></div></div>{block.completion.artifact && <ArtifactPanel artifact={block.completion.artifact} />}</article>;
+      return <article className={`completion-panel ${block.completion.outcome}`} data-testid="completion"><div className="feed-card-heading"><span className="feed-icon completion"><CheckCircle2 size={15} /></span><div><small>Assistant</small><AssistantMessage>{block.completion.message}</AssistantMessage></div></div>{block.completion.artifact && <ArtifactPanel artifact={block.completion.artifact} />}</article>;
     case "failure":
       return <article className="failure-panel"><div className="feed-card-heading"><span className="feed-icon failure"><AlertTriangle size={15} /></span><div><small>任务运行失败 · {block.code}</small><h3>{block.message}</h3></div></div></article>;
     default:
@@ -423,9 +434,9 @@ export function ConversationFeed({
     return (
       <div className="collaboration-empty">
         <span><MessageSquareText size={21} /></span>
-        <small>通用 GUI Agent 协作台</small>
-        <h2>说出目标，观察证据与每个决策点。</h2>
-        <p>任务开始后，目标修订、Runtime 进展、视觉证据和需要你决定的选项会按顺序出现在这里。</p>
+        <small>Affordance Assistant</small>
+        <h2>直接说你想知道什么，或想让它完成什么。</h2>
+        <p>普通问题会直接回答；确实需要操作界面时，浏览器会自动出现，并展示可核验的实时进展。</p>
       </div>
     );
   }
@@ -450,7 +461,7 @@ export function ConversationFeed({
       {view.interaction && !interactionInFeed && <InteractionRequestPanel request={view.interaction} active respond={respond} />}
       {view.question && !view.interaction && <article className="interaction-panel active"><div className="feed-card-heading"><span className="feed-icon question"><CircleHelp size={15} /></span><div><small>需要你的回答</small><h3>{view.question.prompt}</h3></div></div></article>}
       {view.confirmation && !confirmationInFeed && <ConfirmationPanel summary={view.confirmation.summary} risk={view.confirmation.risk} active confirm={confirm} />}
-      {view.completion && !completionInFeed && <article className={`completion-panel ${view.completion.outcome}`} data-testid="completion"><div className="feed-card-heading"><span className="feed-icon completion"><CheckCircle2 size={15} /></span><div><small>任务结果</small><h3>{view.completion.message}</h3></div></div>{view.completion.artifact && <ArtifactPanel artifact={view.completion.artifact} />}</article>}
+      {view.completion && !completionInFeed && <article className={`completion-panel ${view.completion.outcome}`} data-testid="completion"><div className="feed-card-heading"><span className="feed-icon completion"><CheckCircle2 size={15} /></span><div><small>Assistant</small><AssistantMessage>{view.completion.message}</AssistantMessage></div></div>{view.completion.artifact && <ArtifactPanel artifact={view.completion.artifact} />}</article>}
     </div>
   );
 }
@@ -507,14 +518,14 @@ export function UnifiedComposer({
     : view.composer.mode === "answer"
       ? "回答当前问题…"
       : view.composer.mode === "start"
-        ? "描述一个任务…"
+        ? "问任何问题，或描述需要完成的任务…"
         : view.composer.mode === "interaction"
           ? "请使用上方的选项或字段…"
           : "当前没有可用的文字操作";
   return (
     <div className="unified-composer-wrap">
       <div className="composer-context">
-        <span>{revision ? "修改整个目标" : view.composer.mode === "answer" ? "回答问题" : view.composer.mode === "start" ? "开始任务" : view.composer.mode === "interaction" ? "等待你的选择" : "输入暂不可用"}</span>
+        <span>{revision ? "修改当前请求" : view.composer.mode === "answer" ? "回答问题" : view.composer.mode === "start" ? "发送消息" : view.composer.mode === "interaction" ? "等待你的选择" : "输入暂不可用"}</span>
         {view.actions.revise && view.composer.mode !== "revise" && <button type="button" aria-pressed={revisionOverride} onClick={() => setRevisionOverride((current) => !current)}>{revisionOverride ? "返回当前问题" : "修改整个目标"}</button>}
       </div>
       <form className="unified-composer" onSubmit={submit}>

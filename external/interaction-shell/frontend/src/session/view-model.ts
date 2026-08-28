@@ -15,9 +15,9 @@ export function statusPresentation(status: RunStatus, controlOwner: ControlOwner
   }
   switch (status) {
     case "idle":
-      return { label: "等待任务", tone: "idle" as const };
+      return { label: "等待消息", tone: "idle" as const };
     case "running":
-      return { label: "任务运行中", tone: "running" as const };
+      return { label: "正在处理", tone: "running" as const };
     case "paused":
       return { label: "任务已暂停", tone: "paused" as const };
     case "waiting_user":
@@ -25,11 +25,11 @@ export function statusPresentation(status: RunStatus, controlOwner: ControlOwner
     case "waiting_confirmation":
       return { label: "等待操作确认", tone: "waiting_confirmation" as const };
     case "done":
-      return { label: "任务已完成", tone: "done" as const };
+      return { label: "回答完成", tone: "done" as const };
     case "cancelled":
       return { label: "任务已取消", tone: "cancelled" as const };
     case "failed":
-      return { label: "任务运行失败", tone: "failed" as const };
+      return { label: "处理失败", tone: "failed" as const };
     case "blocked":
       return { label: "需要处理后才能继续", tone: "blocked" as const };
     default:
@@ -66,7 +66,7 @@ export function projectShellView(snapshot: Snapshot | null) {
     snapshot,
     runStatus: snapshot?.run_status ?? "idle",
     taskRevision: snapshot?.task_revision ?? 0,
-    taskText: snapshot?.task_text ?? "Waiting for a task",
+    taskText: snapshot?.task_text ?? "等待消息",
     steps: snapshot?.public_steps ?? [],
     completion: snapshot?.completion ?? null,
     effectReconciliation: snapshot?.effect_reconciliation ?? null,
@@ -82,7 +82,7 @@ export function projectShellView(snapshot: Snapshot | null) {
       placeholder: composerMode === "answer"
         ? "Answer the question…"
         : composerMode === "start"
-          ? "Describe a task…"
+          ? "问任何问题，或描述需要完成的任务…"
           : composerMode === "revise"
             ? "Revise the active goal…"
             : composerMode === "interaction"

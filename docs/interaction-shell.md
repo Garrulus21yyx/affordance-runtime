@@ -44,6 +44,30 @@ The initial implementation uses:
 
 Android and desktop are deferred and are not part of this proposal's implementation or acceptance scope.
 
+### 2026-08-28 general Assistant composition
+
+The original sections below were written for a GUI-task-only Shell. Their Runtime-control invariants still apply, but
+the product entrypoint is now superseded by this capability-agnostic composition:
+
+```text
+Shell natural-language turn
+→ outer PydanticAI Assistant
+→ direct answer | provider-native Web Search | run_gui_task
+→ user-facing response
+```
+
+`run_gui_task` lazily opens the existing `CoreRuntimeSessionPort`; no browser is opened by session creation. While the
+tool is pending, all GUI questions, confirmations, revisions, cancellation, pause/resume, takeover, Viewer state, and
+effect reconciliation remain owned by and forwarded to that existing public Runtime session. The outer Assistant
+does not copy World, bindings, GUI history, selectors, or provider transcripts. Its message history is persisted by
+Harness `StepPersistence(SqliteStepStore)` and restored with official PydanticAI messages. The Shell's bounded
+conversation remains a presentation and revision projection, not model history. Optional Harness Memory is disabled
+unless deployment supplies an explicit namespace and is limited to user-requested stable preferences.
+
+Accordingly, later statements that “the Shell does not need a conversational supervisor Agent” mean that Assistant
+prose cannot own or reinterpret Runtime control state; they no longer prohibit the outer user-facing Assistant that
+selects a bounded capability and renders its typed result.
+
 ### 1.1 Reuse-first implementation rule
 
 Infrastructure, protocol, UI primitives, browser transport, model transport, tracing, and test automation should use

@@ -59,6 +59,18 @@ body { font-family: "IBM Plex Sans Variable", "PingFang SC", sans-serif; }
 .feed-card-heading > div { min-width: 0; }
 .feed-card-heading small { display: block; margin-bottom: 4px; color: var(--quiet); font: 600 9px/1.25 "JetBrains Mono Variable", monospace; letter-spacing: .045em; }
 .feed-card-heading h3 { font-size: 13px; line-height: 1.55; letter-spacing: -.01em; }
+.assistant-prose {
+  max-width: 64ch;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.72;
+}
+.assistant-prose > :first-child { margin-top: 0; }
+.assistant-prose > :last-child { margin-bottom: 0; }
+.assistant-prose p, .assistant-prose ul, .assistant-prose ol { margin: 8px 0; }
+.assistant-prose ul, .assistant-prose ol { padding-left: 20px; }
+.assistant-prose a { color: var(--signal-blue); text-underline-offset: 2px; }
+.assistant-prose code { padding: 1px 4px; background: var(--panel-inset); border-radius: 4px; font: 550 10px/1.5 "JetBrains Mono Variable", monospace; }
 .feed-icon { display: grid; flex: 0 0 31px; width: 31px; height: 31px; place-items: center; color: var(--signal-blue); background: var(--signal-blue-soft); border-radius: 9px 9px 3px; }
 .feed-icon.question, .feed-icon.confirmation { color: var(--signal-amber); background: rgba(255,180,134,.19); }
 .feed-icon.revision { color: var(--pine); background: var(--mint); }

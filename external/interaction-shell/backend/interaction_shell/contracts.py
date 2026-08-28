@@ -227,7 +227,7 @@ class PublicArtifact(StrictModel):
 class Completion(StrictModel):
     outcome: Literal["success", "failure", "blocked", "cancelled"]
     code: str = Field(min_length=1, max_length=128)
-    message: str = Field(max_length=4000)
+    message: str = Field(max_length=16000)
     evidence_refs: tuple[str, ...] = ()
     artifact: PublicArtifact | None = None
 

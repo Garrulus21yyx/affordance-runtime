@@ -33,7 +33,7 @@ describe("projectShellView", () => {
     expect(statusPresentation("paused", "agent").label).toBe("任务已暂停");
     expect(statusPresentation("paused", "user")).toEqual({ label: "你正在控制界面", tone: "user_control" });
     expect(statusPresentation("blocked", "agent").label).toBe("需要处理后才能继续");
-    expect(statusPresentation("failed", "agent").label).toBe("任务运行失败");
+    expect(statusPresentation("failed", "agent").label).toBe("处理失败");
   });
 
   it("derives composer behavior from exact command offers", () => {

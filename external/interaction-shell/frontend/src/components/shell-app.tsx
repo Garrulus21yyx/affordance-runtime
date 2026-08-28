@@ -25,13 +25,13 @@ type LabsTab = "experiment" | "bad-cases" | "evidence";
 
 function statusLabel(status: string) {
   return ({
-    idle: "等待任务",
-    running: "任务运行中",
+    idle: "等待消息",
+    running: "正在处理",
     waiting_user: "等待你的回答",
     waiting_confirmation: "等待操作确认",
     paused: "任务已暂停",
-    done: "任务已完成",
-    failed: "任务运行失败",
+    done: "回答完成",
+    failed: "处理失败",
     blocked: "需要处理后才能继续",
     cancelled: "已取消",
     completed: "已完成",
@@ -275,32 +275,33 @@ export function ShellApp() {
   const labs = useBenchmarkLabs(labsOpen || showLabRun);
   const activeLab = showLabRun ? labs.selectedRun : null;
   const title = activeLab ? humanize(activeLab.spec.case_id) : view.snapshot?.task_text || "从一句话开始";
+  const showSurface = Boolean(activeLab) || view.surface.status !== "unavailable";
   const statusTone = activeLab?.status ?? view.status.tone;
   const statusText = activeLab ? statusLabel(activeLab.status) : view.status.label;
   const recent = useMemo(() => labs.runs.slice(0, 8), [labs.runs]);
   const openLabs = (tab: LabsTab) => { setLabsTab(tab); setLabsOpen(true); };
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${showSurface ? "with-surface" : "without-surface"}`}>
       <aside className="sidebar" aria-label="主导航">
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><strong>Affordance</strong></div>
-        <button className="new-task" type="button" onClick={() => { setShowLabRun(false); void shell.newSession(); }}><span>新建任务</span><Plus size={19} /></button>
+        <button className="new-task" type="button" onClick={() => { setShowLabRun(false); void shell.newSession(); }}><span>新建会话</span><Plus size={19} /></button>
         <p className="nav-label">Sessions · 会话</p>
         <nav className="session-list" aria-label="最近运行">
           {view.snapshot?.task_text && <button className={`session ${!showLabRun ? "active" : ""}`} type="button" onClick={() => setShowLabRun(false)}><b>{view.taskText}</b><small><i className={`session-status ${view.status.tone}`} />{view.status.label}</small></button>}
           {recent.map((run) => <button className={`session ${showLabRun && labs.selectedRun?.run_id === run.run_id ? "active" : ""}`} type="button" key={run.run_id} onClick={() => { labs.selectRun(run); setShowLabRun(true); }}><b>{humanize(run.spec.case_id)}</b><small><i className={`session-status ${run.status}`} />{statusLabel(run.status)}</small></button>)}
-          {!view.snapshot?.task_text && !recent.length && <div className="session-placeholder">启动一个任务后，会话会出现在这里。</div>}
+          {!view.snapshot?.task_text && !recent.length && <div className="session-placeholder">开始对话后，会话会出现在这里。</div>}
         </nav>
         <div className="sidebar-bottom"><button className="utility-link" type="button" aria-label="Labs" onClick={() => openLabs("experiment")}><FlaskConical size={17} /><span aria-hidden="true">Labs</span></button><button className="utility-link" type="button" disabled><Settings size={17} /><span>设置</span></button></div>
       </aside>
       <section className="conversation" aria-labelledby="taskTitle">
-        <header className="conversation-header"><div className="title-block"><small>{activeLab ? activeLab.spec.case_id : "COLLABORATION FEED"}</small><h1 id="taskTitle">{title}</h1></div><div className="header-actions">
+        <header className="conversation-header"><div className="title-block"><small>{activeLab ? activeLab.spec.case_id : "ASSISTANT"}</small><h1 id="taskTitle">{title}</h1></div><div className="header-actions">
           {!activeLab && <ControlBar view={view} returnControl={shell.returnControl} takeOver={shell.takeOver} resume={shell.resume} pause={shell.pause} cancel={shell.cancel} />}
           <span className={`status-pill ${statusTone}`}><i /><span>{statusText}</span></span><button className="icon-button" type="button" aria-label="打开运行详情" onClick={() => openLabs("evidence")}><MoreHorizontal size={17} /></button>
         </div></header>
         <div className="thread" aria-live="polite">{activeLab ? <LabThread run={activeLab} activity={labs.activity} /> : <ConversationFeed view={view} respond={shell.respondInteraction} confirm={shell.confirm} />}</div>
         {activeLab ? <div className="composer-wrap"><div className="composer-hint">正式 benchmark 由 Labs 管理；普通用户会话仍保留在左侧。</div><div className="composer disabled"><FlaskConical className="composer-tool" size={18} /><textarea rows={1} readOnly value="" placeholder="Labs 运行中…" /><button className="send" type="button" onClick={() => openLabs("evidence")}><FlaskConical size={16} /></button></div></div> : <UnifiedComposer view={view} submitMessage={shell.submitMessage} revise={shell.revise} />}
       </section>
-      <LiveView view={view} labFrameUrl={labs.frameUrl} labRun={activeLab} />
+      {showSurface && <LiveView view={view} labFrameUrl={labs.frameUrl} labRun={activeLab} />}
       <LabsDrawer
         open={labsOpen}
         tab={labsTab}
