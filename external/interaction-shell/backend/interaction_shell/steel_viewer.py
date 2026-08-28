@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import secrets
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,11 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import httpx
 from affordance_runtime.app.public_session import PublicRuntimeSessionHandle
 
-from .content_filtering import ContentFilterProfile
+from .content_filtering import (
+    ContentFilterProfile,
+    ContentFilterSessionAttestation,
+    CosmeticFilterExtensionAttestation,
+)
 from .viewer import (
     SurfaceAvailability,
     SurfaceChannelAvailable,
@@ -63,6 +68,7 @@ class SteelBrowserLease:
     input_websocket_url: str = ""
     unavailable_reason: str = ""
     released: bool = False
+    content_filter: ContentFilterSessionAttestation | None = None
 
 
 class SteelViewerTransport(Protocol):
@@ -72,7 +78,14 @@ class SteelViewerTransport(Protocol):
         *,
         timeout_ms: int,
         block_ads: bool,
+        extension_ids: tuple[str, ...],
     ) -> tuple[str, str, str]: ...
+
+    async def extension_is_attested(
+        self,
+        api_key: str,
+        attestation: CosmeticFilterExtensionAttestation,
+    ) -> bool: ...
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None: ...
 
@@ -111,17 +124,21 @@ class HTTPXSteelViewerTransport:
         *,
         timeout_ms: int,
         block_ads: bool,
+        extension_ids: tuple[str, ...],
     ) -> tuple[str, str, str]:
+        session_body: dict[str, object] = {
+            "debugConfig": {"interactive": True, "systemCursor": False},
+            "timeout": timeout_ms,
+            "inactivityTimeout": min(timeout_ms, 300_000),
+            "blockAds": block_ads,
+        }
+        if extension_ids:
+            session_body["extensionIds"] = list(extension_ids)
         response = await self._request(
             "POST",
             f"{_STEEL_API_ORIGIN}/v1/sessions",
             headers={"steel-api-key": api_key},
-            json={
-                "debugConfig": {"interactive": True, "systemCursor": False},
-                "timeout": timeout_ms,
-                "inactivityTimeout": min(timeout_ms, 300_000),
-                "blockAds": block_ads,
-            },
+            json=session_body,
         )
         if response.status_code != 201:
             raise SteelViewerUnavailable("viewer_provider_session_create_failed")
@@ -141,6 +158,37 @@ class HTTPXSteelViewerTransport:
         except (TypeError, ValueError) as exc:
             raise SteelViewerUnavailable("viewer_provider_session_invalid") from exc
         return provider_session_id, websocket_url, debug_url
+
+    async def extension_is_attested(
+        self,
+        api_key: str,
+        attestation: CosmeticFilterExtensionAttestation,
+    ) -> bool:
+        response = await self._request(
+            "GET",
+            f"{_STEEL_API_ORIGIN}/v1/extensions",
+            headers={"steel-api-key": api_key},
+        )
+        if response.status_code != 200:
+            return False
+        try:
+            payload = response.json()
+            extensions = payload["extensions"]
+            if not isinstance(extensions, list):
+                return False
+        except (KeyError, TypeError, ValueError):
+            return False
+        expected = {
+            "id": attestation.extension_id,
+            "name": attestation.name,
+            "createdAt": attestation.created_at,
+            "updatedAt": attestation.updated_at,
+        }
+        return any(
+            isinstance(candidate, dict)
+            and all(candidate.get(field) == value for field, value in expected.items())
+            for candidate in extensions
+        )
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None:
         response = await self._request(
@@ -234,6 +282,7 @@ class SteelViewerGateway:
         *,
         maximum_session_timeout_ms: int = _STEEL_DEFAULT_MAX_SESSION_TIMEOUT_MS,
         content_filter_profile: ContentFilterProfile = ContentFilterProfile.OFF,
+        cosmetic_filter_extension: CosmeticFilterExtensionAttestation | None = None,
     ) -> None:
         if not api_key.strip():
             raise ValueError("Steel viewer requires a nonempty API key")
@@ -241,19 +290,38 @@ class SteelViewerGateway:
             raise ValueError("Steel maximum session timeout must be at least 60000 ms")
         if not isinstance(content_filter_profile, ContentFilterProfile):
             raise TypeError("Steel content filter profile must be typed")
+        if (
+            cosmetic_filter_extension is not None
+            and not isinstance(cosmetic_filter_extension, CosmeticFilterExtensionAttestation)
+        ):
+            raise TypeError("Steel cosmetic filter extension attestation must be typed")
         self.__api_key = api_key
         self._transport = transport or HTTPXSteelViewerTransport()
         self._maximum_session_timeout_ms = maximum_session_timeout_ms
         self._content_filter_profile = content_filter_profile
+        self._cosmetic_filter_extension = cosmetic_filter_extension
         self._leases: dict[str, SteelBrowserLease] = {}
         self._handle_sessions: dict[int, str] = {}
 
     async def open(self, session_id: str, expires_at: datetime) -> SteelBrowserLease:
+        activation_started_at = time.perf_counter()
+        active_cosmetic_extension = (
+            self._cosmetic_filter_extension
+            if self._content_filter_profile.requires_cosmetic_filtering
+            else None
+        )
         if self._content_filter_profile.requires_cosmetic_filtering:
-            # Strict mode is admitted only after a pinned extension can be
-            # activated and attested before navigation. Never degrade it to
-            # Steel's network-only blocker.
-            raise SteelViewerUnavailable("content_filter_unavailable")
+            if active_cosmetic_extension is None:
+                raise SteelViewerUnavailable("content_filter_unavailable")
+            try:
+                extension_is_attested = await self._transport.extension_is_attested(
+                    self.__api_key,
+                    active_cosmetic_extension,
+                )
+            except SteelViewerUnavailable:
+                raise SteelViewerUnavailable("content_filter_unavailable") from None
+            if not extension_is_attested:
+                raise SteelViewerUnavailable("content_filter_unavailable")
         now = datetime.now(UTC)
         remaining_ms = max(60_000, int((expires_at - now).total_seconds() * 1000))
         provider_timeout_ms = min(remaining_ms, self._maximum_session_timeout_ms)
@@ -261,6 +329,15 @@ class SteelViewerGateway:
             self.__api_key,
             timeout_ms=provider_timeout_ms,
             block_ads=self._content_filter_profile.blocks_ad_networks,
+            extension_ids=(
+                (active_cosmetic_extension.extension_id,)
+                if active_cosmetic_extension is not None
+                else ()
+            ),
+        )
+        activation_latency_ms = max(
+            0,
+            round((time.perf_counter() - activation_started_at) * 1000),
         )
         provider_expires_at = now + timedelta(milliseconds=provider_timeout_ms)
         return SteelBrowserLease(
@@ -269,6 +346,11 @@ class SteelViewerGateway:
             websocket_url,
             debug_url,
             min(expires_at, provider_expires_at),
+            content_filter=ContentFilterSessionAttestation.applied(
+                self._content_filter_profile,
+                active_cosmetic_extension,
+                activation_latency_ms=activation_latency_ms,
+            ),
         )
 
     def attach(

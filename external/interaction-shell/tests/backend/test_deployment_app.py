@@ -7,7 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 from interaction_shell import deployment_app
-from interaction_shell.content_filtering import ContentFilterProfile
+from interaction_shell.content_filtering import (
+    ContentFilterProfile,
+    CosmeticFilterExtensionAttestation,
+)
 from interaction_shell.steel_viewer import SteelViewerGateway
 from interaction_shell.viewer import ViewerHTTPResponse
 
@@ -57,18 +60,32 @@ class FakeSteelTransport:
     def __init__(self) -> None:
         self.created: list[int] = []
         self.block_ads: list[bool] = []
+        self.extension_ids: list[tuple[str, ...]] = []
         self.released: list[str] = []
 
-    async def create_session(self, api_key: str, *, timeout_ms: int, block_ads: bool):
+    async def create_session(
+        self,
+        api_key: str,
+        *,
+        timeout_ms: int,
+        block_ads: bool,
+        extension_ids: tuple[str, ...],
+    ):
         assert api_key == "viewer-key"
         self.created.append(timeout_ms)
         self.block_ads.append(block_ads)
+        self.extension_ids.append(extension_ids)
         serial = len(self.created)
         return (
             f"provider-{serial}",
             f"wss://connect.steel.dev?sessionId=provider-{serial}",
             f"https://api.steel.dev/v1/sessions/provider-{serial}/debug",
         )
+
+    async def extension_is_attested(self, api_key: str, attestation) -> bool:
+        del attestation
+        assert api_key == "viewer-key"
+        return True
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None:
         assert api_key == "viewer-key"
@@ -100,6 +117,7 @@ def _patch_composition(
     fail_composition: bool = False,
     trace_flush_fails: bool = False,
     role_calls: list[dict[str, object]] | None = None,
+    trace_calls: list[dict[str, object]] | None = None,
 ):
     surfaces: list[FakeBrowser] = []
     traces: list[FakeTrace] = []
@@ -109,7 +127,9 @@ def _patch_composition(
         surfaces.append(surface)
         return surface
 
-    def open_trace(*_args, **_kwargs):
+    def open_trace(*_args, **kwargs):
+        if trace_calls is not None:
+            trace_calls.append(dict(kwargs))
         trace = FakeTrace(len(traces) + 1, flush_fails=trace_flush_fails)
         traces.append(trace)
         return trace
@@ -173,6 +193,30 @@ def test_deployment_rejects_unknown_filter_profile() -> None:
                 "INTERACTION_SHELL_CONTENT_FILTER_PROFILE": "best-effort",
             }
         )
+
+
+def test_deployment_parses_strict_filter_extension_attestation_atomically() -> None:
+    environment = {
+        "INTERACTION_SHELL_BROWSER_PROVIDER": "steel",
+        "INTERACTION_SHELL_CONTENT_FILTER_PROFILE": "ads_and_cosmetic.v1",
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_ID": "ext_ubol_pinned",
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_NAME": "uBOLite_2026_825_1619",
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_CREATED_AT": "2026-08-25T16:20:50Z",
+        "INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_UPDATED_AT": "2026-08-25T16:20:50Z",
+    }
+
+    settings = deployment_app.BrowserDeploymentSettings.from_environment(environment)
+
+    assert settings.cosmetic_filter_extension == CosmeticFilterExtensionAttestation(
+        "ext_ubol_pinned",
+        "uBOLite_2026_825_1619",
+        "2026-08-25T16:20:50Z",
+        "2026-08-25T16:20:50Z",
+    )
+
+    environment.pop("INTERACTION_SHELL_STEEL_COSMETIC_EXTENSION_UPDATED_AT")
+    with pytest.raises(ValueError, match="attestation is incomplete"):
+        deployment_app.BrowserDeploymentSettings.from_environment(environment)
 
 
 @pytest.mark.asyncio
@@ -316,6 +360,57 @@ async def test_strict_filter_unavailability_is_preserved_at_public_session_open(
     assert raised.value.code == "content_filter_unavailable"
     assert transport.created == []
     assert surfaces == []
+    assert [trace.flush_count for trace in traces] == [1]
+
+
+@pytest.mark.asyncio
+async def test_strict_filter_identity_is_attached_to_trace_and_exact_steel_lease(monkeypatch):
+    trace_calls: list[dict[str, object]] = []
+    surfaces, traces = _patch_composition(monkeypatch, trace_calls=trace_calls)
+    extension = CosmeticFilterExtensionAttestation(
+        "ext_ubol_pinned",
+        "uBOLite_2026_825_1619",
+        "2026-08-25T16:20:50Z",
+        "2026-08-25T16:20:50Z",
+    )
+    settings = deployment_app.BrowserDeploymentSettings(
+        "about:blank",
+        10,
+        90,
+        "steel",
+        ContentFilterProfile.ADS_AND_COSMETIC,
+        extension,
+    )
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=settings.content_filter_profile,
+        cosmetic_filter_extension=settings.cosmetic_filter_extension,
+    )
+    factory = deployment_app.BrowserDeploymentSessionFactory(
+        settings,
+        {},
+        viewer_gateway=gateway,
+    )
+
+    session = await factory.open(
+        "session:strict-filter:ready",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    assert trace_calls == [
+        {
+            "directory": None,
+            "run_id": "interaction-shell:session:strict-filter:ready",
+            "session_id": "session:strict-filter:ready",
+            "analysis_identity": settings.content_filter_trace_identity,
+        }
+    ]
+    assert transport.block_ads == [True]
+    assert transport.extension_ids == [(extension.extension_id,)]
+    await session.close()
+    assert [surface.close_count for surface in surfaces] == [1]
     assert [trace.flush_count for trace in traces] == [1]
 
 

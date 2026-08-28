@@ -30,7 +30,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Add focused backend tests for parsing, request bodies, and fail-closed behavior.
 - Commit and push.
 
-### Phase 2 — pinned cosmetic filtering and acquisition attestation (`in_progress`)
+### Phase 2 — pinned cosmetic filtering and acquisition attestation (`done`)
 
 - Verify the exact installed Steel extension admission mechanism against the deployed Steel API.
 - Pin the selected uBO Lite artifact/version/digest; do not auto-update during benchmark runs.
@@ -40,7 +40,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Add fixture coverage for third-party and same-origin cosmetic ads.
 - Commit and push.
 
-### Phase 3 — single filtered frame and compatibility gates (`pending`)
+### Phase 3 — single filtered frame and compatibility gates (`in_progress`)
 
 - Prove DOM/AX projection and screenshot derive from one post-filter CaptureFrame.
 - Verify popups/new pages inherit the session filter.
@@ -72,12 +72,21 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - 2026-08-28: Phase 1 implemented at the Shell browser-session owner. `off` and `network_ads.v1` map to explicit
   Steel `blockAds` booleans; strict mode fails with `content_filter_unavailable` before provider activation. Shell
   backend and architecture gate: 104 passed. Targeted pyright retained one pre-existing deployment adapter type error.
+- 2026-08-28: Phase 2 pinned uBO Lite `2026.825.1619` at official artifact SHA-256
+  `9f0acbe3eabd4ba1c1c0629438cfacafbdaf04cd150769932d5d265b2fac117e`. The provisioner verified the downloaded
+  artifact, uploaded it once through Steel Extensions API, and stored the returned non-secret attestation in local
+  `.env` while keeping the active profile `off`. Runtime verifies exact Steel extension metadata before strict session
+  creation, adds only that `extensionId`, and carries private engine/version/digest/latency metadata on the lease and
+  trace identity. Live metadata lookup and create/release smoke succeeded; no page navigation or benchmark ran.
+  Shell backend and architecture gate: 114 passed.
 
 ## Files changed by this plan
 
 - `.codex-plans/content-filter-visual-validation.md`
 - `external/interaction-shell/backend/interaction_shell/content_filtering.py`
 - `external/interaction-shell/backend/interaction_shell/deployment_app.py`
+- `external/interaction-shell/backend/interaction_shell/provision_content_filter.py`
 - `external/interaction-shell/backend/interaction_shell/steel_viewer.py`
+- `external/interaction-shell/tests/backend/test_content_filtering.py`
 - `external/interaction-shell/tests/backend/test_deployment_app.py`
 - `external/interaction-shell/tests/backend/test_steel_viewer.py`

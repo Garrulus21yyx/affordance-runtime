@@ -47,7 +47,12 @@ from dotenv import load_dotenv
 
 from .api import create_app
 from .completed_runs import CompletedRunSummaryResolver
-from .content_filtering import ContentFilterProfile
+from .content_filtering import (
+    PINNED_UBOL_SHA256,
+    PINNED_UBOL_VERSION,
+    ContentFilterProfile,
+    CosmeticFilterExtensionAttestation,
+)
 from .core_runtime_port import CoreRuntimeSessionPort, unavailable_viewer
 from .manager import RunSessionManager
 from .session_registry import SQLiteSessionRecoveryRegistry
@@ -111,6 +116,7 @@ class BrowserDeploymentSettings:
     call_timeout_s: float
     browser_provider: str = "local"
     content_filter_profile: ContentFilterProfile = ContentFilterProfile.OFF
+    cosmetic_filter_extension: CosmeticFilterExtensionAttestation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.content_filter_profile, ContentFilterProfile):
@@ -120,6 +126,30 @@ class BrowserDeploymentSettings:
             and self.content_filter_profile is not ContentFilterProfile.OFF
         ):
             raise ValueError("local browser provider supports content filtering off only")
+
+    @property
+    def content_filter_trace_identity(self) -> dict[str, object]:
+        if self.content_filter_profile is ContentFilterProfile.OFF:
+            engine_id, engine_version, ruleset_digest = "none", "", ""
+        elif self.content_filter_profile is ContentFilterProfile.NETWORK_ADS:
+            engine_id, engine_version, ruleset_digest = (
+                "steel.block_ads",
+                "provider-managed",
+                "",
+            )
+        else:
+            engine_id, engine_version, ruleset_digest = (
+                "ublock-origin-lite",
+                PINNED_UBOL_VERSION,
+                f"sha256:{PINNED_UBOL_SHA256}",
+            )
+        return {
+            "content_filter_profile": self.content_filter_profile.value,
+            "content_filter_engine_id": engine_id,
+            "content_filter_engine_version": engine_version,
+            "content_filter_ruleset_digest": ruleset_digest,
+            "content_filter_extension_configured": self.cosmetic_filter_extension is not None,
+        }
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> BrowserDeploymentSettings:
@@ -160,12 +190,16 @@ class BrowserDeploymentSettings:
             raise ValueError(
                 f"INTERACTION_SHELL_CONTENT_FILTER_PROFILE must be one of: {supported}"
             ) from exc
+        cosmetic_filter_extension = CosmeticFilterExtensionAttestation.from_environment(
+            environment
+        )
         return cls(
             initial_url,
             max_turns,
             call_timeout_s,
             browser_provider,
             content_filter_profile,
+            cosmetic_filter_extension,
         )
 
 
@@ -216,6 +250,7 @@ class BrowserDeploymentSessionFactory:
                 directory=(Path(raw_trace_directory) / session_id if raw_trace_directory else None),
                 run_id=f"interaction-shell:{session_id}",
                 session_id=session_id,
+                analysis_identity=self.settings.content_filter_trace_identity,
             )
         except Exception as exc:
             logger.exception("runtime composition prerequisites failed for session %s", session_id)
@@ -552,6 +587,7 @@ viewer_gateway = (
             86_400_000,
         ),
         content_filter_profile=settings.content_filter_profile,
+        cosmetic_filter_extension=settings.cosmetic_filter_extension,
     )
     if settings.browser_provider == "steel" and _viewer_key
     else None

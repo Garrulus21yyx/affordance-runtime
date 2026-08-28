@@ -4,7 +4,12 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from interaction_shell.content_filtering import ContentFilterProfile
+from interaction_shell.content_filtering import (
+    PINNED_UBOL_SHA256,
+    PINNED_UBOL_VERSION,
+    ContentFilterProfile,
+    CosmeticFilterExtensionAttestation,
+)
 from interaction_shell.steel_viewer import (
     HTTPXSteelViewerTransport,
     SteelBrowserLease,
@@ -13,10 +18,22 @@ from interaction_shell.steel_viewer import (
 from interaction_shell.viewer import ViewerHTTPResponse, ViewerUnavailable
 
 
+def _cosmetic_extension() -> CosmeticFilterExtensionAttestation:
+    return CosmeticFilterExtensionAttestation(
+        "ext_ubol_pinned",
+        "uBOLite_2026_825_1619",
+        "2026-08-25T16:20:50Z",
+        "2026-08-25T16:20:50Z",
+    )
+
+
 class FakeSteelTransport:
     def __init__(self) -> None:
         self.created: list[int] = []
         self.block_ads: list[bool] = []
+        self.extension_ids: list[tuple[str, ...]] = []
+        self.extension_attestations: list[CosmeticFilterExtensionAttestation] = []
+        self.extension_attested = True
         self.released: list[str] = []
         self.ice_calls: list[tuple[str, str]] = []
         self.whep_calls: list[tuple[str, str, bytes, str, str]] = []
@@ -24,16 +41,33 @@ class FakeSteelTransport:
         self.ice_status = 200
         self.document_modes: list[bool] = []
 
-    async def create_session(self, api_key: str, *, timeout_ms: int, block_ads: bool):
+    async def create_session(
+        self,
+        api_key: str,
+        *,
+        timeout_ms: int,
+        block_ads: bool,
+        extension_ids: tuple[str, ...],
+    ):
         assert api_key == "viewer-key"
         self.created.append(timeout_ms)
         self.block_ads.append(block_ads)
+        self.extension_ids.append(extension_ids)
         serial = len(self.created)
         return (
             f"provider-{serial}",
             f"wss://connect.steel.dev?sessionId=provider-{serial}",
             f"https://api.steel.dev/v1/sessions/provider-{serial}/debug",
         )
+
+    async def extension_is_attested(
+        self,
+        api_key: str,
+        attestation: CosmeticFilterExtensionAttestation,
+    ) -> bool:
+        assert api_key == "viewer-key"
+        self.extension_attestations.append(attestation)
+        return self.extension_attested
 
     async def release_session(self, api_key: str, provider_session_id: str) -> None:
         assert api_key == "viewer-key"
@@ -179,6 +213,28 @@ async def test_gateway_maps_filter_profile_to_explicit_steel_network_policy(
 
 
 @pytest.mark.asyncio
+async def test_off_profile_keeps_provisioned_extension_dormant() -> None:
+    transport = FakeSteelTransport()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=ContentFilterProfile.OFF,
+        cosmetic_filter_extension=_cosmetic_extension(),
+    )
+
+    lease = await gateway.open(
+        "shell-session",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    assert transport.extension_attestations == []
+    assert transport.extension_ids == [()]
+    assert transport.block_ads == [False]
+    assert lease.content_filter is not None
+    assert lease.content_filter.profile is ContentFilterProfile.OFF
+
+
+@pytest.mark.asyncio
 async def test_strict_filter_profile_fails_before_steel_provider_activation() -> None:
     transport = FakeSteelTransport()
     gateway = SteelViewerGateway(
@@ -193,6 +249,53 @@ async def test_strict_filter_profile_fails_before_steel_provider_activation() ->
     assert raised.value.code == "content_filter_unavailable"
     assert transport.created == []
     assert transport.block_ads == []
+
+
+@pytest.mark.asyncio
+async def test_strict_filter_attests_and_attaches_the_exact_pinned_extension() -> None:
+    transport = FakeSteelTransport()
+    extension = _cosmetic_extension()
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=ContentFilterProfile.ADS_AND_COSMETIC,
+        cosmetic_filter_extension=extension,
+    )
+
+    lease = await gateway.open(
+        "shell-session",
+        datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    assert transport.extension_attestations == [extension]
+    assert transport.block_ads == [True]
+    assert transport.extension_ids == [(extension.extension_id,)]
+    assert lease.content_filter is not None
+    assert lease.content_filter.profile is ContentFilterProfile.ADS_AND_COSMETIC
+    assert lease.content_filter.engine_id == "ublock-origin-lite"
+    assert lease.content_filter.engine_version == PINNED_UBOL_VERSION
+    assert lease.content_filter.ruleset_digest == f"sha256:{PINNED_UBOL_SHA256}"
+    assert lease.content_filter.activation_latency_ms >= 0
+    assert lease.content_filter.blocked_request_count is None
+    assert lease.content_filter.cosmetic_rule_count is None
+
+
+@pytest.mark.asyncio
+async def test_strict_filter_rejects_changed_extension_metadata_before_session_create() -> None:
+    transport = FakeSteelTransport()
+    transport.extension_attested = False
+    gateway = SteelViewerGateway(
+        "viewer-key",
+        transport,
+        content_filter_profile=ContentFilterProfile.ADS_AND_COSMETIC,
+        cosmetic_filter_extension=_cosmetic_extension(),
+    )
+
+    with pytest.raises(ViewerUnavailable) as raised:
+        await gateway.open("shell-session", datetime.now(UTC) + timedelta(minutes=5))
+
+    assert raised.value.code == "content_filter_unavailable"
+    assert transport.created == []
 
 
 @pytest.mark.asyncio
@@ -223,6 +326,7 @@ async def test_http_transport_never_relies_on_steel_block_ads_default(
         "viewer-key",
         timeout_ms=90_000,
         block_ads=block_ads,
+        extension_ids=(),
     )
 
     assert request_bodies == [
@@ -233,6 +337,35 @@ async def test_http_transport_never_relies_on_steel_block_ads_default(
             "blockAds": block_ads,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_http_transport_attests_exact_extension_metadata(monkeypatch) -> None:
+    transport = HTTPXSteelViewerTransport()
+    extension = _cosmetic_extension()
+
+    async def request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "https://api.steel.dev/v1/extensions"
+        assert kwargs["headers"] == {"steel-api-key": "viewer-key"}
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "count": 1,
+                "extensions": [
+                    {
+                        "id": extension.extension_id,
+                        "name": extension.name,
+                        "createdAt": extension.created_at,
+                        "updatedAt": extension.updated_at,
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(transport, "_request", request)
+
+    assert await transport.extension_is_attested("viewer-key", extension) is True
 
 
 def test_gateway_rejects_provider_timeout_below_supported_minimum() -> None:
