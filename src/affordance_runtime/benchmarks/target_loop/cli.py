@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
+from affordance_runtime.benchmarks.browsergym_runtime import configured_browsergym_python
 from affordance_runtime.benchmarks.target_loop.detached_run import (
     detached_status,
     launch_detached,
@@ -20,6 +21,7 @@ from affordance_runtime.benchmarks.target_loop.runner import (
     run_suite,
 )
 from affordance_runtime.benchmarks.webarena_verified import (
+    inspect_webarena_verified_w0_readiness,
     inspect_webarena_verified_w1b_world,
 )
 
@@ -40,9 +42,7 @@ def main() -> int:
         print(json.dumps(detached_status(args.output_dir), indent=2, sort_keys=True))
         return 0
     if args.w1b_world:
-        result = asyncio.run(
-            inspect_webarena_verified_w1b_world(Path(args.output_dir), seed=args.seed)
-        )
+        result = asyncio.run(inspect_webarena_verified_w1b_world(Path(args.output_dir), seed=args.seed))
         return 0 if result["ready"] else 1
     if not args.suite or not args.profile:
         parser.error("--suite and --profile are required unless --w1b-world is used")
@@ -77,6 +77,27 @@ def main() -> int:
 
 def _run_foreground_benchmark(manifest, output_dir: Path) -> int:
     """Run with bounded shutdown for tasks already detached by the watchdog."""
+
+    if manifest.suite_id in {"webarena-verified-w1b", "webarena-verified-w2"}:
+        report = inspect_webarena_verified_w0_readiness(
+            runtime_python=configured_browsergym_python(),
+            output_path=output_dir / "w0-admission.json",
+            exercise_environment=False,
+        )
+        if report.get("ready") is not True:
+            print(
+                json.dumps(
+                    {
+                        "state": "environment_invalid",
+                        "failure_origin": "environment",
+                        "acceptance_errors": report.get("acceptance_errors", []),
+                        "report_path": str(output_dir / "w0-admission.json"),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            return 2
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

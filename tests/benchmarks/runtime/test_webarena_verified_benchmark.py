@@ -396,9 +396,7 @@ def test_w1b_privacy_gate_rejects_exact_runtime_lineage_values() -> None:
         envelope=SimpleNamespace(physical_content=lambda: {"messages": (leaked,)}),
     )
 
-    assert _private_leak_markers(leaked, catalog, admitted, private_values) == (
-        "private_binding_value",
-    )
+    assert _private_leak_markers(leaked, catalog, admitted, private_values) == ("private_binding_value",)
 
 
 def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp_path: Path) -> None:
@@ -409,9 +407,18 @@ def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp
         "WA_GITLAB_URL": "https://gitlab.example.test",
         "WA_MAP_URL": "https://map.example.test",
         "WA_WIKIPEDIA_URL": "https://wiki.example.test",
-        "WA_DEPLOYMENT_IMAGE_DIGEST": "sha256:" + "a" * 64,
         "WA_AUTH_TOKEN": "must-not-leak",
     }
+    env.update(
+        {
+            f"WA_{site}_IMAGE_DIGEST": "sha256:" + character * 64
+            for site, character in zip(
+                ("SHOPPING", "SHOPPING_ADMIN", "REDDIT", "GITLAB", "MAP", "WIKIPEDIA"),
+                "abcdef",
+                strict=True,
+            )
+        }
+    )
 
     manifest = write_webarena_verified_w0_manifest(tmp_path / "w0.json", timeout_s=180.0, environment=env)
 
@@ -420,7 +427,18 @@ def test_w0_manifest_freezes_public_smoke_and_proof_identity_without_oracles(tmp
     assert [case["task_id"] for case in manifest["smoke_cases"]] == [0, 7, 21, 27, 44, 266]
     assert [case["task_id"] for case in manifest["heldout_cases"]] == [8]
     assert [case["task_id"] for case in manifest["proof_cohort_cases"]] == [
-        267, 97, 265, 268, 740, 759, 424, 426, 681, 672, 556, 554,
+        267,
+        97,
+        265,
+        268,
+        740,
+        759,
+        424,
+        426,
+        681,
+        672,
+        556,
+        554,
     ]
     assert manifest["timeout_frozen"] is True
     assert manifest["site_environment_frozen"] is True
@@ -498,11 +516,20 @@ def test_w0_readiness_accepts_registered_sites_reset_and_evaluator(
                     "imported": True,
                     "missing_task_ids": [],
                     "registered_task_ids": [
-                        case.gym_id
-                        for case in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES, *WA_W2_COHORT_CASES)
+                        case.gym_id for case in (*WA_W1_SMOKE_CASES, *WA_W1_HELD_OUT_CASES, *WA_W2_COHORT_CASES)
                     ],
                 },
                 "sites": sites,
+                "deployments": [
+                    {"site": name.casefold(), "status": "match"}
+                    for name in ("SHOPPING", "SHOPPING_ADMIN", "REDDIT", "GITLAB", "MAP", "WIKIPEDIA")
+                ],
+                "map_integrity": {
+                    "status": "ok",
+                    "search_http_status": 200,
+                    "detail_http_status": 200,
+                    "entity_type": "relation",
+                },
                 "exercise": {
                     "attempted": True,
                     "reset": {"status": "ok", "goal_present": True},
@@ -521,6 +548,66 @@ def test_w0_readiness_accepts_registered_sites_reset_and_evaluator(
     assert report["ready"] is True
     assert report["acceptance_errors"] == []
     assert report["failure_origin"] == "none"
+
+
+@pytest.mark.parametrize(
+    ("deployment_status", "map_status", "expected_error"),
+    (
+        (
+            "image_digest_mismatch",
+            "ok",
+            "environment:wa_deployment_mismatch:map:image_digest_mismatch",
+        ),
+        (
+            "match",
+            "detail_http_error",
+            "environment:wa_map_integrity_failed:detail_http_error",
+        ),
+    ),
+)
+def test_w0_readiness_rejects_deployment_identity_or_cross_service_map_inconsistency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deployment_status: str,
+    map_status: str,
+    expected_error: str,
+) -> None:
+    sites = [
+        {"env": f"WA_{name}", "redacted_url": f"http://localhost/{name.casefold()}/", "health": {"status": "ok"}}
+        for name in ("SHOPPING", "SHOPPING_ADMIN", "REDDIT", "GITLAB", "MAP", "WIKIPEDIA")
+    ]
+    deployments = [
+        {"site": name, "status": deployment_status if name == "map" else "match"}
+        for name in ("shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia")
+    ]
+    payload = {
+        "packages": {
+            name: {"installed": True, "version": "pinned"}
+            for name in (
+                "playwright",
+                "browsergym-webarena",
+                "browsergym-webarena-verified",
+                "nltk",
+                "webarena-verified",
+            )
+        },
+        "registration": {"imported": True, "missing_task_ids": [], "registered_task_ids": []},
+        "sites": sites,
+        "deployments": deployments,
+        "map_integrity": {"status": map_status},
+        "exercise": {"attempted": False, "reset": "not_attempted", "evaluator": "not_attempted"},
+    }
+
+    completed = SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(payload))
+    monkeypatch.setattr(
+        "affordance_runtime.benchmarks.webarena_verified.subprocess.run",
+        lambda *_args, **_kwargs: completed,
+    )
+
+    report = inspect_webarena_verified_w0_readiness(runtime_python=tmp_path / "python")
+
+    assert report["ready"] is False
+    assert expected_error in report["acceptance_errors"]
 
 
 def test_webarena_gym_task_id_uses_official_browsergym_registration_shape() -> None:
@@ -595,14 +682,18 @@ def test_webarena_evaluation_delegates_to_upstream_and_preserves_results(tmp_pat
         assert kwargs == {"check": False, "capture_output": True, "text": True}
         return Completed()
 
-    report = evaluate_webarena_verified_manifest(
-        manifest, logs, config_path=tmp_path / "config.json", runner=runner
-    )
+    report = evaluate_webarena_verified_manifest(manifest, logs, config_path=tmp_path / "config.json", runner=runner)
 
     assert commands == [
         [
-            "webarena-verified", "eval-tasks", "--task-ids", "1,2", "--output-dir", str(logs),
-            "--config", str(tmp_path / "config.json"),
+            "webarena-verified",
+            "eval-tasks",
+            "--task-ids",
+            "1,2",
+            "--output-dir",
+            str(logs),
+            "--config",
+            str(tmp_path / "config.json"),
         ]
     ]
     assert report["mean_official_score"] == 0.5

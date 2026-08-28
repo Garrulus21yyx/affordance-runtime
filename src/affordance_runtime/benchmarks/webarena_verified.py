@@ -130,9 +130,11 @@ def _diagnostic_pack(request: ModelDecisionRequest, binder: CanonicalProviderEnv
         supports_multimodal=False,
         perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
     )
+
+
 WA_DEFAULT_TIMEOUT_S = 0.0
 WA_REGISTRATION_MODULE = "browsergym.webarena_verified"
-WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v1"
+WA_SCHEMA_W0 = "webarena-verified-w0-readiness.v2"
 WA_SCHEMA_W1B_WORLD = "webarena-verified-w1b-world.v5"
 WA_W1B_DELIVERY_PROBE_VERSION = "v2"
 WA_MANIFEST_SCHEMA = "webarena-verified-target-loop-manifest.v2"
@@ -298,9 +300,12 @@ import importlib
 import importlib.metadata as metadata
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 payload = json.loads(sys.stdin.read())
@@ -344,6 +349,108 @@ def health(url):
     except Exception as exc:
         return {"status": "failed", "error": type(exc).__name__, "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
 
+def configured_url(site):
+    keys = {
+        "shopping": ("WA_SHOPPING", "WA_SHOPPING_URL"),
+        "shopping_admin": ("WA_SHOPPING_ADMIN", "WA_SHOPPING_ADMIN_URL"),
+        "reddit": ("WA_REDDIT", "WA_REDDIT_URL"),
+        "gitlab": ("WA_GITLAB", "WA_GITLAB_URL"),
+        "map": ("WA_MAP", "WA_MAP_URL"),
+        "wikipedia": ("WA_WIKIPEDIA", "WA_WIKIPEDIA_URL"),
+    }[site]
+    return next((os.environ[key].strip() for key in keys if os.environ.get(key, "").strip()), "")
+
+def declared_image_digest(site):
+    value = os.environ.get(f"WA_{site.upper()}_IMAGE_DIGEST", "").strip()
+    match = re.search(r"sha256:[0-9a-fA-F]{64}$", value)
+    return match.group(0).lower() if match else ""
+
+def deployment(site):
+    url = configured_url(site)
+    hostname = (urllib.parse.urlsplit(url).hostname or "").casefold()
+    record = {"site": site, "container": f"webarena_verified_{site}"}
+    if hostname not in {"127.0.0.1", "localhost", "::1"}:
+        record["status"] = "remote_not_inspected"
+        return record
+    declared = declared_image_digest(site)
+    if not declared:
+        record["status"] = "declared_digest_missing"
+        return record
+    try:
+        completed = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .State.Running}}|{{.Image}}", record["container"]],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception as exc:
+        record.update({"status": "inspection_failed", "error": type(exc).__name__})
+        return record
+    if completed.returncode != 0:
+        record["status"] = "container_missing"
+        return record
+    try:
+        running_text, actual = completed.stdout.strip().split("|", 1)
+        running = json.loads(running_text)
+    except Exception:
+        record["status"] = "inspection_invalid"
+        return record
+    record.update({"running": running is True, "declared_digest": declared, "actual_digest": actual.lower()})
+    if running is not True:
+        record["status"] = "container_not_running"
+    elif actual.lower() != declared:
+        record["status"] = "image_digest_mismatch"
+    else:
+        record["status"] = "match"
+    return record
+
+def map_integrity():
+    base_url = configured_url("map")
+    if not base_url:
+        return {"status": "map_url_missing"}
+    started = time.perf_counter()
+    query = urllib.parse.urlencode({"q": "New York", "format": "json", "limit": 1})
+    search_url = urllib.parse.urljoin(base_url.rstrip("/") + "/", "nominatim/search?" + query)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(search_url, method="GET"), timeout=10) as response:
+            search_status = int(response.status)
+            results = json.loads(response.read(262144))
+    except urllib.error.HTTPError as exc:
+        return {"status": "search_http_error", "search_http_status": int(exc.code)}
+    except Exception as exc:
+        return {"status": "search_failed", "error": type(exc).__name__}
+    if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+        return {"status": "search_entity_missing", "search_http_status": search_status}
+    entity = results[0]
+    osm_type = str(entity.get("osm_type") or "").casefold()
+    osm_id = entity.get("osm_id")
+    route_type = {"node": "node", "way": "way", "relation": "relation", "n": "node", "w": "way", "r": "relation"}.get(osm_type)
+    if route_type is None or type(osm_id) is not int or osm_id <= 0:
+        return {"status": "search_entity_invalid", "search_http_status": search_status}
+    detail_url = urllib.parse.urljoin(base_url.rstrip("/") + "/", f"{route_type}/{osm_id}")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(detail_url, method="GET"), timeout=10) as response:
+            detail_status = int(response.status)
+            response.read(8192)
+    except urllib.error.HTTPError as exc:
+        return {
+            "status": "detail_http_error",
+            "search_http_status": search_status,
+            "detail_http_status": int(exc.code),
+            "entity_type": route_type,
+        }
+    except Exception as exc:
+        return {"status": "detail_failed", "search_http_status": search_status, "error": type(exc).__name__}
+    return {
+        "status": "ok" if detail_status == 200 else "detail_http_error",
+        "search_http_status": search_status,
+        "detail_http_status": detail_status,
+        "entity_type": route_type,
+        "entity_id_sha256": "sha256:" + __import__("hashlib").sha256(str(osm_id).encode()).hexdigest(),
+        "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+    }
+
 report = {
     "sys_executable": sys.executable,
     "python_version": ".".join(str(part) for part in sys.version_info[:3]),
@@ -357,6 +464,8 @@ report = {
     },
     "registration": {"imported": False, "missing_task_ids": list(task_ids), "registered_task_ids": []},
     "sites": [],
+    "deployments": [],
+    "map_integrity": {},
     "exercise": {"attempted": exercise, "reset": "not_attempted", "evaluator": "not_attempted"},
 }
 
@@ -389,6 +498,12 @@ for key in sorted(os.environ):
     elif "DIGEST" in upper or value.startswith("sha256:"):
         item["image_digest"] = value
     report["sites"].append(item)
+
+report["deployments"] = [
+    deployment(site)
+    for site in ("shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia")
+]
+report["map_integrity"] = map_integrity()
 
 if exercise and not report["registration"]["missing_task_ids"]:
     try:
@@ -660,9 +775,7 @@ def open_webarena_verified_case(
     if case_ref not in WA_W0_REQUIRED_CASES:
         raise ValueError("WebArena-Verified case is outside the reviewed W1/W2 manifest")
     navigation_urls = (
-        _configured_webarena_navigation_urls(os.environ)
-        if browser_navigation_urls is None
-        else browser_navigation_urls
+        _configured_webarena_navigation_urls(os.environ) if browser_navigation_urls is None else browser_navigation_urls
     )
     final_response_codec = WebArenaVerifiedFinalResponseCodec()
     surface = BrowserGymSurfaceAdapter.open(
@@ -1325,15 +1438,18 @@ def _transition_delivery_diagnostic(
         and local_context.current_observation.observation_id == after.observation_id
     )
     stale_effect_markers = ("LatestEffect", "CurrentFindings", "ChangedRegions", "new_document")
-    single_current_world_projection = all(
-        marker not in delivery.view.text and marker not in local_delivery.view.text
-        for marker in stale_effect_markers
-    ) and "PageMap regions=" in delivery.view.text and "PageMap regions=" in local_delivery.view.text
-    gui_action_did_not_create_delivery_state = store == ObservationDeliveryStore()
-    local_delivery_does_not_reproject_gui_effect = (
-        local_store.local_deliveries
-        and tuple(item.name for item in fields(local_store)) == ("local_deliveries",)
+    single_current_world_projection = (
+        all(
+            marker not in delivery.view.text and marker not in local_delivery.view.text
+            for marker in stale_effect_markers
+        )
+        and "PageMap regions=" in delivery.view.text
+        and "PageMap regions=" in local_delivery.view.text
     )
+    gui_action_did_not_create_delivery_state = store == ObservationDeliveryStore()
+    local_delivery_does_not_reproject_gui_effect = local_store.local_deliveries and tuple(
+        item.name for item in fields(local_store)
+    ) == ("local_deliveries",)
     errors = []
     if public_diff != delta_keys:
         errors.append("transition:serialized_snapshot_delta_mismatch")
@@ -1825,9 +1941,7 @@ def _recoverability_diagnostic(
     try:
         read_spec = next(item for item in working_catalog.specs if item.name == "read_region")
         region_schema = read_spec.input_schema["properties"]["region_ref"]
-        if "enum" in region_schema or not PublicRefCodec.accepts(
-            sample_region_ref, expected=PublicRefKind.REGION
-        ):
+        if "enum" in region_schema or not PublicRefCodec.accepts(sample_region_ref, expected=PublicRefKind.REGION):
             raise ValueError("read_region must accept current R-refs returned by direct tools")
         checks["directory_tail_ref"] = True
         checks["directory_pages"] = directory_pages
@@ -1888,9 +2002,7 @@ def _recoverability_diagnostic(
             checks["find"] = bool(matches)
             if not matches:
                 errors.append("recoverability:find_no_match")
-            elif not any(
-                item.get("region_ref") == sample_region_ref for item in matches if isinstance(item, Mapping)
-            ):
+            elif not any(item.get("region_ref") == sample_region_ref for item in matches if isinstance(item, Mapping)):
                 errors.append("recoverability:find_wrong_region")
         except Exception as exc:
             return _recoverability_failure("find", exc)
@@ -1940,9 +2052,9 @@ def _recoverability_diagnostic(
             checks["continuation"] = True
     except Exception as exc:
         return _recoverability_failure("view_all", exc)
-    checks["store_has_no_result_cursor"] = tuple(
-        item.name for item in fields(opened_transition.next_store)
-    ) == ("local_deliveries",)
+    checks["store_has_no_result_cursor"] = tuple(item.name for item in fields(opened_transition.next_store)) == (
+        "local_deliveries",
+    )
     if not checks["store_has_no_result_cursor"]:
         errors.append("recoverability:store_result_cursor_present")
     try:
@@ -2375,6 +2487,19 @@ def _w0_report(payload: dict[str, Any], *, runtime_python: Path) -> dict[str, An
     ]
     if unhealthy:
         errors.append(f"environment:wa_site_health_failed:{','.join(sorted(unhealthy))}")
+    deployments = payload.get("deployments") if isinstance(payload.get("deployments"), list) else []
+    deployment_failures = [
+        f"{item.get('site')}:{item.get('status')}"
+        for item in deployments
+        if isinstance(item, dict) and item.get("status") not in {"match", "remote_not_inspected"}
+    ]
+    if len(deployments) != len(required_sites):
+        errors.append("environment:wa_deployment_inspection_incomplete")
+    if deployment_failures:
+        errors.append(f"environment:wa_deployment_mismatch:{','.join(sorted(deployment_failures))}")
+    map_integrity = payload.get("map_integrity") if isinstance(payload.get("map_integrity"), dict) else {}
+    if map_integrity.get("status") != "ok":
+        errors.append(f"environment:wa_map_integrity_failed:{map_integrity.get('status') or 'missing'}")
     exercise = payload.get("exercise") if isinstance(payload.get("exercise"), dict) else {}
     if exercise.get("attempted") is True:
         reset = exercise.get("reset") if isinstance(exercise.get("reset"), dict) else {}
@@ -2440,8 +2565,9 @@ def _site_config_from_environment(environment: Mapping[str, str]) -> list[dict[s
 def _site_environment_frozen(environment: Mapping[str, str]) -> bool:
     records = _site_config_from_environment(environment)
     site_urls = _configured_site_names([item for item in records if "redacted_url" in item])
-    has_digest = any("image_digest" in item for item in records)
-    return {"shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia"}.issubset(site_urls) and has_digest
+    digest_sites = _configured_site_names([item for item in records if "image_digest" in item])
+    required = {"shopping", "shopping_admin", "reddit", "gitlab", "map", "wikipedia"}
+    return required.issubset(site_urls) and required.issubset(digest_sites)
 
 
 def _redact_url(value: str) -> str:
