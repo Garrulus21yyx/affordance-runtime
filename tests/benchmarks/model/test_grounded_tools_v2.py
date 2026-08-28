@@ -1301,6 +1301,45 @@ def test_structured_profile_adds_sidecars_without_changing_compatibility_schema(
     assert "public_intent" in structured_activate.input_schema["properties"]
 
 
+def test_structured_profile_closes_empty_evidence_ref_domain_without_empty_enum() -> None:
+    context = replace(_context(), private_fact_bindings={})
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+        ObservationToolExposureProfile.DYNAMIC_VISUAL,
+        InteractionToolExposureProfile.STRUCTURED,
+    )
+
+    final = next(item for item in catalog.specs if item.name == "submit_final_response")
+    artifact = final.input_schema["properties"]["artifact"]
+    top_refs = artifact["properties"]["evidence_refs"]
+    item_refs = artifact["properties"]["items"]["items"]["properties"]["evidence_refs"]
+    assert top_refs["maxItems"] == item_refs["maxItems"] == 0
+    assert "enum" not in top_refs["items"]
+    assert "enum" not in item_refs["items"]
+    outcome = _resolve_catalog_call(
+        catalog,
+        ToolCall(
+            "submit_final_response",
+            {
+                "content": "Done.",
+                "artifact": {
+                    "title": "Result",
+                    "items": [{"title": "Item", "evidence_refs": []}],
+                    "evidence_refs": [],
+                },
+            },
+            "call:empty-evidence-artifact",
+        ),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(outcome.decision, FinalResponse)
+    assert outcome.decision.artifact is not None
+    assert outcome.decision.artifact.evidence_refs == ()
+
+
 def test_readable_matches_attach_current_grounding_without_changing_discovery_authority() -> None:
     task = TaskGoal(
         "task:watch4-synthetic",

@@ -857,9 +857,12 @@ def _attributes_schema() -> Mapping[str, object]:
 
 
 def _evidence_refs_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
+    item_schema: dict[str, object] = {"type": "string", "maxLength": 512}
+    if evidence_refs:
+        item_schema["enum"] = list(evidence_refs)
     return {
         "type": "array",
-        "items": {"type": "string", "enum": list(evidence_refs)},
+        "items": item_schema,
         "maxItems": min(32, len(evidence_refs)),
     }
 
