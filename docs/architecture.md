@@ -2173,3 +2173,17 @@ visual roles, all over one `PydanticAIVisualInference`, validates `dynamic-visua
 the BrowserGym Surface owner. Thus configuring a VLM cannot itself advertise a tool or cause a call. BrowserGym still
 derives the offer from the roles actually attached to the fresh Surface, and provider activation still follows one
 admitted `request_evidence` selected by the sole ActionPolicy.
+
+The supervised-GUI breadth gate is likewise an explicit benchmark composition, not a product type. Its controlled
+fixture owner contains one candidate-comparison flagship and chart, map, and file-list held-out pages. The product
+`BrowserSession` captures each self-contained page into the normal DOM/SVG/screenshot acquisition; the benchmark then
+projects that capture through `DomSurfaceAdapter` and `WorldFusion` and exercises the existing generic
+`InteractionRequest` admission, typed selection response, and current-evidence `PublicArtifact` materialization. No
+shopping, chart, map, or file protocol enters ActionPolicy, World, Binder, Executor, or Shell contracts.
+
+Public drift checking is a separate read-only shadow profile. The committed manifest names environment-variable URL
+slots rather than sites, requires `ads_and_cosmetic.v1`, declares no allowed effects, and forbids login, credential
+use, submission, purchase, and download. Its provider-free preflight never opens a browser or resolves a host and
+persists only redacted origins. It cannot attest filter activation: the Shell browser-session owner must still admit
+and attest the required strict profile before navigation. Actual public navigation remains authorization-gated and
+cannot contribute formal benchmark truth.

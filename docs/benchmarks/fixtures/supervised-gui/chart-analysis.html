@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chart analysis fixture</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 0; background: #f5f7fb; color: #182134; }
+    main { max-width: 820px; margin: 36px auto; padding: 28px; background: white; border-radius: 18px; }
+    svg { width: 100%; height: auto; border: 1px solid #d8deea; }
+    button { margin: 16px 8px 0 0; padding: 10px 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Quarterly support volume</h1>
+  <p>Select the bar with the highest visible value.</p>
+  <svg viewBox="0 0 640 300" role="img" aria-label="Bar chart: Q1 42, Q2 58, Q3 81, Q4 63">
+    <line x1="60" y1="250" x2="600" y2="250" stroke="#596579" stroke-width="2"/>
+    <g aria-label="Q1 value 42"><rect x="100" y="166" width="75" height="84" fill="#6b8dc5"/><text x="123" y="280">Q1</text><text x="123" y="158">42</text></g>
+    <g aria-label="Q2 value 58"><rect x="225" y="134" width="75" height="116" fill="#6b8dc5"/><text x="248" y="280">Q2</text><text x="248" y="126">58</text></g>
+    <g aria-label="Q3 value 81"><rect x="350" y="88" width="75" height="162" fill="#d25f4a"/><text x="373" y="280">Q3</text><text x="373" y="80">81</text></g>
+    <g aria-label="Q4 value 63"><rect x="475" y="124" width="75" height="126" fill="#6b8dc5"/><text x="498" y="280">Q4</text><text x="498" y="116">63</text></g>
+  </svg>
+  <div aria-label="Chart choices">
+    <button type="button">Q1</button><button type="button">Q2</button>
+    <button type="button">Q3</button><button type="button">Q4</button>
+  </div>
+</main>
+</body>
+</html>

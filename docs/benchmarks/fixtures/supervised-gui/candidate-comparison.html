@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Candidate comparison fixture</title>
+  <style>
+    body { margin: 0; font: 16px/1.45 system-ui, sans-serif; background: #f4f1ea; color: #17231d; }
+    main { max-width: 980px; margin: 0 auto; padding: 42px 28px; }
+    .candidates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    article { padding: 20px; border: 2px solid #c6cec8; border-radius: 18px; background: #fff; }
+    article[data-selected="true"] { border-color: #176b52; box-shadow: 0 0 0 4px #cce8df; }
+    .swatch { width: 100%; height: 110px; border-radius: 12px; margin-bottom: 14px; }
+    .red { background: #b73535; } .blue { background: #315d94; } .green { background: #387653; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+    dt { color: #627069; } dd { margin: 0; font-weight: 650; }
+    button { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 10px; color: white; background: #263e34; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Compare three visible candidates</h1>
+  <p>Choose one candidate after checking its color, price, and available size.</p>
+  <section class="candidates" aria-label="Candidate set">
+    <article aria-label="Harbor jacket" data-selected="false">
+      <div class="swatch red" role="img" aria-label="Red fabric sample"></div>
+      <h2>Harbor jacket</h2>
+      <dl><dt>Price</dt><dd>$68</dd><dt>Size</dt><dd>M</dd></dl>
+      <button type="button" aria-pressed="false">Choose</button>
+    </article>
+    <article aria-label="Field jacket" data-selected="true">
+      <div class="swatch blue" role="img" aria-label="Blue fabric sample"></div>
+      <h2>Field jacket</h2>
+      <dl><dt>Price</dt><dd>$72</dd><dt>Size</dt><dd>M</dd></dl>
+      <button type="button" aria-pressed="true">Choose</button>
+    </article>
+    <article aria-label="Cedar jacket" data-selected="false">
+      <div class="swatch green" role="img" aria-label="Green fabric sample"></div>
+      <h2>Cedar jacket</h2>
+      <dl><dt>Price</dt><dd>$64</dd><dt>Size</dt><dd>L only</dd></dl>
+      <button type="button" aria-pressed="false">Choose</button>
+    </article>
+  </section>
+</main>
+<script>
+  document.querySelectorAll('article button').forEach((button) => button.addEventListener('click', () => {
+    document.querySelectorAll('article').forEach((card) => {
+      card.dataset.selected = 'false';
+      card.querySelector('button').setAttribute('aria-pressed', 'false');
+    });
+    button.closest('article').dataset.selected = 'true';
+    button.setAttribute('aria-pressed', 'true');
+  }));
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -37,6 +38,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=Path("visual-capability-evaluation-v1.json"),
+    )
+
+    supervised_manifest = subcommands.add_parser(
+        "write-supervised-gui-acceptance-manifest",
+        help="write the controlled cross-domain and read-only public-shadow acceptance contract",
+    )
+    supervised_manifest.add_argument(
+        "--output",
+        type=Path,
+        default=Path("supervised-gui-acceptance-v1.json"),
+    )
+
+    supervised_fixtures = subcommands.add_parser(
+        "validate-supervised-gui-fixtures",
+        help="capture the controlled cross-domain fixtures without agent or visual-provider calls",
+    )
+    supervised_fixtures.add_argument(
+        "--fixtures-root",
+        type=Path,
+        default=Path("docs/benchmarks/fixtures/supervised-gui"),
+    )
+    supervised_fixtures.add_argument(
+        "--output",
+        type=Path,
+        default=Path("supervised-gui-controlled-results.json"),
+    )
+
+    supervised_shadow = subcommands.add_parser(
+        "preflight-supervised-gui-shadow",
+        help="validate public shadow inputs without opening a browser or resolving a host",
+    )
+    supervised_shadow.add_argument(
+        "--output",
+        type=Path,
+        default=Path("supervised-gui-shadow-preflight.json"),
     )
 
     workarena = subcommands.add_parser(
@@ -123,6 +159,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = write_visual_capability_manifest(args.output)
         print(json.dumps(manifest, indent=2, sort_keys=True))
         return 0
+    if args.command == "write-supervised-gui-acceptance-manifest":
+        from affordance_runtime.benchmarks.supervised_gui_acceptance import (
+            write_supervised_gui_acceptance_manifest,
+        )
+
+        manifest = write_supervised_gui_acceptance_manifest(args.output)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
+    if args.command == "validate-supervised-gui-fixtures":
+        from affordance_runtime.benchmarks.supervised_gui_acceptance import (
+            validate_controlled_supervised_gui,
+        )
+
+        report = validate_controlled_supervised_gui(
+            args.output,
+            fixture_root=args.fixtures_root,
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["accepted"] else 1
+    if args.command == "preflight-supervised-gui-shadow":
+        from affordance_runtime.benchmarks.supervised_gui_acceptance import (
+            preflight_public_shadow,
+        )
+
+        report = preflight_public_shadow(os.environ, args.output)
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["input_ready"] else 1
     if args.command == "benchmark-workarena-preflight":
         from affordance_runtime.benchmarks.workarena import write_workarena_preflight
 

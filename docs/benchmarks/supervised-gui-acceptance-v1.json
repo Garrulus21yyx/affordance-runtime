@@ -1,0 +1,78 @@
+{
+  "controlled": {
+    "agent_calls": 0,
+    "content_filter_profile": "off",
+    "scenarios": [
+      {
+        "cohort": "flagship",
+        "fixture": "candidate-comparison.html",
+        "required_capabilities": [
+          "generic_candidates",
+          "visual_predicate",
+          "generic_option_interaction",
+          "public_artifact",
+          "user_control"
+        ],
+        "scenario_id": "candidate_comparison_flagship"
+      },
+      {
+        "cohort": "heldout",
+        "fixture": "chart-analysis.html",
+        "required_capabilities": [
+          "svg_target",
+          "text_in_image",
+          "visual_predicate"
+        ],
+        "scenario_id": "chart_analysis_heldout"
+      },
+      {
+        "cohort": "heldout",
+        "fixture": "map-spatial.html",
+        "required_capabilities": [
+          "svg_target",
+          "spatial_relationship",
+          "generic_candidates"
+        ],
+        "scenario_id": "map_spatial_heldout"
+      },
+      {
+        "cohort": "heldout",
+        "fixture": "file-list.html",
+        "required_capabilities": [
+          "generic_candidates",
+          "text_in_image",
+          "public_artifact"
+        ],
+        "scenario_id": "file_list_heldout"
+      }
+    ],
+    "visual_provider_calls": 0
+  },
+  "manifest_digest": "sha256:2addcd5cba6bd0af7bd668ecda84f84b02078c863e3ee9b20ea59bba59b4d375",
+  "production_specialization_prohibited": true,
+  "profile_id": "general-supervised-gui-controlled.v1",
+  "public_shadow": {
+    "allowed_effects": [],
+    "cases": [
+      {
+        "case_id": "public_shopping",
+        "url_environment_variable": "SUPERVISED_GUI_SHADOW_SHOPPING_URL"
+      },
+      {
+        "case_id": "public_content",
+        "url_environment_variable": "SUPERVISED_GUI_SHADOW_CONTENT_URL"
+      }
+    ],
+    "forbidden_effects": [
+      "login",
+      "credential_use",
+      "form_submission",
+      "purchase",
+      "download"
+    ],
+    "live_authorization_required": true,
+    "mode": "read_only",
+    "required_content_filter_profile": "ads_and_cosmetic.v1"
+  },
+  "schema_version": "supervised-gui-acceptance.v1"
+}

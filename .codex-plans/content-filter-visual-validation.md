@@ -57,7 +57,7 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Persist profile/model/ruleset/config identity with results.
 - Commit and push code/evaluation manifests; live results only after explicit authorization.
 
-### Phase 5 — controlled flagship and public read-only shadow (`pending`)
+### Phase 5 — controlled flagship and public read-only shadow (`done`)
 
 - Validate the generic contract composition on a controlled shopping task with no commerce-specific production types.
 - Add chart/map/file-list held-out cases.
@@ -101,6 +101,19 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   `f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`; its fixed-interpreter full suite reported
   1,992 passed / 19 skipped and one unrelated missing archived trace fixture. No ScreenSpot, MiniWoB, or other live
   VLM benchmark was run.
+- 2026-08-28: Phase 5 added a generic, provider-free supervised-GUI acceptance gate: one candidate-comparison
+  flagship and chart/map/file-list held-out fixtures. Product `BrowserSession` capture plus normal DOM projection and
+  World fusion preserved repeated same-label controls and admitted the existing generic option response and
+  current-evidence artifact contract on all four pages with zero Agent/VLM calls. Existing Runtime tests cover
+  takeover, lease fencing, fresh-World return, and failure retention without a scenario branch. The public shadow
+  path is preflight-only: two environment URL slots, strict filtering, read-only/no-effects policy, credential
+  rejection, redacted origins, and explicit live authorization. The preflight cannot attest filter activation and
+  leaves `live_execution_ready=false`; only the Shell Surface owner can admit and attest strict filtering before
+  navigation. Focused gates passed 53 tests; targeted Ruff and mypy passed. Playwright CLI independently confirmed
+  candidate pressed-state transfer, and the formal MiniWoB target manifest digest remained
+  `f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`.
+  The isolated staged-tree full suite reported 1,997 passed / 19 skipped / 1 warning and the same single pre-existing
+  missing archived-trace fixture failure as Phase 4. No public page or live benchmark was opened.
 
 ## Files changed by this plan
 
@@ -118,3 +131,9 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - `docs/benchmarks/visual-capability-evaluation-v1.json`
 - `src/affordance_runtime/benchmarks/visual_capability.py`
 - `src/affordance_runtime/surfaces/visual/role_set.py`
+- `docs/benchmarks/supervised-gui-acceptance-v1.json`
+- `docs/benchmarks/fixtures/supervised-gui/*.html`
+- `src/affordance_runtime/benchmarks/supervised_gui_acceptance.py`
+- `src/affordance_runtime/benchmarks/cli.py`
+- `tests/benchmarks/runtime/test_supervised_gui_acceptance.py`
+- `tests/benchmarks/runtime/test_cli.py`

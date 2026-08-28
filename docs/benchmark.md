@@ -1911,3 +1911,29 @@ or benchmark command was run. The isolated staged tree's compatibility target-ma
 `f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`. Its fixed BrowserGym-interpreter full suite
 reported `1,992 passed, 19 skipped, 1 warning`; the sole failure was a pre-existing test dependency on an uncommitted
 archived trace path, not an exercised Runtime or benchmark-contract failure.
+
+## 2026-08-28 — Controlled supervised-GUI breadth gate
+
+The committed `docs/benchmarks/supervised-gui-acceptance-v1.json` adds a provider-free acceptance surface without
+adding benchmark semantics to production. Four self-contained local pages cover a candidate-comparison flagship plus
+chart, map, and file-list held-out layouts. The fixed BrowserGym interpreter captured all four with the product
+`BrowserSession` at 1280×720. Repeated same-label controls remained distinct; the generic single-select response was
+admitted and a current-evidence `PublicArtifact` was materialized for every page. The report recorded
+`agent_calls=0`, `visual_provider_calls=0`, and no acceptance errors.
+
+The takeover/return-currentness portion is protected by the existing Runtime checkpoint tests rather than a fixture
+specific control path. The focused Phase-5 set—manifest and CLI contracts, generic interaction/artifact contracts,
+and Runtime takeover lifecycle—passed `53` tests. Ruff and targeted mypy passed. A separate Playwright CLI inspection
+showed three distinct `Choose` controls, transferred `pressed` state from the initially selected middle candidate to
+the first candidate after clicking its current ref, and produced a 1280×720 screenshot. The unchanged formal
+MiniWoB compatibility target-manifest digest remained
+`f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`.
+The isolated staged-tree full suite reported `1,997 passed, 19 skipped, 1 warning`; its only failure was the same
+pre-existing test dependency on the uncommitted archived `w1b-one-task-0-zhipu-glm46-readable-tools-run2` trace.
+
+The public shadow command is only a zero-network preflight. It accepts two environment-provided HTTP(S) URL slots,
+rejects embedded credentials, writes only origins, and records `browser_opened=false`, `network_requests=0`,
+read-only mode, required strict filtering, and required live authorization. It always records
+`live_execution_ready=false`: only the Shell browser-session owner may attest strict filter activation before an
+authorized navigation. No public page, DeepSeek VLM, ScreenSpot, MiniWoB, or other live benchmark was run in Phase 5;
+consequently this gate makes no live capability or benchmark non-regression claim.
