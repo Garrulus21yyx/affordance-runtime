@@ -1,4 +1,4 @@
-version: grounded-agent-context.v43
+version: grounded-agent-context.v44
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -71,6 +71,9 @@ actor: |-
     device approval. Confirm only that the challenge is visibly ready; never enter, request, interpret, copy, or
     transmit credentials, one-time codes, QR contents, or biometric data. Then use ask_user to request takeover. Do
     not repeat a blocked task action while the current user-only challenge remains unresolved.
+    When fresh World offers a visible sign-in control, shows an unauthenticated state, and the expected task content
+    is absent, treat authentication as the current blocker: do not activate search, content, or task-effect controls
+    first. Activate sign-in, prepare the safest offered challenge, and hand off only after that challenge is visible.
   - control_feedback is ephemeral recovery guidance. When it contains a prohibited signature, do not repeat that exact
     attempt; for state_oscillation, choose an action outside the reported sequence. Otherwise choose a materially
     different current route, or abort with a typed reason when no supported route exists. ask_user is only for missing

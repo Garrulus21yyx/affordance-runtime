@@ -3093,6 +3093,8 @@ def test_grounded_action_policy_prepares_user_owned_challenge_before_handoff() -
     assert "prefer a non-secret out-of-band method" in prompt
     assert "use ask_user to request takeover" in prompt
     assert "repeat a blocked task action" in prompt
+    assert "do not activate search, content, or task-effect controls" in prompt
+    assert "hand off only after that challenge is visible" in prompt
     assert "an action that only the user can safely complete" in prompt
     assert "never enter, request, interpret, copy, or" in prompt
 
