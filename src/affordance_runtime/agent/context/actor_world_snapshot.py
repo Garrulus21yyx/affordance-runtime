@@ -190,12 +190,7 @@ class ActorWorldSnapshot:
         source_refs = {item.source_ref for item in self.sources}
         if len(source_refs) != len(self.sources):
             raise ValueError("Actor world source refs must be unique")
-        node_refs = [
-            node.ref
-            for document in self.documents
-            for root in document.roots
-            for node in _walk_nodes(root)
-        ]
+        node_refs = [node.ref for document in self.documents for root in document.roots for node in _walk_nodes(root)]
         if len(node_refs) != len(set(node_refs)):
             raise ValueError("Actor world node refs must be globally unique")
         if any(document.source_ref not in source_refs for document in self.documents):
@@ -208,6 +203,26 @@ def _walk_nodes(root: ActorWorldNodeView):
     yield root
     for child in root.children:
         yield from _walk_nodes(child)
+
+
+def complete_homogeneous_child_counts(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:
+    """Return exact direct-child counts for complete homogeneous public groups."""
+
+    counts: dict[str, int] = {}
+    for document in snapshot.documents:
+        if document.truncated:
+            continue
+        for root in document.roots:
+            for node in _walk_nodes(root):
+                if len(node.children) >= 2 and _homogeneous_actor_children(node.children):
+                    counts[node.ref] = len(node.children)
+    return freeze_json(counts)
+
+
+def _homogeneous_actor_children(children: tuple[ActorWorldNodeView, ...]) -> bool:
+    first = children[0]
+    shape = (first.role, first.label, first.state, len(first.children))
+    return all((child.role, child.label, child.state, len(child.children)) == shape for child in children[1:])
 
 
 def actor_world_for_delivery(
@@ -287,17 +302,9 @@ def project_actor_world_snapshot(
     ordered_sources = _ordered_actor_sources(observation)
     source_refs = actor_source_refs(observation)
     memberships = _source_memberships(observation, visible, source_refs)
-    primary_source = {
-        target_id: memberships[target_id][0]
-        for target_id in visible
-        if memberships.get(target_id)
-    }
+    primary_source = {target_id: memberships[target_id][0] for target_id in visible if memberships.get(target_id)}
     fallback_source = next(iter(source_refs.values()), "S1")
-    structure_ids = {
-        node.structure_id
-        for source in observation.sources
-        for node in source.structure
-    }
+    structure_ids = {node.structure_id for source in observation.sources for node in source.structure}
     facts_by_subject: dict[str, list[ActorWorldFactView]] = defaultdict(list)
     evidence_by_subject: dict[str, dict[str, str]] = defaultdict(dict)
     global_facts: list[ActorWorldGlobalFactView] = []
@@ -307,13 +314,9 @@ def project_actor_world_snapshot(
         if target is not None and target.state.get(fact.predicate) == fact.value:
             evidence_by_subject[fact.subject_id].setdefault(fact.predicate, evidence)
         elif target is not None or fact.subject_id in structure_ids:
-            facts_by_subject[fact.subject_id].append(
-                ActorWorldFactView(evidence, fact.predicate, fact.value)
-            )
+            facts_by_subject[fact.subject_id].append(ActorWorldFactView(evidence, fact.predicate, fact.value))
         else:
-            global_facts.append(
-                ActorWorldGlobalFactView(evidence, "task", fact.predicate, fact.value)
-            )
+            global_facts.append(ActorWorldGlobalFactView(evidence, "task", fact.predicate, fact.value))
 
     parent_by_id: dict[str, str] = {}
     explicit_children: dict[str, tuple[str, ...]] = {}
@@ -331,8 +334,7 @@ def project_actor_world_snapshot(
         if parent_id in visible:
             derived_children[parent_id].append(child_id)
     children_by_id = {
-        target_id: explicit_children.get(target_id, tuple(derived_children.get(target_id, ())))
-        for target_id in visible
+        target_id: explicit_children.get(target_id, tuple(derived_children.get(target_id, ()))) for target_id in visible
     }
     _validate_forest(visible, parent_by_id)
 
@@ -389,15 +391,17 @@ def project_actor_world_snapshot(
     )
     if not sources:
         coverage = "truncated" if world.targets.truncated else "complete"
-        sources = (ActorWorldSourceView(
-            fallback_source,
-            "structural",
-            "unknown",
-            "current",
-            coverage,
-            coverage,
-            "not_available",
-        ),)
+        sources = (
+            ActorWorldSourceView(
+                fallback_source,
+                "structural",
+                "unknown",
+                "current",
+                coverage,
+                coverage,
+                "not_available",
+            ),
+        )
     documents = _structure_documents(
         observation,
         projection,
@@ -414,21 +418,10 @@ def project_actor_world_snapshot(
         max_structure_bytes,
     )
     if documents and max_structure_nodes is None:
-        represented = {
-            item.ref
-            for document in documents
-            for root in document.roots
-            for item in _walk_nodes(root)
-        }
-        missing_ids = {
-            target_id
-            for target_id, ref in refs.items()
-            if ref not in represented
-        }
+        represented = {item.ref for document in documents for root in document.roots for item in _walk_nodes(root)}
+        missing_ids = {target_id for target_id, ref in refs.items() if ref not in represented}
         remaining_nodes = (
-            len(missing_ids)
-            if max_structure_nodes is None
-            else max(0, max_structure_nodes - len(represented))
+            len(missing_ids) if max_structure_nodes is None else max(0, max_structure_nodes - len(represented))
         )
         for source in sources:
             all_source_ids = tuple(
@@ -445,14 +438,17 @@ def project_actor_world_snapshot(
                 for target_id in visible
                 if target_id in source_ids and parent_by_id.get(target_id) not in source_ids
             )
-            documents = (*documents, ActorWorldDocumentView(
-                source.source_ref,
-                source.modality,
-                roots,
-                len(source_ids),
-                len(all_source_ids),
-                len(source_ids) < len(all_source_ids),
-            ))
+            documents = (
+                *documents,
+                ActorWorldDocumentView(
+                    source.source_ref,
+                    source.modality,
+                    roots,
+                    len(source_ids),
+                    len(all_source_ids),
+                    len(source_ids) < len(all_source_ids),
+                ),
+            )
             remaining_nodes -= len(source_ids)
     if not documents:
         fallback_documents: list[ActorWorldDocumentView] = []
@@ -471,25 +467,29 @@ def project_actor_world_snapshot(
                 for target_id in visible
                 if target_id in retained_ids and parent_by_id.get(target_id) not in retained_ids
             )
-            fallback_documents.append(ActorWorldDocumentView(
-                source.source_ref,
-                source.modality,
-                roots,
-                len(retained_ids),
-                len(all_source_ids),
-                len(retained_ids) < len(all_source_ids),
-            ))
+            fallback_documents.append(
+                ActorWorldDocumentView(
+                    source.source_ref,
+                    source.modality,
+                    roots,
+                    len(retained_ids),
+                    len(all_source_ids),
+                    len(retained_ids) < len(all_source_ids),
+                )
+            )
             remaining_nodes -= len(retained_ids)
         documents = tuple(fallback_documents)
     if not documents and visible:
-        documents = (ActorWorldDocumentView(
-            fallback_source,
-            "structural",
-            tuple(node(item) for item in visible),
-            len(visible),
-            world.targets.total_count,
-            world.targets.truncated,
-        ),)
+        documents = (
+            ActorWorldDocumentView(
+                fallback_source,
+                "structural",
+                tuple(node(item) for item in visible),
+                len(visible),
+                world.targets.total_count,
+                world.targets.truncated,
+            ),
+        )
     image_by_digest = {item.sha256: item for item in image_inputs}
     media = tuple(
         ActorWorldMediaView(
@@ -586,16 +586,8 @@ def _facet_collections(
                 partitions = tuple(
                     ActorWorldBooleanPartitionView(
                         boolean_field,
-                        tuple(
-                            refs[item.target_id]
-                            for item in ordered_members
-                            if item.state[boolean_field] is True
-                        ),
-                        tuple(
-                            refs[item.target_id]
-                            for item in ordered_members
-                            if item.state[boolean_field] is False
-                        ),
+                        tuple(refs[item.target_id] for item in ordered_members if item.state[boolean_field] is True),
+                        tuple(refs[item.target_id] for item in ordered_members if item.state[boolean_field] is False),
                     )
                     for boolean_field in boolean_fields
                     if all(isinstance(item.state[boolean_field], bool) for item in members)
@@ -636,22 +628,21 @@ def _source_memberships(observation, visible, source_refs) -> dict[str, tuple[st
 
 
 def _ordered_actor_sources(observation: WorldObservation) -> tuple[object, ...]:
-    return tuple(sorted(
-        observation.sources,
-        key=lambda source: (
-            source.surface,
-            str(source.source_profile.modality),
-            source.source_profile.debug_source,
-            tuple((item.role, item.label) for item in source.structure),
-        ),
-    ))
+    return tuple(
+        sorted(
+            observation.sources,
+            key=lambda source: (
+                source.surface,
+                str(source.source_profile.modality),
+                source.source_profile.debug_source,
+                tuple((item.role, item.label) for item in source.structure),
+            ),
+        )
+    )
 
 
 def actor_source_refs(observation: WorldObservation) -> Mapping[str, str]:
-    return {
-        source.observation_id: f"S{index}"
-        for index, source in enumerate(_ordered_actor_sources(observation), 1)
-    }
+    return {source.observation_id: f"S{index}" for index, source in enumerate(_ordered_actor_sources(observation), 1)}
 
 
 def _structure_documents(
@@ -683,9 +674,7 @@ def _structure_documents(
     }
     documents: list[ActorWorldDocumentView] = []
     emitted_entities: set[str] = set()
-    structural_sources = tuple(
-        source for source in ordered_sources if source.structure
-    )
+    structural_sources = tuple(source for source in ordered_sources if source.structure)
     remaining = max_structure_nodes or sum(len(source.structure) for source in structural_sources)
     remaining_bytes = max_structure_bytes
     source_views = {item.source_ref: item for item in sources}
@@ -705,8 +694,7 @@ def _structure_documents(
             required = {
                 item.structure_id
                 for item in source.structure
-                if not item.semantic_target_id
-                or canonical_for_structure.get(item.structure_id) in visible
+                if not item.semantic_target_id or canonical_for_structure.get(item.structure_id) in visible
             }
         else:
             required = {
@@ -718,9 +706,7 @@ def _structure_documents(
                 )
                 or (
                     item.semantic_target_id
-                    and allocation_by_endpoint.get(
-                        SourceEntityEndpoint(source.observation_id, item.semantic_target_id)
-                    )
+                    and allocation_by_endpoint.get(SourceEntityEndpoint(source.observation_id, item.semantic_target_id))
                     is EntityAllocation.INDEPENDENT
                     and canonical_for_structure.get(item.structure_id) not in emitted_entities
                 )
@@ -746,11 +732,7 @@ def _structure_documents(
         for item in retained:
             canonical_id = canonical_for_structure.get(item.structure_id)
             semantic_ref = refs.get(canonical_id or "")
-            if (
-                semantic_ref is not None
-                and canonical_id is not None
-                and canonical_id not in emitted_entities
-            ):
+            if semantic_ref is not None and canonical_id is not None and canonical_id not in emitted_entities:
                 actor_refs[item.structure_id] = semantic_ref
                 emitted_entities.add(canonical_id)
             else:
@@ -768,9 +750,7 @@ def _structure_documents(
             target_ref = refs.get(canonical_id or "") if is_entity_occurrence else None
             entity = entity_by_ref.get(target_ref or "")
             children = tuple(
-                node(child, active | {structure_id})
-                for child in item.child_structure_ids
-                if child in retained_ids
+                node(child, active | {structure_id}) for child in item.child_structure_ids if child in retained_ids
             )
             return ActorWorldNodeView(
                 actor_refs[structure_id],
@@ -794,14 +774,16 @@ def _structure_documents(
             for item in retained
             if not item.parent_structure_id or item.parent_structure_id not in retained_ids
         )
-        documents.append(ActorWorldDocumentView(
-            source_ref,
-            source_views[source_ref].modality,
-            roots,
-            len(retained),
-            source.structure_total_count if lens_index == 0 else len(ordered),
-            len(retained) < (source.structure_total_count if lens_index == 0 else len(ordered)),
-        ))
+        documents.append(
+            ActorWorldDocumentView(
+                source_ref,
+                source_views[source_ref].modality,
+                roots,
+                len(retained),
+                source.structure_total_count if lens_index == 0 else len(ordered),
+                len(retained) < (source.structure_total_count if lens_index == 0 else len(ordered)),
+            )
+        )
         remaining -= len(retained)
         if remaining_bytes is not None:
             remaining_bytes -= serialized_size(retained)
@@ -834,16 +816,15 @@ def _retain_complete_structure_groups(
         for root in repeated_roots
         if not any(ancestor in repeated_roots for ancestor in _structure_ancestors(root, by_id))
     }
-    descendants_by_root = {
-        root: _structure_descendants(root, by_id) & ordered_ids for root in repeated_roots
-    }
+    descendants_by_root = {root: _structure_descendants(root, by_id) & ordered_ids for root in repeated_roots}
     grouped_ids = set().union(*descendants_by_root.values()) if descendants_by_root else set()
     units = [tuple(item for item in ordered if item.structure_id not in grouped_ids)]
     units.extend(
         tuple(item for item in ordered if item.structure_id in descendants_by_root[root])
-        for root in sorted(repeated_roots, key=lambda item: next(
-            index for index, node in enumerate(ordered) if node.structure_id == item
-        ))
+        for root in sorted(
+            repeated_roots,
+            key=lambda item: next(index for index, node in enumerate(ordered) if node.structure_id == item),
+        )
     )
     retained: list[object] = []
     used_bytes = 0
@@ -947,7 +928,9 @@ def _validate_forest(visible: Mapping[str, ModelTargetView], parent_by_id: Mappi
 
 
 def _rendering_coverage(source) -> str:
-    return "current_screenshot_available" if any(item.kind == "screenshot" for item in source.media) else "not_available"
+    return (
+        "current_screenshot_available" if any(item.kind == "screenshot" for item in source.media) else "not_available"
+    )
 
 
 def _media_source_ref(observation, evidence_ref: str, source_refs: Mapping[str, str]) -> str:
@@ -960,9 +943,5 @@ def _media_source_ref(observation, evidence_ref: str, source_refs: Mapping[str, 
 def _media_aligned_refs(observation, evidence_ref: str, refs: Mapping[str, str]) -> tuple[str, ...]:
     for item in observation.media:
         if canonical_artifact_ref(item.source_observation_id, item.media.media_id) == evidence_ref:
-            return tuple(
-                refs[region.target_id]
-                for region in item.media.grounding_regions
-                if region.target_id in refs
-            )
+            return tuple(refs[region.target_id] for region in item.media.grounding_regions if region.target_id in refs)
     return ()
