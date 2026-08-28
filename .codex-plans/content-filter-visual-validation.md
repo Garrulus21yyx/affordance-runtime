@@ -225,9 +225,9 @@ authority or bypass.
   when all providers are configured; no task wording or benchmark identity participates in that decision.
 - 2026-08-28: Clean live run `phase7-clean9` falsified the growing Catalog restrictions as the right abstraction. The
   visual tool was absent and every visual provider counter stayed at zero, but the ActionPolicy still failed after
-  ordinary `read_region`/`count_children` use. The run therefore demonstrates a policy-use failure, not a missing
-  Runtime/VLM gate. Phase 8 removes the compensating role allowlists, closed visual vocabularies, point-target
-  heuristic, duplicate ActorWorld cardinality owner, and `read_region.direct_child_count` sidecar. It restores the
+  ordinary `read_region`/`count_children` use. Phase 8 removes the compensating role allowlists, closed visual
+  vocabularies, point-target heuristic, duplicate ActorWorld cardinality owner, and
+  `read_region.direct_child_count` sidecar. It restores the
   pre-existing open atomic visual query fields and pre-existing Catalog-owned `count_children`; the existing
   ActorWorld tree remains the single structural authority. OCR retains only its purpose-intrinsic pixel-container
   domain and entity discovery retains only the existing structural-projection-gap applicability rule. CoreLoop,
@@ -240,12 +240,15 @@ authority or bypass.
   `visual_property` over 21 accumulated N-refs. By that turn the exact Catalog admitted only the four N-refs returned
   by page 2 (plus current E-refs), so the first call was stale/oversized. Representation repair reduced the operands
   to those four current N-refs, but the existing semantic-conservation gate correctly rejected that as more than a
-  representation-only repair. The causal gap is therefore bounded: paginated same-World ToolReturns remain visible
-  in model history while `ModelTurnDelivery` grants Catalog admission only to the latest pending ToolReturn. This can
-  strand a later batched observation or `count_children` over refs from an earlier page. It is not a VLM activation,
-  CoreLoop, Fusion, compression, or provider-routing failure. No production change follows from this diagnostic in
-  Phase 8; the next design review must resolve the same-World paginated-ref lifetime at the
-  `ModelTurnDelivery`/DeliveryManifest owner or explicitly require page-local processing before continuation.
+  representation-only repair. A subsequent history audit corrected the initial diagnosis: pagination exposed the
+  symptom, but it was not the shared root cause. Commit `58b1215e` had already closed this task class with one
+  Catalog-owned `count_children(containers=[...])` over every complete current ActorWorld group. Commit `732379b3`
+  later filtered those read-only operands through `delivery.manifest.exact_refs`, so PageMap folding could erase the
+  deterministic capability. Commit `c4a31c84` compensated by duplicating counts into `read_region`; Phase 8 removed
+  that sidecar without restoring the original Catalog reachability and weakened the positive regression test. Phase
+  9 restores the `58b1215e` contract at the Catalog owner: complete fresh ActorWorld groups remain batch-countable
+  even when folded, truncated documents expose no count tool, and action routes remain Manifest-bound. This is not a
+  VLM activation, CoreLoop, Fusion, compression, or provider-routing change.
 
 ## Files changed by this plan
 

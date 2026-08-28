@@ -332,7 +332,9 @@ class _CountChildrenBinding:
         if not isinstance(raw_refs, list | tuple):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         container_refs = tuple(str(item) for item in raw_refs)
-        if any(item not in self.counts for item in container_refs):
+        if len(set(container_refs)) != len(container_refs) or any(
+            item not in self.counts for item in container_refs
+        ):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         counts = {item: self.counts[item] for item in container_refs}
         return ReadRegionResult(
@@ -517,17 +519,18 @@ def compile_grounded_tool_catalog(
         )
     )
 
-    child_counts = {
-        ref: count
-        for ref, count in _countable_child_groups(context.actor_world).items()
-        if ref in delivery.manifest.exact_refs
-    }
+    # This pure read-only utility is grounded by the same frozen fresh
+    # ActorWorld that owns the structural fact. Action routes remain bounded
+    # by DeliveryManifest; folding a complete group out of PageMap must not
+    # erase its current deterministic count capability from this Catalog.
+    child_counts = _countable_child_groups(context.actor_world)
     if child_counts:
         registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.COUNT_CHILDREN.value,
-                    "Count direct children in current complete repeated groups.",
+                    "Required for counting repeated visible items: select every relevant current complete group; "
+                    "Runtime returns each exact direct-child count and their total.",
                     _object_schema(
                         {
                             "containers": {

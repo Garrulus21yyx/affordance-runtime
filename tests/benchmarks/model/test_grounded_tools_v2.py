@@ -240,6 +240,10 @@ def _nested_context():
         ax_node("group", "generic", "Choices", child_ids=("one", "two")),
         ax_node("one", "graphics-symbol", "", parent_id="group"),
         ax_node("two", "graphics-symbol", "", parent_id="group"),
+        ax_node("more", "generic", "More choices", child_ids=("three", "four", "five")),
+        ax_node("three", "graphics-symbol", "", parent_id="more"),
+        ax_node("four", "graphics-symbol", "", parent_id="more"),
+        ax_node("five", "graphics-symbol", "", parent_id="more"),
         goal="Count the choices.",
     )
     projection = project_browsergym_observation(
@@ -1779,11 +1783,36 @@ def test_grounded_catalog_does_not_expose_propose_done() -> None:
     assert "propose_done" not in {item.name for item in catalog.specs}
 
 
-def test_read_region_does_not_duplicate_actor_world_child_counts() -> None:
+def test_complete_actor_world_groups_remain_countable_when_page_map_folds_their_refs() -> None:
     context = _nested_context()
-    group_ref = next(
-        item.ref for item in context.grounding.entities if item.role == "generic" and item.label == "Choices"
+    groups = {
+        item.label: item.ref
+        for item in context.grounding.entities
+        if item.role == "generic" and item.label in {"Choices", "More choices"}
+    }
+    assert set(groups) == {"Choices", "More choices"}
+    group_ref = groups["Choices"]
+    expected_counts = {groups["Choices"]: 2, groups["More choices"]: 3}
+    delivery = _delivery(context)
+    assert set(expected_counts).isdisjoint(delivery.manifest.exact_refs)
+
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
     )
+    count_tool = next(item for item in catalog.specs if item.name == "count_children")
+    assert "every relevant current complete group" in count_tool.description
+    assert "their total" in count_tool.description
+    assert count_tool.input_schema["properties"]["containers"]["items"]["enum"] == sorted(expected_counts)
+    counted = _resolve_catalog_call(
+        catalog,
+        ToolCall("count_children", {"containers": sorted(expected_counts)}, "provider-call:count"),
+        expected_context_id=context.context_id,
+    ).decision
+    assert isinstance(counted, ReadRegionResult)
+    assert counted.result == {"counts": expected_counts, "total": 5}
+
     group_target_id = next(
         target_id for target_id, public_ref in context.grounding.target_refs.items() if public_ref == group_ref
     )
@@ -1805,6 +1834,23 @@ def test_read_region_does_not_duplicate_actor_world_child_counts() -> None:
     assert root.ref == group_ref
     assert len(root.children) == 2
     assert "member_count" not in root.state
+
+    document = context.actor_world.documents[0]
+    incomplete = replace(
+        context,
+        actor_world=replace(
+            context.actor_world,
+            documents=(
+                replace(
+                    document,
+                    total_node_count=document.retained_node_count + 1,
+                    truncated=True,
+                ),
+            ),
+        ),
+    )
+    incomplete_catalog = _compile_catalog(incomplete)
+    assert "count_children" not in {item.name for item in incomplete_catalog.specs}
 
 
 def test_workspace_result_is_not_duplicated_into_model_context() -> None:
