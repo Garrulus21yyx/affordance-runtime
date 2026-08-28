@@ -35,8 +35,7 @@ from affordance_runtime.app.public_session import (
 from affordance_runtime.benchmarks.lab import BenchmarkLabManager
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.model.policy import model_roles_from_environment
-from affordance_runtime.surfaces.dom import DomSurfaceAdapter
-from affordance_runtime.surfaces.dom.browser_session import BrowserSession
+from affordance_runtime.surfaces.browser_bundle import browser_surface_from_environment
 from affordance_runtime.surfaces.dom.thread_session import ThreadBoundBrowserSession
 from affordance_runtime.task import (
     LoopBudget,
@@ -248,7 +247,7 @@ class BrowserDeploymentSessionFactory:
 
         cleanup.attach_browser(browser)
         try:
-            surface = DomSurfaceAdapter(cast(BrowserSession, browser))
+            surface = browser_surface_from_environment(browser, self.environment)
             world = InteractiveTaskEnvironment(UnifiedWorldEnvironment((surface,)))
             runtime = compose_target_runtime(
                 roles.action_policy,

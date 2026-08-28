@@ -39,6 +39,9 @@ from affordance_runtime.world.acquisition import (
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
+    ObservationGroundingRegion,
+    ObservationMedia,
+    ObservationMediaVariant,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
@@ -97,6 +100,11 @@ class DomSurfaceAdapter:
 
     async def acquire(self, request: SelectedObservationRequest) -> SelectedObservationResult:
         snapshot = self.session.capture(page_id="agent-loop", task_instruction="")
+        return self.project_snapshot(request, snapshot)
+
+    def project_snapshot(self, request: SelectedObservationRequest, snapshot) -> SelectedObservationResult:
+        """Project a capture supplied by the physical BrowserSession owner."""
+
         if self._task is None:
             raise RuntimeError("DOM surface adapter must be reset before observation")
         observation_id = snapshot.observation.snapshot_id
@@ -141,6 +149,7 @@ class DomSurfaceAdapter:
         )
         self._observation_id = observation_id
         self._source_revision = snapshot.observation.page_revision
+        media = _snapshot_media(snapshot, action_targets)
         observation = SurfaceObservation(
             observation_id,
             self.surface,
@@ -156,6 +165,7 @@ class DomSurfaceAdapter:
                 "unsupported_actions": unsupported,
                 **({"structured_document": document.artifact} if document_enabled else {}),
             },
+            media=media,
             acquisition_root_id=f"browser:{snapshot.observation.page_revision}",
         )
         return SelectedObservationResult.acquired(
@@ -178,11 +188,11 @@ class DomSurfaceAdapter:
         if not identity_is_current:
             return False, 0
         if binding.payload.get("binding_kind") == "browser_context":
-            current = _browser_context_fingerprint(self.session.browser_context_state())
-            return current == binding.target_fingerprint, 1
+            current_fingerprint = _browser_context_fingerprint(self.session.browser_context_state())
+            return current_fingerprint == binding.target_fingerprint, 1
         live = self.session.probe_dom_target(binding.source_target_id)
-        current = bool(live and live[0] == binding.source_revision and live[1] == binding.target_fingerprint)
-        return current, 1
+        is_current = bool(live and live[0] == binding.source_revision and live[1] == binding.target_fingerprint)
+        return is_current, 1
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:
         current, probe_count = self._currentness(request)
@@ -262,6 +272,51 @@ def _target(affordance: Affordance) -> SemanticTarget:
         affordance.role,
         affordance.label,
         dict(affordance.state),
+    )
+
+
+def _snapshot_media(snapshot, targets: tuple[SemanticTarget, ...]) -> tuple[ObservationMedia, ...]:
+    frame = snapshot.visual_frame
+    if frame is None:
+        return ()
+    known = {item.target_id for item in targets}
+    regions: list[ObservationGroundingRegion] = []
+    for affordance in snapshot.affordance_model.affordances:
+        if affordance.id not in known:
+            continue
+        raw = affordance.locator.get("bbox")
+        if not isinstance(raw, tuple | list) or len(raw) != 4:
+            continue
+        try:
+            x, y, width, height = (float(item) for item in raw)
+        except (TypeError, ValueError):
+            continue
+        left = max(0, min(frame.image_width - 1, round(x)))
+        top = max(0, min(frame.image_height - 1, round(y)))
+        right = max(left + 1, min(frame.image_width, round(x + width)))
+        bottom = max(top + 1, min(frame.image_height, round(y + height)))
+        if right <= left or bottom <= top:
+            continue
+        regions.append(
+            ObservationGroundingRegion(
+                affordance.id,
+                (left, top, right - left, bottom - top),
+                affordance.confidence,
+                "browser-session:viewport_pixels",
+            )
+        )
+    return (
+        ObservationMedia(
+            "screenshot",
+            "screenshot",
+            "image/png",
+            frame.image_bytes,
+            tuple(regions),
+            capture_group_id=f"browser:{snapshot.observation.page_revision}",
+            variant=ObservationMediaVariant.RAW,
+            dimensions=(frame.image_width, frame.image_height),
+            coordinate_space_id="browser-session:viewport_pixels",
+        ),
     )
 
 

@@ -13,6 +13,7 @@ from affordance_runtime.actions.capabilities import (
 from affordance_runtime.actions.classification import classify_surface_action
 from affordance_runtime.execution.contracts import ActionError, ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.visual.contracts import (
+    VisualFrame,
     VisualRegionBinding,
     project_visual_semantic_state,
 )
@@ -35,12 +36,24 @@ from affordance_runtime.world.acquisition import (
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CoverageState,
+    ObservationGroundingRegion,
+    ObservationMedia,
+    ObservationMediaVariant,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
 )
 from affordance_runtime.world.observation_needs import ObservationPurpose
+from affordance_runtime.world.observation_outcomes import (
+    ObservationObservedItem,
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+    ObservationUnknownItem,
+    QueryScopeLocator,
+    ResultLocator,
+    VisualUnknownReason,
+)
 
 if TYPE_CHECKING:
     from affordance_runtime.surfaces.dom.browser_session import BrowserSession
@@ -64,19 +77,21 @@ class VisualSurfaceAdapter:
 
     @property
     def observation_offers(self) -> tuple[ObservationOffer, ...]:
-        return (ObservationOffer(
-            self.surface,
-            "visual",
-            "weak",
-            "high",
-            supported_purposes=(
-                ObservationPurpose.WORLD_GROUNDING,
-                ObservationPurpose.ENTITY_DISCOVERY,
-                ObservationPurpose.EFFECT_VERIFICATION,
-                ObservationPurpose.CRITERION_VERIFICATION,
-                ObservationPurpose.CURRENTNESS_REFRESH,
+        return (
+            ObservationOffer(
+                self.surface,
+                "visual",
+                "weak",
+                "high",
+                supported_purposes=(
+                    ObservationPurpose.WORLD_GROUNDING,
+                    ObservationPurpose.ENTITY_DISCOVERY,
+                    ObservationPurpose.EFFECT_VERIFICATION,
+                    ObservationPurpose.CRITERION_VERIFICATION,
+                    ObservationPurpose.CURRENTNESS_REFRESH,
+                ),
             ),
-        ),)
+        )
 
     def initialize_task(self, task: TaskGoal) -> None:
         self._task = task
@@ -92,35 +107,57 @@ class VisualSurfaceAdapter:
             raise RuntimeError("Visual surface adapter must be reset before observation")
         observation_id = f"visual:{uuid.uuid4().hex}"
         frame = self.session.capture_visual_frame(observation_id)
+        return self.project_frame(
+            request,
+            frame,
+            atomic_query=self._task.instruction,
+            use_point_grounder=self.point_grounder is not None,
+        )
+
+    def project_frame(
+        self,
+        request: SelectedObservationRequest,
+        frame: VisualFrame,
+        *,
+        atomic_query: str,
+        use_point_grounder: bool,
+        acquisition_root_id: str = "",
+        max_results: int = 16,
+    ) -> SelectedObservationResult:
+        """Project one capture supplied by a grouped physical browser owner."""
+
+        if self._task is None:
+            raise RuntimeError("Visual surface adapter must be initialized before projection")
+        observation_id = frame.observation_id
         proposal_request = VisualRegionProposalRequest(
             observation_id,
             None,
             frame.image_bytes,
             (frame.image_width, frame.image_height),
-            self._task.instruction,
+            atomic_query,
+            max_results,
         )
         proposed = tuple(
             replace(region, primitive_action="observe_only", action_point_xy=None)
             for region in self.proposer.propose(proposal_request)
         )
-        if self.point_grounder is not None:
+        if use_point_grounder:
+            if self.point_grounder is None:
+                raise RuntimeError("point grounding capability is unavailable")
             point = self.point_grounder.ground(
                 VisualGroundingRequest(
                     observation_id,
                     None,
                     frame.image_bytes,
                     (frame.image_width, frame.image_height),
-                    self._task.instruction,
+                    atomic_query,
                 )
             )
-            proposed = tuple(
-                point_grounded_visual_regions(list(proposed), point, proposal_request.image_size)
-            )
+            proposed = tuple(point_grounded_visual_regions(list(proposed), point, proposal_request.image_size))
         if len(proposed) > proposal_request.max_regions:
             raise ValueError("visual proposer exceeded the region bound")
         regions = tuple(
-            VisualRegionBinding.from_region(frame, f"region:{index}", region)
-            for index, region in enumerate(proposed)
+            VisualRegionBinding.from_region(frame, f"region:{index}", region) for index, region in enumerate(proposed)
         )
         targets = tuple(
             SemanticTarget(
@@ -145,7 +182,33 @@ class VisualSurfaceAdapter:
             for target in targets
             for key, value in target.state.items()
         )
-        unsupported = tuple(region.primitive_action for region, binding in zip(regions, candidate_bindings, strict=True) if binding is None)
+        unsupported = tuple(
+            region.primitive_action
+            for region, binding in zip(regions, candidate_bindings, strict=True)
+            if binding is None
+        )
+        grounding_regions = tuple(
+            ObservationGroundingRegion(
+                region.region_id,
+                _integer_bbox(region, frame),
+                region.confidence,
+                "browser-session:viewport_pixels",
+            )
+            for region in regions
+        )
+        media = (
+            ObservationMedia(
+                "visual-screenshot",
+                "screenshot",
+                "image/png",
+                frame.image_bytes,
+                grounding_regions,
+                capture_group_id=acquisition_root_id or f"browser:{frame.source_revision}",
+                variant=ObservationMediaVariant.RAW,
+                dimensions=(frame.image_width, frame.image_height),
+                coordinate_space_id="browser-session:viewport_pixels",
+            ),
+        )
         observation = SurfaceObservation(
             observation_id,
             self.surface,
@@ -158,7 +221,8 @@ class VisualSurfaceAdapter:
             if bool(getattr(self.proposer, "acquisition_exhaustive", False))
             else CoverageState.TRUNCATED,
             {"screenshot_ref": frame.screenshot_ref, "unsupported_actions": unsupported},
-            acquisition_root_id=f"browser:{frame.source_revision}",
+            media=media,
+            acquisition_root_id=acquisition_root_id or f"browser:{frame.source_revision}",
             visual_only_target_ids=tuple(region.region_id for region in regions),
         )
         fulfilled = tuple(
@@ -167,23 +231,23 @@ class VisualSurfaceAdapter:
             if item.purpose is ObservationPurpose.WORLD_GROUNDING
             or (item.purpose is ObservationPurpose.ENTITY_DISCOVERY and bool(targets))
             or (
-                item.purpose in {
+                item.purpose
+                in {
                     ObservationPurpose.EFFECT_VERIFICATION,
                     ObservationPurpose.CRITERION_VERIFICATION,
                 }
                 and bool(facts)
-                and (
-                    not item.subject_ids
-                    or bool(set(item.subject_ids) & {target.target_id for target in targets})
-                )
+                and (not item.subject_ids or bool(set(item.subject_ids) & {target.target_id for target in targets}))
             )
             or item.purpose is ObservationPurpose.CURRENTNESS_REFRESH
         )
+        query_outcomes = _query_outcomes(request, regions)
         return SelectedObservationResult.acquired(
             request,
             observation,
-            fulfilled_need_ids=fulfilled,
+            fulfilled_need_ids=tuple(dict.fromkeys((*fulfilled, *(item.query_id for item in query_outcomes)))),
             unfulfilled_reason_code="no_matching_visual_evidence",
+            query_outcomes=query_outcomes,
         )
 
     def is_current(self, request: BoundActionRequest) -> bool:
@@ -279,3 +343,62 @@ class VisualSurfaceAdapter:
             error,
             {"currentness_probe_count": probes},
         )
+
+
+def _integer_bbox(region: VisualRegionBinding, frame: VisualFrame) -> tuple[int, int, int, int]:
+    x, y, width, height = region.bbox_xywh
+    left = max(0, min(frame.image_width - 1, round(x)))
+    top = max(0, min(frame.image_height - 1, round(y)))
+    right = max(left + 1, min(frame.image_width, round(x + width)))
+    bottom = max(top + 1, min(frame.image_height, round(y + height)))
+    return left, top, right - left, bottom - top
+
+
+def _query_outcomes(
+    request: SelectedObservationRequest,
+    regions: tuple[VisualRegionBinding, ...],
+) -> tuple[ObservationQueryOutcome, ...]:
+    outcomes: list[ObservationQueryOutcome] = []
+    for need in request.needs:
+        if need.purpose is ObservationPurpose.ENTITY_DISCOVERY:
+            observed = tuple(
+                ObservationObservedItem(ResultLocator(index), (region.region_id,))
+                for index, region in enumerate(regions[: need.max_results])
+            )
+            outcomes.append(
+                ObservationQueryOutcome(
+                    need.need_id,
+                    need.purpose,
+                    ObservationQueryDisposition.OBSERVED,
+                    observed,
+                )
+                if observed
+                else ObservationQueryOutcome(
+                    need.need_id,
+                    need.purpose,
+                    ObservationQueryDisposition.UNKNOWN,
+                    unknown_items=(
+                        ObservationUnknownItem(QueryScopeLocator(), VisualUnknownReason.TARGET_NOT_VISIBLE),
+                    ),
+                )
+            )
+        elif need.purpose is ObservationPurpose.POINT_GROUNDING:
+            grounded = next((item for item in regions if item.primitive_action == "point_activate"), None)
+            outcomes.append(
+                ObservationQueryOutcome(
+                    need.need_id,
+                    need.purpose,
+                    ObservationQueryDisposition.OBSERVED,
+                    (ObservationObservedItem(QueryScopeLocator(), (grounded.region_id,)),),
+                )
+                if grounded is not None
+                else ObservationQueryOutcome(
+                    need.need_id,
+                    need.purpose,
+                    ObservationQueryDisposition.UNKNOWN,
+                    unknown_items=(
+                        ObservationUnknownItem(QueryScopeLocator(), VisualUnknownReason.TARGET_NOT_VISIBLE),
+                    ),
+                )
+            )
+    return tuple(outcomes)

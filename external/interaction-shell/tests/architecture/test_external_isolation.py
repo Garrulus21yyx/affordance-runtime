@@ -64,17 +64,18 @@ def test_deployment_composition_imports_only_named_core_owners():
         "affordance_runtime.agent.observability",
         "affordance_runtime.app.checkpoint",
         "affordance_runtime.app.composition",
+        "affordance_runtime.app.interactive_environment",
         "affordance_runtime.app.public_session",
         "affordance_runtime.benchmarks.lab",
         "affordance_runtime.evaluation",
         "affordance_runtime.model.policy",
-        "affordance_runtime.surfaces.browsergym",
+        "affordance_runtime.surfaces.browser_bundle",
+        "affordance_runtime.surfaces.dom.thread_session",
         "affordance_runtime.task",
+        "affordance_runtime.world.environment",
         "affordance_runtime.world.orchestrator",
     }
-    assert {name for name in imports if "benchmarks" in name} == {
-        "affordance_runtime.benchmarks.lab"
-    }
+    assert {name for name in imports if "benchmarks" in name} == {"affordance_runtime.benchmarks.lab"}
 
 
 def test_external_scope_contains_no_platform_or_custom_media_implementation():

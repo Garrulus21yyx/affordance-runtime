@@ -11,7 +11,7 @@ import json
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from threading import RLock
 from typing import Any, Mapping, Protocol, cast
@@ -95,6 +95,7 @@ class BrowserSnapshot:
     perception_requirements: PerceptionRequirements | None = None
     source_coverage: tuple[SourceCoverage, ...] = ()
     predicate_evidence: tuple[PredicateEvidence, ...] = ()
+    visual_frame: VisualFrame | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.accessibility_tree is not None:
@@ -799,6 +800,7 @@ class BrowserSession:
         screenshot_ref = ""
         screenshot_bytes = b""
         image_size: tuple[int, int] | None = None
+        visual_frame: VisualFrame | None = None
         svg_geometry: SvgGeometryObservation | None = None
         accessibility_tree = _bounded_accessibility_tree(self._page)
         control_states: dict[str, Any] = {}
@@ -819,7 +821,7 @@ class BrowserSession:
                 captured = evaluator(
                     """() => Object.fromEntries("""
                     + serialized_bindings
-                    + """.flatMap(({key, selector}) => { const element = document.querySelector(selector); if (!key || !element) return []; const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [[key, {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', aria_expanded: element.getAttribute('aria-expanded') || '', aria_controls: element.getAttribute('aria-controls') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), visible}]]; }))"""
+                    + """.flatMap(({key, selector}) => { const element = document.querySelector(selector); if (!key || !element) return []; const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; const selected_options = element instanceof HTMLSelectElement ? Array.from(element.selectedOptions).map((option) => String(option.value || option.textContent || '').trim()).filter(Boolean) : []; return [[key, {value: 'value' in element ? String(element.value) : '', selected_options, checked: 'checked' in element ? Boolean(element.checked) : null, aria_valuenow: element.getAttribute('aria-valuenow') || '', aria_checked: element.getAttribute('aria-checked') || '', aria_selected: element.getAttribute('aria-selected') || '', aria_expanded: element.getAttribute('aria-expanded') || '', aria_controls: element.getAttribute('aria-controls') || '', scroll_top: Number(element.scrollTop || 0), scroll_height: Number(element.scrollHeight || 0), client_height: Number(element.clientHeight || 0), bbox: [rect.x, rect.y, rect.width, rect.height], visible}]]; }))"""
                 )
                 if isinstance(captured, dict):
                     control_states = captured
@@ -852,11 +854,26 @@ class BrowserSession:
                 evidence_ref=screenshot_path or "",
             )
         if screenshot_path is not None or visual_required or spatial_required:
+            before_viewport = _visual_viewport(evaluator) if callable(evaluator) else None
             screenshot_bytes = (
                 self._page.screenshot(path=screenshot_path) if screenshot_path is not None else self._page.screenshot()
             )
+            after_viewport = _visual_viewport(evaluator) if callable(evaluator) else None
+            if before_viewport is None or before_viewport != after_viewport:
+                raise RuntimeError("visual viewport changed during coherent browser capture")
             screenshot_ref = screenshot_path or f"sha256:{hashlib.sha256(screenshot_bytes).hexdigest()}"
             image_size = _image_size(screenshot_bytes, evaluator)
+            if image_size is None:
+                raise RuntimeError("visual screenshot dimensions are unavailable")
+            visual_frame = VisualFrame(
+                snapshot_id,
+                screenshot_ref,
+                "sha256:" + hashlib.sha256(screenshot_bytes).hexdigest(),
+                image_size[0],
+                image_size[1],
+                after_viewport,
+                screenshot_bytes,
+            )
         if accessibility_tree is not None or (
             perception_requirements is not None and (visual_required or spatial_required)
         ):
@@ -937,7 +954,16 @@ class BrowserSession:
                 state["selected_options"] = [
                     str(item)[:160] for item in selected_options if isinstance(item, str) and item
                 ][:20]
-            enriched_affordances.append(replace(affordance, state=state))
+            locator = dict(affordance.locator)
+            rendered_bbox = control_state.get("bbox") if isinstance(control_state, dict) else None
+            if (
+                isinstance(rendered_bbox, list | tuple)
+                and len(rendered_bbox) == 4
+                and all(isinstance(item, int | float) for item in rendered_bbox)
+            ):
+                locator["bbox"] = [float(item) for item in rendered_bbox]
+                locator["coordinate_space"] = "viewport_pixels"
+            enriched_affordances.append(replace(affordance, state=state, locator=locator))
             if element_tag == "textarea" and isinstance(control_state, dict):
                 scroll_top = control_state.get("scroll_top")
                 scroll_height = control_state.get("scroll_height")
@@ -1271,6 +1297,7 @@ class BrowserSession:
                     else frozenset()
                 ),
             ),
+            visual_frame=visual_frame,
         )
         assertions = _source_assertions(snapshot, effective_ttl_ms)
         if not assertions:
