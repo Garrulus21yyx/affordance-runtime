@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 from interaction_shell.assistant import (
     _ASSISTANT_INSTRUCTIONS,
+    _GUI_AUTHENTICATION_CONTINGENCY,
+    _complete_gui_goal,
     GuiTaskResult,
     PydanticAssistantTurnRunner,
 )
@@ -43,6 +45,8 @@ async def test_pydantic_runner_preserves_one_complete_gui_tool_exchange():
     assert isinstance(result.output, str)
     assert result.output
     assert called_goals
+    assert called_goals[0].endswith(_GUI_AUTHENTICATION_CONTINGENCY)
+    assert called_goals[0].startswith("a\n\n")
     assert len(result.gui_results) == 1
     assert result.gui_results[0].outcome == "success"
     assert result.gui_results[0].message == "GUI complete"
@@ -148,3 +152,6 @@ def test_assistant_delegates_the_authentication_contingency_with_the_complete_gu
     assert "prepare the safest visible out-of-band challenge" in _ASSISTANT_INSTRUCTIONS
     assert "resume\n  the original goal after control is returned" in _ASSISTANT_INSTRUCTIONS
     assert "Never ask the GUI Runtime to collect credentials" in _ASSISTANT_INSTRUCTIONS
+    assert _complete_gui_goal("Original goal") == (
+        f"Original goal\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
+    )

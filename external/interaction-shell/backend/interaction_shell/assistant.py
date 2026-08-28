@@ -96,6 +96,19 @@ you to remember. Never write task progress, browser or GUI state, credentials, i
 model hypotheses, or one-off instructions. If the user did not explicitly ask to remember something, do not write.
 """.strip()
 
+_GUI_AUTHENTICATION_CONTINGENCY = (
+    "If authentication is required at any point, activate the sign-in entry, prepare the safest visible "
+    "out-of-band challenge such as a QR scan or device approval, and ask the user to take over only after the "
+    "challenge is visibly ready. Never collect credentials or one-time codes. Resume this original goal after "
+    "the user returns control."
+)
+
+
+def _complete_gui_goal(goal: str) -> str:
+    """Attach the stable supervised-authentication contract to one delegated GUI goal."""
+
+    return f"{goal.strip()}\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
+
 
 @dataclass(frozen=True)
 class PydanticAssistantTurnRunner:
@@ -217,7 +230,7 @@ class PydanticAssistantTurnRunner:
 
             if gui_results:
                 return gui_results[-1]
-            gui_result = await run_gui_task(goal)
+            gui_result = await run_gui_task(_complete_gui_goal(goal))
             gui_results.append(gui_result)
             return gui_result
 
