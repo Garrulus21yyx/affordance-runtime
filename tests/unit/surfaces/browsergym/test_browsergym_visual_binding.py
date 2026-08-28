@@ -22,6 +22,8 @@ from affordance_runtime.surfaces.visual.disambiguation import (
     VisualCandidateDisambiguationRequest,
 )
 from affordance_runtime.surfaces.visual.grounding import (
+    VisualGroundingAbstained,
+    VisualGroundingAbstentionReason,
     VisualGroundingPoint,
     VisualGroundingRequest,
     VisualRegion,
@@ -93,6 +95,19 @@ class _Grounder:
     def ground(self, request: VisualGroundingRequest) -> VisualGroundingPoint:
         self.calls.append(request)
         return self.point
+
+
+@dataclass
+class _AbstainingGrounder:
+    reason: VisualGroundingAbstentionReason
+    calls: list[VisualGroundingRequest] = field(default_factory=list)
+    provider: str = "zhipu"
+    model: str = "glm-fixture"
+    prompt_version: str = "visual-grounder-v3"
+
+    def ground(self, request: VisualGroundingRequest) -> VisualGroundingPoint:
+        self.calls.append(request)
+        raise VisualGroundingAbstained(self.reason)
 
 
 @dataclass
@@ -501,6 +516,47 @@ def test_point_grounding_uses_atomic_query_and_requires_next_policy_action() -> 
         assert environment.visual_proposer_calls == 0
         assert environment.visual_point_grounder_calls == 1
         assert fake.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_point_grounding_closed_abstention_is_unknown_not_provider_failure() -> None:
+    async def scenario() -> None:
+        grounder = _AbstainingGrounder(VisualGroundingAbstentionReason.INSUFFICIENT_RESOLUTION)
+        environment, task = open_surface(
+            "browsergym/miniwob.click-button",
+            7,
+            gym_factory=lambda *_args, **_kwargs: FakeBrowserGym(_raw()),
+            visual_point_grounder=grounder,
+        )
+        try:
+            await environment.reset(task)
+            acquired = await environment.capture(
+                WorldObservationRequest(
+                    ObservationRequestKind.POLICY_REQUEST,
+                    "ground one current point",
+                    (
+                        ObservationNeed(
+                            "observation-query:point-abstained",
+                            ObservationPurpose.POINT_GROUNDING,
+                            required_modality=ObservationModality.VISUAL,
+                            required_assurance=ObservationAssurance.WEAK,
+                            query_text="the small circular control in the center",
+                        ),
+                    ),
+                )
+            )
+        finally:
+            await environment.close()
+
+        outcome = acquired.query_outcome("observation-query:point-abstained")
+        assert outcome is not None
+        assert outcome.disposition is ObservationQueryDisposition.UNKNOWN
+        assert tuple(item.reason.value for item in outcome.unknown_items) == ("insufficient_resolution",)
+        assert environment.visual_provider_abstained_count == 1
+        assert environment.visual_provider_failure_count == 1
+        assert environment.visual_point_grounder_calls == 1
+        assert len(grounder.calls) == 1
 
     asyncio.run(scenario())
 

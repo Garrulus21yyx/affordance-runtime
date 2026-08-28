@@ -16,9 +16,11 @@ from affordance_runtime.benchmarks.screenspot import (
     run_screenspot_offline_suite,
 )
 from affordance_runtime.model.policy.pydantic_ai_bridge import ConfiguredPydanticAIModel
+from affordance_runtime.model.providers.port import StructuredModelError
 from affordance_runtime.surfaces.visual.grounding import (
     PydanticAIVisualGrounder,
     PydanticAIVisualRegionProposer,
+    VisualGroundingAbstained,
     VisualGroundingPoint,
     VisualGroundingRequest,
     VisualRegion,
@@ -350,6 +352,23 @@ def test_pydantic_ai_visual_grounder_sends_only_screenshot_and_instruction(tmp_p
     user = next(part for part in records[0][-1].parts if isinstance(part, UserPromptPart))
     assert any(isinstance(item, BinaryContent) and item.data == image.read_bytes() for item in user.content)
     assert any(isinstance(item, str) and "click the target" in item for item in user.content)
+
+
+def test_pydantic_ai_visual_grounder_has_closed_abstention_not_arbitrary_answers(tmp_path: Path) -> None:
+    image = tmp_path / "sample.png"
+    Image.new("RGB", (20, 10), "white").save(image)
+    abstaining, _ = _visual_inference('{"abstain_reason":"target_not_visible"}')
+
+    with pytest.raises(VisualGroundingAbstained, match="target_not_visible"):
+        PydanticAIVisualGrounder(abstaining).ground(
+            VisualGroundingRequest("sample", image, image.read_bytes(), (20, 10), "click the target")
+        )
+
+    arbitrary_answer, _ = _visual_inference('{"answer":"17"}', '{"answer":"17"}')
+    with pytest.raises(StructuredModelError):
+        PydanticAIVisualGrounder(arbitrary_answer).ground(
+            VisualGroundingRequest("sample", image, image.read_bytes(), (20, 10), "count the blocks")
+        )
 
 
 def test_visual_region_converts_normalized_bbox_and_rejects_invalid_extent() -> None:

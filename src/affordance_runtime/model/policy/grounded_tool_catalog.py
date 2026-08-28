@@ -140,8 +140,11 @@ class _EvidenceBinding:
             max_results = raw_max_results
         elif purpose is ObservationPurpose.VISUAL_PROPERTY:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
-            property_name = str(arguments["property"]).strip()
-            expected_value = str(arguments["expected_value"]).strip()
+            property_query = arguments["property_query"]
+            if not isinstance(property_query, Mapping):
+                raise ValueError("property_query must be an object")
+            property_name = str(property_query["property"]).strip()
+            expected_value = str(property_query["expected"]).strip()
             predicate = f"{property_name} equals {expected_value}"
         elif purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
             candidate_ids = self._resolve_refs(arguments["candidate_refs"], purpose=purpose)
@@ -150,13 +153,18 @@ class _EvidenceBinding:
             atomic_query = str(arguments["target_description"]).strip()
         elif purpose is ObservationPurpose.TEXT_IN_IMAGE:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
-            atomic_query = str(arguments["text_query"]).strip()
+            read_mode = str(arguments["read_mode"]).strip()
+            if read_mode != "all_visible_text":
+                raise ValueError("unsupported text reading mode")
+            atomic_query = "transcribe all visible text inside each supplied subject"
         elif purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
-            predicate = str(arguments["relation"]).strip()
+            relation = str(arguments["relation"]).strip()
+            predicate = f"first_subject {relation} second_subject"
         elif purpose is ObservationPurpose.VISUAL_CHANGE:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
-            predicate = str(arguments["change_predicate"]).strip()
+            changed_property = str(arguments["changed_property"]).strip()
+            predicate = f"{changed_property} changed between frames"
         else:  # pragma: no cover - guarded by the typed exposure set
             raise ValueError("purpose is unavailable in dynamic observation schema")
         return RequestObservation(
@@ -1225,7 +1233,11 @@ def _dynamic_evidence_request_schema(
         "maxLength": 500,
     }
 
-    def ref_array(purpose: str, minimum: int) -> Mapping[str, object]:
+    def ref_array(
+        purpose: str,
+        minimum: int,
+        maximum: int | None = None,
+    ) -> Mapping[str, object]:
         refs = sorted(purpose_subjects[purpose])
         return {
             "type": "array",
@@ -1236,7 +1248,7 @@ def _dynamic_evidence_request_schema(
                 "enum": refs,
             },
             "minItems": minimum,
-            "maxItems": min(32, len(refs)),
+            "maxItems": min(maximum or 32, len(refs)),
         }
 
     variants: list[Mapping[str, object]] = []
@@ -1267,29 +1279,58 @@ def _dynamic_evidence_request_schema(
             properties.update(
                 {
                     "subject_refs": ref_array(purpose, 1),
-                    "property": {
-                        "type": "string",
-                        "description": "supported visible attribute to classify independently per subject",
-                        "enum": [
-                            "appearance",
-                            "color",
-                            "icon",
-                            "selection_state",
-                            "visibility",
-                        ],
-                    },
-                    "expected_value": {
-                        "type": "string",
+                    "property_query": {
                         "description": (
-                            "one expected attribute value; returns true, false, or unknown per subject; "
-                            "never use for counts, totals, enumeration, or comparison across subjects"
+                            "one supported per-subject classification; returns true, false, or unknown per subject"
                         ),
-                        "minLength": 1,
-                        "maxLength": 120,
+                        "oneOf": [
+                            _object_schema(
+                                {
+                                    "property": {"type": "string", "enum": ["selection_state"]},
+                                    "expected": {
+                                        "type": "string",
+                                        "enum": ["selected", "unselected"],
+                                    },
+                                },
+                                ("property", "expected"),
+                            ),
+                            _object_schema(
+                                {
+                                    "property": {"type": "string", "enum": ["visibility"]},
+                                    "expected": {
+                                        "type": "string",
+                                        "enum": ["visible", "hidden"],
+                                    },
+                                },
+                                ("property", "expected"),
+                            ),
+                            _object_schema(
+                                {
+                                    "property": {"type": "string", "enum": ["color"]},
+                                    "expected": {
+                                        "type": "string",
+                                        "enum": [
+                                            "black",
+                                            "blue",
+                                            "brown",
+                                            "gray",
+                                            "green",
+                                            "orange",
+                                            "pink",
+                                            "purple",
+                                            "red",
+                                            "white",
+                                            "yellow",
+                                        ],
+                                    },
+                                },
+                                ("property", "expected"),
+                            ),
+                        ],
                     },
                 }
             )
-            required.extend(("subject_refs", "property", "expected_value"))
+            required.extend(("subject_refs", "property_query"))
         elif purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
             purpose_schema["description"] = "choose among known visually ambiguous candidates"
             properties.update(
@@ -1317,24 +1358,34 @@ def _dynamic_evidence_request_schema(
             properties.update(
                 {
                     "subject_refs": ref_array(purpose, 1),
-                    "text_query": {
-                        **bounded_text,
+                    "read_mode": {
+                        "type": "string",
                         "description": (
-                            "specific letters or digits to transcribe from the supplied pixel container; "
-                            "never use for counting or classifying visible objects"
+                            "transcribe all visible text inside each supplied pixel container; the result contains "
+                            "text only and never answers questions about the image"
                         ),
+                        "enum": ["all_visible_text"],
                     },
                 }
             )
-            required.extend(("subject_refs", "text_query"))
+            required.extend(("subject_refs", "read_mode"))
         elif purpose == ObservationPurpose.SPATIAL_RELATIONSHIP.value:
-            purpose_schema["description"] = "classify a visible relation among known subjects"
+            purpose_schema["description"] = "classify one supported relation between two ordered subjects"
             properties.update(
                 {
-                    "subject_refs": ref_array(purpose, 2),
+                    "subject_refs": ref_array(purpose, 2, 2),
                     "relation": {
-                        **bounded_text,
-                        "description": "one visible spatial relation to classify among the supplied subjects",
+                        "type": "string",
+                        "description": "relation of first_subject to second_subject",
+                        "enum": [
+                            "left_of",
+                            "right_of",
+                            "above",
+                            "below",
+                            "inside",
+                            "contains",
+                            "overlaps",
+                        ],
                     },
                 }
             )
@@ -1344,13 +1395,22 @@ def _dynamic_evidence_request_schema(
             properties.update(
                 {
                     "subject_refs": ref_array(purpose, 1),
-                    "change_predicate": {
-                        **bounded_text,
-                        "description": "one visible change to check across the admitted before/after frames",
+                    "changed_property": {
+                        "type": "string",
+                        "description": "supported visible property to compare across admitted before/after frames",
+                        "enum": [
+                            "appearance",
+                            "color",
+                            "icon",
+                            "selection_state",
+                            "visibility",
+                            "position",
+                            "text",
+                        ],
                     },
                 }
             )
-            required.extend(("subject_refs", "change_predicate"))
+            required.extend(("subject_refs", "changed_property"))
         else:  # pragma: no cover - guarded by the typed exposure set
             raise ValueError(f"unsupported dynamic observation purpose: {purpose}")
         variants.append(_object_schema(properties, tuple(required)))
@@ -1384,10 +1444,7 @@ def _dynamic_purpose_applicable(
     del delivery  # refs were already intersected with this exact manifest
     ref_count = len(refs)
     if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
-        return bool(context.actor_world.media) and (
-            any(document.truncated for document in context.actor_world.documents)
-            or any(source.projection_coverage != "complete" for source in context.actor_world.sources)
-        )
+        return bool(context.actor_world.media) and _has_structural_projection_gap(context)
     if purpose in {
         ObservationPurpose.VISUAL_PROPERTY.value,
         ObservationPurpose.TEXT_IN_IMAGE.value,
@@ -1399,7 +1456,9 @@ def _dynamic_purpose_applicable(
     }:
         return ref_count >= 2
     if purpose == ObservationPurpose.POINT_GROUNDING.value:
-        return bool(context.actor_world.media)
+        return bool(context.actor_world.media) and (
+            _has_structural_projection_gap(context) or not _has_structurally_grounded_action_target(context)
+        )
     if purpose == ObservationPurpose.VISUAL_CHANGE.value:
         return ref_count >= 1
     return False
@@ -1423,10 +1482,45 @@ def _dynamic_ref_domain(
     context: AgentContext,
     refs: Mapping[str, str],
 ) -> Mapping[str, str]:
-    if purpose != ObservationPurpose.TEXT_IN_IMAGE.value:
-        return refs
-    roles = {item.ref: item.role.strip().casefold() for item in context.grounding.entities}
-    return {ref: subject for ref, subject in refs.items() if roles.get(ref, "") in _PIXEL_TEXT_CONTAINER_ROLES}
+    entities = {item.ref: item for item in context.grounding.entities}
+    if purpose == ObservationPurpose.TEXT_IN_IMAGE.value:
+        return {
+            ref: subject
+            for ref, subject in refs.items()
+            if entities.get(ref) is not None
+            and entities[ref].role.strip().casefold() in _PIXEL_TEXT_CONTAINER_ROLES
+        }
+    if purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
+        identities: dict[tuple[str, str], int] = {}
+        for ref in refs:
+            entity = entities.get(ref)
+            if entity is None or not PublicRefCodec.accepts(ref, expected=PublicRefKind.EXECUTABLE):
+                continue
+            identity = (entity.role.strip().casefold(), entity.label.strip().casefold())
+            identities[identity] = identities.get(identity, 0) + 1
+        return {
+            ref: subject
+            for ref, subject in refs.items()
+            if (entity := entities.get(ref)) is not None
+            and PublicRefCodec.accepts(ref, expected=PublicRefKind.EXECUTABLE)
+            and identities.get((entity.role.strip().casefold(), entity.label.strip().casefold()), 0) >= 2
+        }
+    return refs
+
+
+def _has_structural_projection_gap(context: AgentContext) -> bool:
+    return any(document.truncated for document in context.actor_world.documents) or any(
+        source.modality == "structural" and source.projection_coverage != "complete"
+        for source in context.actor_world.sources
+    )
+
+
+def _has_structurally_grounded_action_target(context: AgentContext) -> bool:
+    synthetic_roles = frozenset({"document", "focus", "focused_context", "viewport"})
+    return any(
+        entity.verbs and entity.role.strip().casefold() not in synthetic_roles
+        for entity in context.grounding.entities
+    )
 
 
 def _observation_tool_needed(context: AgentContext, capability) -> bool:

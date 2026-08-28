@@ -101,6 +101,7 @@ from affordance_runtime.surfaces.visual.disambiguation import (
 )
 from affordance_runtime.surfaces.visual.grounding import (
     VisualGrounderPort,
+    VisualGroundingAbstentionReason,
     VisualProviderFailure,
     VisualProviderFailureCode,
     VisualProviderStage,
@@ -1649,6 +1650,32 @@ class BrowserGymSurfaceAdapter:
                 outcomes.append(_completed_outcome(need.need_id, need.purpose, tuple(observed), unknown))
             elif need.purpose is ObservationPurpose.POINT_GROUNDING:
                 if visual.provider_failure is not None:
+                    if (
+                        visual.provider_failure.code is VisualProviderFailureCode.ABSTAINED
+                        and visual.provider_failure.abstention_reason is not None
+                    ):
+                        unknown_reason = {
+                            VisualGroundingAbstentionReason.TARGET_NOT_VISIBLE: (
+                                VisualUnknownReason.TARGET_NOT_VISIBLE
+                            ),
+                            VisualGroundingAbstentionReason.MULTIPLE_PLAUSIBLE_TARGETS: (
+                                VisualUnknownReason.MULTIPLE_PLAUSIBLE_TARGETS
+                            ),
+                            VisualGroundingAbstentionReason.INSUFFICIENT_RESOLUTION: (
+                                VisualUnknownReason.INSUFFICIENT_RESOLUTION
+                            ),
+                        }[visual.provider_failure.abstention_reason]
+                        outcomes.append(
+                            ObservationQueryOutcome(
+                                need.need_id,
+                                need.purpose,
+                                ObservationQueryDisposition.UNKNOWN,
+                                unknown_items=(
+                                    ObservationUnknownItem(QueryScopeLocator(), unknown_reason),
+                                ),
+                            )
+                        )
+                        continue
                     outcomes.append(
                         ObservationQueryOutcome(
                             need.need_id,

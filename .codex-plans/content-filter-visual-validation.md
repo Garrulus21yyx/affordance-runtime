@@ -97,6 +97,44 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Commit and push the reporting repair and the escalation/tool-contract repair separately before another clean live
   run.
 
+#### Reopen convergence contract
+
+The clean4–clean7 sequence is one shared contract failure, not four independent prompt mistakes: open natural-language
+fields let a typed visual specialist encode an arbitrary screenshot question even though its result algebra could not
+answer that question. The Catalog owned the tool name but did not yet own a closed, output-shaped applicability and
+argument algebra for every purpose. Closure therefore requires all seven variants to be reviewed together:
+
+- `entity_discovery`: an open referring class is valid because the only result is a bounded region list; it is exposed
+  only when current structural projection is incomplete.
+- `target_disambiguation`: an open visible criterion is valid because the only result is one of the supplied current
+  executable refs or unknown; only duplicate role/label executable groups enter its ref domain.
+- `point_grounding`: an open referring expression is valid because the only result is one point or the closed
+  `target_not_visible|multiple_plausible_targets|insufficient_resolution` abstention. It is not exposed on a complete
+  structural turn that already contains grounded action targets.
+- `text_in_image`: the public request only selects `all_visible_text` over pixel-container refs; the provider returns
+  transcription per subject and cannot return an arbitrary answer.
+- `visual_property`: the public request selects one closed per-subject query: selected/unselected, visible/hidden, or
+  one supported color. It returns true/false/unknown per subject; arbitrary expected-value prose is not representable.
+- `spatial_relationship`: exactly two ordered refs plus one closed relation
+  (`left_of|right_of|above|below|inside|contains|overlaps`) return one truth value.
+- `visual_change`: one or more current refs plus one closed changed-property category return one truth value over
+  Runtime-admitted before/after lineage.
+
+This follows the specialist boundary used by current GUI-agent systems: UGround maps one referring expression to one
+coordinate (arXiv:2410.05243); Agent S2 routes an already-decided atomic action to a grounding expert and uses exact
+OCR spans rather than arbitrary screenshot QA (arXiv:2504.00906); OmniParser parses a screenshot into OCR/icon boxes
+for a planner rather than taking over task solving (arXiv:2408.00203). The single ActionPolicy remains the only task
+semantic authority. Catalog applicability is derived only from the frozen current World/Delivery; provider activation
+still occurs only after typed request admission. No CoreLoop branch, TaskGoal classifier, second planner, or provider
+registry is introduced.
+
+Falsifiable exit gates are: compatibility Catalog identity unchanged; each dynamic variant accepts every supported
+shape and rejects arbitrary-QA/foreign fields; stale or unoffered requests cause zero provider calls; complete
+structure plus grounded actions omits discovery, point, OCR, and non-ambiguous disambiguation; the `visual-addition`
+flagship uses the exact structural group counts and makes zero visual-provider calls; held-out point/OCR/property/
+spatial/change fixtures still activate exactly their declared specialist; and a fresh-context review finds no second
+authority or bypass.
+
 ## Progress log
 
 - 2026-08-28: Started from pushed feature branch. Detected unrelated dirty worktree; all phase commits will use
@@ -173,6 +211,12 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   closed per-subject property algebra (`appearance|color|icon|selection_state|visibility` plus `expected_value`) and
   deterministically binds it to the existing internal boolean predicate. Aggregate count/enumeration is no longer
   expressible through this purpose; compatibility profile remains unchanged.
+- 2026-08-28: Clean live run `phase7-clean7` then selected the remaining open `spatial_relationship.relation` field
+  for the same aggregate count. Surface admission rejected it before provider activation, so all seven visual provider
+  counters remained zero, but this third reopening triggered the repository convergence protocol. The bounded root
+  repair now closes OCR, spatial, change, and point outputs together, constrains same-name disambiguation and point
+  applicability from the frozen current World, and keeps the compatibility profile and CoreLoop untouched. Provider-
+  free invariant/property gates and one held-out live rerun remain required before Phase 7 can be called verified.
 
 ## Files changed by this plan
 
