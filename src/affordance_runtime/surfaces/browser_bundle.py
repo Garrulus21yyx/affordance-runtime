@@ -8,7 +8,12 @@ from dataclasses import dataclass, field, replace
 from affordance_runtime.actions.grounding import EvidenceKind, GroundingSource, PerceptionRequirements
 from affordance_runtime.execution.contracts import ActionResult, BoundActionRequest, DispatchStatus
 from affordance_runtime.surfaces.dom.adapter import DomSurfaceAdapter
-from affordance_runtime.surfaces.dom.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.surfaces.dom.browser_session import (
+    BrowserLayer,
+    BrowserLayerKind,
+    BrowserSession,
+    BrowserSnapshot,
+)
 from affordance_runtime.surfaces.visual.adapter import VisualSurfaceAdapter
 from affordance_runtime.surfaces.visual.contracts import VisualFrame
 from affordance_runtime.surfaces.visual.disambiguation import (
@@ -35,6 +40,8 @@ from affordance_runtime.surfaces.visual.pydantic_ai_inference import (
 from affordance_runtime.surfaces.visual.semantic_classification import (
     VisualChangeClassificationRequest,
     VisualChangeClassifierPort,
+    VisualLayerObserverPort,
+    VisualLayerTransitionRequest,
     VisualSemanticRole,
     VisualSpatialClassificationRequest,
     VisualSpatialClassifierPort,
@@ -45,6 +52,7 @@ from affordance_runtime.surfaces.visual.semantic_classification import (
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationOffer,
+    ObservationRequestKind,
     SelectedObservationRequest,
     SelectedObservationResult,
     SourceAcquisitionStatus,
@@ -84,6 +92,7 @@ class BrowserSessionSurfaceBundle:
     text_reader: VisualTextReaderPort | None = field(default=None, repr=False)
     spatial_classifier: VisualSpatialClassifierPort | None = field(default=None, repr=False)
     change_classifier: VisualChangeClassifierPort | None = field(default=None, repr=False)
+    layer_observer: VisualLayerObserverPort | None = field(default=None, repr=False)
     surface: str = field(default="browser_session", init=False)
     owns_physical_reset: bool = field(default=True, init=False)
     execution_surfaces: tuple[str, ...] = field(default=("dom", "visual"), init=False)
@@ -92,6 +101,11 @@ class BrowserSessionSurfaceBundle:
     _task: TaskGoal | None = field(default=None, init=False, repr=False)
     _current_frame: VisualFrame | None = field(default=None, init=False, repr=False)
     _before_frame: VisualFrame | None = field(default=None, init=False, repr=False)
+    _current_layers: tuple[BrowserLayer, ...] = field(default=(), init=False, repr=False)
+    _before_layers: tuple[BrowserLayer, ...] = field(default=(), init=False, repr=False)
+    _pending_acquisition_id: str = field(default="", init=False, repr=False)
+    _pending_snapshot: BrowserSnapshot | None = field(default=None, init=False, repr=False)
+    _pending_structured: SurfaceObservation | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._dom = DomSurfaceAdapter(self.session, owns_physical_reset=False)
@@ -126,6 +140,8 @@ class BrowserSessionSurfaceBundle:
             purposes.append(ObservationPurpose.SPATIAL_RELATIONSHIP)
         if self.change_classifier is not None and self._change_lineage_available:
             purposes.append(ObservationPurpose.VISUAL_CHANGE)
+        if self.layer_observer is not None and self._before_frame is not None:
+            purposes.append(ObservationPurpose.EFFECT_VERIFICATION)
         return (
             ObservationOffer("dom", "structural", "structural", "low", group),
             ObservationOffer(
@@ -150,6 +166,11 @@ class BrowserSessionSurfaceBundle:
         self._task = task
         self._current_frame = None
         self._before_frame = None
+        self._current_layers = ()
+        self._before_layers = ()
+        self._pending_acquisition_id = ""
+        self._pending_snapshot = None
+        self._pending_structured = None
         self._dom.initialize_task(task)
         self._visual.initialize_task(task)
 
@@ -175,27 +196,43 @@ class BrowserSessionSurfaceBundle:
         if visual_request is None:
             results = []
             for item in requests:
-                results.append(
-                    await self._dom.acquire(item)
-                    if item.source == "dom"
-                    else SelectedObservationResult.failed(
-                        item,
-                        SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
-                        "source_not_owned",
+                if item.source != "dom":
+                    results.append(
+                        SelectedObservationResult.failed(
+                            item,
+                            SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE,
+                            "source_not_owned",
+                        )
                     )
-                )
+                    continue
+                snapshot = self.session.capture(page_id="agent-loop", task_instruction="")
+                dom_result = self._dom.project_snapshot(item, snapshot)
+                assert dom_result.observation is not None
+                structured = self._with_layer_transition_obligation(item, snapshot, dom_result.observation)
+                dom_result = replace(dom_result, observation=structured)
+                self._pending_acquisition_id = item.acquisition_id
+                self._pending_snapshot = snapshot
+                self._pending_structured = structured
+                self._current_layers = snapshot.layers
+                results.append(dom_result)
             return tuple(results)
-        snapshot = self.session.capture(
-            page_id="agent-loop",
-            task_instruction="",
-            perception_requirements=PerceptionRequirements(
-                required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
-                acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.VISUAL}),
-                preferred_sources=(GroundingSource.DOM, GroundingSource.VISUAL),
-                observation_budget=1,
-                model_call_budget=0,
-            ),
-        )
+        cached = self._pending_acquisition_id == visual_request.acquisition_id
+        if cached:
+            assert self._pending_snapshot is not None
+            frame = self.session.capture_visual_frame(f"{self._pending_snapshot.observation.snapshot_id}:visual")
+            snapshot = replace(self._pending_snapshot, visual_frame=frame)
+        else:
+            snapshot = self.session.capture(
+                page_id="agent-loop",
+                task_instruction="",
+                perception_requirements=PerceptionRequirements(
+                    required_properties=frozenset({EvidenceKind.VISUAL_APPEARANCE}),
+                    acceptable_evidence=frozenset({GroundingSource.DOM, GroundingSource.VISUAL}),
+                    preferred_sources=(GroundingSource.DOM, GroundingSource.VISUAL),
+                    observation_budget=1,
+                    model_call_budget=0,
+                ),
+            )
         if snapshot.visual_frame is None:
             return tuple(
                 SelectedObservationResult.failed(
@@ -206,9 +243,14 @@ class BrowserSessionSurfaceBundle:
         root = f"browser:{snapshot.observation.page_revision}"
         dom_request = next((item for item in requests if item.source == "dom"), None)
         dom_result = self._dom.project_snapshot(dom_request, snapshot) if dom_request is not None else None
-        structured = dom_result.observation if dom_result is not None else None
+        structured = self._pending_structured if cached else dom_result.observation if dom_result is not None else None
         visual_result = self._acquire_visual(visual_request, snapshot, structured, root)
         self._current_frame = snapshot.visual_frame
+        self._current_layers = snapshot.layers
+        if cached:
+            self._pending_acquisition_id = ""
+            self._pending_snapshot = None
+            self._pending_structured = None
         by_source = {"visual": visual_result}
         if dom_result is not None:
             by_source["dom"] = dom_result
@@ -218,6 +260,37 @@ class BrowserSessionSurfaceBundle:
                 item, SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE, "source_not_owned"
             )
             for item in requests
+        )
+
+    def _with_layer_transition_obligation(
+        self,
+        request: SelectedObservationRequest,
+        snapshot: BrowserSnapshot,
+        structured: SurfaceObservation,
+    ) -> SurfaceObservation:
+        if (
+            request.lifecycle_kind is not ObservationRequestKind.POST_ACTION_FALLBACK
+            or self.layer_observer is None
+            or self._before_frame is None
+        ):
+            return structured
+        before = {_layer_signature(item) for item in self._before_layers}
+        candidate_target_ids = tuple(
+            f"dom-layer:{index}"
+            for index, layer in enumerate(snapshot.layers)
+            if layer.kind is BrowserLayerKind.GEOMETRIC_OVERLAY and _layer_signature(layer) not in before
+        )
+        if not candidate_target_ids:
+            return structured
+        return replace(
+            structured,
+            artifacts={
+                **structured.artifacts,
+                "unresolved_visual_layer_transition": {
+                    "public_summary": "A newly visible overlay requires bounded visual interpretation.",
+                    "candidate_target_ids": candidate_target_ids,
+                },
+            },
         )
 
     def _acquire_visual(
@@ -263,6 +336,13 @@ class BrowserSessionSurfaceBundle:
             return self._spatial(request, snapshot.visual_frame, structured, acquisition_root_id)
         if purpose is ObservationPurpose.VISUAL_CHANGE:
             return self._change(request, snapshot.visual_frame, structured, acquisition_root_id)
+        if purpose is ObservationPurpose.EFFECT_VERIFICATION:
+            return self._observe_layer_transition(
+                request,
+                snapshot,
+                structured,
+                acquisition_root_id,
+            )
         return SelectedObservationResult.failed(
             request, SourceAcquisitionStatus.CAPABILITY_UNAVAILABLE, "visual_purpose_unavailable"
         )
@@ -493,6 +573,147 @@ class BrowserSessionSurfaceBundle:
         )
         return _outcome_only_result(request, need, frame, root, outcome, "Visual change evidence.")
 
+    def _observe_layer_transition(
+        self,
+        request: SelectedObservationRequest,
+        snapshot: BrowserSnapshot,
+        structured: SurfaceObservation,
+        root: str,
+    ) -> SelectedObservationResult:
+        assert self.layer_observer is not None
+        assert snapshot.visual_frame is not None
+        need = _single_need(request, ObservationPurpose.EFFECT_VERIFICATION)
+        before = self._before_frame
+        artifact = structured.artifacts.get("unresolved_visual_layer_transition")
+        candidate_ids = tuple(artifact.get("candidate_target_ids", ())) if isinstance(artifact, Mapping) else ()
+        targets_by_id = {target.target_id: target for target in structured.targets}
+        candidates: list[VisualCandidate] = []
+        index_by_ref: dict[str, int] = {}
+        for input_index, target_id in enumerate(need.subject_ids):
+            if target_id not in candidate_ids:
+                continue
+            target = targets_by_id.get(target_id)
+            try:
+                layer_index = int(target_id.rsplit(":", 1)[1])
+                layer = snapshot.layers[layer_index]
+            except (IndexError, TypeError, ValueError):
+                continue
+            if target is None or layer.kind is not BrowserLayerKind.GEOMETRIC_OVERLAY:
+                continue
+            ref = f"E{len(candidates) + 1}"
+            candidates.append(
+                VisualCandidate(
+                    ref,
+                    target_id,
+                    target.role,
+                    target.label,
+                    layer.bbox,
+                    target.state,
+                )
+            )
+            index_by_ref[ref] = input_index
+        frame = snapshot.visual_frame
+        if (
+            before is None
+            or before.viewport != frame.viewport
+            or not candidates
+            or len(candidates) != len(need.subject_ids)
+        ):
+            return _unknown_result(
+                request,
+                need,
+                frame,
+                root,
+                VisualUnknownReason.CHANGE_NOT_DETERMINABLE,
+                tuple(range(len(need.subject_ids))),
+                "Visual layer transition is not determinable.",
+            )
+        assessments = self.layer_observer.observe_layers(
+            VisualLayerTransitionRequest(
+                need.need_id,
+                before.image_bytes,
+                frame.image_bytes,
+                (frame.image_width, frame.image_height),
+                tuple(candidates),
+            )
+        )
+        by_ref = {item.ref: item for item in assessments}
+        if set(by_ref) != {item.ref for item in candidates} or len(by_ref) != len(assessments):
+            raise ValueError("layer observer must cover current candidates exactly once")
+        observation_id = f"{frame.observation_id}:visual-layer-change"
+        visual_targets: list[SemanticTarget] = []
+        facts: list[StateFact] = []
+        proposals: list[EntityAlignmentProposal] = []
+        observed: list[ObservationObservedItem] = []
+        unknown: list[ObservationUnknownItem] = []
+        for candidate in candidates:
+            assessment = by_ref[candidate.ref]
+            input_index = index_by_ref[candidate.ref]
+            if assessment.description is None:
+                unknown.append(
+                    ObservationUnknownItem(
+                        InputLocator((input_index,)),
+                        VisualUnknownReason.CHANGE_NOT_DETERMINABLE,
+                    )
+                )
+                continue
+            local_id = f"layer-change:{input_index}"
+            state = {
+                "visual_change": "appeared",
+                "visual_layer_description": assessment.description,
+                "visual_layer_role": assessment.role.value,
+                "occludes_primary_surface": assessment.occludes_primary_surface,
+                "confidence": assessment.confidence,
+            }
+            visual_targets.append(
+                SemanticTarget(
+                    local_id,
+                    candidate.role,
+                    assessment.description,
+                    state,
+                )
+            )
+            local_facts = tuple(
+                StateFact(
+                    f"fact:{observation_id}:{input_index}:{predicate}",
+                    local_id,
+                    predicate,
+                    value,
+                    observation_id,
+                )
+                for predicate, value in state.items()
+            )
+            facts.extend(local_facts)
+            proposals.append(
+                _alignment(
+                    observation_id,
+                    local_id,
+                    structured.observation_id,
+                    candidate.target_id,
+                    local_facts[0].fact_id,
+                    assessment.confidence,
+                )
+            )
+            observed.append(
+                ObservationObservedItem(
+                    InputLocator((input_index,)),
+                    (candidate.target_id,),
+                    tuple(item.fact_id for item in local_facts),
+                )
+            )
+        return _semantic_result(
+            request,
+            need,
+            frame,
+            root,
+            visual_targets,
+            facts,
+            proposals,
+            observed,
+            unknown,
+            "Bounded visual interpretation of a newly appeared overlay.",
+        )
+
     def is_current(self, request: BoundActionRequest) -> bool:
         if request.binding.surface == "dom":
             return self._dom.is_current(request)
@@ -501,12 +722,22 @@ class BrowserSessionSurfaceBundle:
         return False
 
     async def execute(self, request: BoundActionRequest) -> ActionResult:
+        before_frame: VisualFrame | None = None
+        before_layers = self._current_layers
+        if self.layer_observer is not None:
+            try:
+                before_frame = self.session.capture_visual_frame(
+                    f"{request.binding.source_observation_id}:before-action"
+                )
+            except Exception:
+                before_frame = None
         if request.binding.surface == "dom":
             result = await self._dom.execute(request)
         else:
             result = await self._visual.execute(request)
         if result.dispatch_status is not DispatchStatus.NOT_SENT:
-            self._before_frame = self._current_frame
+            self._before_frame = before_frame or self._current_frame
+            self._before_layers = before_layers
         return result
 
 
@@ -534,6 +765,11 @@ def browser_surface_from_environment(
         inference=inference,
         role=VisualSemanticRole.CHANGE,
     )
+    layer_observer = visual_semantic_classifier_from_environment(
+        environment,
+        inference=inference,
+        role=VisualSemanticRole.LAYER_CHANGE,
+    )
     return BrowserSessionSurfaceBundle(
         session,
         visual_region_proposer_from_environment(environment, inference=inference),
@@ -543,6 +779,14 @@ def browser_surface_from_environment(
         text_reader,
         spatial_classifier,
         change_classifier,
+        layer_observer,
+    )
+
+
+def _layer_signature(layer: BrowserLayer) -> tuple[str, int, int, int, int]:
+    return (
+        layer.kind.value,
+        *(round(value / 8) for value in layer.bbox),
     )
 
 
@@ -554,6 +798,7 @@ def _visual_purpose(request: SelectedObservationRequest) -> ObservationPurpose:
         ObservationPurpose.TEXT_IN_IMAGE,
         ObservationPurpose.SPATIAL_RELATIONSHIP,
         ObservationPurpose.VISUAL_CHANGE,
+        ObservationPurpose.EFFECT_VERIFICATION,
         ObservationPurpose.POINT_GROUNDING,
         ObservationPurpose.ENTITY_DISCOVERY,
         ObservationPurpose.WORLD_GROUNDING,

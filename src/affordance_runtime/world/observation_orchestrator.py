@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from affordance_runtime.world.acquisition import (
@@ -296,13 +297,22 @@ def _residual_needs(
         }.get(evidence_need)
         if purpose is None or any(item.purpose is purpose for item in request.needs):
             continue
-        residual.append(ObservationNeed(
-            f"residual:{purpose.value}",
-            purpose,
-            required_modality=ObservationModality.VISUAL,
-            required_assurance=ObservationAssurance.WEAK,
-            freshness=FreshnessRequirement.FRESH_ACQUISITION,
-        ))
+        layer_transition = structured.artifacts.get("unresolved_visual_layer_transition")
+        subject_ids = (
+            tuple(str(item) for item in layer_transition.get("candidate_target_ids", ()))
+            if purpose is ObservationPurpose.EFFECT_VERIFICATION and isinstance(layer_transition, Mapping)
+            else ()
+        )
+        residual.append(
+            ObservationNeed(
+                f"residual:{purpose.value}",
+                purpose,
+                subject_ids,
+                required_modality=ObservationModality.VISUAL,
+                required_assurance=ObservationAssurance.WEAK,
+                freshness=FreshnessRequirement.FRESH_ACQUISITION,
+            )
+        )
     return tuple(residual)
 
 

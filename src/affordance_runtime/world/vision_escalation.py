@@ -37,6 +37,8 @@ def derive_visual_evidence_needs(
         return (VisionEvidenceNeed.RAW_SCREENSHOT,)
     if postcondition_unresolved:
         return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
+    if "unresolved_visual_layer_transition" in structured.artifacts:
+        return (VisionEvidenceNeed.POSTCONDITION_DIAGNOSIS,)
     # A bounded structural omission is a Runtime-owned fact. Candidate count,
     # duplicate labels, and task-language similarity are not: they require the
     # policy to first state what it intends to interact with. Consequently,

@@ -19,6 +19,8 @@ from affordance_runtime.surfaces.visual.pydantic_ai_inference import PydanticAIV
 from affordance_runtime.surfaces.visual.semantic_classification import (
     PydanticAIVisualSemanticClassifier,
     VisualChangeClassificationRequest,
+    VisualLayerRole,
+    VisualLayerTransitionRequest,
     VisualSemanticRole,
     VisualSpatialClassificationRequest,
     VisualTextReadingRequest,
@@ -66,10 +68,13 @@ def test_predicate_and_semantic_roles_use_one_typed_pydantic_ai_boundary() -> No
     inference, records = _inference(
         '{"assessments":[{"ref":"E1","truth":"true","confidence":0.9},'
         '{"ref":"E2","truth":"unknown","confidence":0.3}]}',
-        '{"assessments":[{"ref":"E1","text":"Alpha","confidence":0.95},'
-        '{"ref":"E2","text":null,"confidence":0.2}]}',
+        '{"assessments":[{"ref":"E1","text":"Alpha","confidence":0.95},{"ref":"E2","text":null,"confidence":0.2}]}',
         '{"truth":"false","confidence":0.8}',
         '{"truth":"true","confidence":0.85}',
+        '{"assessments":[{"ref":"E1","description":"A sign-in dialog with a visible QR code",'
+        '"role":"dialog","occludes_primary_surface":true,"confidence":0.92},'
+        '{"ref":"E2","description":null,"role":"unknown",'
+        '"occludes_primary_surface":null,"confidence":0.2}]}',
     )
     image = _png()
     candidates = _candidates()
@@ -77,6 +82,7 @@ def test_predicate_and_semantic_roles_use_one_typed_pydantic_ai_boundary() -> No
     text_reader = PydanticAIVisualSemanticClassifier(inference, VisualSemanticRole.TEXT)
     spatial_classifier = PydanticAIVisualSemanticClassifier(inference, VisualSemanticRole.SPATIAL)
     change_classifier = PydanticAIVisualSemanticClassifier(inference, VisualSemanticRole.CHANGE)
+    layer_observer = PydanticAIVisualSemanticClassifier(inference, VisualSemanticRole.LAYER_CHANGE)
 
     assessments = predicate.classify(
         VisualPredicateClassificationRequest(
@@ -115,16 +121,28 @@ def test_predicate_and_semantic_roles_use_one_typed_pydantic_ai_boundary() -> No
             candidates,
         )
     )
+    layers = layer_observer.observe_layers(
+        VisualLayerTransitionRequest(
+            "sample:layers",
+            image,
+            image,
+            (200, 100),
+            candidates,
+        )
+    )
 
     assert tuple(item.truth for item in assessments) == (PredicateTruth.TRUE, PredicateTruth.UNKNOWN)
     assert tuple(item.text for item in readings) == ("Alpha", None)
     assert spatial.truth is PredicateTruth.FALSE
     assert change.truth is PredicateTruth.TRUE
+    assert layers[0].role is VisualLayerRole.DIALOG
+    assert layers[0].description == "A sign-in dialog with a visible QR code"
+    assert layers[1].description is None
     binary_counts = []
     for messages in records:
         user = next(part for part in messages[-1].parts if isinstance(part, UserPromptPart))
         binary_counts.append(sum(isinstance(item, BinaryContent) for item in user.content))
-    assert binary_counts == [1, 1, 1, 2]
+    assert binary_counts == [1, 1, 1, 2, 2]
 
 
 def test_visual_inference_rejects_text_models_and_close_is_terminal() -> None:
