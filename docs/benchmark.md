@@ -13,6 +13,47 @@ This is a presentation and control-surface consolidation, not benchmark-result e
 ActionPolicy, World, ToolReturn, evaluator, or formal runner semantics, and no live benchmark was launched for it.
 Provider-free manager/API/schema/frontend/browser tests are its acceptance evidence.
 
+### 2026-08-28 held-out public-Web Interaction Shell witness
+
+Real Interaction Shell session `GZ5_Ccm4CXBzAo4v4fwreWVD` used the existing Steel-backed browser profile for:
+
+```text
+Open https://www.wikipedia.org, search for OpenAI,
+and report the first sentence of the article.
+```
+
+It completed in nine agent steps, five fresh observations, and three dispatched GUI actions. The policy then used five
+bounded `read_region` calls over the current World's `Visible page text` region and submitted: `OpenAI is an American
+artificial intelligence (AI) public benefit corporation headquartered in San Francisco.` The Runtime invoked its
+native evaluator and terminated `done` with `terminal_success`; there was no execution retry. The local raw trace is
+`output/traces/GZ5_Ccm4CXBzAo4v4fwreWVD/trace.jsonl`, and the completed Console/Viewer capture is
+`output/playwright/real-wikipedia-browser-completed.png`.
+
+This closes the real-browser observation/currentness witness exercised by that task: deterministic observation-local
+ActionSpace membership, surface-owned live currentness, duplicate-control identity, readable DOM text projection, and
+staged source lineage. It does not claim broad Web benchmark accuracy or close the independently environment-invalid
+Task426 acceptance gate. Expanded Action/World/CoreLoop verification reports 343 passed and 3 skipped, including an
+eight-test DOM conformance suite with an honest-truncation witness.
+
+### 2026-08-27 Task426 environment invalidation
+
+Task426 is presently environment-invalid and cannot serve as a planning, recovery, efficiency, or end-to-end
+acceptance witness. The official evaluator requires `/relation/189076`; the current Map deployment's Nominatim and
+tile databases know that relation, while its Rails website database contains no current nodes, ways, or relations, so
+the same route returns `Not Found`. The latest
+[`logical-turn-run11`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run11/run.json)
+was externally stopped after repeatedly reaching this contradictory state. It retained the verified Shanksville and
+relation facts across compaction and emitted both control-stall and route-regression recovery signals. This is an
+environment admission failure, not evidence that the single ActionPolicy forgot the task or requires another
+Replanner.
+
+All later Task426 status statements in this chronological record are superseded accordingly. Their traces may still
+witness the narrower pre-route contracts they directly exercised, but none can close or reopen long-horizon policy
+behavior. Before another live Agent call, W0 must validate the declared local image against the live container and
+verify that one Map search result resolves through the website service; the pinned Map website data must then be
+restored. Only a clean Task426 rerun followed by one untouched long held-out task can contribute fresh closure
+evidence. No history, cursor, ToolReturn, World, or Monitor change is authorized by the invalid run.
+
 Task426
 [`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
 is the current failed pre-repair witness for generation-local grounding. The run made 31 policy calls, 18 executions,
@@ -232,8 +273,9 @@ dead end. The policy navigated from Wikipedia to OSM, searched Shanksville, and 
 `Shanksville, Somerset County, 15560, United States` result. That result consistently routed to
 `/relation/189076`, where the current site returned `Not Found`; the policy returned to search and retried the same
 failed route instead of abandoning it. The run blocked after 84 policy calls, 1,556,528 total tokens, two final typed
-invalid responses, and no STOP/native evaluation. Canonical history recovery is live-verified; broader benchmark
-closure remains open for long-horizon failed-route convergence and a new untouched task-success witness.
+invalid responses, and no STOP/native evaluation. Canonical history recovery is live-verified; for the broader
+benchmark, the environment-invalid status above supersedes the failed-route classification. After W0 and Map data restoration,
+closure remains open for a clean Task426 rerun and a new untouched task-success witness.
 
 The provider-free failed-route repair now recognizes the first bounded ref-free `A -> ... -> A` GUI excursion as
 typed `route_regression`, even when the visited branch produced new public text. It sends that mechanical fact through
@@ -241,7 +283,8 @@ the existing recovery feedback into one deliberate ActionPolicy call; Runtime ne
 chooses the alternate route. The exact outbound replay is rejected before dispatch, one bounded fallback remains
 available, and a different current route executes normally. Focused owner/consumer verification reports 331 passed
 and 3 skipped; PydanticAI/grounded-tool verification reports 137 passed. This is implementation evidence only:
-Task426 and one fresh held-out long task remain the live acceptance gate.
+After W0 deployment consistency and Map data restoration, Task426 and one fresh held-out long task remain the live
+acceptance gate.
 The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped, with only the pre-existing
 `docs/interaction-shell.md` documentation-governance count failing.
 

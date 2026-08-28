@@ -775,6 +775,54 @@ Constraints:
       passed and released its exact lease. No model call, compensation action,
       live benchmark, or benchmark artifact was produced by Phase 8/9.
 
+25. **done — Phase 10 merged metrics and Bad-case causal projection.**
+    - Restore the missing producer side of the Phase 10 contract on the current
+      simplify-descended branch: immutable `run_attempt_id`, typed Runtime
+      stall/oscillation measurements, provider-usage versus request-admission
+      separation, bounded trajectory analysis, and Langfuse attempt lineage.
+    - Add one benchmark-owned, closed Bad-case presentation projection derived
+      only from `BenchmarkCaseResult`, `CaseFacts`, `RuntimeFailure`, terminal
+      reason, and native evaluator outcome. It exposes a stable category,
+      failure stage/origin/code, termination source, and a bounded plain-language
+      summary without parsing display text or making Shell authoritative.
+    - Supported presentation categories include structured model output failure,
+      control stall/oscillation, harness timeout/interruption, provider failure,
+      Runtime execution/acquisition/evaluation failure, native task failure,
+      user/confirmation wait, cancellation, and bounded unknown typed failure.
+      Monitor is a source only when Runtime-owned typed control termination proves
+      it; invalid JSON is represented by the existing policy
+      `invalid_response|schema_error` algebra rather than substring matching.
+    - Project these persisted fields through the existing completed-run summary
+      endpoint and existing Bad cases list. Preserve the current page, visual
+      system, tabs, and evidence navigation; add only the hierarchy needed to
+      read cause, owner, and code at a glance.
+    - Add a cross-boundary acceptance gate using an actual runner-produced result
+      shape, so Shell consumer tests cannot remain green against fabricated fields
+      that the runner does not produce. Re-run affected Core, external backend,
+      generated OpenAPI/client, frontend unit/lint/type/build, and diff gates.
+    - Do not modify Runtime control decisions, benchmark truth, or introduce a
+      Langfuse-to-Runtime loop. No live benchmark/provider call without separate
+      authorization.
+    - Verification: benchmark Runtime suite passed 335 tests; the affected
+      observability/Core/Shell backend slice passed 156 tests with 3 skips;
+      frontend passed 28 unit tests, ESLint, TypeScript, deterministic generated
+      client equality, and production build; Ruff, Pyright, compileall, and diff
+      checks passed. After advancing to the current Shell head, full
+      provider-free root verification reached 2003 passed and 19 skipped with
+      no failures; frontend verification reached 40 unit tests plus ESLint,
+      TypeScript, deterministic generated contracts, and production build. No
+      model/provider call or live benchmark was performed. A separately
+      authorized provider-free Langfuse audit then exposed and repaired an IPC
+      privacy-projection gap that had removed public `model_id`, `provider_id`,
+      suite/profile, and attempt identity and had over-truncated standard message
+      content. The held-out trace `e5c14028025e940fba1b351805764dd5`
+      (`attempt:2a144e2a235849099253d9b90e8630fc`) was read back through the v2
+      Observations and Scores APIs with the expected agent/generation hierarchy,
+      readable messages, model `gpt-4o`, usage 100/20/120, calculated cost
+      0.00045 USD, 125 ms generation duration, immutable identity tags,
+      `structured_output_invalid`, and billing=false request-admission scores.
+      Post-repair full verification remained 2003 passed and 19 skipped.
+
 ## Current-work produced files
 
 - `.codex-plans/interaction-shell-implementation.md` — Phase 0-2 progress ledger.

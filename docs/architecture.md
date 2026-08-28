@@ -23,6 +23,48 @@ launch, public activity, digest-verified Runtime frames, Bad Cases, raw local ev
 write Runtime state or create another agent loop. FastAPI/Pydantic remains the public schema authority and the frontend
 uses regenerated named SDK operations and validators for both surfaces.
 
+### 2026-08-28 real-browser observation/currentness closure
+
+The Interaction Shell's existing Steel profile now completes a held-out public-Web task through the same
+`CoreAgentLoop`: open Wikipedia, search for OpenAI, read the article, and submit its first sentence. Four owner defects
+were repaired without adding another World, result path, cursor, retry loop, or state machine:
+
+- `ActionSpaceBuilder` and `RouteSelector` are pure projections of one immutable `WorldObservation`; wall-clock parser
+  leases cannot change model-visible membership during inference. The selected `SurfaceAdapter` alone proves live
+  currentness immediately before dispatch from source revision and its existing target probe.
+- the DOM source publishes capture order through the existing `ObservationStructureNode` contract, so repeated labels
+  on a large real page retain distinct public positions while canonical ambiguity checks remain strict;
+- bounded `document.body.innerText` enters the same World as read-only `StaticText` records under `Visible page text`.
+  Existing `read_region`/`search_page_content` ToolReturns consume those records directly; source or projection
+  truncation remains honestly `coverage=truncated`;
+- staged acquisition retains an already acquired structural baseline in the final selection, activation, fusion, and
+  binding lineage. A source is reacquired only when the refined selected need set differs from the stage request.
+
+The resulting chain remains `fresh browser capture -> Unified World -> current ActionSpace -> one ToolCall -> Binder
+-> Surface execution/read -> same-call ToolReturn -> next model turn`. Trace and Viewer only observe it. The local
+successful session is `GZ5_Ccm4CXBzAo4v4fwreWVD`; the expanded Action/World/CoreLoop set reports 343 passed and 3
+skipped, including an eight-test DOM conformance suite with an honest-truncation witness.
+
+### 2026-08-27 Task426 environment invalidation
+
+Task426 is not currently an admissible planning, recovery, efficiency, or end-to-end acceptance witness. Its official
+evaluator requires navigation to `/relation/189076`. In the deployment used by the Task426 runs, Nominatim and the
+tile database contain relation `189076`, but the Rails website database contains no current nodes, ways, or relations;
+the required fresh page therefore returns `Not Found`. The latest
+[`logical-turn-run11`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-logical-turn-run11/run.json)
+reached that contradictory state repeatedly and was then stopped externally. Its progress/history remained bounded
+and retained the exact verified facts, while Monitor produced both control-stall and route-regression feedback. The
+model's refusal to report success against a fresh `Not Found` World was therefore consistent with the public task
+state.
+
+Earlier Task426 traces remain valid only for the narrower owner defects that they directly exercised before reaching
+this environment contradiction. They do not establish a need for another Replanner, Monitor rule, history path,
+cursor, ToolReturn projection, early-success URL rule, or arbitrary repetition cap. The authoritative repair order is
+now: make W0 compare the declared local deployment with the live deployment and verify a cross-service Map entity;
+restore a pinned, mutually consistent Map website database; rerun Task426; then run one untouched long held-out case.
+Until those gates pass, every later Task426 closure statement in this chronological section is superseded by this
+environment-invalid status.
+
 Task426
 [`route-regression-run3`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-route-regression-run3/run.json)
 reopens one narrower observation-local grounding contract. A completed search-page read had exposed `E6` as the
@@ -281,8 +323,9 @@ continued to later provider calls after each; it made 81 valid tool calls with z
 or post-failure internal-history errors. It did not complete the task. The policy repeatedly opened the exact current
 Shanksville search result, received `/relation/189076 -> Not Found`, returned to search, and tried the same failed route
 again. After 84 policy calls, two final typed invalid responses let the existing Monitor block the stalled episode.
-This is now a separate long-horizon failed-route convergence and efficiency witness; it does not justify reopening
-the action projection or canonical provider-history contracts.
+This was initially classified as a long-horizon failed-route convergence and efficiency witness. The environment
+invalidation above supersedes that classification; it still does not justify reopening the action projection or
+canonical provider-history contracts.
 
 The failed-route owner repair is implemented but not yet live-verified. `EpisodeMonitor` now retains its existing
 bounded ref-free GUI-attempt window across local `NEW_INFORMATION`, because new public text does not prove task
@@ -304,7 +347,8 @@ plan revision to a model role rather than a deterministic executor
 proves only the closed route and exact replay; the single ActionPolicy performs the reflection. Provider-free
 verification covers first-return recovery, an intervening informative read, forward-only non-regression, one
 deliberate event, exact GUI replay with zero additional dispatch, and a materially different route reaching task
-completion. Live Task426 and one fresh held-out long task remain required before this gap can be closed.
+completion. After W0 deployment consistency and the Map website data are restored, Task426 and one fresh held-out
+long task remain required before this gap can be closed.
 The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped; its sole failure remains the pre-existing
 `docs/interaction-shell.md` documentation-governance count, not a product or recovery regression.
 
