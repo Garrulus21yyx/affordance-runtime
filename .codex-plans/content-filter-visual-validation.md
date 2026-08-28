@@ -162,12 +162,6 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   used OCR to guess `17` and native evaluation failed. Catalog now intersects each purpose with a stable current-World
   ref domain, so OCR accepts only image/canvas/graphics-document-like pixel containers. No TaskGoal parser, keyword
   filter, CoreLoop branch, or provider-side semantic rewrite was added.
-- 2026-08-28: Clean live run `phase7-clean5` kept OCR, point, and region-proposal calls at zero but exposed one remaining
-  deterministic evidence loss: the ActionPolicy used per-subject `visual_property` as an aggregate count because
-  `read_region` omitted ActorWorld's already-known homogeneous child cardinalities. The ActorWorld snapshot now owns
-  one exact complete-group count projection shared by `read_region` and `count_children`; read records include
-  `direct_child_count` only with complete coverage. Real local `visual-addition` projection returns N6=8 and N17=2,
-  while a truncated snapshot withholds the field.
 
 ## Files changed by this plan
 
