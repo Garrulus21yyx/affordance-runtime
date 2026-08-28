@@ -53,12 +53,7 @@ class CountingBrowserSession(BrowserSession):
 
 class RepeatedControlsPage(InteractivePage):
     def content(self) -> str:
-        return (
-            "<main>"
-            "<button id='first'>Show</button>"
-            "<button id='second'>Show</button>"
-            "</main>"
-        )
+        return "<main><button id='first'>Show</button><button id='second'>Show</button></main>"
 
 
 class ReadablePage(RepeatedControlsPage):
@@ -66,10 +61,7 @@ class ReadablePage(RepeatedControlsPage):
         if "document.activeElement" in expression:
             return ""
         if "innerText" in expression:
-            return (
-                "OpenAI\n"
-                "OpenAI is an American artificial intelligence research organization."
-            )
+            return "OpenAI\nOpenAI is an American artificial intelligence research organization."
         return {}
 
 
@@ -91,6 +83,27 @@ class DialogPage(InteractivePage):
             '<div role="dialog" aria-modal="true" aria-label="Sign in">'
             '<button id="challenge">Show QR code</button></div>'
         )
+
+
+class GeometricOverlayPage(ReadablePage):
+    def content(self) -> str:
+        return '<main><button id="shared">Continue with QR</button></main>'
+
+    def evaluate(self, expression: str) -> object:
+        if "runtimeLayerProbe" in expression:
+            return [
+                {
+                    "layer_id": "layer:0",
+                    "kind": "geometric_overlay",
+                    "role": "region",
+                    "label": "Scan the visible QR code",
+                    "text": "Scan the visible QR code with the Taobao app",
+                    "modal": False,
+                    "bbox": [100, 50, 600, 500],
+                    "member_keys": ["#shared"],
+                }
+            ]
+        return super().evaluate(expression)
 
 
 def test_dom_adapter_keeps_selector_private_and_executes_current_binding() -> None:
@@ -176,19 +189,17 @@ def test_dom_capture_order_disambiguates_identical_executable_controls() -> None
             allowed_effects=("external_ui_interaction",),
             risk_profile=RiskProfile.LOW,
         )
-        acquired = await UnifiedWorldEnvironment((
-            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
-        )).reset(task)
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        ).reset(task)
         assert acquired.observation is not None
         observed = acquired.observation
 
         source = observed.sources[0]
-        show_target_ids = {
-            target.target_id for target in observed.targets if target.label == "Show"
-        }
-        show_nodes = tuple(
-            node for node in source.structure if node.semantic_target_id in show_target_ids
-        )
+        show_target_ids = {target.target_id for target in observed.targets if target.label == "Show"}
+        show_nodes = tuple(node for node in source.structure if node.semantic_target_id in show_target_ids)
         projection = canonical_world(
             observed,
             ActionSpaceBuilder().build(task, observed),
@@ -216,16 +227,16 @@ def test_dom_structure_preserves_active_dialog_layer_without_visual_provider() -
             allowed_effects=("external_ui_interaction",),
             risk_profile=RiskProfile.LOW,
         )
-        acquired = await UnifiedWorldEnvironment((
-            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
-        )).reset(task)
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        ).reset(task)
         assert acquired.observation is not None
         source = acquired.observation.sources[0]
         dialog = next(node for node in source.structure if node.role == "dialog")
         challenge = next(target for target in source.targets if target.label == "Show QR code")
-        challenge_node = next(
-            node for node in source.structure if node.semantic_target_id == challenge.target_id
-        )
+        challenge_node = next(node for node in source.structure if node.semantic_target_id == challenge.target_id)
         index = canonical_world(
             acquired.observation,
             ActionSpaceBuilder().build(task, acquired.observation),
@@ -243,6 +254,35 @@ def test_dom_structure_preserves_active_dialog_layer_without_visual_provider() -
     asyncio.run(scenario())
 
 
+def test_dom_structure_preserves_browser_observed_geometric_layer_and_membership() -> None:
+    async def scenario() -> None:
+        page = GeometricOverlayPage()
+        task = TaskGoal(
+            "geometric-layer",
+            "Prepare the current visible challenge",
+            allowed_effects=("external_ui_interaction",),
+            risk_profile=RiskProfile.LOW,
+        )
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        ).reset(task)
+        assert acquired.observation is not None
+        source = acquired.observation.sources[0]
+        layer = next(target for target in source.targets if target.state.get("active_layer") is True)
+        control = next(target for target in source.targets if target.label == "Continue with QR")
+        layer_node = next(node for node in source.structure if node.semantic_target_id == layer.target_id)
+        control_node = next(node for node in source.structure if node.semantic_target_id == control.target_id)
+
+        assert layer.state["layer_kind"] == "geometric_overlay"
+        assert layer.state["visible_text"] == "Scan the visible QR code with the Taobao app"
+        assert control.relations["parent_id"] == layer.target_id
+        assert control_node.parent_structure_id == layer_node.structure_id
+
+    asyncio.run(scenario())
+
+
 def test_dom_visible_text_enters_the_existing_readable_world_contract() -> None:
     async def scenario() -> None:
         page = ReadablePage()
@@ -252,9 +292,11 @@ def test_dom_visible_text_enters_the_existing_readable_world_contract() -> None:
             allowed_effects=("external_ui_interaction",),
             risk_profile=RiskProfile.LOW,
         )
-        acquired = await UnifiedWorldEnvironment((
-            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
-        )).reset(task)
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        ).reset(task)
         assert acquired.observation is not None
         observed = acquired.observation
         readable = tuple(target for target in observed.targets if target.role == "StaticText")
@@ -267,9 +309,7 @@ def test_dom_visible_text_enters_the_existing_readable_world_contract() -> None:
             "OpenAI",
             "OpenAI is an American artificial intelligence research organization.",
         ]
-        assert any(
-            node.label == "Visible page text" for node in observed.sources[0].structure
-        )
+        assert any(node.label == "Visible page text" for node in observed.sources[0].structure)
         assert any(record.label == readable[1].label for record in index.ordered_target_records)
 
     asyncio.run(scenario())
@@ -284,9 +324,11 @@ def test_dom_visible_text_reports_honest_source_and_record_truncation() -> None:
             allowed_effects=("external_ui_interaction",),
             risk_profile=RiskProfile.LOW,
         )
-        acquired = await UnifiedWorldEnvironment((
-            DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
-        )).reset(task)
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(page)),  # type: ignore[arg-type]
+            )
+        ).reset(task)
         assert acquired.observation is not None
         source = acquired.observation.sources[0]
         readable = tuple(target for target in source.targets if target.role == "StaticText")
@@ -306,9 +348,11 @@ def test_dom_main_document_reports_partial_coverage_when_child_frames_are_unproj
             allowed_effects=("external_ui_interaction",),
             risk_profile=RiskProfile.LOW,
         )
-        acquired = await UnifiedWorldEnvironment((
-            DomSurfaceAdapter(BrowserSession(FramedPage())),  # type: ignore[arg-type]
-        )).reset(task)
+        acquired = await UnifiedWorldEnvironment(
+            (
+                DomSurfaceAdapter(BrowserSession(FramedPage())),  # type: ignore[arg-type]
+            )
+        ).reset(task)
         assert acquired.observation is not None
 
         source = acquired.observation.sources[0]

@@ -12,6 +12,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from pathlib import Path
 from threading import RLock
 from typing import Any, Mapping, Protocol, cast
@@ -82,6 +83,42 @@ class PageDriver(Protocol):
     def close(self) -> Any: ...
 
 
+class BrowserLayerKind(StrEnum):
+    SEMANTIC = "semantic"
+    GEOMETRIC_OVERLAY = "geometric_overlay"
+
+
+@dataclass(frozen=True)
+class BrowserLayer:
+    """One current visible stacking layer observed from browser-owned DOM facts."""
+
+    layer_id: str
+    kind: BrowserLayerKind
+    role: str
+    label: str
+    text: str
+    modal: bool
+    bbox: tuple[float, float, float, float]
+    member_keys: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (
+            not self.layer_id.strip()
+            or not isinstance(self.kind, BrowserLayerKind)
+            or not self.role.strip()
+            or not self.label.strip()
+            or len(self.label) > 160
+            or len(self.text) > 1_000
+            or len(self.bbox) != 4
+            or any(not isinstance(value, int | float) for value in self.bbox)
+            or self.bbox[2] <= 0
+            or self.bbox[3] <= 0
+        ):
+            raise ValueError("browser layer is invalid")
+        object.__setattr__(self, "bbox", tuple(float(value) for value in self.bbox))
+        object.__setattr__(self, "member_keys", tuple(dict.fromkeys(self.member_keys)))
+
+
 @dataclass(frozen=True)
 class BrowserSnapshot:
     observation: Observation
@@ -97,11 +134,15 @@ class BrowserSnapshot:
     perception_requirements: PerceptionRequirements | None = None
     source_coverage: tuple[SourceCoverage, ...] = ()
     predicate_evidence: tuple[PredicateEvidence, ...] = ()
+    layers: tuple[BrowserLayer, ...] = ()
     visual_frame: VisualFrame | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.accessibility_tree is not None:
             object.__setattr__(self, "accessibility_tree", freeze_json(self.accessibility_tree))
+        object.__setattr__(self, "layers", tuple(self.layers))
+        if any(not isinstance(item, BrowserLayer) for item in self.layers):
+            raise TypeError("browser snapshot layers must be typed")
 
 
 @dataclass(frozen=True)
@@ -404,6 +445,48 @@ def _bounded_accessibility_tree(page: PageDriver, *, max_nodes: int = 256) -> di
 
     result = bounded(raw)
     return cast(dict[str, Any], result) if isinstance(result, dict) and result else None
+
+
+def _visible_browser_layers(
+    page: PageDriver,
+    bindings: list[dict[str, str]],
+) -> tuple[BrowserLayer, ...]:
+    """Observe current semantic layers and topmost fixed overlays without task inference."""
+
+    evaluator = getattr(page, "evaluate", None)
+    if not callable(evaluator):
+        return ()
+    serialized_bindings = json.dumps(bindings, separators=(",", ":"))
+    try:
+        raw = evaluator(
+            """() => { const runtimeLayerProbe = true; const bindings = """
+            + serialized_bindings
+            + r"""; const viewportArea = Math.max(1, innerWidth * innerHeight); const visible = (element) => { const style = getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0; }; const explicit = Array.from(document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="alert"], [aria-modal="true"]')).filter(visible); const explicitSet = new Set(explicit); const geometric = Array.from(document.body?.querySelectorAll('*') || []).filter((element) => { if (explicitSet.has(element) || explicit.some((item) => element.contains(item))) return false; const style = getComputedStyle(element); if (style.position !== 'fixed' || style.pointerEvents === 'none' || !visible(element)) return false; const z = Number.parseFloat(style.zIndex); if (!Number.isFinite(z) || z < 1) return false; const rect = element.getBoundingClientRect(); const ratio = rect.width * rect.height / viewportArea; if (ratio < 0.02 || ratio > 0.98) return false; const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2)); const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2)); const topmost = document.elementFromPoint(centerX, centerY); const intersectsCenter = rect.left <= innerWidth / 2 && rect.right >= innerWidth / 2 && rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2; const spansViewport = rect.width >= innerWidth * 0.7 && rect.height >= innerHeight * 0.15; return Boolean(topmost && element.contains(topmost) && (intersectsCenter || spansViewport) && ((element.innerText || '').trim() || element.querySelector('button, input, select, textarea, a[href], [role="button"]'))); }); const candidates = [...explicit.map((element) => ({element, kind:'semantic'})), ...geometric.map((element) => ({element, kind:'geometric_overlay'}))]; return candidates.slice(0, 8).map(({element, kind}, index) => { const rect = element.getBoundingClientRect(); const authoredRole = (element.getAttribute('role') || '').toLowerCase(); const role = element.tagName.toLowerCase() === 'dialog' ? 'dialog' : ['alert','alertdialog','dialog'].includes(authoredRole) ? authoredRole : element.getAttribute('aria-modal') === 'true' ? 'dialog' : 'region'; const text = (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000); const label = (element.getAttribute('aria-label') || element.getAttribute('title') || text || 'Visible overlay').trim().slice(0, 160); const memberKeys = bindings.flatMap(({key, selector}) => { try { const target = document.querySelector(selector); return key && target && element.contains(target) ? [key] : []; } catch { return []; } }); return {layer_id:`layer:${index}`, kind, role, label, text, modal: element.getAttribute('aria-modal') === 'true' || element.tagName.toLowerCase() === 'dialog', bbox:[rect.x, rect.y, rect.width, rect.height], member_keys:memberKeys}; }); void runtimeLayerProbe; }"""
+        )
+    except Exception:
+        return ()
+    if not isinstance(raw, list | tuple):
+        return ()
+    result: list[BrowserLayer] = []
+    for item in raw[:8]:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            result.append(
+                BrowserLayer(
+                    str(item["layer_id"]),
+                    BrowserLayerKind(str(item["kind"])),
+                    str(item["role"]),
+                    str(item["label"]),
+                    str(item.get("text") or "")[:1_000],
+                    item.get("modal") is True,
+                    tuple(item["bbox"]),
+                    tuple(str(value) for value in item.get("member_keys", ()) if str(value).strip()),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return tuple(result)
 
 
 def _assertion_property_evidence(property_key: str) -> EvidenceKind:
@@ -878,6 +961,7 @@ class BrowserSession:
                 active_control = ""
                 visible_text = ""
                 visible_text_truncated = False
+        layers = _visible_browser_layers(self._page, live_bindings)
         if (
             (spatial_required or visual_required)
             and perception_requirements is not None
@@ -1338,6 +1422,7 @@ class BrowserSession:
                 ),
                 main_document_scope_complete=_main_document_scope_is_complete(self._page),
             ),
+            layers=layers,
             visual_frame=visual_frame,
         )
         assertions = _source_assertions(snapshot, effective_ttl_ms)

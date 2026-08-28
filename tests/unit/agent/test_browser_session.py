@@ -12,7 +12,11 @@ from affordance_runtime.actions.grounding import (
     VisualGroundingPayload,
 )
 from affordance_runtime.execution.context import ExecutionContextRequirementRef, issue_surface_binding
-from affordance_runtime.surfaces.dom.browser_session import BrowserSession, BrowserSnapshot
+from affordance_runtime.surfaces.dom.browser_session import (
+    BrowserLayerKind,
+    BrowserSession,
+    BrowserSnapshot,
+)
 from affordance_runtime.surfaces.dom.document_model import PageAffordanceModel
 from affordance_runtime.surfaces.visual.grounding import VisualRegion
 from affordance_runtime.surfaces.visual.proposal import GenericPerceptionOrchestrator
@@ -96,10 +100,7 @@ def test_browser_session_captures_observation_and_affordances() -> None:
 def test_rendered_dom_projection_excludes_css_hidden_controls_only_when_enabled() -> None:
     class FilteredPage(FakePage):
         def content(self) -> str:
-            return (
-                "<main><button id='keep'>Continue</button>"
-                "<button id='hidden-ad'>Sponsored action</button></main>"
-            )
+            return "<main><button id='keep'>Continue</button><button id='hidden-ad'>Sponsored action</button></main>"
 
         def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
             del args, kwargs
@@ -154,13 +155,37 @@ def test_browser_session_bundles_browser_accessibility_tree_in_same_epoch() -> N
         "name": "Settings",
         "children": [{"role": "button", "name": "Save"}],
     }
-    accessibility = next(
-        item
-        for item in snapshot.source_observations
-        if item.source == GroundingSource.ACCESSIBILITY
-    )
+    accessibility = next(item for item in snapshot.source_observations if item.source == GroundingSource.ACCESSIBILITY)
     assert accessibility.observation_epoch_id == snapshot.observation.snapshot_id
     assert snapshot.observation.metadata["accessibility_tree"] == snapshot.accessibility_tree
+
+
+def test_browser_session_observes_a_visible_geometric_overlay_without_calling_a_model() -> None:
+    class OverlayPage(FakePage):
+        def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+            del args, kwargs
+            if "runtimeLayerProbe" in expression:
+                return [
+                    {
+                        "layer_id": "layer:0",
+                        "kind": "geometric_overlay",
+                        "role": "region",
+                        "label": "Scan with the app to sign in",
+                        "text": "Scan with the app to sign in",
+                        "modal": False,
+                        "bbox": [120, 80, 560, 420],
+                        "member_keys": ["#save"],
+                    }
+                ]
+            return super().evaluate(expression)
+
+    snapshot = BrowserSession(OverlayPage()).capture(page_id="settings")
+
+    assert len(snapshot.layers) == 1
+    layer = snapshot.layers[0]
+    assert layer.kind is BrowserLayerKind.GEOMETRIC_OVERLAY
+    assert layer.label == "Scan with the app to sign in"
+    assert layer.member_keys == ("#save",)
 
 
 def test_browser_snapshot_accessibility_tree_is_deeply_immutable_from_source_payload() -> None:
@@ -344,9 +369,7 @@ def test_browser_session_preserves_exact_non_sensitive_control_values() -> None:
     assert states["textarea"]["control_value"] == "Trim-sensitive text "
     assert states["input"]["control_value"] == ""
     assertions = {
-        (item.property_key, item.value)
-        for item in snapshot.source_assertions
-        if item.source == GroundingSource.DOM
+        (item.property_key, item.value) for item in snapshot.source_assertions if item.source == GroundingSource.DOM
     }
     assert ("control_value", "Trim-sensitive text ") in assertions
     assert ("control_value", "") in assertions
@@ -404,9 +427,7 @@ def test_browser_session_uses_runtime_visibility_for_current_affordances() -> No
 def test_browser_session_refreshes_live_disclosure_state() -> None:
     class DisclosurePage(FakePage):
         def content(self) -> str:
-            return (
-                '<h3 id="section" role="tab" aria-expanded="false" aria-controls="panel">Section</h3>'
-            )
+            return '<h3 id="section" role="tab" aria-expanded="false" aria-controls="panel">Section</h3>'
 
         def evaluate(self, expression: str) -> object:
             if "document.activeElement" in expression:

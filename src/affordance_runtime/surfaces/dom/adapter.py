@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
@@ -124,13 +124,18 @@ class DomSurfaceAdapter:
         browser_state = self.session.browser_context_state()
         browser_target = _browser_context_target(browser_state)
         action_targets = tuple(_target(affordance) for affordance in snapshot.affordance_model.affordances)
+        layer_targets, action_targets = _project_browser_layers(
+            snapshot.layers,
+            tuple(snapshot.affordance_model.affordances),
+            action_targets,
+        )
         text_targets, text_projection_truncated = _visible_text_targets(
             str(snapshot.observation.metadata.get("visible_text") or ""),
             source_truncated=snapshot.observation.metadata.get("visible_text_truncated") is True,
         )
         readable_targets = (*text_targets, *(document.targets if document_enabled else ()))
-        targets = (browser_target, *action_targets, *readable_targets)
-        structure = _dom_structure(browser_target, action_targets, readable_targets)
+        targets = (browser_target, *layer_targets, *action_targets, *readable_targets)
+        structure = _dom_structure(browser_target, action_targets, readable_targets, layer_targets)
         binding_results = tuple(
             _binding(
                 self._task,
@@ -169,8 +174,7 @@ class DomSurfaceAdapter:
             None,
         )
         dom_scope_truncated = bool(
-            dom_coverage is not None
-            and dom_coverage.completeness is not CoverageCompleteness.COMPLETE
+            dom_coverage is not None and dom_coverage.completeness is not CoverageCompleteness.COMPLETE
         )
         observation = SurfaceObservation(
             observation_id,
@@ -182,9 +186,7 @@ class DomSurfaceAdapter:
             bindings,
             (
                 CoverageState.TRUNCATED
-                if dom_scope_truncated
-                or text_projection_truncated
-                or (document_enabled and document.truncated)
+                if dom_scope_truncated or text_projection_truncated or (document_enabled and document.truncated)
                 else CoverageState.COMPLETE
             ),
             {
@@ -304,6 +306,44 @@ def _target(affordance: Affordance) -> SemanticTarget:
     )
 
 
+def _project_browser_layers(layers, affordances, action_targets):
+    """Project browser-owned layer facts and relate contained controls without exposing routes."""
+
+    member_parent: dict[str, str] = {}
+    projected: list[SemanticTarget] = []
+    for index, layer in enumerate(layers):
+        target_id = f"dom-layer:{index}"
+        for member_key in layer.member_keys:
+            member_parent.setdefault(member_key, target_id)
+        projected.append(
+            SemanticTarget(
+                target_id,
+                layer.role,
+                layer.label,
+                {
+                    "visible": True,
+                    "active_layer": True,
+                    "layer_kind": layer.kind.value,
+                    "modal": layer.modal,
+                    **({"visible_text": layer.text} if layer.text and layer.text != layer.label else {}),
+                },
+            )
+        )
+    adjusted: list[SemanticTarget] = []
+    children: dict[str, list[str]] = {target.target_id: [] for target in projected}
+    for affordance, target in zip(affordances, action_targets, strict=True):
+        key = str(affordance.locator.get("backend_handle") or affordance.locator.get("selector") or "")
+        parent_id = member_parent.get(key, "")
+        if parent_id:
+            children[parent_id].append(target.target_id)
+            target = replace(target, relations={**target.relations, "parent_id": parent_id})
+        adjusted.append(target)
+    return (
+        tuple(replace(target, relations={"child_ids": tuple(children[target.target_id])}) for target in projected),
+        tuple(adjusted),
+    )
+
+
 def _visible_text_targets(
     value: str,
     *,
@@ -344,6 +384,7 @@ def _dom_structure(
     browser_target: SemanticTarget,
     action_targets: tuple[SemanticTarget, ...],
     readable_targets: tuple[SemanticTarget, ...],
+    layer_targets: tuple[SemanticTarget, ...] = (),
 ) -> tuple[ObservationStructureNode, ...]:
     """Publish bounded readable content and captured control order from one DOM epoch."""
 
@@ -352,12 +393,18 @@ def _dom_structure(
     controls_id = "dom-controls-root"
     readable_id = "dom-readable-root"
     control_node_ids = tuple(f"dom-control-node:{index}" for index in range(len(controls)))
-    readable_node_ids = tuple(
-        f"dom-readable-node:{index}" for index in range(len(readable_targets))
-    )
+    readable_node_ids = tuple(f"dom-readable-node:{index}" for index in range(len(readable_targets)))
+    live_layer_node_ids = {
+        target.target_id: f"dom-live-layer-node:{index}" for index, target in enumerate(layer_targets)
+    }
+    live_layer_members: dict[str, list[str]] = {target.target_id: [] for target in layer_targets}
     layer_groups: dict[tuple[str, str], list[tuple[str, SemanticTarget]]] = {}
     direct_control_nodes: list[str] = []
     for structure_id, target in zip(control_node_ids, controls, strict=True):
+        parent_id = str(target.relations.get("parent_id") or "")
+        if parent_id in live_layer_members:
+            live_layer_members[parent_id].append(structure_id)
+            continue
         scope_role = str(target.state.get("semantic_scope_role") or "").casefold()
         scope_label = str(target.state.get("semantic_scope_label") or "").strip()
         if scope_role in _ACTIVE_LAYER_ROLES and scope_label:
@@ -380,6 +427,25 @@ def _dom_structure(
         for layer, members in zip(layer_nodes, layer_groups.values(), strict=True)
         for structure_id, _target in members
     }
+    layer_parent_by_control.update(
+        {
+            structure_id: live_layer_node_ids[target_id]
+            for target_id, members in live_layer_members.items()
+            for structure_id in members
+        }
+    )
+    live_layer_nodes = tuple(
+        ObservationStructureNode(
+            live_layer_node_ids[target.target_id],
+            target.role,
+            target.label,
+            dict(target.state),
+            parent_structure_id=controls_id,
+            child_structure_ids=tuple(live_layer_members[target.target_id]),
+            semantic_target_id=target.target_id,
+        )
+        for target in layer_targets
+    )
     root_children = (controls_id, *((readable_id,) if readable_targets else ()))
     return (
         ObservationStructureNode(
@@ -393,7 +459,11 @@ def _dom_structure(
             "region",
             "Interactive controls",
             parent_structure_id=root_id,
-            child_structure_ids=(*direct_control_nodes, *(item.structure_id for item in layer_nodes)),
+            child_structure_ids=(
+                *direct_control_nodes,
+                *(item.structure_id for item in live_layer_nodes),
+                *(item.structure_id for item in layer_nodes),
+            ),
         ),
         *(
             ObservationStructureNode(
@@ -405,6 +475,7 @@ def _dom_structure(
             )
             for structure_id, target in zip(control_node_ids, controls, strict=True)
         ),
+        *live_layer_nodes,
         *layer_nodes,
         *(
             (
