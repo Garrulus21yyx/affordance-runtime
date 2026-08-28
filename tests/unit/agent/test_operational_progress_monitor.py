@@ -38,6 +38,9 @@ from affordance_runtime.agent.recovery import (
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
     ObservedChange,
     ProductionActionOutcomeProjector,
     TaskEvaluation,
@@ -681,6 +684,47 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
     assert monitor.no_progress_count == 3
     assert monitor.latest_attempt_signature is not None
     assert monitor.latest_attempt_signature.digest.startswith("sha256:")
+
+
+def test_screenshot_only_change_does_not_hide_repeated_gui_stall() -> None:
+    first_world = _world("observation:visual-before")
+    second_world = _world("observation:visual-after-1")
+    third_world = _world("observation:visual-after-2")
+
+    def visual_step(before, after):
+        step = _dispatched_step(before, after)
+        assert step.execution_receipts is not None
+        receipt = step.execution_receipts.receipts[-1]
+        return replace(
+            step,
+            action_outcome=ActionOutcome(
+                receipt.request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.CHANGED,
+                LocalPostconditionStatus.NOT_APPLICABLE,
+                EvidenceMethod.VISUAL_DIFF,
+                "the screenshot changed without a public semantic transition",
+                ("artifact:visual:screenshot_semantic_state",),
+                {"screenshot_changed": True},
+                step.public_world_delta,
+            ),
+        )
+
+    first_step = visual_step(first_world, second_world)
+    second_step = visual_step(second_world, third_world)
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    first = _evaluate(monitor, first_step)
+    recovery = _evaluate(monitor, second_step)
+
+    assert first_step.public_world_delta is not None
+    assert not first_step.public_world_delta.semantic_changed
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.prohibited_attempt_signature is not None
 
 
 def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None:

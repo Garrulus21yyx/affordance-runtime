@@ -623,8 +623,11 @@ def _gui_has_operational_result(result: StepResult) -> bool:
     return bool(
         outcome is not None
         and (
-            outcome.observed_change is ObservedChange.CHANGED
-            or outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
+            outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
+            or (
+                outcome.observed_change is ObservedChange.CHANGED
+                and result.public_world_delta.semantic_changed
+            )
         )
     )
 
