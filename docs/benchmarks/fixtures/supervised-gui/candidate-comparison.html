@@ -11,7 +11,9 @@
     article { padding: 20px; border: 2px solid #c6cec8; border-radius: 18px; background: #fff; }
     article[data-selected="true"] { border-color: #176b52; box-shadow: 0 0 0 4px #cce8df; }
     .swatch { width: 100%; height: 110px; border-radius: 12px; margin-bottom: 14px; }
-    .red { background: #b73535; } .blue { background: #315d94; } .green { background: #387653; }
+    article:nth-child(1) .swatch { background: #b73535; }
+    article:nth-child(2) .swatch { background: #315d94; }
+    article:nth-child(3) .swatch { background: #387653; }
     dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
     dt { color: #627069; } dd { margin: 0; font-weight: 650; }
     button { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 10px; color: white; background: #263e34; }
@@ -23,19 +25,19 @@
   <p>Choose one candidate after checking its color, price, and available size.</p>
   <section class="candidates" aria-label="Candidate set">
     <article aria-label="Harbor jacket" data-selected="false">
-      <div class="swatch red" role="img" aria-label="Red fabric sample"></div>
+      <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Harbor jacket</h2>
       <dl><dt>Price</dt><dd>$68</dd><dt>Size</dt><dd>M</dd></dl>
       <button type="button" aria-pressed="false">Choose</button>
     </article>
-    <article aria-label="Field jacket" data-selected="true">
-      <div class="swatch blue" role="img" aria-label="Blue fabric sample"></div>
+    <article aria-label="Field jacket" data-selected="false">
+      <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Field jacket</h2>
       <dl><dt>Price</dt><dd>$72</dd><dt>Size</dt><dd>M</dd></dl>
-      <button type="button" aria-pressed="true">Choose</button>
+      <button type="button" aria-pressed="false">Choose</button>
     </article>
     <article aria-label="Cedar jacket" data-selected="false">
-      <div class="swatch green" role="img" aria-label="Green fabric sample"></div>
+      <div class="swatch" role="img" aria-label="Fabric sample"></div>
       <h2>Cedar jacket</h2>
       <dl><dt>Price</dt><dd>$64</dd><dt>Size</dt><dd>L only</dd></dl>
       <button type="button" aria-pressed="false">Choose</button>

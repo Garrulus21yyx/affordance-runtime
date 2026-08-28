@@ -4,7 +4,9 @@
 
 Add a browser-owned, typed content-filter profile for public Surface acquisition while preserving the existing
 benchmark path exactly, then validate the already-general visual observation capability in controlled and public
-settings. Filtering is not an ActionPolicy tool and never becomes a second task-semantic authority.
+settings. The active completion target is deliberately narrower than broad non-regression: run the controlled
+shopping flagship through the real ActionPolicy, visual specialist, interaction response, GUI action, final artifact,
+and trace path once. Filtering is not an ActionPolicy tool and never becomes a second task-semantic authority.
 
 ## Invariants
 
@@ -135,6 +137,24 @@ structure plus grounded actions omits discovery, point, OCR, and non-ambiguous d
 flagship uses the exact structural group counts and makes zero visual-provider calls; held-out point/OCR/property/
 spatial/change fixtures still activate exactly their declared specialist; and a fresh-context review finds no second
 authority or bypass.
+
+### Phase 8 — runnable controlled shopping flagship (`in_progress`)
+
+- Add one explicit benchmark entry for `candidate_comparison_flagship`; do not route it through the provider-free
+  fixture validator or pretend that the earlier `visual-addition` diagnostic is the shopping flagship.
+- Serve the existing self-contained fixture from a benchmark-owned local HTTP origin and compose the unchanged
+  product `BrowserSessionSurfaceBundle`, `CoreAgentLoop`, public interaction session, and PydanticAI model roles.
+- Make color pixel-only in the fixture while keeping price, size, candidate identity, and actions structurally
+  available. The ActionPolicy must be able to issue one batched `visual_property` request over current refs without a
+  shopping-specific tool, prompt, binding, or evaluator.
+- Use the normal structured `ask_user` option contract. The runner supplies one declared user choice through the
+  public interaction-response boundary, then lets the same ActionPolicy select the corresponding generic GUI action
+  and submit one final response with a generic `PublicArtifact` sidecar.
+- Persist the task, selected public option, ActionPolicy/VLM identities, tool/decision sequence, GUI effect receipts,
+  final response/artifact, provider counters, screenshot lineage, and terminal status. Fail if the expected visual,
+  interaction, GUI action, artifact, or cleanup segment is absent.
+- The exit gate is one valid live trace and a documented rerun command. Broad benchmark non-regression, public-site
+  shopping, statistical A/B, and held-out breadth are explicitly not prerequisites for this user-requested milestone.
 
 ## Progress log
 

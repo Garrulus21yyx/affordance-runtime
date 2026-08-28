@@ -1495,6 +1495,8 @@ def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding(
 
     assert "oneOf" in structured_ask.input_schema
     assert structured_ask.input_schema["type"] == "object"
+    assert "decision among grounded current options" in structured_ask.description
+    assert "never performs a GUI action" in structured_ask.description
     assert "question" in compatibility_ask.input_schema["properties"]
     assert catalog.interaction_tool_profile_id == "structured-interaction.v1"
     outcome = _resolve_catalog_call(

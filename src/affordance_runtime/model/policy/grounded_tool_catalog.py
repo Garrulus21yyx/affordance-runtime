@@ -705,7 +705,8 @@ def compile_grounded_tool_catalog(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.ASK_USER.value,
-                    "Ask for task information unavailable in the interface.",
+                    "Ask the user for missing input or a decision among grounded current options; never performs "
+                    "a GUI action.",
                     ask_schema,
                 ),
                 _ControlBinding(
