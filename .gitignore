@@ -15,3 +15,12 @@ traces/
 /evidence/
 .env
 .env.*
+
+# Local browser automation artifacts
+/.playwright-cli/
+
+# Runtime-local checkpoints and databases
+/.runtime/
+
+# Local screenshots, reports, and temporary run outputs
+/output/
