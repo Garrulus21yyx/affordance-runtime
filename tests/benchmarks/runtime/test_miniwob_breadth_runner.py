@@ -17,7 +17,11 @@ from affordance_runtime.benchmarks.external_breadth.contracts import (
     MiniWobBreadthManifest,
 )
 from affordance_runtime.benchmarks.external_breadth.manifest import breadth_manifest_digest
-from affordance_runtime.benchmarks.external_breadth.runner import REQUIRED_METRICS, run_breadth_campaign
+from affordance_runtime.benchmarks.external_breadth.runner import (
+    REQUIRED_METRICS,
+    _record,
+    run_breadth_campaign,
+)
 from affordance_runtime.benchmarks.external_breadth.verifier_targeted import (
     PREVIOUS_VERIFIER_UNKNOWN_CASE_IDS,
     run_verifier_targeted_diagnostic,
@@ -35,6 +39,7 @@ from affordance_runtime.benchmarks.target_loop.contracts import (
     MetricMeasurement,
 )
 from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest as target_manifest_digest
+from affordance_runtime.immutable import freeze_json
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.providers.port import ModelConfig
 
@@ -96,6 +101,28 @@ def test_task_failure_does_not_invalidate_campaign_evidence(monkeypatch, tmp_pat
     ))
     assert outcome.acceptance.evidence_valid
     assert outcome.acceptance.successful_cases == 0
+
+
+def test_case_record_projects_nested_immutable_trace_to_json() -> None:
+    case = _manifest().cases[0]
+    result = _result(1, failed=False)
+    instrumentation = SimpleNamespace(
+        policy_trace=(
+            {
+                "decision": "request_observation",
+                "evidence": freeze_json({"confidence": 0.91, "refs": ["E17"]}),
+            },
+        ),
+    )
+
+    record = _record(case, result, instrumentation)
+
+    assert json.loads(json.dumps(record.diagnostic_trace)) == [
+        {
+            "decision": "request_observation",
+            "evidence": {"confidence": 0.91, "refs": ["E17"]},
+        }
+    ]
 
 
 def test_unclassified_campaign_cannot_be_accepted_as_evidence(monkeypatch, tmp_path: Path) -> None:

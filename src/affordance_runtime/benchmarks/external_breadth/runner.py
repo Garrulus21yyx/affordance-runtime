@@ -49,6 +49,7 @@ from affordance_runtime.benchmarks.target_loop.manifest import manifest_digest a
 from affordance_runtime.benchmarks.target_loop.runner import run_suite
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.goals import GoalCompiler
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
 from affordance_runtime.surfaces.visual.disambiguation import VisualCandidateDisambiguatorPort
@@ -499,8 +500,17 @@ def _record(case, result, instrumentation=None) -> MiniWobBreadthCaseRecord:
         classified.outcome,
         classified.source,
         result,
-        tuple(dict(item) for item in getattr(instrumentation, "policy_trace", ())),
+        _public_diagnostic_trace(instrumentation),
     )
+
+
+def _public_diagnostic_trace(instrumentation) -> tuple[dict[str, object], ...]:
+    """Project the owner-produced trace into the JSON report boundary."""
+
+    projected = to_json_compatible(tuple(getattr(instrumentation, "policy_trace", ())))
+    if not isinstance(projected, list) or any(not isinstance(item, dict) for item in projected):
+        raise TypeError("benchmark policy trace must project to a list of JSON objects")
+    return tuple(projected)
 
 
 def _accept_campaign(

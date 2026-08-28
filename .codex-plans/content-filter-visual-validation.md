@@ -76,6 +76,27 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - Keep public-page shadow navigation pending concrete user-supplied URLs; do not infer a shopping or content site.
 - Commit and push live manifests/results only after source and reporting validation.
 
+### Phase 7 — structure-first visual escalation convergence (`in_progress`)
+
+- Preserve the product invariant that ordinary structure-sufficient turns activate no visual provider; a configured
+  VLM or available screenshot never triggers acquisition by itself.
+- Treat the clean MiniWoB live run as two separate witnesses: recursively project immutable diagnostic trace at the
+  benchmark-report boundary, and diagnose the policy's unnecessary point-grounding request without reclassifying the
+  reporting failure as a GUI failure.
+- Keep the existing Runtime applicability gate and compatibility profile; do not make entity discovery available
+  merely because current media exists.
+- Replace the dynamic `request_evidence` variants' shared broad query description with purpose-specific, concise
+  model-facing fields and positive use/not-use/result contracts. Map those fields deterministically in the existing
+  Catalog binding to the single internal `RequestObservation`; do not add a semantic rewrite path or second planner.
+- Ensure a legitimately admitted point-grounding request activates only its target-specific grounding provider, not
+  an automatic full-screen entity-discovery provider first. Entity discovery remains a separately selected,
+  observation-only purpose.
+- Add provider-free gates for structure-sufficient zero visual calls, exact dynamic Catalog schemas/binding, stale or
+  unoffered zero-call rejection, and one-call point grounding. Preserve compatibility Catalog bytes and target-loop
+  benchmark identity where declared.
+- Commit and push the reporting repair and the escalation/tool-contract repair separately before another clean live
+  run.
+
 ## Progress log
 
 - 2026-08-28: Started from pushed feature branch. Detected unrelated dirty worktree; all phase commits will use
@@ -125,6 +146,12 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   `f9326cbb02ae5a0238603dedae253ac8a44ac28138d82427800b4468b75e67ab`.
   The isolated staged-tree full suite reported 1,997 passed / 19 skipped / 1 warning and the same single pre-existing
   missing archived-trace fixture failure as Phase 4. No public page or live benchmark was opened.
+- 2026-08-28: The authorized ScreenSpot diagnostic completed 23/30 point-in-box (text 14/15, icon 9/15) with one
+  correctly rejected invalid structured coordinate. Three clean MiniWoB attempts exposed, in order, an empty public
+  ref schema, a provider-incompatible root union, and a nested immutable trace reporting failure; the first two are
+  fixed and pushed. The latest GUI run itself ended blocked after the ActionPolicy repeatedly requested point
+  grounding for a structure-readable counting question, with zero GUI executions. Phase 7 now protects the original
+  structure-first zero-VLM invariant and forbids using that witness to broaden visual availability.
 
 ## Files changed by this plan
 
@@ -148,3 +175,11 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
 - `src/affordance_runtime/benchmarks/cli.py`
 - `tests/benchmarks/runtime/test_supervised_gui_acceptance.py`
 - `tests/benchmarks/runtime/test_cli.py`
+- `src/affordance_runtime/benchmarks/external_breadth/runner.py`
+- `tests/benchmarks/runtime/test_miniwob_breadth_runner.py`
+- `src/affordance_runtime/model/policy/grounded_tool_catalog.py`
+- `src/affordance_runtime/surfaces/browsergym/environment.py`
+- `src/affordance_runtime/surfaces/browsergym/visual_projection.py`
+- `src/affordance_runtime/surfaces/visual/grounding.py`
+- `tests/benchmarks/model/test_grounded_tools_v2.py`
+- `tests/unit/surfaces/browsergym/test_browsergym_visual_binding.py`
