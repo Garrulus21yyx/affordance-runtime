@@ -774,6 +774,27 @@ def test_repeated_gui_operation_across_semantically_changed_worlds_is_not_a_same
     assert monitor.same_attempt_streak == 1
 
 
+def test_same_gui_operation_reaching_a_seen_result_world_requests_new_route() -> None:
+    first_world = _world("observation:cycle-a", result_text="state a")
+    second_world = _world("observation:cycle-b", result_text="state b")
+    third_world = _world("observation:cycle-c", result_text="state c")
+    returned_second = _world("observation:cycle-b-return", result_text="state b")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    first = _evaluate(monitor, _dispatched_step(first_world, second_world))
+    second = _evaluate(monitor, _dispatched_step(second_world, third_world))
+    recovery = _evaluate(monitor, _dispatched_step(third_world, returned_second))
+
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert recovery.recovery_signal.prohibited_attempt_signature is not None
+    assert recovery.recovery_signal.observed_evidence["repeated_result_world"] is True
+
+
 def test_first_closed_gui_route_requests_deliberate_review() -> None:
     portland = _world("observation:portland", route="/wiki/Portland_Maine")
     acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
@@ -975,5 +996,6 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "same_attempt_streak",
         "no_progress_count",
         "recent_gui_attempts",
+        "recent_gui_results",
         "active_gui_cycle_digest",
     } == set(vars(monitor)) - {"profile"}

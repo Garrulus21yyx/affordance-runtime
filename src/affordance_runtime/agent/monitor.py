@@ -63,6 +63,7 @@ class EpisodeMonitor:
     same_attempt_streak: int = 0
     no_progress_count: int = 0
     recent_gui_attempts: tuple[PublicAttemptSignature, ...] = ()
+    recent_gui_results: tuple[tuple[str, str], ...] = ()
     active_gui_cycle_digest: str = ""
 
     def start_episode(self, world, task_evaluation) -> None:
@@ -75,6 +76,7 @@ class EpisodeMonitor:
         self.same_attempt_streak = 0
         self.no_progress_count = 0
         self.recent_gui_attempts = ()
+        self.recent_gui_results = ()
         self.active_gui_cycle_digest = ""
 
     def evaluate(
@@ -127,6 +129,7 @@ class EpisodeMonitor:
             self.recovery_count = 0
             self.same_attempt_streak = 0
             self.recent_gui_attempts = ()
+            self.recent_gui_results = ()
             self.active_gui_cycle_digest = ""
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
@@ -183,6 +186,7 @@ class EpisodeMonitor:
             )
 
         gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+        repeated_gui_result = self._record_gui_result(gui_signature, next_world_digest)
         route_origin, route_length = _closed_gui_route(
             self.recent_gui_attempts,
             gui_signature,
@@ -206,6 +210,25 @@ class EpisodeMonitor:
                 tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REGRESSION))),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.ROUTE_REGRESSION.value,
+                signal,
+            )
+        if repeated_gui_result and state_changed and gui_signature is not None:
+            self.observation_only_streak = 0
+            self.no_progress_count += 1
+            self.same_attempt_streak = 1
+            self.latest_attempt_signature = gui_signature
+            self.recovery_count = 1
+            self.active_gui_cycle_digest = ""
+            signal = _repeated_gui_result_signal(
+                result,
+                self,
+                gui_signature=gui_signature,
+                result_world_digest=next_world_digest,
+            )
+            return EpisodeMonitorTransition(
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.OSCILLATION))),
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
         if cycle_digest:
@@ -335,6 +358,20 @@ class EpisodeMonitor:
         self.recent_gui_attempts = (*self.recent_gui_attempts, signature)[-_MAX_RECENT_GUI_ATTEMPTS:]
         return _short_gui_cycle(self.recent_gui_attempts)
 
+    def _record_gui_result(
+        self,
+        signature: PublicAttemptSignature | None,
+        result_world_digest: str,
+    ) -> bool:
+        """Detect one repeated semantic action/result pair in the bounded window."""
+
+        if signature is None:
+            return False
+        key = (signature.digest, result_world_digest)
+        repeated = key in self.recent_gui_results
+        self.recent_gui_results = (*self.recent_gui_results, key)[-_MAX_RECENT_GUI_ATTEMPTS:]
+        return repeated
+
 
 def _diagnostic_events(result: StepResult) -> list[EpisodeMonitorEvent]:
     events: list[EpisodeMonitorEvent] = []
@@ -435,6 +472,38 @@ def _gui_cycle_recovery_signal(
             "requirement; do not revisit the same sequence merely to re-verify it."
         ),
         recovery_attempt=recovery_attempt,
+    )
+
+
+def _repeated_gui_result_signal(
+    result: StepResult,
+    monitor: EpisodeMonitor,
+    *,
+    gui_signature: PublicAttemptSignature,
+    result_world_digest: str,
+) -> RecoverySignal:
+    """Request a new route when one action reaches an already-seen public result."""
+
+    digest = hashlib.sha256(
+        _canonical_json((gui_signature.digest, result_world_digest)).encode()
+    ).hexdigest()
+    return RecoverySignal(
+        RecoveryKind.STATE_OSCILLATION,
+        "state_oscillation:sha256:" + digest,
+        {
+            "attempt": _bounded_public_attempt(result),
+            "dispatch": _dispatch_status(result),
+            "repeated_result_world": True,
+            "world_digest": monitor.world_digest,
+            "current_findings_digest": monitor.current_findings_digest,
+        },
+        attempted_modes=(_attempted_mode(result),),
+        prohibited_attempt_signature=gui_signature,
+        human_instruction=(
+            "The same semantic GUI action has reached this public result before. Preserve current evidence and "
+            "choose a materially different offered control or observation route; do not replay this action."
+        ),
+        recovery_attempt=1,
     )
 
 
