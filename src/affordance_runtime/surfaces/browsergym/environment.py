@@ -1112,7 +1112,10 @@ class BrowserGymSurfaceAdapter:
             elif visual_purpose is ObservationPurpose.VISUAL_CHANGE:
                 return self._project_visual_change_request(request, projection)
             else:
-                if self.visual_region_proposer is not None:
+                region_proposer = (
+                    self.visual_region_proposer if visual_purpose is ObservationPurpose.ENTITY_DISCOVERY else None
+                )
+                if region_proposer is not None:
                     self.visual_proposer_calls += 1
                 visual = project_browsergym_visual_source(
                     self._pending_raw,
@@ -1126,7 +1129,7 @@ class BrowserGymSurfaceAdapter:
                         visual_purpose,
                         "inspect the current visible interface",
                     ),
-                    proposer=self.visual_region_proposer,
+                    proposer=region_proposer,
                     point_grounder=(
                         self.visual_point_grounder if visual_purpose is ObservationPurpose.POINT_GROUNDING else None
                     ),

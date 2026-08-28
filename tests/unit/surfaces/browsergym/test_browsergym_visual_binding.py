@@ -461,11 +461,13 @@ def test_visual_change_without_before_lineage_is_unknown_and_zero_provider_calls
 def test_point_grounding_uses_atomic_query_and_requires_next_policy_action() -> None:
     async def scenario() -> None:
         fake = FakeBrowserGym(_raw())
+        proposer = _Proposer([VisualRegion((0.25, 0.2, 0.2, 0.3), "target", 0.9)])
         grounder = _Grounder(VisualGroundingPoint((0.5, 0.5), normalized=True))
         environment, task = open_surface(
             "browsergym/miniwob.click-button",
             7,
             gym_factory=lambda *_args, **_kwargs: fake,
+            visual_region_proposer=proposer,
             visual_point_grounder=grounder,
         )
         try:
@@ -495,6 +497,9 @@ def test_point_grounding_uses_atomic_query_and_requires_next_policy_action() -> 
         assert len(grounder.calls) == 1
         assert grounder.calls[0].instruction == "the small circular control in the center"
         assert grounder.calls[0].instruction != task.instruction
+        assert proposer.calls == []
+        assert environment.visual_proposer_calls == 0
+        assert environment.visual_point_grounder_calls == 1
         assert fake.actions == []
 
     asyncio.run(scenario())
@@ -611,6 +616,9 @@ def test_visual_only_evidence_mark_does_not_create_action_authority() -> None:
             assert _non_runtime_bindings(initial.observation) == ()
             assert len(proposer.calls) == 0
             assert environment.visual_proposer_calls == 0
+            assert environment.visual_point_grounder_calls == 0
+            assert isinstance(environment.visual_point_grounder, _Grounder)
+            assert environment.visual_point_grounder.calls == []
             assert [(item.source, item.status) for item in initial.source_results] == [
                 ("browsergym", SourceAcquisitionStatus.ACQUIRED),
                 ("browsergym_visual", SourceAcquisitionStatus.NOT_ACQUIRED),
