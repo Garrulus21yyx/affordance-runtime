@@ -20,12 +20,22 @@ from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelive
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
-    AskUser,
+    BooleanFieldDraft,
+    DateFieldDraft,
+    DecimalFieldDraft,
     FinalResponse,
+    IntegerFieldDraft,
+    InteractionAttribute,
+    InteractionOptionDraft,
+    InteractionRequestDraft,
+    InteractionResponseKind,
+    PublicArtifactDraft,
+    PublicArtifactItemDraft,
     ReadRegionResult,
     RequestActionPage,
     RequestObservation,
     SearchPageContentResult,
+    TextFieldDraft,
     Wait,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -39,7 +49,7 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
     RegisteredGroundedTool,
 )
-from affordance_runtime.model.policy.perception import ObservationToolExposureProfile
+from affordance_runtime.model.policy.perception import InteractionToolExposureProfile, ObservationToolExposureProfile
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.world.observation_needs import ObservationPurpose
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
@@ -68,6 +78,7 @@ class _FindControlsBinding:
             context_id,
             query,
             tool_call_id=tool_call_id,
+            public_intent=str(arguments.get("public_intent", "")).strip(),
         )
 
 
@@ -191,17 +202,34 @@ class _EvidenceBinding:
 @dataclass(frozen=True)
 class _ControlBinding:
     kind: GroundedLocalToolName
+    interaction_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY
+    evidence_bindings: Mapping[str, str] | None = None
+    media_refs: frozenset[str] = frozenset()
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         if self.kind is GroundedLocalToolName.ASK_USER:
+            if self.interaction_profile is InteractionToolExposureProfile.STRUCTURED:
+                return _resolve_interaction_draft(
+                    arguments,
+                    context_id=context_id,
+                    tool_call_id=tool_call_id,
+                    evidence_bindings=self.evidence_bindings or {},
+                    media_refs=self.media_refs,
+                )
             requested_fields = arguments.get("requested_fields", ())
             if not isinstance(requested_fields, list | tuple):
                 raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
-            return AskUser(
+            fields = tuple(TextFieldDraft(str(item)) for item in requested_fields)
+            return InteractionRequestDraft(
                 context_id,
                 str(arguments["question"]),
-                tuple(str(item) for item in requested_fields),
-                tool_call_id,
+                (
+                    InteractionResponseKind.STRUCTURED_FIELDS
+                    if fields
+                    else InteractionResponseKind.FREE_TEXT
+                ),
+                fields,
+                tool_call_id=tool_call_id,
             )
         if self.kind is GroundedLocalToolName.WAIT:
             return Wait(
@@ -209,6 +237,7 @@ class _ControlBinding:
                 str(arguments["reason"]),
                 5_000,
                 tool_call_id,
+                str(arguments.get("public_intent", "")).strip(),
             )
         if self.kind is GroundedLocalToolName.ABORT:
             return Abort(
@@ -216,6 +245,7 @@ class _ControlBinding:
                 str(arguments["reason"]),
                 str(arguments["category"]),
                 tool_call_id,
+                str(arguments.get("public_intent", "")).strip(),
             )
         if self.kind is GroundedLocalToolName.SUBMIT_FINAL_RESPONSE:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -224,9 +254,21 @@ class _ControlBinding:
 
 @dataclass(frozen=True)
 class _FinalResponseBinding:
+    interaction_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY
+    evidence_bindings: Mapping[str, str] | None = None
+
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         del tool_call_id
-        return FinalResponse(context_id, str(arguments["content"]))
+        artifact = None
+        if self.interaction_profile is InteractionToolExposureProfile.STRUCTURED and "artifact" in arguments:
+            artifact = _resolve_artifact_draft(arguments["artifact"], self.evidence_bindings or {})
+        return FinalResponse(
+            context_id,
+            str(arguments["content"]),
+            (),
+            artifact,
+            str(arguments.get("public_intent", "")).strip(),
+        )
 
 
 @dataclass(frozen=True)
@@ -331,6 +373,7 @@ def compile_grounded_tool_catalog(
     phase: GroundedToolPhase,
     delivery: ModelTurnDelivery,
     observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
+    interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY,
 ) -> GroundedToolCatalog:
     if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -349,6 +392,7 @@ def compile_grounded_tool_catalog(
             "ModelTurnDelivery belongs to another World",
         )
     observation_tool_profile = ObservationToolExposureProfile(observation_tool_profile)
+    interaction_tool_profile = InteractionToolExposureProfile(interaction_tool_profile)
     registered: list[RegisteredGroundedTool] = []
 
     purposes: set[str] = set()
@@ -399,6 +443,9 @@ def compile_grounded_tool_catalog(
             context_id=context.context_id,
             admitted_routes=frozenset(
                 (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+            ),
+            include_public_intent=(
+                interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
             ),
         )
     )
@@ -523,52 +570,82 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
+    evidence_bindings = {
+        ref: canonical
+        for ref, canonical in context.private_fact_bindings.items()
+        if ref in delivery.manifest.fact_refs
+    }
+    evidence_bindings.update({item.evidence_ref: item.evidence_ref for item in delivery.media})
+    media_refs = frozenset(item.evidence_ref for item in delivery.media)
+    final_properties: dict[str, object] = {
+        "content": {
+            "type": "string",
+            "description": "complete final answer, JSON when the task contract requires JSON",
+            "minLength": 1,
+            "maxLength": 8000,
+        },
+    }
+    if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED:
+        final_properties.update(
+            {
+                "artifact": _artifact_draft_schema(tuple(sorted(evidence_bindings))),
+                "public_intent": _public_intent_schema(),
+            }
+        )
     registered.append(
         RegisteredGroundedTool(
             ToolSpec(
                 GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
                 _final_response_description(context.final_response_guidance),
-                _object_schema(
-                    {
-                        "content": {
-                            "type": "string",
-                            "description": "complete final answer, JSON when the task contract requires JSON",
-                            "minLength": 1,
-                            "maxLength": 8000,
-                        },
-                    },
-                    ("content",),
-                ),
+                _object_schema(final_properties, ("content",)),
             ),
-            _FinalResponseBinding(),
+            _FinalResponseBinding(interaction_tool_profile, evidence_bindings),
         )
     )
 
+    ask_schema = (
+        _structured_interaction_request_schema(
+            tuple(sorted(evidence_bindings)),
+            tuple(sorted(media_refs)),
+        )
+        if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
+        else _object_schema(
+            {
+                "question": {
+                    "type": "string",
+                    "description": "one clear question",
+                    "minLength": 1,
+                    "maxLength": 1000,
+                },
+                "requested_fields": {
+                    "type": "array",
+                    "description": "facts only the user can provide",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "maxItems": 8,
+                },
+            },
+            ("question",),
+        )
+    )
+    sidecar = (
+        {"public_intent": _public_intent_schema()}
+        if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
+        else {}
+    )
     registered.extend(
         (
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.ASK_USER.value,
                     "Ask for task information unavailable in the interface.",
-                    _object_schema(
-                        {
-                            "question": {
-                                "type": "string",
-                                "description": "one clear question",
-                                "minLength": 1,
-                                "maxLength": 1000,
-                            },
-                            "requested_fields": {
-                                "type": "array",
-                                "description": "facts only the user can provide",
-                                "items": {"type": "string", "minLength": 1, "maxLength": 120},
-                                "maxItems": 8,
-                            },
-                        },
-                        ("question",),
-                    ),
+                    ask_schema,
                 ),
-                _ControlBinding(GroundedLocalToolName.ASK_USER),
+                _ControlBinding(
+                    GroundedLocalToolName.ASK_USER,
+                    interaction_tool_profile,
+                    evidence_bindings,
+                    media_refs,
+                ),
             ),
             RegisteredGroundedTool(
                 ToolSpec(
@@ -582,11 +659,12 @@ def compile_grounded_tool_catalog(
                                 "minLength": 1,
                                 "maxLength": 500,
                             },
+                            **sidecar,
                         },
                         ("reason",),
                     ),
                 ),
-                _ControlBinding(GroundedLocalToolName.WAIT),
+                _ControlBinding(GroundedLocalToolName.WAIT, interaction_tool_profile),
             ),
             RegisteredGroundedTool(
                 ToolSpec(
@@ -605,11 +683,12 @@ def compile_grounded_tool_catalog(
                                 "description": "stop category",
                                 "enum": ["policy", "safety", "unsupported", "no_progress", "user_request"],
                             },
+                            **sidecar,
                         },
                         ("reason", "category"),
                     ),
                 ),
-                _ControlBinding(GroundedLocalToolName.ABORT),
+                _ControlBinding(GroundedLocalToolName.ABORT, interaction_tool_profile),
             ),
         )
     )
@@ -618,6 +697,7 @@ def compile_grounded_tool_catalog(
         delivery,
         tuple(registered),
         observation_tool_profile=observation_tool_profile,
+        interaction_tool_profile=interaction_tool_profile,
     )
 
 
@@ -627,6 +707,7 @@ def _catalog_from_registrations(
     registered: tuple[RegisteredGroundedTool, ...],
     *,
     observation_tool_profile: ObservationToolExposureProfile,
+    interaction_tool_profile: InteractionToolExposureProfile,
 ) -> GroundedToolCatalog:
     names = tuple(tool.spec.name for tool in registered)
     if len(names) != len(set(names)):
@@ -648,7 +729,7 @@ def _catalog_from_registrations(
     if len(specs) > MAX_GROUNDED_TOOL_COUNT:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     digest = hashlib.sha256(
-        f"{context.context_id}\0{delivery.delivery_id}\0{observation_tool_profile.digest}\0{encoded}".encode()
+        f"{context.context_id}\0{delivery.delivery_id}\0{observation_tool_profile.digest}\0{interaction_tool_profile.digest}\0{encoded}".encode()
     ).hexdigest()[:32]
     catalog_id = f"grounded-catalog:{digest}"
     return GroundedToolCatalog(
@@ -661,6 +742,8 @@ def _catalog_from_registrations(
         encoded_bytes,
         observation_tool_profile.value,
         observation_tool_profile.digest,
+        interaction_tool_profile.value,
+        interaction_tool_profile.digest,
     )
 
 
@@ -668,12 +751,14 @@ def compile_grounded_action_catalog(
     context: AgentContext,
     delivery: ModelTurnDelivery,
     observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
+    interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY,
 ) -> GroundedToolCatalog:
     return compile_grounded_tool_catalog(
         context,
         GroundedToolPhase.ACTION_SELECTION,
         delivery,
         observation_tool_profile,
+        interaction_tool_profile,
     )
 
 
@@ -746,6 +831,256 @@ def resolve_grounded_action_call(
 
 def _object_schema(properties: Mapping[str, object], required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
+
+
+def _public_intent_schema() -> Mapping[str, object]:
+    return {
+        "type": "string",
+        "description": "optional short user-visible intent; never a completion claim",
+        "minLength": 1,
+        "maxLength": 240,
+    }
+
+
+def _attributes_schema() -> Mapping[str, object]:
+    return {
+        "type": "array",
+        "maxItems": 16,
+        "items": _object_schema(
+            {
+                "label": {"type": "string", "minLength": 1, "maxLength": 120},
+                "value": {"type": "string", "minLength": 1, "maxLength": 500},
+            },
+            ("label", "value"),
+        ),
+    }
+
+
+def _evidence_refs_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
+    return {
+        "type": "array",
+        "items": {"type": "string", "enum": list(evidence_refs)},
+        "maxItems": min(32, len(evidence_refs)),
+    }
+
+
+def _option_draft_schema(
+    evidence_refs: tuple[str, ...],
+    media_refs: tuple[str, ...],
+) -> Mapping[str, object]:
+    properties: dict[str, object] = {
+        "title": {"type": "string", "minLength": 1, "maxLength": 240},
+        "description": {"type": "string", "maxLength": 1000},
+        "attributes": _attributes_schema(),
+        "evidence_refs": _evidence_refs_schema(evidence_refs),
+        "uncertainties": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "maxLength": 500},
+            "maxItems": 32,
+        },
+    }
+    if media_refs:
+        properties["media_ref"] = {"type": "string", "enum": list(media_refs)}
+    return _object_schema(properties, ("title",))
+
+
+def _field_draft_schema() -> Mapping[str, object]:
+    variants = []
+    for kind in ("text", "integer", "decimal", "boolean", "date"):
+        variants.append(
+            _object_schema(
+                {
+                    "kind": {"type": "string", "enum": [kind]},
+                    "label": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "description": {"type": "string", "maxLength": 500},
+                    "required": {"type": "boolean"},
+                },
+                ("kind", "label"),
+            )
+        )
+    return {"oneOf": variants}
+
+
+def _structured_interaction_request_schema(
+    evidence_refs: tuple[str, ...],
+    media_refs: tuple[str, ...],
+) -> Mapping[str, object]:
+    prompt = {"type": "string", "minLength": 1, "maxLength": 1000}
+    intent = _public_intent_schema()
+    common = {"prompt": prompt, "public_intent": intent}
+    return {
+        "oneOf": [
+            _object_schema(
+                {**common, "response_kind": {"type": "string", "enum": ["free_text"]}},
+                ("prompt", "response_kind"),
+            ),
+            *(
+                _object_schema(
+                    {
+                        **common,
+                        "response_kind": {"type": "string", "enum": [kind]},
+                        "option_drafts": {
+                            "type": "array",
+                            "items": _option_draft_schema(evidence_refs, media_refs),
+                            "minItems": 1,
+                            "maxItems": 32,
+                        },
+                    },
+                    ("prompt", "response_kind", "option_drafts"),
+                )
+                for kind in ("single_select", "multi_select")
+            ),
+            _object_schema(
+                {
+                    **common,
+                    "response_kind": {"type": "string", "enum": ["structured_fields"]},
+                    "field_drafts": {
+                        "type": "array",
+                        "items": _field_draft_schema(),
+                        "minItems": 1,
+                        "maxItems": 32,
+                    },
+                },
+                ("prompt", "response_kind", "field_drafts"),
+            ),
+        ]
+    }
+
+
+def _artifact_draft_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
+    item = _object_schema(
+        {
+            "title": {"type": "string", "minLength": 1, "maxLength": 240},
+            "summary": {"type": "string", "maxLength": 1000},
+            "attributes": _attributes_schema(),
+            "evidence_refs": _evidence_refs_schema(evidence_refs),
+        },
+        ("title",),
+    )
+    return _object_schema(
+        {
+            "title": {"type": "string", "minLength": 1, "maxLength": 240},
+            "summary": {"type": "string", "maxLength": 2000},
+            "items": {"type": "array", "items": item, "maxItems": 32},
+            "evidence_refs": _evidence_refs_schema(evidence_refs),
+        },
+        ("title",),
+    )
+
+
+def _resolve_interaction_draft(
+    arguments: Mapping[str, object],
+    *,
+    context_id: str,
+    tool_call_id: str,
+    evidence_bindings: Mapping[str, str],
+    media_refs: frozenset[str],
+) -> InteractionRequestDraft:
+    raw_fields = arguments.get("field_drafts", ())
+    raw_options = arguments.get("option_drafts", ())
+    if not isinstance(raw_fields, list | tuple) or not isinstance(raw_options, list | tuple):
+        raise ValueError("interaction draft collections must be arrays")
+    fields = tuple(_resolve_field_draft(item) for item in raw_fields)
+    options = tuple(
+        _resolve_option_draft(item, evidence_bindings, media_refs)
+        for item in raw_options
+    )
+    return InteractionRequestDraft(
+        context_id,
+        str(arguments["prompt"]),
+        InteractionResponseKind(str(arguments["response_kind"])),
+        fields,
+        options,
+        str(arguments.get("public_intent", "")).strip(),
+        tool_call_id,
+    )
+
+
+def _resolve_field_draft(value: object):
+    if not isinstance(value, Mapping):
+        raise ValueError("interaction field draft must be an object")
+    common = (
+        str(value["label"]),
+        str(value.get("description", "")),
+        bool(value.get("required", True)),
+    )
+    field_type = {
+        "text": TextFieldDraft,
+        "integer": IntegerFieldDraft,
+        "decimal": DecimalFieldDraft,
+        "boolean": BooleanFieldDraft,
+        "date": DateFieldDraft,
+    }.get(str(value["kind"]))
+    if field_type is None:
+        raise ValueError("interaction field kind is unsupported")
+    return field_type(*common)
+
+
+def _resolve_option_draft(
+    value: object,
+    evidence_bindings: Mapping[str, str],
+    media_refs: frozenset[str],
+) -> InteractionOptionDraft:
+    if not isinstance(value, Mapping):
+        raise ValueError("interaction option draft must be an object")
+    media_ref = str(value.get("media_ref", ""))
+    if media_ref and media_ref not in media_refs:
+        raise ValueError("interaction option media is outside the current delivery")
+    return InteractionOptionDraft(
+        str(value["title"]),
+        str(value.get("description", "")),
+        media_ref,
+        _resolve_attributes(value.get("attributes", ())),
+        _resolve_evidence_refs(value.get("evidence_refs", ()), evidence_bindings),
+        tuple(str(item) for item in _array(value.get("uncertainties", ()))),
+    )
+
+
+def _resolve_artifact_draft(
+    value: object,
+    evidence_bindings: Mapping[str, str],
+) -> PublicArtifactDraft:
+    if not isinstance(value, Mapping):
+        raise ValueError("artifact draft must be an object")
+    return PublicArtifactDraft(
+        str(value["title"]),
+        str(value.get("summary", "")),
+        tuple(
+            PublicArtifactItemDraft(
+                str(item["title"]),
+                str(item.get("summary", "")),
+                _resolve_attributes(item.get("attributes", ())),
+                _resolve_evidence_refs(item.get("evidence_refs", ()), evidence_bindings),
+            )
+            for raw in _array(value.get("items", ()))
+            for item in (raw if isinstance(raw, Mapping) else {},)
+        ),
+        _resolve_evidence_refs(value.get("evidence_refs", ()), evidence_bindings),
+    )
+
+
+def _resolve_attributes(value: object) -> tuple[InteractionAttribute, ...]:
+    return tuple(
+        InteractionAttribute(str(item["label"]), str(item["value"]))
+        for raw in _array(value)
+        for item in (raw if isinstance(raw, Mapping) else {},)
+    )
+
+
+def _resolve_evidence_refs(
+    value: object,
+    evidence_bindings: Mapping[str, str],
+) -> tuple[str, ...]:
+    refs = tuple(str(item) for item in _array(value))
+    if any(item not in evidence_bindings for item in refs):
+        raise ValueError("presentation evidence is outside the current delivery")
+    return tuple(evidence_bindings[item] for item in refs)
+
+
+def _array(value: object) -> tuple[object, ...]:
+    if not isinstance(value, list | tuple):
+        raise ValueError("structured tool field must be an array")
+    return tuple(value)
 
 
 def _compatibility_evidence_request_schema(

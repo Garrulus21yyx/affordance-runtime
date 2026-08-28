@@ -25,13 +25,13 @@ from affordance_runtime.agent.context.world_transition import (
 )
 from affordance_runtime.agent.decisions import (
     AgentDecision,
-    AskUser,
     DecisionKind,
     FinalResponse,
     LocalToolResult,
     SelectAction,
 )
 from affordance_runtime.agent.finalization import FinalizationProtocolResult
+from affordance_runtime.agent.interactions import InteractionRequest, PublicArtifact
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.agent.result_code import AgentFailureCode
 from affordance_runtime.agent.run_control import (
@@ -100,7 +100,7 @@ class ControlTermination:
 class StepResult:
     """One policy outcome's concise feedback; never a replay or ledger record."""
 
-    decision: AgentDecision | PolicyFailure
+    decision: AgentDecision | InteractionRequest | PolicyFailure
     before_world: WorldObservation
     after_world: WorldObservation
     task_evaluation: TaskEvaluation | None
@@ -148,6 +148,7 @@ class StepResult:
         default=None, repr=False, compare=False, metadata={"serialize": False}
     )
     observation_outcome: ObservationQueryOutcome | None = None
+    public_artifact: PublicArtifact | None = None
 
     def __post_init__(self) -> None:
         delta = self.public_world_delta
@@ -161,10 +162,16 @@ class StepResult:
             or delta.after_observation_id != self.after_world.observation_id
         ):
             raise ValueError("step public World delta must match its exact Worlds")
-        if not isinstance(self.decision, AgentDecision | PolicyFailure):
+        if not isinstance(self.decision, AgentDecision | InteractionRequest | PolicyFailure):
             raise TypeError("step decision must belong to the closed decision algebra")
         if self.action_page_result is not None and not isinstance(self.action_page_result, ActionDiscoveryResult):
             raise TypeError("action discovery output must be typed")
+        if self.public_artifact is not None and not isinstance(self.public_artifact, PublicArtifact):
+            raise TypeError("step public artifact must be Runtime-admitted")
+        if self.public_artifact is not None and (
+            not isinstance(self.decision, FinalResponse) or self.status_after is not RunStatus.DONE
+        ):
+            raise ValueError("public artifact can only accompany evaluator-confirmed completion")
         if not isinstance(self.status_after, RunStatus):
             raise TypeError("step status must be typed")
         if self.control_termination is not None:
@@ -345,7 +352,7 @@ class RunCheckpointFacts:
     pause_boundary: RunControlOutcome
     latest_effect: CommittedEffect | None = None
     effect_reconciliation: EffectReconciliation | None = None
-    last_decision: AgentDecision | None = None
+    last_decision: AgentDecision | InteractionRequest | None = None
     last_confirmation: RiskAssessment | None = None
     last_feedback: str = "checkpoint_restored"
 
@@ -391,8 +398,8 @@ class RunCheckpointFacts:
             raise ValueError("checkpoint decision counts are invalid")
         object.__setattr__(self, "decision_counts", counts)
         if self.status_before_pause is RunStatus.WAITING_USER:
-            if not isinstance(self.last_decision, AskUser) or self.last_confirmation is not None:
-                raise ValueError("waiting-user checkpoint requires its exact question")
+            if not isinstance(self.last_decision, InteractionRequest) or self.last_confirmation is not None:
+                raise ValueError("waiting-user checkpoint requires its exact interaction")
         elif self.status_before_pause is RunStatus.WAITING_CONFIRMATION:
             if not isinstance(self.last_decision, SelectAction) or self.last_confirmation is None:
                 raise ValueError("waiting-confirmation checkpoint requires its exact request")

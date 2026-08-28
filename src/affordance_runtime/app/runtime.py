@@ -16,7 +16,7 @@ from affordance_runtime.agent.decision_capability import (
     UnsupportedCompositionError,
     normalize_decision_capabilities,
 )
-from affordance_runtime.agent.decisions import AskUser
+from affordance_runtime.agent.interactions import InteractionRequest
 from affordance_runtime.agent.observability import NullRunTraceSink, RunTraceSink
 from affordance_runtime.agent.policy import ActionOutcomeProjector, AgentDecisionPorts, TaskEvaluator
 from affordance_runtime.agent.run_control import (
@@ -387,12 +387,15 @@ class TargetRuntime:
 
         effective_status = state.paused_from_status if state.status is RunStatus.PAUSED else state.status
         step = state.last_step
-        if effective_status is RunStatus.WAITING_USER and step is not None and isinstance(step.decision, AskUser):
+        if (
+            effective_status is RunStatus.WAITING_USER
+            and step is not None
+            and isinstance(step.decision, InteractionRequest)
+        ):
             decision = step.decision
-            identity = decision.tool_call_id or decision.context_id
             return TaskRevisionRuntimeContext(
-                pending_question_id=f"ask:{identity}",
-                pending_question=decision.question,
+                pending_question_id=decision.request_id,
+                pending_question=decision.prompt,
                 pending_question_fields=decision.requested_fields,
             )
         if effective_status is RunStatus.WAITING_CONFIRMATION and step is not None and step.confirmation is not None:

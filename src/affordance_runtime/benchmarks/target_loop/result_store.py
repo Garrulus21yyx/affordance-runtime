@@ -15,6 +15,11 @@ from typing import Protocol
 from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
     OfficialOutcomeCheckpoint,
 )
+from affordance_runtime.benchmarks.target_loop.presentation_sidecar import (
+    CasePresentationSidecar,
+    decode_public_case_presentation,
+    public_case_presentation,
+)
 
 
 class RunResultStoreError(RuntimeError):
@@ -151,6 +156,8 @@ class RunResultStore(Protocol):
     def commit_official_outcome(self, checkpoint: OfficialOutcomeCheckpoint) -> None: ...
 
     def commit_case_outcome(self, record: CaseOutcomeRecord) -> None: ...
+
+    def commit_case_presentation(self, sidecar: CasePresentationSidecar) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -382,6 +389,51 @@ class SQLiteRunResultStore:
                 )
         except sqlite3.Error as exc:
             raise RunResultStoreError("case report commit failed") from exc
+
+    def commit_case_presentation(self, sidecar: CasePresentationSidecar) -> None:
+        payload = json.dumps(
+            public_case_presentation(sidecar),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        try:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    "SELECT payload_json FROM case_presentation_sidecars WHERE case_id = ?",
+                    (sidecar.case_id,),
+                ).fetchone()
+                if existing is not None and str(existing[0]) != payload:
+                    raise RunResultStoreError("conflicting case presentation sidecar")
+                connection.execute(
+                    "INSERT OR IGNORE INTO case_presentation_sidecars VALUES (?, ?)",
+                    (sidecar.case_id, payload),
+                )
+        except sqlite3.Error as exc:
+            raise RunResultStoreError("case presentation sidecar commit failed") from exc
+
+    def load_case_presentation(self, case_id: str) -> CasePresentationSidecar | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM case_presentation_sidecars WHERE case_id = ?",
+                (case_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return decode_public_case_presentation(json.loads(str(row[0])))
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise RunResultStoreError("case presentation sidecar is malformed") from exc
+
+    def export_case_presentation(self, case_id: str, output_dir: Path) -> Path:
+        sidecar = self.load_case_presentation(case_id)
+        if sidecar is None:
+            raise RunResultStoreError("case presentation sidecar is not committed")
+        path = Path(output_dir) / "cases" / f"{case_id}.presentation.json"
+        try:
+            _write_json_projection(path, public_case_presentation(sidecar))
+        except OSError as exc:
+            raise RunResultStoreError("case presentation sidecar export failed") from exc
+        return path
 
     def commit_run_report(self, result: object) -> None:
         run_id = str(getattr(getattr(result, "identity"), "run_id"))
@@ -638,6 +690,10 @@ CREATE TABLE IF NOT EXISTS case_phase_events (
     PRIMARY KEY (case_id, sequence)
 );
 CREATE TABLE IF NOT EXISTS case_reports (
+    case_id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS case_presentation_sidecars (
     case_id TEXT PRIMARY KEY,
     payload_json TEXT NOT NULL
 );

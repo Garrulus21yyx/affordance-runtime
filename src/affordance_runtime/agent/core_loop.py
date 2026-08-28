@@ -32,13 +32,15 @@ from affordance_runtime.agent.decisions import (
     Abort,
     AbortCategory,
     AgentDecision,
-    AskUser,
     DecisionKind,
     FinalResponse,
+    InteractionRequestDraft,
+    InteractionResponseKind,
     LocalToolResult,
     RequestActionPage,
     RequestObservation,
     SelectAction,
+    TextFieldDraft,
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import (
@@ -46,6 +48,11 @@ from affordance_runtime.agent.evaluation_control import (
     validated_task_evaluation_attempt,
 )
 from affordance_runtime.agent.finalization import FinalizationProtocolResult, admit_final_response
+from affordance_runtime.agent.interactions import (
+    InteractionRequest,
+    admit_interaction_request,
+    materialize_public_artifact,
+)
 from affordance_runtime.agent.observability import (
     NullRunTraceSink,
     RunTraceSink,
@@ -252,13 +259,10 @@ class CoreAgentLoop:
         if callable(start_episode):
             start_episode(initial, evaluation)
         if isinstance(goal_resolution, NeedsInput) and initial_status is RunStatus.WAITING_USER:
+            request = _admit_goal_input_request(initial, task.revision, goal_resolution)
             state.apply(
                 StepResult(
-                    AskUser(
-                        f"context:goal-compiler:{task.revision}",
-                        goal_resolution.question,
-                        goal_resolution.fields,
-                    ),
+                    request,
                     initial,
                     initial,
                     evaluation,
@@ -398,11 +402,7 @@ class CoreAgentLoop:
             status = RunStatus.RUNNING
         pending = (
             StepResult(
-                AskUser(
-                    f"context:goal-compiler:{revised_task.revision}",
-                    resolution.question,
-                    resolution.fields,
-                ),
+                _admit_goal_input_request(current, revised_task.revision, resolution),
                 current,
                 current,
                 evaluation,
@@ -810,7 +810,11 @@ class CoreAgentLoop:
         state: RunState,
     ) -> RunState:
         pending = state.last_step
-        if state.status is not RunStatus.WAITING_USER or pending is None or not isinstance(pending.decision, AskUser):
+        if (
+            state.status is not RunStatus.WAITING_USER
+            or pending is None
+            or not isinstance(pending.decision, InteractionRequest)
+        ):
             raise ValueError("core run has no pending user request")
         if task.task_id != state.current_task_evaluation.task_id or task.revision != state.task_revision + 1:
             raise ValueError("core user resume requires one consecutive task revision")
@@ -828,11 +832,7 @@ class CoreAgentLoop:
         )
         status = self._status_for_goal_resolution(task, evaluation, resolution)
         decision = (
-            AskUser(
-                f"context:goal-compiler:{task.revision}",
-                resolution.question,
-                resolution.fields,
-            )
+            _admit_goal_input_request(state.current_world, task.revision, resolution)
             if isinstance(resolution, NeedsInput) and status is RunStatus.WAITING_USER
             else pending.decision
         )
@@ -1263,7 +1263,7 @@ class CoreAgentLoop:
                 SelectAction,
                 RequestObservation,
                 RequestActionPage,
-                AskUser,
+                InteractionRequestDraft,
                 LocalToolResult,
                 FinalResponse,
                 Wait,
@@ -1331,8 +1331,22 @@ class CoreAgentLoop:
                 assert isinstance(decision, FinalResponse)
                 result = await self._finalize(environment, task, state, decision)
             case DecisionKind.ASK_USER:
-                assert isinstance(decision, AskUser)
-                result = _same_world_step(state, decision, RunStatus.WAITING_USER, "user_input_required")
+                assert isinstance(decision, InteractionRequestDraft)
+                admission = admit_interaction_request(state.current_world, decision)
+                if admission.request is None:
+                    result = _same_world_step(
+                        state,
+                        decision,
+                        RunStatus.FAILED,
+                        admission.rejection_code.value if admission.rejection_code is not None else "interaction_invalid",
+                    )
+                else:
+                    result = _same_world_step(
+                        state,
+                        admission.request,
+                        RunStatus.WAITING_USER,
+                        "user_input_required",
+                    )
             case DecisionKind.ABORT:
                 assert isinstance(decision, Abort)
                 status = RunStatus.CANCELLED if decision.category == AbortCategory.USER_REQUEST else RunStatus.BLOCKED
@@ -1439,6 +1453,19 @@ class CoreAgentLoop:
                 decision,
                 RunStatus.FAILED,
                 admission.rejection_code,
+            )
+        try:
+            public_artifact = materialize_public_artifact(
+                state.current_world,
+                decision.artifact,
+                response_identity=decision.context_id,
+            )
+        except ValueError:
+            return _same_world_step(
+                state,
+                decision,
+                RunStatus.FAILED,
+                "public_artifact_evidence_not_current",
             )
         if not environment.supports_finalization:
             return _same_world_step(
@@ -1580,18 +1607,20 @@ class CoreAgentLoop:
                 "final_response_post_capture_failed",
                 finalization=facts,
             )
+        final_status = _status_for_final_evaluation(evaluation)
         return StepResult(
             decision,
             state.current_world,
             post.observation,
             evaluation,
-            _status_for_final_evaluation(evaluation),
+            final_status,
             feedback="final_response_evaluated",
             finalization=facts,
             public_world_delta=final_delta,
             before_public_world=state.canonical_world,
             after_public_world=after_projection,
             after_delivery_index=after_index,
+            public_artifact=(public_artifact if final_status is RunStatus.DONE else None),
         )
 
     def _trace_finalization(self, facts: FinalizationProtocolResult) -> None:
@@ -2407,7 +2436,7 @@ def _post_dispatch_evaluation_failure(
 
 def _same_world_step(
     state: RunState,
-    decision: AgentDecision,
+    decision: AgentDecision | InteractionRequest,
     status: RunStatus,
     feedback: str,
     *,
@@ -2426,6 +2455,28 @@ def _same_world_step(
         control_termination=control_termination,
         control_boundary=control_boundary,
     )
+
+
+def _admit_goal_input_request(
+    world: WorldObservation,
+    task_revision: int,
+    resolution: NeedsInput,
+) -> InteractionRequest:
+    fields = tuple(TextFieldDraft(item) for item in resolution.fields)
+    draft = InteractionRequestDraft(
+        f"context:goal-compiler:{task_revision}",
+        resolution.question,
+        (
+            InteractionResponseKind.STRUCTURED_FIELDS
+            if fields
+            else InteractionResponseKind.FREE_TEXT
+        ),
+        fields,
+    )
+    admission = admit_interaction_request(world, draft)
+    if admission.request is None:
+        raise TypeError("GoalCompiler input request failed deterministic admission")
+    return admission.request
 
 
 def _last_dispatch_status(result: StepResult) -> DispatchStatus | None:

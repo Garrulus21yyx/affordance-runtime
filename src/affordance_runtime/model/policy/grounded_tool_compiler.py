@@ -88,7 +88,11 @@ class CompiledGroundedTool:
         if len(matches) != 1:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         match = matches[0]
-        parameters = {name: value for name, value in arguments.items() if name not in selector_names}
+        parameters = {
+            name: value
+            for name, value in arguments.items()
+            if name not in selector_names and name != "public_intent"
+        }
         try:
             validate_value(parameters, match.parameter_schema, path="command")
         except ValueError as exc:
@@ -100,6 +104,7 @@ class CompiledGroundedTool:
             match.destination_id or "",
             tool_call_id,
             "",
+            str(arguments.get("public_intent", "")).strip(),
         )
 
 
@@ -120,6 +125,7 @@ class GroundedToolCompiler:
         *,
         context_id: str,
         admitted_routes: frozenset[tuple[str, str, str]] | None = None,
+        include_public_intent: bool = False,
     ) -> tuple[CompiledGroundedTool, ...]:
         grouped: dict[str, list[ConcreteActionCandidateRow]] = defaultdict(list)
         compiled_routes: set[tuple[str, str, str]] = set()
@@ -141,6 +147,7 @@ class GroundedToolCompiler:
                 operation,
                 tuple(sorted(grouped[operation], key=_row_order)),
                 context_id,
+                include_public_intent=include_public_intent,
             )
             for operation in sorted(grouped)
         )
@@ -162,6 +169,8 @@ class GroundedToolCompiler:
         operation: str,
         rows: tuple[ConcreteActionCandidateRow, ...],
         context_id: str,
+        *,
+        include_public_intent: bool,
     ) -> CompiledGroundedTool:
         if not rows or {row.option.destination_mode for row in rows} not in (
             {"forbidden"},
@@ -178,7 +187,11 @@ class GroundedToolCompiler:
         # title/open/close change rewrite the provider tool prefix even though
         # the browser capability and public call contract did not change.
         parameter_schemas = _public_business_schemas(operation)
-        schema = _public_operation_schema(parameter_schemas, fields)
+        schema = _public_operation_schema(
+            parameter_schemas,
+            fields,
+            include_public_intent=include_public_intent,
+        )
         resolutions = tuple(
             PrivateResolutionEntry(
                 selector,
@@ -299,22 +312,45 @@ def _current_reference_selectors(
 def _public_operation_schema(
     parameter_schemas: tuple[Mapping[str, object], ...],
     fields: tuple[CompiledSelectorField, ...],
+    *,
+    include_public_intent: bool = False,
 ) -> Mapping[str, object]:
-    branches = tuple(_public_operation_branch(schema, fields) for schema in parameter_schemas)
+    branches = tuple(
+        _public_operation_branch(
+            schema,
+            fields,
+            include_public_intent=include_public_intent,
+        )
+        for schema in parameter_schemas
+    )
     return branches[0] if len(branches) == 1 else {"anyOf": list(branches)}
 
 
 def _public_operation_branch(
     parameter_schema: Mapping[str, object],
     fields: tuple[CompiledSelectorField, ...],
+    *,
+    include_public_intent: bool = False,
 ) -> dict[str, object]:
     properties, required = _business_schema(parameter_schema)
     if set(properties).intersection(_RESERVED_NAMES):
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
     selector_properties = {field.public_name: to_json_compatible(field.input_schema) for field in fields}
+    sidecar = (
+        {
+            "public_intent": {
+                "type": "string",
+                "description": "optional short user-visible intent; never a completion claim",
+                "minLength": 1,
+                "maxLength": 240,
+            }
+        }
+        if include_public_intent
+        else {}
+    )
     return {
         "type": "object",
-        "properties": {**selector_properties, **properties},
+        "properties": {**selector_properties, **properties, **sidecar},
         "required": [*(field.public_name for field in fields), *required],
         "additionalProperties": False,
     }

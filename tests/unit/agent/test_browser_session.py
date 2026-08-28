@@ -21,6 +21,18 @@ from affordance_runtime.surfaces.visual.proposal import GenericPerceptionOrchest
 class FakePage:
     url = "http://fixture/settings"
 
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        original = cls.__dict__.get("evaluate")
+        if original is None:
+            return
+
+        def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+            viewport = FakePage._viewport_evaluation(expression)
+            return viewport if viewport is not None else original(self, expression, *args, **kwargs)
+
+        cls.evaluate = evaluate  # type: ignore[attr-defined]
+
     def __init__(self) -> None:
         self.visits: list[str] = []
         self.main_frame = object()
@@ -45,6 +57,28 @@ class FakePage:
 
     def screenshot(self, **kwargs: Any) -> bytes:
         return b"png"
+
+    def evaluate(self, expression: str, *args: Any, **kwargs: Any) -> object:
+        del args, kwargs
+        if "getScreenCTM" in expression:
+            return {"viewport": [800, 600], "elements": []}
+        return self._viewport_evaluation(expression) or {}
+
+    @staticmethod
+    def _viewport_evaluation(expression: str) -> object | None:
+        if "width: window.innerWidth" in expression:
+            return {
+                "width": 800,
+                "height": 600,
+                "scrollX": 0,
+                "scrollY": 0,
+                "dpr": 1,
+                "zoom": 1,
+                "orientation": "landscape-primary",
+            }
+        if expression.strip() == "() => [window.innerWidth, window.innerHeight]":
+            return [800, 600]
+        return None
 
 
 def test_browser_session_captures_observation_and_affordances() -> None:

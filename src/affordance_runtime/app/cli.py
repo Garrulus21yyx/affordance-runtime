@@ -8,7 +8,8 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from affordance_runtime.agent.decisions import AskUser, FinalResponse
+from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.interactions import InteractionRequest
 from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.composition import compose_target_runtime_from_environment
 from affordance_runtime.app.runtime import TargetRuntime, TargetRuntimeRunOutcome
@@ -167,8 +168,8 @@ def target_run_payload(outcome: TargetRuntimeRunOutcome) -> dict[str, object]:
             "",
         ),
         "message": (
-            decision.question
-            if isinstance(decision, AskUser)
+            decision.prompt
+            if isinstance(decision, InteractionRequest)
             else decision.content
             if isinstance(decision, FinalResponse)
             else getattr(outcome.intake, "question", "")

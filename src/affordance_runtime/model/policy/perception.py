@@ -27,6 +27,17 @@ class ObservationToolExposureProfile(StrEnum):
         return hashlib.sha256(self.value.encode()).hexdigest()[:16]
 
 
+class InteractionToolExposureProfile(StrEnum):
+    """Frozen per-session rollout contract for interaction and presentation sidecars."""
+
+    COMPATIBILITY = "compatibility.v1"
+    STRUCTURED = "structured-interaction.v1"
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.value.encode()).hexdigest()[:16]
+
+
 def perception_uses_images(
     request: ModelDecisionRequest,
     profile: DecisionPerceptionProfile,

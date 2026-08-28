@@ -78,6 +78,7 @@ from affordance_runtime.model.policy.grounded_tool_rejection import (
 )
 from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
+    InteractionToolExposureProfile,
     ObservationToolExposureProfile,
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
@@ -253,6 +254,7 @@ class PydanticAIGroundedDecisionPort:
     tracer_provider: object | None = field(default=None, repr=False)
     perception_profile: DecisionPerceptionProfile = DecisionPerceptionProfile.SCREENSHOT_AX
     observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY
+    interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY
     transport_timeout_s: float = 85.0
     policy_timeout_s: float | None = None
     provider_retry_backoff_s: float = _DEFAULT_PROVIDER_BACKOFF_S
@@ -308,6 +310,11 @@ class PydanticAIGroundedDecisionPort:
             self,
             "observation_tool_profile",
             ObservationToolExposureProfile(self.observation_tool_profile),
+        )
+        object.__setattr__(
+            self,
+            "interaction_tool_profile",
+            InteractionToolExposureProfile(self.interaction_tool_profile),
         )
 
     def close_deferred_call(self, step: object) -> None:
@@ -930,6 +937,7 @@ class PydanticAIGroundedDecisionPort:
                 supports_multimodal=self.supports_multimodal,
                 perception_profile=self.perception_profile,
                 observation_tool_profile=self.observation_tool_profile,
+                interaction_tool_profile=self.interaction_tool_profile,
                 request_timeout_s=request_timeout_s,
                 history_messages=messages,
                 pending_tool_call_id=pending_call.call_id if pending_call is not None else "",
@@ -1919,6 +1927,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
     observation_tool_profile: ObservationToolExposureProfile | str | None = None,
+    interaction_tool_profile: InteractionToolExposureProfile | str | None = None,
     step_store: StepStore | None = None,
     conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
@@ -1938,6 +1947,13 @@ def openai_compatible_pydantic_ai_policy_from_environment(
             ObservationToolExposureProfile.COMPATIBILITY.value,
         )
     )
+    selected_interaction_tools = InteractionToolExposureProfile(
+        interaction_tool_profile
+        or env.get(
+            "LLM_INTERACTION_TOOL_PROFILE",
+            InteractionToolExposureProfile.COMPATIBILITY.value,
+        )
+    )
     compaction_timeout_s, retry_delay_budget_s, transport_timeout_s = _provider_time_budgets(call_timeout_s)
     port = PydanticAIGroundedDecisionPort(
         model=configured.model,
@@ -1949,6 +1965,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         step_conversation_id=conversation_id,
         perception_profile=selected_perception,
         observation_tool_profile=selected_observation_tools,
+        interaction_tool_profile=selected_interaction_tools,
         transport_timeout_s=transport_timeout_s,
         policy_timeout_s=call_timeout_s,
         provider_retry_backoff_s=min(_DEFAULT_PROVIDER_BACKOFF_S, retry_delay_budget_s),
@@ -2132,6 +2149,7 @@ def zhipu_pydantic_ai_policy_from_environment(
     call_timeout_s: float = 90.0,
     perception_profile: DecisionPerceptionProfile | str | None = None,
     observation_tool_profile: ObservationToolExposureProfile | str | None = None,
+    interaction_tool_profile: InteractionToolExposureProfile | str | None = None,
     step_store: StepStore | None = None,
     conversation_id: str = "",
 ) -> ModelBackedAgentPolicy:
@@ -2142,6 +2160,7 @@ def zhipu_pydantic_ai_policy_from_environment(
         call_timeout_s=call_timeout_s,
         perception_profile=perception_profile,
         observation_tool_profile=observation_tool_profile,
+        interaction_tool_profile=interaction_tool_profile,
         step_store=step_store,
         conversation_id=conversation_id,
     )

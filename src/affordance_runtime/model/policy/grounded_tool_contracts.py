@@ -73,6 +73,8 @@ class GroundedToolCatalog:
     serialized_bytes: int
     observation_tool_profile_id: str = "compatibility.v1"
     observation_tool_profile_digest: str = ""
+    interaction_tool_profile_id: str = "compatibility.v1"
+    interaction_tool_profile_digest: str = ""
 
     def __post_init__(self) -> None:
         if (
@@ -93,6 +95,8 @@ class GroundedToolCatalog:
             raise ValueError("grounded catalog registrations are invalid")
         if not self.observation_tool_profile_id.strip():
             raise ValueError("grounded catalog requires an observation tool profile")
+        if not self.interaction_tool_profile_id.strip():
+            raise ValueError("grounded catalog requires an interaction tool profile")
         object.__setattr__(self, "tools", tuple(self.tools))
 
     @property

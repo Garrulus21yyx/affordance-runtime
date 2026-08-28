@@ -4,7 +4,6 @@ import pytest
 
 from affordance_runtime.agent import (
     Abort,
-    AskUser,
     DecisionKind,
     ReadRegionResult,
     RequestActionPage,
@@ -21,6 +20,7 @@ from affordance_runtime.agent import (
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.decisions import FinalResponse
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
+from affordance_runtime.agent.interactions import legacy_interaction_request
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from tests.support.world import fused_world
@@ -37,7 +37,11 @@ def _evaluation(observation_id: str) -> TaskEvaluation:
 
 def test_every_control_decision_uses_the_single_decision_kind_algebra() -> None:
     decisions = (
-        AskUser("context:test", "Which value?"),
+        legacy_interaction_request(
+            context_id="context:test",
+            prompt="Which value?",
+            requested_fields=(),
+        ),
         Abort("context:test", "stop", "user_request"),
     )
     assert tuple(item.kind for item in decisions) == (
@@ -56,7 +60,11 @@ def test_decision_algebra_is_exhaustive_through_step_history_trace_and_snapshot(
             atomic_query="inspect",
         ),
         RequestActionPage("context:test", query="controls"),
-        AskUser("context:test", "Which value?"),
+        legacy_interaction_request(
+            context_id="context:test",
+            prompt="Which value?",
+            requested_fields=(),
+        ),
         ReadRegionResult("context:test", "read_region", {}, {"items": ()}),
         SearchPageContentResult("context:test", "search_page_content", {}, {"items": ()}),
         ToolRejectedResult("context:test", "tool_rejected", {}, {"rejected": True}),

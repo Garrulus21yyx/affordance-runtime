@@ -19,7 +19,20 @@ from affordance_runtime.actions.reconciliation import (
     EffectRevisionDisposition,
     assess_effect_revision,
 )
-from affordance_runtime.agent.decisions import AskUser, FinalResponse
+from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.interactions import (
+    FreeTextResponse,
+    InteractionAdmissionCode,
+    InteractionField,
+    InteractionOption,
+    InteractionRequest,
+    InteractionResponse,
+    PublicArtifact,
+    StructuredFieldsResponse,
+    TextFieldValue,
+    admit_interaction_response,
+    interaction_response_public_value,
+)
 from affordance_runtime.agent.observability import FanoutRunTraceSink, NullRunTraceSink
 from affordance_runtime.agent.run_control import (
     RunControlAdmissionKind,
@@ -149,6 +162,7 @@ class PublicTaskRevisionCommand:
 class PublicSessionCapability(StrEnum):
     START_TASK = "start_task"
     ANSWER_QUESTION = "answer_question"
+    RESPOND_INTERACTION = "respond_interaction"
     APPROVE_ACTION = "approve_action"
     REJECT_ACTION = "reject_action"
     CANCEL_TASK = "cancel_task"
@@ -163,6 +177,7 @@ class PublicSessionCapability(StrEnum):
 class PublicSessionCommandKind(StrEnum):
     START_TASK = "start_task"
     ANSWER_QUESTION = "answer_question"
+    RESPOND_INTERACTION = "respond_interaction"
     APPROVE_ACTION = "approve_action"
     REJECT_ACTION = "reject_action"
     CANCEL_TASK = "cancel_task"
@@ -187,12 +202,16 @@ class PublicSessionCommandCapability:
     def __post_init__(self) -> None:
         interaction_kind = self.kind in {
             PublicSessionCommandKind.ANSWER_QUESTION,
+            PublicSessionCommandKind.RESPOND_INTERACTION,
             PublicSessionCommandKind.APPROVE_ACTION,
             PublicSessionCommandKind.REJECT_ACTION,
         }
         if interaction_kind != (self.interaction_ref is not None):
             raise ValueError("interaction capability ref placement is invalid")
-        if self.kind is PublicSessionCommandKind.ANSWER_QUESTION:
+        if self.kind in {
+            PublicSessionCommandKind.ANSWER_QUESTION,
+            PublicSessionCommandKind.RESPOND_INTERACTION,
+        }:
             if not self.prompt or self.summary or self.risk:
                 raise ValueError("answer capability presentation is invalid")
         elif self.kind in {
@@ -216,6 +235,7 @@ class PublicSessionCommand:
     task: str = ""
     interaction_ref: str = ""
     answer: str = ""
+    response: InteractionResponse | None = None
     checkpoint_id: str = ""
     control_lease_id: str = ""
     revision: PublicTaskRevisionCommand | None = None
@@ -229,11 +249,16 @@ class PublicSessionCommand:
             or not isinstance(self.expected_run_status, PublicSessionStatus)
         ):
             raise ValueError("public session command identity/currentness is invalid")
+        if self.kind is PublicSessionCommandKind.ANSWER_QUESTION:
+            object.__setattr__(self, "kind", PublicSessionCommandKind.RESPOND_INTERACTION)
+        if self.kind is PublicSessionCommandKind.RESPOND_INTERACTION and self.response is None and self.answer.strip():
+            object.__setattr__(self, "response", FreeTextResponse(self.interaction_ref, self.answer))
+            object.__setattr__(self, "answer", "")
         required: dict[PublicSessionCommandKind, tuple[bool, ...]] = {
             PublicSessionCommandKind.START_TASK: (bool(self.task.strip()),),
-            PublicSessionCommandKind.ANSWER_QUESTION: (
+            PublicSessionCommandKind.RESPOND_INTERACTION: (
                 bool(self.interaction_ref.strip()),
-                bool(self.answer.strip()),
+                self.response is not None,
             ),
             PublicSessionCommandKind.APPROVE_ACTION: (bool(self.interaction_ref.strip()),),
             PublicSessionCommandKind.REJECT_ACTION: (bool(self.interaction_ref.strip()),),
@@ -244,6 +269,11 @@ class PublicSessionCommand:
         }
         if not all(required.get(self.kind, (True,))):
             raise ValueError("public session command payload is incomplete")
+        if self.response is not None and (
+            self.kind is not PublicSessionCommandKind.RESPOND_INTERACTION
+            or self.response.request_id != self.interaction_ref
+        ):
+            raise ValueError("interaction response placement is invalid")
         if self.kind is PublicSessionCommandKind.REVISE_TASK:
             if self.revision is None or self.revision.command_id != self.command_id:
                 raise ValueError("public revision command identity is invalid")
@@ -263,6 +293,8 @@ class PublicSessionCommand:
             "schema_version": PUBLIC_SESSION_V3_SCHEMA_VERSION,
             "task": self.task,
         }
+        if self.response is not None:
+            payload["response"] = interaction_response_public_value(self.response)
         if self.revision is not None:
             payload["revision_digest"] = self.revision.payload_digest
         canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -286,6 +318,7 @@ PublicRejectedCode: TypeAlias = Literal[
     "command_persistence_failed",
     "command_projection_failed",
     "internal_contract_failure",
+    "interaction_response_invalid",
 ]
 
 
@@ -325,7 +358,9 @@ PublicCommandAdmission: TypeAlias = (
 )
 
 
-PUBLIC_SESSION_CAPABILITIES = frozenset(PublicSessionCapability)
+PUBLIC_SESSION_CAPABILITIES = frozenset(
+    item for item in PublicSessionCapability if item is not PublicSessionCapability.ANSWER_QUESTION
+)
 BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
     PublicSessionCapability.PAUSE_TASK,
     PublicSessionCapability.RESUME_TASK,
@@ -341,10 +376,21 @@ class PublicSessionControlOwner(StrEnum):
 
 
 @dataclass(frozen=True)
-class PublicPendingQuestion:
-    interrupt_id: str
+class PublicInteractionRequest:
+    request_id: str
     prompt: str
-    requested_fields: tuple[str, ...] = ()
+    response_kind: str
+    fields: tuple[InteractionField, ...] = ()
+    options: tuple[InteractionOption, ...] = ()
+    public_intent: str = ""
+
+    @property
+    def interrupt_id(self) -> str:
+        return self.request_id
+
+    @property
+    def requested_fields(self) -> tuple[str, ...]:
+        return tuple(item.label for item in self.fields)
 
 
 @dataclass(frozen=True)
@@ -360,6 +406,7 @@ class PublicCompletion:
     code: str
     message: str
     evidence_refs: tuple[str, ...] = ()
+    artifact: PublicArtifact | None = None
 
 
 @dataclass(frozen=True)
@@ -413,7 +460,7 @@ class PublicRuntimeSessionSnapshot:
     task_id: str | None = None
     task_revision: int = 0
     task_text: str | None = None
-    pending_question: PublicPendingQuestion | None = None
+    pending_interaction: PublicInteractionRequest | None = None
     pending_confirmation: PublicPendingConfirmation | None = None
     completion: PublicCompletion | None = None
     progress: tuple[PublicProgressStep, ...] = ()
@@ -424,6 +471,12 @@ class PublicRuntimeSessionSnapshot:
     control_owner: PublicSessionControlOwner = PublicSessionControlOwner.AGENT
     control_lease_id: str | None = None
     schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
+
+    @property
+    def pending_question(self) -> PublicInteractionRequest | None:
+        """Read-only compatibility projection for pre-v4 Shell adapters."""
+
+        return self.pending_interaction
 
 
 @dataclass(frozen=True)
@@ -494,6 +547,8 @@ class PublicRuntimeSessionHandle(Protocol):
     async def admits_surface_input(self, control_lease_id: str) -> bool: ...
     async def inspect_live_checkpoint(self, checkpoint_id: str) -> LiveCheckpointAdmission: ...
     async def start(self, instruction: str) -> PublicRuntimeSessionSnapshot: ...
+    async def respond(self, response: InteractionResponse) -> PublicRuntimeSessionSnapshot: ...
+
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot: ...
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
     async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
@@ -631,7 +686,7 @@ class TargetRuntimeSession:
     _admitted: ReadyTask | None = field(default=None, init=False, repr=False)
     _state: RunState | None = field(default=None, init=False, repr=False)
     _status: PublicSessionStatus = field(default=PublicSessionStatus.IDLE, init=False, repr=False)
-    _intake_question: PublicPendingQuestion | None = field(default=None, init=False, repr=False)
+    _intake_question: PublicInteractionRequest | None = field(default=None, init=False, repr=False)
     _failure: PublicCompletion | None = field(default=None, init=False, repr=False)
     _checkpoint_id: str | None = field(default=None, init=False, repr=False)
     _resume_eligible: bool = field(default=False, init=False, repr=False)
@@ -730,8 +785,9 @@ class TargetRuntimeSession:
     ) -> PublicCommandAdmission:
         if command.kind is PublicSessionCommandKind.START_TASK:
             snapshot = await self.start(command.task)
-        elif command.kind is PublicSessionCommandKind.ANSWER_QUESTION:
-            snapshot = await self.answer(command.interaction_ref, command.answer)
+        elif command.kind is PublicSessionCommandKind.RESPOND_INTERACTION:
+            assert command.response is not None
+            snapshot = await self.respond(command.response)
         elif command.kind is PublicSessionCommandKind.APPROVE_ACTION:
             snapshot = await self.confirm(command.interaction_ref, approved=True)
         elif command.kind is PublicSessionCommandKind.REJECT_ACTION:
@@ -803,19 +859,28 @@ class TargetRuntimeSession:
             )
             return self._project()
 
-    async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot:
+    async def respond(self, response: InteractionResponse) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
             self._require_agent_control()
             self._require_open()
-            pending = self._project().pending_question
-            if pending is None or pending.interrupt_id != interrupt_id:
+            pending_step = self._state.last_step if self._state is not None else None
+            pending = pending_step.decision if pending_step is not None else None
+            if not isinstance(pending, InteractionRequest):
                 raise PublicSessionConflict("interrupt_mismatch", self._project())
+            if response.request_id != pending.request_id:
+                raise PublicSessionConflict("interrupt_mismatch", self._project())
+            admission = admit_interaction_response(pending, response)
+            if not admission.admitted:
+                raise PublicSessionConflict(
+                    admission.rejection_code.value if admission.rejection_code is not None else "interaction_invalid",
+                    self._project(),
+                )
             if self._request is None or self._state is None:
                 raise PublicSessionConflict("run_not_resumable", self._project())
             boundary = self._request.boundary
             inputs = dict(boundary.inputs)
             responses = list(inputs.get("user_responses", ()))
-            responses.append({"interrupt_id": interrupt_id, "answer": answer})
+            responses.append(interaction_response_public_value(response))
             revised_boundary = replace(boundary, inputs={**inputs, "user_responses": responses})
             self._request = replace(
                 self._request,
@@ -827,6 +892,25 @@ class TargetRuntimeSession:
             self._emit("RUN_STARTED")
             self._active = asyncio.create_task(self._run_answer(), name=f"runtime-resume:{self.session_id}")
             return self._project()
+
+    async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot:
+        """Compatibility adapter into the canonical free-text response contract."""
+        pending_step = self._state.last_step if self._state is not None else None
+        pending = pending_step.decision if pending_step is not None else None
+        if (
+            isinstance(pending, InteractionRequest)
+            and pending.request_id == interrupt_id
+            and pending.response_kind.value == "structured_fields"
+            and len(pending.fields) == 1
+            and pending.fields[0].kind.value == "text"
+        ):
+            return await self.respond(
+                StructuredFieldsResponse(
+                    interrupt_id,
+                    (TextFieldValue(pending.fields[0].field_id, answer),),
+                )
+            )
+        return await self.respond(FreeTextResponse(interrupt_id, answer))
 
     async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot:
         async with self._lock:
@@ -1675,18 +1759,22 @@ class TargetRuntimeSession:
         status = self._status if self._active is not None or state is None else _public_status(state.status)
         if self._control_owner is PublicSessionControlOwner.USER or self._control_return_in_progress:
             status = PublicSessionStatus.PAUSED
-        pending_question = self._intake_question
+        pending_interaction = self._intake_question
         pending_confirmation = None
         if state is not None and state.last_step is not None:
             if (
                 self._control_owner is PublicSessionControlOwner.AGENT
                 and status is PublicSessionStatus.WAITING_USER
-                and isinstance(state.last_step.decision, AskUser)
+                and isinstance(state.last_step.decision, InteractionRequest)
             ):
                 decision = state.last_step.decision
-                identity = decision.tool_call_id or decision.context_id
-                pending_question = PublicPendingQuestion(
-                    f"ask:{identity}", decision.question, decision.requested_fields
+                pending_interaction = PublicInteractionRequest(
+                    decision.request_id,
+                    decision.prompt,
+                    decision.response_kind.value,
+                    decision.fields,
+                    decision.options,
+                    decision.public_intent,
                 )
             if (
                 self._control_owner is PublicSessionControlOwner.AGENT
@@ -1759,7 +1847,7 @@ class TargetRuntimeSession:
                 checkpoint_store_available=self.checkpoint_store is not None,
                 checkpoint_id=self._checkpoint_id,
                 resume_eligible=public_resume_eligible,
-                pending_question=pending_question,
+                pending_interaction=pending_interaction,
                 pending_confirmation=pending_confirmation,
                 control_owner=self._control_owner,
                 control_return_in_progress=self._control_return_in_progress,
@@ -1769,7 +1857,7 @@ class TargetRuntimeSession:
             task_id=task.task_id if task is not None else (request.request_id if request else None),
             task_revision=task.revision if task is not None else (request.revision if request else 0),
             task_text=task.instruction if task is not None else (request.instruction if request else None),
-            pending_question=pending_question,
+            pending_interaction=pending_interaction,
             pending_confirmation=pending_confirmation,
             completion=completion,
             progress=tuple(self._progress),
@@ -2179,6 +2267,13 @@ def _convert_public_session_conflict(
             "command_persistence_failed",
             conflict.snapshot,
         )
+    if code in {item.value for item in InteractionAdmissionCode}:
+        return PublicCommandRejected(
+            "rejected",
+            command_id,
+            "interaction_response_invalid",
+            conflict.snapshot,
+        )
     if code in {
         "control_boundary_failed",
         "revision_pause_failed",
@@ -2204,7 +2299,7 @@ def _v3_command_capabilities(
     checkpoint_store_available: bool,
     checkpoint_id: str | None,
     resume_eligible: bool,
-    pending_question: PublicPendingQuestion | None,
+    pending_interaction: PublicInteractionRequest | None,
     pending_confirmation: PublicPendingConfirmation | None,
     control_owner: PublicSessionControlOwner,
     control_return_in_progress: bool,
@@ -2231,12 +2326,12 @@ def _v3_command_capabilities(
         PublicSessionStatus.PAUSED,
     }:
         capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CANCEL_TASK))
-    if pending_question is not None and status is PublicSessionStatus.WAITING_USER:
+    if pending_interaction is not None and status is PublicSessionStatus.WAITING_USER:
         capabilities.append(
             PublicSessionCommandCapability(
-                PublicSessionCommandKind.ANSWER_QUESTION,
-                interaction_ref=pending_question.interrupt_id,
-                prompt=pending_question.prompt,
+                PublicSessionCommandKind.RESPOND_INTERACTION,
+                interaction_ref=pending_interaction.request_id,
+                prompt=pending_interaction.prompt,
             )
         )
     if pending_confirmation is not None and status is PublicSessionStatus.WAITING_CONFIRMATION:
@@ -2388,7 +2483,8 @@ def _completion(state: RunState | None, status: PublicSessionStatus) -> PublicCo
     if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_SUCCESS:
         last_decision = state.last_step.decision if state.last_step is not None else None
         message = last_decision.content if isinstance(last_decision, FinalResponse) else evaluation.reason
-        return PublicCompletion("success", outcome.code, message, outcome.evidence_refs)
+        artifact = state.last_step.public_artifact if state.last_step is not None else None
+        return PublicCompletion("success", outcome.code, message, outcome.evidence_refs, artifact)
     if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_FAILURE:
         return PublicCompletion("failure", outcome.code, evaluation.reason, outcome.evidence_refs)
     failure = state.runtime_failure

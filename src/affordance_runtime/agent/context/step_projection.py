@@ -20,14 +20,15 @@ from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.decisions import (
     Abort,
     AgentDecision,
-    AskUser,
     FinalResponse,
+    InteractionRequestDraft,
     LocalToolResult,
     RequestActionPage,
     RequestObservation,
     SelectAction,
     Wait,
 )
+from affordance_runtime.agent.interactions import InteractionRequest
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import ActionOutcome
 
@@ -48,7 +49,8 @@ def project_step_result(
             SelectAction,
             RequestObservation,
             RequestActionPage,
-            AskUser,
+            InteractionRequestDraft,
+            InteractionRequest,
             LocalToolResult,
             FinalResponse,
             Wait,
@@ -210,7 +212,7 @@ def _historical_value(value: object) -> object:
     return sanitize_history_value(value)
 
 
-def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
+def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Mapping[str, object]:
     if isinstance(decision, RequestObservation):
         return {
             "query_id": _bounded(decision.query_id),
@@ -223,17 +225,37 @@ def project_decision_summary(decision: AgentDecision) -> Mapping[str, object]:
             "public_intent": _bounded(decision.public_intent),
         }
     if isinstance(decision, RequestActionPage):
-        return {"query": decision.query}
-    if isinstance(decision, AskUser):
-        return {"question": decision.question, "requested_fields": decision.requested_fields}
+        return {"query": decision.query, "public_intent": _bounded(decision.public_intent)}
+    if isinstance(decision, InteractionRequest):
+        return {
+            "request_id": decision.request_id,
+            "prompt": decision.prompt,
+            "response_kind": decision.response_kind.value,
+            "public_intent": _bounded(decision.public_intent),
+        }
+    if isinstance(decision, InteractionRequestDraft):
+        return {
+            "prompt": decision.prompt,
+            "response_kind": decision.response_kind.value,
+            "public_intent": _bounded(decision.public_intent),
+            "committed": False,
+        }
     if isinstance(decision, LocalToolResult):
         return project_public_value(decision.arguments)
     if isinstance(decision, FinalResponse):
-        return {"content": _bounded(decision.content)}
+        return {"content": _bounded(decision.content), "public_intent": _bounded(decision.public_intent)}
     if isinstance(decision, Wait):
-        return {"reason": decision.reason, "max_wait_ms": decision.max_wait_ms}
+        return {
+            "reason": decision.reason,
+            "max_wait_ms": decision.max_wait_ms,
+            "public_intent": _bounded(decision.public_intent),
+        }
     if isinstance(decision, Abort):
-        return {"category": decision.category, "reason": decision.reason}
+        return {
+            "category": decision.category,
+            "reason": decision.reason,
+            "public_intent": _bounded(decision.public_intent),
+        }
     return {}
 
 

@@ -20,6 +20,8 @@ from affordance_runtime.agent.decisions import (
     AskUser,
     DecisionKind,
     FinalResponse,
+    InteractionRequestDraft,
+    InteractionResponseKind,
     LocalToolResult,
     ReadRegionResult,
     RequestActionPage,
@@ -28,6 +30,11 @@ from affordance_runtime.agent.decisions import (
     SelectAction,
     ToolRejectedResult,
     Wait,
+)
+from affordance_runtime.agent.interactions import (
+    InteractionRequest,
+    InteractionResponse,
+    PublicArtifact,
 )
 from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.result_code import AgentFailureCode
@@ -50,11 +57,11 @@ from affordance_runtime.agent.workspace import (
 __all__ = [
     "ALL_DECISION_CAPABILITIES",
     "Abort",
+    "AskUser",
     "AgentFailureCode",
     "AgentLoopProfile",
     "AgentWorkspace",
     "ActivitySummary",
-    "AskUser",
     "LocalToolResult",
     "CoreAgentLoop",
     "CoreLoopStartError",
@@ -66,6 +73,10 @@ __all__ = [
     "FailureKind",
     "FailureStage",
     "FinalResponse",
+    "InteractionRequest",
+    "InteractionRequestDraft",
+    "InteractionResponse",
+    "InteractionResponseKind",
     "GROUNDED_ACTION_DECISION_CAPABILITIES",
     "RequestActionPage",
     "RequestObservation",
@@ -75,6 +86,7 @@ __all__ = [
     "RunStatus",
     "RuntimeFailure",
     "PublicWorldDelta",
+    "PublicArtifact",
     "SelectAction",
     "SearchPageContentResult",
     "SemanticEvent",

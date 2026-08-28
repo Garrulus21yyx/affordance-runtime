@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, assert_never
 
 from affordance_runtime.agent.decisions import (
     Abort,
-    AskUser,
     FinalResponse,
+    InteractionRequestDraft,
     LocalToolResult,
     ReadRegionResult,
     RequestActionPage,
@@ -22,6 +22,7 @@ from affordance_runtime.agent.decisions import (
     ToolRejectedResult,
     Wait,
 )
+from affordance_runtime.agent.interactions import InteractionRequest
 from affordance_runtime.agent.policy import PolicyFailure
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.observation_outcomes import (
@@ -46,7 +47,8 @@ def committed_tool_call_id(step: StepResult) -> str:
             SelectAction,
             RequestObservation,
             RequestActionPage,
-            AskUser,
+            InteractionRequestDraft,
+            InteractionRequest,
             ReadRegionResult,
             SearchPageContentResult,
             ToolRejectedResult,
@@ -175,8 +177,25 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
             common.update({"kind": "discovery", "matches": ()})
             return freeze_json(common)
         return freeze_json(result.to_public_value())
-    if isinstance(decision, AskUser):
-        common.update({"kind": "needs_input", "requested_fields": decision.requested_fields})
+    if isinstance(decision, InteractionRequest):
+        common.update(
+            {
+                "kind": "needs_input",
+                "request_id": decision.request_id,
+                "response_kind": decision.response_kind.value,
+                "field_ids": tuple(item.field_id for item in decision.fields),
+                "option_ids": tuple(item.option_id for item in decision.options),
+            }
+        )
+        return freeze_json(common)
+    if isinstance(decision, InteractionRequestDraft):
+        common.update(
+            {
+                "kind": "needs_input",
+                "response_kind": decision.response_kind.value,
+                "committed": False,
+            }
+        )
         return freeze_json(common)
     if isinstance(decision, LocalToolResult):
         return freeze_json(decision.result)

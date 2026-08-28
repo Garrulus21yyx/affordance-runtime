@@ -667,7 +667,7 @@ async def test_pause_publishes_only_after_atomic_checkpoint_and_command_outcome(
     payload = json.loads(checkpoint.to_json())
     assert payload["run"]["status"] == "paused"
     assert payload["run"]["status_before_pause"] == "waiting_user"
-    assert payload["last_step"]["pending_question"]["identity"]
+    assert payload["last_step"]["pending_interaction"]["request_id"].startswith("interaction:")
     assert payload["model_history"] == {"format": "unavailable", "messages": []}
     assert "current_world" not in checkpoint.to_json()
     assert "full_world" not in checkpoint.to_json()
@@ -1745,7 +1745,7 @@ async def test_revision_compiler_receives_shell_language_and_runtime_pending_fac
     request = compiler.requests[0]
     assert request.conversation == conversation
     assert request.text == "用第二个"
-    assert request.runtime_context.pending_question_id.startswith("ask:")
+    assert request.runtime_context.pending_question_id.startswith("interaction:")
     assert request.runtime_context.pending_question == "Which account should I use?"
     assert revised.pending_question is None
     await handle.close()

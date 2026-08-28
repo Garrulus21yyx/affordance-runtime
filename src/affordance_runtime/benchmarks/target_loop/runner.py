@@ -44,6 +44,11 @@ from affordance_runtime.benchmarks.target_loop.outcome_checkpoint import (
     OfficialOutcomeCheckpointRecorder,
     OfficialOutcomePersistenceError,
 )
+from affordance_runtime.benchmarks.target_loop.presentation_sidecar import (
+    PresentationReportingStatus,
+    project_case_presentation,
+    report_case_presentation,
+)
 from affordance_runtime.benchmarks.target_loop.result_store import (
     CaseLifecyclePhase,
     CaseOutcomeRecord,
@@ -614,6 +619,19 @@ async def _run_case(
                     # The earlier committed payload remains regenerable; this
                     # projection-update failure cannot erase it.
                     pass
+        presentation = project_case_presentation(
+            case.case_id,
+            result if isinstance(result, RunState) else None,
+        )
+        presentation_reporting = report_case_presentation(
+            result_store,
+            presentation,
+            trace_dir,
+        )
+        if presentation_reporting.status is PresentationReportingStatus.FAILED:
+            # Presentation reporting is additive evidence. It cannot alter the
+            # native evaluator result or reclassify a GUI case outcome.
+            instrumentation.set_custom_metric("presentation_sidecar_reporting_failures", 1)
     final_commit_disposition = FinalCommitDisposition.NOT_ATTEMPTED
     if result_store is not None and cleanup_record is not None:
         final_record = replace(

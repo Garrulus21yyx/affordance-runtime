@@ -23,7 +23,13 @@ from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
     AgentTurnView,
 )
-from affordance_runtime.agent.decisions import AskUser, DecisionKind, SelectAction
+from affordance_runtime.agent.decisions import DecisionKind, SelectAction
+from affordance_runtime.agent.interactions import (
+    InteractionRequest,
+    interaction_request_public_value,
+    legacy_interaction_request,
+    restore_interaction_request_public_value,
+)
 from affordance_runtime.agent.run_control import (
     RunControlBoundary,
     RunControlKind,
@@ -62,10 +68,11 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v3"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v4"
 _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
     {
         "affordance-runtime.checkpoint.v2",
+        "affordance-runtime.checkpoint.v3",
         RUNTIME_CHECKPOINT_SCHEMA_VERSION,
     }
 )
@@ -986,12 +993,8 @@ def _last_step_payload(state: RunState) -> dict[str, object] | None:
             "reason": step.action_outcome.reason,
             "evidence_refs": list(step.action_outcome.evidence_refs),
         }
-    if hasattr(decision, "question"):
-        payload["pending_question"] = {
-            "identity": str(getattr(decision, "tool_call_id", "") or getattr(decision, "context_id", "")),
-            "question": str(getattr(decision, "question", "")),
-            "requested_fields": list(getattr(decision, "requested_fields", ())),
-        }
+    if isinstance(decision, InteractionRequest):
+        payload["pending_interaction"] = interaction_request_public_value(decision)
     if step.confirmation is not None:
         payload["pending_confirmation"] = {
             "identity": step.confirmation.subject_id,
@@ -1205,20 +1208,23 @@ def _restore_historical_target(payload: object) -> AgentHistoricalTargetView | N
 def _restore_pending_step(
     status: RunStatus,
     payload: Mapping[str, object] | None,
-) -> tuple[AskUser | SelectAction | None, RiskAssessment | None, str]:
+) -> tuple[InteractionRequest | SelectAction | None, RiskAssessment | None, str]:
     if payload is None:
         if status in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}:
             raise RuntimeCheckpointError("checkpoint_pending_step_missing")
         return None, None, "checkpoint_restored"
     feedback = str(payload.get("feedback", "checkpoint_restored"))
     if status is RunStatus.WAITING_USER:
+        current = payload.get("pending_interaction")
+        if current is not None:
+            return restore_interaction_request_public_value(current), None, feedback
         pending = _mapping(payload["pending_question"])
         return (
-            AskUser(
-                str(payload["context_id"]),
-                str(pending["question"]),
-                tuple(_string_sequence(pending.get("requested_fields", []))),
-                str(payload.get("tool_call_id", "")),
+            legacy_interaction_request(
+                context_id=str(payload["context_id"]),
+                prompt=str(pending["question"]),
+                requested_fields=tuple(_string_sequence(pending.get("requested_fields", []))),
+                tool_call_id=str(payload.get("tool_call_id", "")),
             ),
             None,
             feedback,

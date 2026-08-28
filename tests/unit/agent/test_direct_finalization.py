@@ -5,7 +5,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from affordance_runtime.agent.decisions import FinalResponse
+from affordance_runtime.agent.decisions import (
+    FinalResponse,
+    PublicArtifactDraft,
+    PublicArtifactItemDraft,
+)
 from affordance_runtime.agent.finalization import FinalizationProtocolResult
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import AgentDecisionPorts
@@ -40,11 +44,12 @@ from tests.support.observation_acquisition import acquired_acquisition
 @dataclass
 class FinalResponsePolicy:
     content: str
+    artifact: PublicArtifactDraft | None = None
     calls: int = 0
 
     async def decide(self, context):
         self.calls += 1
-        return FinalResponse(context.context_id, self.content)
+        return FinalResponse(context.context_id, self.content, artifact=self.artifact)
 
 
 @dataclass
@@ -150,6 +155,50 @@ def test_final_response_sends_once_then_uses_one_fresh_native_evaluation(dispatc
     assert state.finalization.stop_send_count == 1
     assert state.finalization.post_stop_capture_count == 1
     assert state.finalization.native_evaluator_count == 1
+
+
+def test_public_artifact_sidecar_does_not_change_stop_bytes_or_native_evaluation_order() -> None:
+    before = shared_world("artifact-before", False)
+    after = shared_world("artifact-after", True)
+    artifact = PublicArtifactDraft(
+        "Result",
+        items=(
+            PublicArtifactItemDraft(
+                "Current state",
+                evidence_refs=("fact:artifact-before:enabled",),
+            ),
+        ),
+        evidence_refs=("fact:artifact-before:enabled",),
+    )
+
+    def run(draft):
+        evaluator = TerminalEvaluator(after.observation_id)
+        environment = FinalizingEnvironment(
+            ScriptedEnvironment(before),
+            after,
+            DispatchStatus.SENT,
+        )
+        runtime = TargetRuntime(
+            AgentDecisionPorts(FinalResponsePolicy("same evaluator bytes", draft)),
+            SharedActionOutcomeProjector(),
+            evaluator,
+            goal_compiler=NotRequiredGoalCompiler("artifact_parity_test"),
+        )
+        state = asyncio.run(
+            runtime.run_task(environment, TaskGoal("task:artifact-parity", "Return the answer."))
+        )
+        return state, environment.finalize_calls, evaluator.calls
+
+    plain_state, plain_bytes, plain_order = run(None)
+    artifact_state, artifact_bytes, artifact_order = run(artifact)
+
+    assert plain_state.status is artifact_state.status is RunStatus.DONE
+    assert plain_bytes == artifact_bytes == ["same evaluator bytes"]
+    assert plain_order == artifact_order == [before.observation_id, after.observation_id]
+    assert plain_state.last_step is not None and plain_state.last_step.public_artifact is None
+    assert artifact_state.last_step is not None
+    assert artifact_state.last_step.public_artifact is not None
+    assert artifact_state.last_step.public_artifact.links == ()
 
 
 def test_invalid_final_response_representation_never_sends_stop() -> None:

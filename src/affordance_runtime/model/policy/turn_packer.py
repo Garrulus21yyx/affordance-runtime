@@ -20,6 +20,7 @@ from affordance_runtime.model.policy.grounded_tool_catalog import compile_ground
 from affordance_runtime.model.policy.grounded_tool_contracts import GroundedToolCatalog
 from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
+    InteractionToolExposureProfile,
     ObservationToolExposureProfile,
 )
 from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
@@ -72,6 +73,7 @@ class TurnPacker:
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
+        interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY,
         request_timeout_s: float | None = None,
         history_messages: tuple[object, ...] = (),
         pending_tool_call_id: str = "",
@@ -98,6 +100,7 @@ class TurnPacker:
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
             observation_tool_profile=observation_tool_profile,
+            interaction_tool_profile=interaction_tool_profile,
             request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=0,
@@ -161,6 +164,7 @@ class TurnPacker:
                 supports_multimodal=supports_multimodal,
                 perception_profile=perception_profile,
                 observation_tool_profile=observation_tool_profile,
+                interaction_tool_profile=interaction_tool_profile,
                 request_timeout_s=request_timeout_s,
                 admitted_records=required,
                 backoff_count=0,
@@ -195,6 +199,7 @@ class TurnPacker:
                         supports_multimodal=supports_multimodal,
                         perception_profile=perception_profile,
                         observation_tool_profile=observation_tool_profile,
+                        interaction_tool_profile=interaction_tool_profile,
                         request_timeout_s=request_timeout_s,
                         admitted_records=tentative,
                         backoff_count=0,
@@ -230,6 +235,7 @@ class TurnPacker:
             supports_multimodal=supports_multimodal,
             perception_profile=perception_profile,
             observation_tool_profile=observation_tool_profile,
+            interaction_tool_profile=interaction_tool_profile,
             request_timeout_s=request_timeout_s,
             admitted_records=admitted_counts,
             backoff_count=backoffs,
@@ -259,6 +265,7 @@ class TurnPacker:
         supports_multimodal: bool,
         perception_profile: DecisionPerceptionProfile,
         observation_tool_profile: ObservationToolExposureProfile,
+        interaction_tool_profile: InteractionToolExposureProfile,
         request_timeout_s: float | None,
         admitted_records: dict[str, int],
         backoff_count: int,
@@ -280,6 +287,7 @@ class TurnPacker:
             request.agent_context,
             delivery,
             observation_tool_profile,
+            interaction_tool_profile,
         )
         envelope = binder.bind(
             request,

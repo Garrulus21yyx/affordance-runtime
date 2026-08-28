@@ -6,7 +6,6 @@ from affordance_runtime.actions import ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.decisions import (
     Abort,
-    AskUser,
     ReadRegionResult,
     RequestActionPage,
     RequestObservation,
@@ -15,6 +14,7 @@ from affordance_runtime.agent.decisions import (
     ToolRejectedResult,
     Wait,
 )
+from affordance_runtime.agent.interactions import legacy_interaction_request
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
@@ -68,7 +68,12 @@ def _step(decision, *, waited_ms: int = 0) -> StepResult:
             tool_call_id="call:observe",
         ),
         RequestActionPage("context:fixture", "query", tool_call_id="call:discover"),
-        AskUser("context:fixture", "Which value?", ("value",), "call:ask"),
+        legacy_interaction_request(
+            context_id="context:fixture",
+            prompt="Which value?",
+            requested_fields=("value",),
+            tool_call_id="call:ask",
+        ),
         Wait("context:fixture", "settle", 100, "call:wait"),
         Abort("context:fixture", "stop", "user_request", "call:abort"),
     ),

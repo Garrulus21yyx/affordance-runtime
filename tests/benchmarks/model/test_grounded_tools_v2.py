@@ -18,6 +18,8 @@ from affordance_runtime.agent import (
     Abort,
     AskUser,
     FinalResponse,
+    InteractionRequestDraft,
+    InteractionResponseKind,
     LocalToolResult,
     ReadRegionResult,
     RequestActionPage,
@@ -71,6 +73,7 @@ from affordance_runtime.model.policy.grounded_tool_rejection import (
 )
 from affordance_runtime.model.policy.perception import (
     DecisionPerceptionProfile,
+    InteractionToolExposureProfile,
     ObservationToolExposureProfile,
 )
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
@@ -1006,6 +1009,8 @@ def test_grounded_catalog_is_only_tools_and_private_bindings() -> None:
         "serialized_bytes",
         "observation_tool_profile_id",
         "observation_tool_profile_digest",
+        "interaction_tool_profile_id",
+        "interaction_tool_profile_digest",
     }
     assert tuple(item.spec for item in catalog.tools) == catalog.specs
     assert tuple(item.binding for item in catalog.tools) == catalog.bindings
@@ -1200,7 +1205,7 @@ def test_every_registered_local_tool_resolver_produces_its_contract_decision_typ
         GroundedLocalToolName.LIST_REGIONS.value: ReadRegionResult,
         GroundedLocalToolName.FIND_CONTROLS.value: RequestActionPage,
         GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value: FinalResponse,
-        GroundedLocalToolName.ASK_USER.value: AskUser,
+        GroundedLocalToolName.ASK_USER.value: InteractionRequestDraft,
         GroundedLocalToolName.WAIT.value: Wait,
         GroundedLocalToolName.ABORT.value: Abort,
     }
@@ -1227,6 +1232,73 @@ def test_every_registered_local_tool_resolver_produces_its_contract_decision_typ
         assert type(resolution.decision) is expected[spec.name]
         if isinstance(resolution.decision, LocalToolResult):
             assert resolution.decision.result
+
+
+def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding() -> None:
+    context = _context()
+    delivery = _delivery(context)
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+        ObservationToolExposureProfile.COMPATIBILITY,
+        InteractionToolExposureProfile.STRUCTURED,
+    )
+    compatibility = _compile_catalog(context)
+    structured_ask = next(item for item in catalog.specs if item.name == "ask_user")
+    compatibility_ask = next(item for item in compatibility.specs if item.name == "ask_user")
+
+    assert "oneOf" in structured_ask.input_schema
+    assert "question" in compatibility_ask.input_schema["properties"]
+    assert catalog.interaction_tool_profile_id == "structured-interaction.v1"
+    outcome = _resolve_catalog_call(
+        catalog,
+        ToolCall(
+            "ask_user",
+            {
+                "prompt": "Choose a visible candidate.",
+                "response_kind": "single_select",
+                "option_drafts": [
+                    {"title": "First", "attributes": [{"label": "rank", "value": "1"}]},
+                    {"title": "Second", "uncertainties": ["visual state is unknown"]},
+                ],
+                "public_intent": "I need your choice before continuing.",
+            },
+            "call:structured-interaction",
+        ),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(outcome.decision, InteractionRequestDraft)
+    assert outcome.decision.response_kind is InteractionResponseKind.SINGLE_SELECT
+    assert tuple(item.title for item in outcome.decision.option_drafts) == ("First", "Second")
+    assert outcome.decision.public_intent == "I need your choice before continuing."
+
+
+def test_structured_profile_adds_sidecars_without_changing_compatibility_schema() -> None:
+    context = _context()
+    delivery = _delivery(context)
+    structured = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        delivery,
+        ObservationToolExposureProfile.COMPATIBILITY,
+        InteractionToolExposureProfile.STRUCTURED,
+    )
+    compatibility = _compile_catalog(context)
+
+    compatible_final = next(item for item in compatibility.specs if item.name == "submit_final_response")
+    structured_final = next(item for item in structured.specs if item.name == "submit_final_response")
+    compatible_activate = next(item for item in compatibility.specs if item.name == "activate")
+    structured_activate = next(item for item in structured.specs if item.name == "activate")
+    assert set(compatible_final.input_schema["properties"]) == {"content"}
+    assert set(structured_final.input_schema["properties"]) == {
+        "content",
+        "artifact",
+        "public_intent",
+    }
+    assert "public_intent" not in compatible_activate.input_schema["properties"]
+    assert "public_intent" in structured_activate.input_schema["properties"]
 
 
 def test_readable_matches_attach_current_grounding_without_changing_discovery_authority() -> None:

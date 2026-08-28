@@ -6,10 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from affordance_runtime.agent.interactions import StructuredFieldsResponse, TextFieldValue
 from affordance_runtime.app import compose_target_runtime
 from affordance_runtime.app.public_session import (
     PublicCommandAccepted,
     PublicCommandConflict,
+    PublicCommandRejected,
     PublicSessionCapability,
     PublicSessionCommand,
     PublicSessionCommandKind,
@@ -353,12 +355,45 @@ async def test_v3_runtime_command_capabilities_are_state_correct_unique_and_ref_
     answer = next(
         capability
         for capability in waiting.command_capabilities
-        if capability.kind is PublicSessionCommandKind.ANSWER_QUESTION
+        if capability.kind is PublicSessionCommandKind.RESPOND_INTERACTION
     )
-    assert waiting.pending_question is not None
-    assert answer.interaction_ref == waiting.pending_question.interrupt_id
-    assert answer.prompt == waiting.pending_question.prompt
+    assert waiting.pending_interaction is not None
+    assert answer.interaction_ref == waiting.pending_interaction.request_id
+    assert answer.prompt == waiting.pending_interaction.prompt
     assert len({capability.kind for capability in waiting.command_capabilities}) == len(waiting.command_capabilities)
+    await handle.close()
+
+
+@pytest.mark.asyncio
+async def test_interaction_response_is_admitted_against_exact_pending_contract_before_resume() -> None:
+    factory = TargetRuntimeSessionFactory(
+        lambda _session_id: _runtime(),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
+    )
+    handle = await factory.open("session:typed-response", datetime.now(UTC) + timedelta(minutes=5))
+    await handle.start("Inspect the selected account")
+    waiting = await _wait_for_status(handle, PublicSessionStatus.WAITING_USER)
+    assert waiting.pending_interaction is not None
+
+    before = waiting
+    admission = await handle.admit(
+        PublicSessionCommand(
+            command_id="response:invalid-field",
+            kind=PublicSessionCommandKind.RESPOND_INTERACTION,
+            expected_task_revision=waiting.task_revision,
+            expected_run_status=waiting.status,
+            interaction_ref=waiting.pending_interaction.request_id,
+            response=StructuredFieldsResponse(
+                waiting.pending_interaction.request_id,
+                (TextFieldValue("field:00000000000000000000000000000000", "primary"),),
+            ),
+        )
+    )
+
+    assert isinstance(admission, PublicCommandRejected)
+    assert admission.code == "interaction_response_invalid"
+    assert admission.snapshot == before
+    assert (await handle.snapshot()).status is PublicSessionStatus.WAITING_USER
     await handle.close()
 
 
