@@ -157,6 +157,11 @@ settings. Filtering is not an ActionPolicy tool and never becomes a second task-
   now calls only the point grounder; entity discovery remains a separate ActionPolicy decision. A post-commit audit
   caught and removed an accidental media-only entity-discovery applicability relaxation before live rerun; complete
   structural projection continues to suppress that purpose, and the provider-free regression records the boundary.
+- 2026-08-28: Clean live run `phase7-clean4` proved the point contract no longer accepted the counting question, but
+  falsified the generic ref domain by admitting `text_in_image` over ordinary generic/control refs; the ActionPolicy
+  used OCR to guess `17` and native evaluation failed. Catalog now intersects each purpose with a stable current-World
+  ref domain, so OCR accepts only image/canvas/graphics-document-like pixel containers. No TaskGoal parser, keyword
+  filter, CoreLoop branch, or provider-side semantic rewrite was added.
 
 ## Files changed by this plan
 

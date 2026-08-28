@@ -708,6 +708,14 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
 
 def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> None:
     base = _context()
+    pixel_ref = base.grounding.entities[0].ref
+    grounding = replace(
+        base.grounding,
+        entities=(
+            replace(base.grounding.entities[0], role="image"),
+            *base.grounding.entities[1:],
+        ),
+    )
     purposes = (
         "entity_discovery",
         "visual_property",
@@ -719,6 +727,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     )
     context = replace(
         base,
+        grounding=grounding,
         actor_world=replace(
             base.actor_world,
             sources=tuple(
@@ -761,7 +770,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
             "target_description": "the small circular control in the center",
         },
         "text_in_image": {
-            "subject_refs": [refs[0]],
+            "subject_refs": [pixel_ref],
             "text_query": "the text rendered inside the image",
         },
         "spatial_relationship": {
@@ -815,6 +824,24 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     assert disambiguation.candidate_ids == (bindings[refs[0]], bindings[refs[1]])
     assert disambiguation.atomic_query == "the candidate with the red outline"
     assert "structural evidence cannot answer" in spec.description
+    text_variant = next(
+        variant
+        for variant in spec.input_schema["oneOf"]
+        if variant["properties"]["purpose"]["enum"] == ("text_in_image",)
+    )
+    assert text_variant["properties"]["subject_refs"]["items"]["enum"] == (pixel_ref,)
+    non_pixel_ref = next(ref for ref in refs if ref != pixel_ref)
+    assert (
+        validate_value_issue(
+            {
+                "purpose": "text_in_image",
+                "subject_refs": [non_pixel_ref],
+                "text_query": "visible text",
+            },
+            spec.input_schema,
+        )
+        is not None
+    )
     encoded_schema = json.dumps(to_json_compatible(spec.input_schema))
     assert "entity_query" in encoded_schema
     assert "target_description" in encoded_schema
@@ -867,6 +894,31 @@ def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None
     assert "request_evidence" not in {item.name for item in complete.specs}
     spec = next(item for item in incomplete.specs if item.name == "request_evidence")
     assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
+
+
+def test_dynamic_text_in_image_excludes_non_pixel_container_refs() -> None:
+    base = _context()
+    context = replace(
+        base,
+        actor_world=replace(
+            base.actor_world,
+            observation_capabilities=(
+                {
+                    "modality": "visual",
+                    "assurance": "weak",
+                    "purposes": ("text_in_image",),
+                },
+            ),
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        _delivery(context),
+        ObservationToolExposureProfile.DYNAMIC_VISUAL,
+    )
+
+    assert "request_evidence" not in {item.name for item in catalog.specs}
 
 
 def test_dynamic_visual_change_requires_runtime_owned_before_after_lineage() -> None:

@@ -87,6 +87,7 @@ class _EvidenceBinding:
     purposes: tuple[str, ...]
     subjects: Mapping[str, str]
     profile: ObservationToolExposureProfile
+    purpose_subjects: Mapping[str, Mapping[str, str]] | None = None
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         purpose = ObservationPurpose(str(arguments["purpose"]))
@@ -136,21 +137,21 @@ class _EvidenceBinding:
                 raise ValueError("max_results must be an integer")
             max_results = raw_max_results
         elif purpose is ObservationPurpose.VISUAL_PROPERTY:
-            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
             predicate = str(arguments["predicate"]).strip()
         elif purpose is ObservationPurpose.TARGET_DISAMBIGUATION:
-            candidate_ids = self._resolve_refs(arguments["candidate_refs"])
+            candidate_ids = self._resolve_refs(arguments["candidate_refs"], purpose=purpose)
             atomic_query = str(arguments["selection_criterion"]).strip()
         elif purpose is ObservationPurpose.POINT_GROUNDING:
             atomic_query = str(arguments["target_description"]).strip()
         elif purpose is ObservationPurpose.TEXT_IN_IMAGE:
-            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
             atomic_query = str(arguments["text_query"]).strip()
         elif purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
-            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
             predicate = str(arguments["relation"]).strip()
         elif purpose is ObservationPurpose.VISUAL_CHANGE:
-            subject_ids = self._resolve_refs(arguments["subject_refs"])
+            subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
             predicate = str(arguments["change_predicate"]).strip()
         else:  # pragma: no cover - guarded by the typed exposure set
             raise ValueError("purpose is unavailable in dynamic observation schema")
@@ -167,13 +168,23 @@ class _EvidenceBinding:
             tool_call_id=tool_call_id,
         )
 
-    def _resolve_refs(self, raw_refs: object) -> tuple[str, ...]:
+    def _resolve_refs(
+        self,
+        raw_refs: object,
+        *,
+        purpose: ObservationPurpose | None = None,
+    ) -> tuple[str, ...]:
         if not isinstance(raw_refs, list | tuple):
             raise ValueError("observation refs must be an array")
         refs = tuple(str(item) for item in raw_refs)
-        if len(set(refs)) != len(refs) or any(item not in self.subjects for item in refs):
+        admitted = (
+            self.purpose_subjects.get(purpose.value, {})
+            if purpose is not None and self.purpose_subjects is not None
+            else self.subjects
+        )
+        if len(set(refs)) != len(refs) or any(item not in admitted for item in refs):
             raise ValueError("observation refs must be unique current DeliveryManifest refs")
-        return tuple(self.subjects[item] for item in refs)
+        return tuple(admitted[item] for item in refs)
 
     def _resolve_compatibility(
         self,
@@ -448,15 +459,27 @@ def compile_grounded_tool_catalog(
         }
         subjects = {"current_world": "current_world", **refs}
         ordered_purposes = tuple(sorted(purposes))
+        dynamic_subjects: Mapping[str, Mapping[str, str]] | None = None
         if observation_tool_profile is ObservationToolExposureProfile.DYNAMIC_VISUAL:
+            dynamic_subjects = {purpose: _dynamic_ref_domain(purpose, context, refs) for purpose in ordered_purposes}
             ordered_purposes = tuple(
-                item for item in ordered_purposes if _dynamic_purpose_applicable(item, context, delivery, refs)
+                item
+                for item in ordered_purposes
+                if _dynamic_purpose_applicable(
+                    item,
+                    context,
+                    delivery,
+                    dynamic_subjects[item],
+                )
             )
         if ordered_purposes:
             schema = (
                 _compatibility_evidence_request_schema(ordered_purposes, subjects)
                 if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
-                else _dynamic_evidence_request_schema(ordered_purposes, refs)
+                else _dynamic_evidence_request_schema(
+                    ordered_purposes,
+                    dynamic_subjects or {},
+                )
             )
             registered.append(
                 RegisteredGroundedTool(
@@ -471,7 +494,12 @@ def compile_grounded_tool_catalog(
                         ),
                         schema,
                     ),
-                    _EvidenceBinding(ordered_purposes, subjects, observation_tool_profile),
+                    _EvidenceBinding(
+                        ordered_purposes,
+                        subjects,
+                        observation_tool_profile,
+                        dynamic_subjects,
+                    ),
                 )
             )
 
@@ -1179,14 +1207,8 @@ def _compatibility_evidence_request_schema(
 
 def _dynamic_evidence_request_schema(
     purposes: tuple[str, ...],
-    subjects: Mapping[str, str],
+    purpose_subjects: Mapping[str, Mapping[str, str]],
 ) -> Mapping[str, object]:
-    refs = sorted(subjects)
-    ref_items = {
-        "type": "string",
-        "description": "current readable E/N ref from this delivery",
-        "enum": refs,
-    }
     public_intent = {
         "type": "string",
         "description": "optional short user-visible intent",
@@ -1199,11 +1221,16 @@ def _dynamic_evidence_request_schema(
         "maxLength": 500,
     }
 
-    def ref_array(minimum: int) -> Mapping[str, object]:
+    def ref_array(purpose: str, minimum: int) -> Mapping[str, object]:
+        refs = sorted(purpose_subjects[purpose])
         return {
             "type": "array",
             "description": "ordered unique current refs",
-            "items": ref_items,
+            "items": {
+                "type": "string",
+                "description": "purpose-applicable current E/N ref from this delivery",
+                "enum": refs,
+            },
             "minItems": minimum,
             "maxItems": min(32, len(refs)),
         }
@@ -1235,7 +1262,7 @@ def _dynamic_evidence_request_schema(
             purpose_schema["description"] = "classify one visible property for known subjects"
             properties.update(
                 {
-                    "subject_refs": ref_array(1),
+                    "subject_refs": ref_array(purpose, 1),
                     "predicate": {
                         **bounded_text,
                         "description": "one directly visible property to classify for every subject ref",
@@ -1247,7 +1274,7 @@ def _dynamic_evidence_request_schema(
             purpose_schema["description"] = "choose among known visually ambiguous candidates"
             properties.update(
                 {
-                    "candidate_refs": ref_array(2),
+                    "candidate_refs": ref_array(purpose, 2),
                     "selection_criterion": {
                         **bounded_text,
                         "description": "one visible criterion that distinguishes the intended candidate",
@@ -1269,10 +1296,13 @@ def _dynamic_evidence_request_schema(
             purpose_schema["description"] = "read text that exists only in pixels"
             properties.update(
                 {
-                    "subject_refs": ref_array(1),
+                    "subject_refs": ref_array(purpose, 1),
                     "text_query": {
                         **bounded_text,
-                        "description": "specific pixel-only text to read from the supplied subjects",
+                        "description": (
+                            "specific letters or digits to transcribe from the supplied pixel container; "
+                            "never use for counting or classifying visible objects"
+                        ),
                     },
                 }
             )
@@ -1281,7 +1311,7 @@ def _dynamic_evidence_request_schema(
             purpose_schema["description"] = "classify a visible relation among known subjects"
             properties.update(
                 {
-                    "subject_refs": ref_array(2),
+                    "subject_refs": ref_array(purpose, 2),
                     "relation": {
                         **bounded_text,
                         "description": "one visible spatial relation to classify among the supplied subjects",
@@ -1293,7 +1323,7 @@ def _dynamic_evidence_request_schema(
             purpose_schema["description"] = "compare a known subject across Runtime-owned frames"
             properties.update(
                 {
-                    "subject_refs": ref_array(1),
+                    "subject_refs": ref_array(purpose, 1),
                     "change_predicate": {
                         **bounded_text,
                         "description": "one visible change to check across the admitted before/after frames",
@@ -1353,6 +1383,30 @@ def _dynamic_purpose_applicable(
     if purpose == ObservationPurpose.VISUAL_CHANGE.value:
         return ref_count >= 1
     return False
+
+
+_PIXEL_TEXT_CONTAINER_ROLES = frozenset(
+    {
+        "canvas",
+        "figure",
+        "graphics-document",
+        "graphics-object",
+        "image",
+        "img",
+        "video",
+    }
+)
+
+
+def _dynamic_ref_domain(
+    purpose: str,
+    context: AgentContext,
+    refs: Mapping[str, str],
+) -> Mapping[str, str]:
+    if purpose != ObservationPurpose.TEXT_IN_IMAGE.value:
+        return refs
+    roles = {item.ref: item.role.strip().casefold() for item in context.grounding.entities}
+    return {ref: subject for ref, subject in refs.items() if roles.get(ref, "") in _PIXEL_TEXT_CONTAINER_ROLES}
 
 
 def _observation_tool_needed(context: AgentContext, capability) -> bool:
