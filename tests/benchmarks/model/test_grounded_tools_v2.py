@@ -640,8 +640,11 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
 
 def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     base = _context()
+    entities = list(base.grounding.entities)
+    entities[:2] = [replace(item, role="option") for item in entities[:2]]
     context = replace(
         base,
+        grounding=replace(base.grounding, entities=tuple(entities)),
         actor_world=replace(
             base.actor_world,
             observation_capabilities=(
@@ -925,6 +928,7 @@ def test_dynamic_specialist_variants_cannot_encode_arbitrary_screenshot_question
     base = _context()
     entities = list(base.grounding.entities)
     entities[0] = replace(entities[0], role="image")
+    entities[1] = replace(entities[1], role="option")
     context = replace(
         base,
         grounding=replace(base.grounding, entities=tuple(entities)),
@@ -1000,6 +1004,38 @@ def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None
     assert "request_evidence" not in {item.name for item in complete.specs}
     spec = next(item for item in incomplete.specs if item.name == "request_evidence")
     assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
+
+
+def test_dynamic_visual_tool_is_absent_on_complete_generic_form_without_visual_subjects() -> None:
+    base = _context()
+    context = replace(
+        base,
+        actor_world=replace(
+            base.actor_world,
+            observation_capabilities=(
+                {
+                    "modality": "visual",
+                    "assurance": "weak",
+                    "purposes": (
+                        "entity_discovery",
+                        "point_grounding",
+                        "spatial_relationship",
+                        "target_disambiguation",
+                        "text_in_image",
+                        "visual_property",
+                    ),
+                },
+            ),
+        ),
+    )
+    catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        _delivery(context),
+        ObservationToolExposureProfile.DYNAMIC_VISUAL,
+    )
+
+    assert "request_evidence" not in {item.name for item in catalog.specs}
 
 
 def test_dynamic_point_grounding_is_hidden_when_structure_already_exposes_action_targets() -> None:

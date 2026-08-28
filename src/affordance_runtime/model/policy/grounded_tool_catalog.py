@@ -1476,6 +1476,41 @@ _PIXEL_TEXT_CONTAINER_ROLES = frozenset(
     }
 )
 
+_VISUAL_PROPERTY_SUBJECT_ROLES = frozenset(
+    {
+        "canvas",
+        "checkbox",
+        "figure",
+        "graphics-document",
+        "graphics-object",
+        "graphics-symbol",
+        "image",
+        "img",
+        "listitem",
+        "menuitemcheckbox",
+        "menuitemradio",
+        "option",
+        "radio",
+        "switch",
+        "tab",
+    }
+)
+
+_SPATIAL_VISUAL_SUBJECT_ROLES = frozenset(
+    {
+        "canvas",
+        "figure",
+        "graphics-document",
+        "graphics-object",
+        "graphics-symbol",
+        "image",
+        "img",
+        "listitem",
+        "map",
+        "option",
+    }
+)
+
 
 def _dynamic_ref_domain(
     purpose: str,
@@ -1489,6 +1524,20 @@ def _dynamic_ref_domain(
             for ref, subject in refs.items()
             if entities.get(ref) is not None
             and entities[ref].role.strip().casefold() in _PIXEL_TEXT_CONTAINER_ROLES
+        }
+    if purpose == ObservationPurpose.VISUAL_PROPERTY.value:
+        return {
+            ref: subject
+            for ref, subject in refs.items()
+            if entities.get(ref) is not None
+            and entities[ref].role.strip().casefold() in _VISUAL_PROPERTY_SUBJECT_ROLES
+        }
+    if purpose == ObservationPurpose.SPATIAL_RELATIONSHIP.value:
+        return {
+            ref: subject
+            for ref, subject in refs.items()
+            if entities.get(ref) is not None
+            and entities[ref].role.strip().casefold() in _SPATIAL_VISUAL_SUBJECT_ROLES
         }
     if purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
         identities: dict[tuple[str, str], int] = {}

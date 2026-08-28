@@ -113,9 +113,10 @@ argument algebra for every purpose. Closure therefore requires all seven variant
   structural turn that already contains grounded action targets.
 - `text_in_image`: the public request only selects `all_visible_text` over pixel-container refs; the provider returns
   transcription per subject and cannot return an arbitrary answer.
-- `visual_property`: the public request selects one closed per-subject query: selected/unselected, visible/hidden, or
-  one supported color. It returns true/false/unknown per subject; arbitrary expected-value prose is not representable.
-- `spatial_relationship`: exactly two ordered refs plus one closed relation
+- `visual_property`: option/control-state and image/graphics-like refs form its bounded subject domain. The public
+  request selects selected/unselected, visible/hidden, or one supported color and returns true/false/unknown per
+  subject; arbitrary expected-value prose is not representable.
+- `spatial_relationship`: exactly two ordered option/list/image/canvas/graphics-like refs plus one closed relation
   (`left_of|right_of|above|below|inside|contains|overlaps`) return one truth value.
 - `visual_change`: one or more current refs plus one closed changed-property category return one truth value over
   Runtime-admitted before/after lineage.
@@ -217,6 +218,11 @@ authority or bypass.
   repair now closes OCR, spatial, change, and point outputs together, constrains same-name disambiguation and point
   applicability from the frozen current World, and keeps the compatibility profile and CoreLoop untouched. Provider-
   free invariant/property gates and one held-out live rerun remain required before Phase 7 can be called verified.
+- 2026-08-28: Clean live run `phase7-clean8` showed that a closed property value alone did not close applicability:
+  the policy legally requested `color equals blue` over ordinary generic containers and activated the predicate VLM
+  once. Catalog now intersects property and spatial variants with stable role domains that match those specialists'
+  declared evidence shapes. A complete generic/textbox/button page therefore advertises no dynamic visual tool even
+  when all providers are configured; no task wording or benchmark identity participates in that decision.
 
 ## Files changed by this plan
 
