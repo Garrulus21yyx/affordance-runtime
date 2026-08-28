@@ -755,6 +755,14 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
         ObservationToolExposureProfile.DYNAMIC_VISUAL,
     )
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
+    assert "find_controls returns no usable control" in spec.description
+    point_variant = next(
+        item
+        for item in spec.input_schema["oneOf"]
+        if item["properties"]["purpose"]["enum"] == ["point_grounding"]
+    )
+    assert "no executable current ref" in point_variant["properties"]["purpose"]["description"]
+    assert "find_controls returns empty" in point_variant["properties"]["target_description"]["description"]
     refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
     calls = {

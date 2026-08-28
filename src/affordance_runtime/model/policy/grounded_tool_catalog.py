@@ -491,7 +491,8 @@ def compile_grounded_tool_catalog(
                             "Request missing current-world evidence; Runtime chooses how to obtain it."
                             if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
                             else "Acquire one missing read-only visual fact for the next decision. Use only when "
-                            "current structural evidence cannot answer that fact; this never performs a GUI action."
+                            "current structural evidence cannot answer it, including after find_controls returns no "
+                            "usable control for a target that is visibly present. This never performs a GUI action."
                         ),
                         schema,
                     ),
@@ -1289,12 +1290,15 @@ def _dynamic_evidence_request_schema(
             )
             required.extend(("candidate_refs", "selection_criterion"))
         elif purpose == ObservationPurpose.POINT_GROUNDING.value:
-            purpose_schema["description"] = "locate one already-decided visible target"
+            purpose_schema["description"] = (
+                "locate one already-decided visible target that has no executable current ref"
+            )
             properties["target_description"] = {
                 **bounded_text,
                 "description": (
-                    "one already-decided visible target whose point is missing; not a question, count, text read, "
-                    "property classification, or candidate choice"
+                    "one specific visible target whose executable ref or point is missing, especially after "
+                    "find_controls returns empty; not a question, count, text read, property classification, or "
+                    "candidate choice"
                 ),
             }
             required.append("target_description")

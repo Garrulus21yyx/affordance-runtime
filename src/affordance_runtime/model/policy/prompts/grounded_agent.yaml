@@ -1,4 +1,4 @@
-version: grounded-agent-context.v41
+version: grounded-agent-context.v42
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -38,6 +38,11 @@ actor: |-
     clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. For a known
     collection, read its region and follow UI pagination. Partial source coverage, pagination controls, or a displayed total larger than the inspected records
     leaves exhaustive scope unresolved when it can still be inspected.
+  - Visual evidence is a selective fallback, not a default reading path. When a desired visible target is already
+    identified but has no executable E ref, and find_controls returned no usable control on the unchanged World, use
+    offered point_grounding once for that target and then act through the returned current E ref. Use entity_discovery
+    only when the relevant visible entities themselves are missing from current refs. Do not keep paging readable text
+    to recover a visually obvious control, and do not request visual evidence when a structural control already works.
 
   Action:
   - Reassess progress each turn from task, fresh World, completed ToolReturns, and the historical summary. Preserve outcomes already supported by evidence
