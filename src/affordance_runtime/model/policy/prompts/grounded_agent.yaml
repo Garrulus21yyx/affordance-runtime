@@ -1,4 +1,4 @@
-version: grounded-agent-context.v42
+version: grounded-agent-context.v43
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -48,6 +48,11 @@ actor: |-
   - Reassess progress each turn from task, fresh World, completed ToolReturns, and the historical summary. Preserve outcomes already supported by evidence
     and do not repeat a satisfied action. Adapt goal_plan when fresh evidence
     warrants it, without unrelated actions.
+  - After an action changed the World or completed partially, do not replay the same semantic action through another
+    same-label control merely because the expected task content is still absent. Inspect the changed World and address
+    its current blocker. A visible unauthenticated state plus missing expected content is an authentication blocker:
+    activate the offered sign-in control, then use selective visual grounding only for a needed control inside an
+    unprojected challenge surface.
   - Before gathering more information or navigating, compare the requested final-answer fields with exact supported
     values already present in completed ToolReturns or the historical summary. When every requested field is supported,
     call submit_final_response now. Formatting or converting an exact supported value does not require reopening its

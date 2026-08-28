@@ -3078,6 +3078,8 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "does not require reopening its" in MODEL_POLICY_INSTRUCTIONS
     assert "find_controls returned no usable control" in MODEL_POLICY_INSTRUCTIONS
     assert "point_grounding once for that target" in MODEL_POLICY_INSTRUCTIONS
+    assert "do not replay the same semantic action" in MODEL_POLICY_INSTRUCTIONS
+    assert "visible unauthenticated state plus missing expected content" in MODEL_POLICY_INSTRUCTIONS
     assert "destination is unavailable" in MODEL_POLICY_EVIDENCE_STATUS
     assert "must not also appear unresolved" in MODEL_POLICY_EVIDENCE_STATUS
     assert pydantic_bridge._HISTORY_RECENT_EXACT_TOKENS_RATIO == 0.12
