@@ -104,7 +104,6 @@ def _request_factory(session_id: str, instruction: str) -> NaturalLanguageTaskRe
             constraints=("Do not act before the user's explicit option selection.",),
             allowed_effects=("external_ui_interaction",),
             forbidden_effects=("external_network_side_effect", "credential_use"),
-            requested_outputs=("selected_candidate_summary",),
             risk_profile=RiskProfile.LOW,
             loop_budget=LoopBudget(max_turns=20, max_observations=40),
         ),
@@ -189,42 +188,78 @@ def _trace_segments(
         state = source.get("state") if isinstance(source, Mapping) else None
         return str(state.get("semantic_scope_label", "")) if isinstance(state, Mapping) else ""
 
-    action_turn = next(
-        (
-            event
-            for event in turns
-            if scope_label(event).strip().casefold() == choice_title.strip().casefold()
-        ),
-        None,
+    action_turns = tuple(
+        event
+        for event in turns
+        if event.get("outcome") == "select_action"
+        and scope_label(event).strip().casefold() == choice_title.strip().casefold()
     )
-    action_id = ""
-    action_decision = action_turn.get("decision") if isinstance(action_turn, Mapping) else None
-    if isinstance(action_decision, Mapping):
-        action_id = str(action_decision.get("action_id", ""))
 
     def step_action_id(event: Mapping[str, object]) -> str:
         result = event.get("result")
         decision = result.get("decision") if isinstance(result, Mapping) else None
         return str(decision.get("action_id", "")) if isinstance(decision, Mapping) else ""
 
-    action_step = next(
-        (
-            event
-            for event in steps
-            if action_id and step_action_id(event) == action_id
-        ),
-        None,
-    )
+    attempts: list[dict[str, object]] = []
     dispatches: list[str] = []
-    action_result = action_step.get("result") if isinstance(action_step, Mapping) else None
-    if isinstance(action_result, Mapping):
-        receipts = action_result.get("execution_receipts")
-        if isinstance(receipts, Mapping):
-            raw_receipts = receipts.get("receipts")
-            for receipt in raw_receipts if isinstance(raw_receipts, list | tuple) else ():
-                receipt_result = receipt.get("result") if isinstance(receipt, Mapping) else None
-                if isinstance(receipt_result, Mapping):
-                    dispatches.append(str(receipt_result.get("dispatch_status", "")))
+    for action_turn in action_turns:
+        decision = action_turn.get("decision")
+        action_id = str(decision.get("action_id", "")) if isinstance(decision, Mapping) else ""
+        action_step = next(
+            (event for event in steps if action_id and step_action_id(event) == action_id),
+            None,
+        )
+        action_result = action_step.get("result") if isinstance(action_step, Mapping) else None
+        attempt_dispatches: list[str] = []
+        if isinstance(action_result, Mapping):
+            receipts = action_result.get("execution_receipts")
+            if isinstance(receipts, Mapping):
+                raw_receipts = receipts.get("receipts")
+                for receipt in raw_receipts if isinstance(raw_receipts, list | tuple) else ():
+                    receipt_result = receipt.get("result") if isinstance(receipt, Mapping) else None
+                    if isinstance(receipt_result, Mapping):
+                        attempt_dispatches.append(str(receipt_result.get("dispatch_status", "")))
+            terminal = receipts.get("terminal_failure") if isinstance(receipts, Mapping) else None
+            if isinstance(terminal, Mapping):
+                attempt_dispatches.append(str(terminal.get("dispatch_status", "")))
+        dispatches.extend(attempt_dispatches)
+        attempts.append({
+            "action_id": action_id,
+            "grounding": action_turn.get("selected_grounding"),
+            "dispatch_statuses": attempt_dispatches,
+            "feedback": action_result.get("feedback", "") if isinstance(action_result, Mapping) else "",
+        })
+    successful_attempt: dict[str, object] | None = None
+    for item in reversed(attempts):
+        statuses = item.get("dispatch_statuses")
+        if isinstance(statuses, list | tuple) and "sent" in statuses:
+            successful_attempt = item
+            break
+    if successful_attempt is None and attempts:
+        successful_attempt = attempts[-1]
+
+    selection_confirmation: dict[str, object] | None = None
+    for event in turns:
+        if event.get("outcome") != "read_region":
+            continue
+        decision = event.get("decision")
+        result = decision.get("result") if isinstance(decision, Mapping) else None
+        items = result.get("items") if isinstance(result, Mapping) else None
+        for item in items if isinstance(items, list | tuple) else ():
+            if not isinstance(item, Mapping):
+                continue
+            state = item.get("state")
+            if (
+                str(item.get("label", "")).strip().casefold() == "selected"
+                and isinstance(state, Mapping)
+                and str(state.get("semantic_scope_label", "")).strip().casefold()
+                == choice_title.strip().casefold()
+            ):
+                selection_confirmation = {
+                    "target_ref": item.get("target_ref", ""),
+                    "label": item.get("label", ""),
+                    "semantic_scope_label": state.get("semantic_scope_label", ""),
+                }
     screenshot_lineage: list[dict[str, object]] = []
     for event in events:
         observation = event.get("observation")
@@ -242,10 +277,12 @@ def _trace_segments(
     return {
         "visual_property": visual_steps,
         "selected_action": {
-            "action_id": action_id,
-            "grounding": action_turn.get("selected_grounding") if isinstance(action_turn, Mapping) else None,
+            "action_id": successful_attempt.get("action_id", "") if successful_attempt else "",
+            "grounding": successful_attempt.get("grounding") if successful_attempt else None,
             "dispatch_statuses": dispatches,
+            "attempts": attempts,
         },
+        "selection_confirmation": selection_confirmation,
         "screenshot_lineage": screenshot_lineage,
     }
 
@@ -266,6 +303,8 @@ def flagship_acceptance_errors(report: Mapping[str, object]) -> tuple[str, ...]:
     dispatches = action.get("dispatch_statuses") if isinstance(action, Mapping) else None
     if not isinstance(dispatches, list) or "sent" not in dispatches:
         errors.append("selected candidate GUI action was not dispatched")
+    if not isinstance(trace, Mapping) or not trace.get("selection_confirmation"):
+        errors.append("fresh page did not expose the selected candidate")
     if report.get("terminal_status") != "done":
         errors.append("Runtime did not finish successfully")
     if not isinstance(completion, Mapping) or completion.get("outcome") != "success":

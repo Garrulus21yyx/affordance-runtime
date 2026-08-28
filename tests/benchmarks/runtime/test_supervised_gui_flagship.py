@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from affordance_runtime.benchmarks.supervised_gui_flagship import (
+    _request_factory,
+    _trace_segments,
     flagship_acceptance_errors,
     flagship_profile_errors,
 )
@@ -35,16 +37,90 @@ def test_flagship_acceptance_requires_every_collaboration_segment() -> None:
         "trace_segments": {
             "visual_property": [{"subject_count": 3}],
             "selected_action": {"dispatch_statuses": ["sent"]},
+            "selection_confirmation": {"label": "Selected"},
         },
         "terminal_status": "done",
         "completion": {"outcome": "success", "artifact": {"title": "Selected candidate"}},
     }
     assert flagship_acceptance_errors(report) == ()
 
-    report["trace_segments"] = {"visual_property": [], "selected_action": {"dispatch_statuses": []}}
+    report["trace_segments"] = {
+        "visual_property": [],
+        "selected_action": {"dispatch_statuses": []},
+        "selection_confirmation": None,
+    }
     report["completion"] = {"outcome": "success", "artifact": None}
     assert flagship_acceptance_errors(report) == (
         "missing batched three-subject visual_property evidence",
         "selected candidate GUI action was not dispatched",
+        "fresh page did not expose the selected candidate",
         "final PublicArtifact was not materialized",
     )
+
+
+def test_flagship_request_does_not_claim_native_evaluator_outputs() -> None:
+    request = _request_factory("session", "compare candidates")
+
+    assert request.boundary.requested_outputs == ()
+
+
+def test_trace_segments_follow_refreshed_action_to_sent_receipt_and_fresh_confirmation() -> None:
+    def action_turn(sequence: int, action_id: str) -> dict[str, object]:
+        return {
+            "sequence": sequence,
+            "event": "model_turn",
+            "outcome": "select_action",
+            "decision": {"action_id": action_id},
+            "selected_grounding": {
+                "source": {"state": {"semantic_scope_label": "Field jacket"}}
+            },
+        }
+
+    def action_step(sequence: int, action_id: str, status: str) -> dict[str, object]:
+        receipt = (
+            {"receipts": [{"result": {"dispatch_status": status}}]}
+            if status == "sent"
+            else {"receipts": [], "terminal_failure": {"dispatch_status": status}}
+        )
+        return {
+            "sequence": sequence,
+            "event": "step_completed",
+            "result": {
+                "decision": {"action_id": action_id},
+                "execution_receipts": receipt,
+                "feedback": "test",
+            },
+        }
+
+    events = (
+        action_turn(1, "stale-action"),
+        action_step(2, "stale-action", "not_sent"),
+        action_turn(3, "current-action"),
+        action_step(4, "current-action", "sent"),
+        {
+            "sequence": 5,
+            "event": "model_turn",
+            "outcome": "read_region",
+            "decision": {
+                "result": {
+                    "items": [
+                        {
+                            "target_ref": "E4",
+                            "label": "Selected",
+                            "state": {"semantic_scope_label": "Field jacket"},
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    segments = _trace_segments(events, choice_title="Field jacket")
+
+    assert segments["selected_action"]["action_id"] == "current-action"
+    assert segments["selected_action"]["dispatch_statuses"] == ["not_sent", "sent"]
+    assert segments["selection_confirmation"] == {
+        "target_ref": "E4",
+        "label": "Selected",
+        "semantic_scope_label": "Field jacket",
+    }

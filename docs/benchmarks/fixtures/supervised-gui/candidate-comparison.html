@@ -53,10 +53,12 @@
     document.querySelectorAll('article').forEach((card) => {
       card.dataset.selected = 'false';
       card.querySelector('button').setAttribute('aria-pressed', 'false');
+      card.querySelector('button').textContent = 'Choose';
     });
     const selected = button.closest('article');
     selected.dataset.selected = 'true';
     button.setAttribute('aria-pressed', 'true');
+    button.textContent = 'Selected';
     document.querySelector('#selection-status').textContent = `Selected: ${selected.getAttribute('aria-label')}`;
   }));
 </script>
