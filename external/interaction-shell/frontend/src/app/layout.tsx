@@ -3,6 +3,7 @@ import "@fontsource-variable/ibm-plex-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "@radix-ui/themes/styles.css";
 import "./globals.css";
+import "./collaboration.css";
 
 export const metadata: Metadata = {
   title: "Affordance",

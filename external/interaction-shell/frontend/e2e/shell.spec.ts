@@ -20,11 +20,11 @@ test("one Console joins real user interaction, live surface, and Labs", async ({
 
   const composer = page.getByRole("textbox", { name: "Task command" });
   await composer.fill("Choose an option");
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByTestId("pending-question")).toContainText("Which option");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByTestId("conversation-feed")).toContainText("Which option");
   await composer.fill("The second one");
-  await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByTestId("confirmation-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByTestId("confirmation-panel")).toBeVisible();
   await page.getByRole("button", { name: "批准操作" }).click();
   await expect(page.getByTestId("completion")).toContainText("Contract demo completed");
   expect(commandPaths).toHaveLength(3);

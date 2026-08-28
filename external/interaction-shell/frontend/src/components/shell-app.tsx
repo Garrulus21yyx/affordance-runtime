@@ -1,22 +1,12 @@
 "use client";
 
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import {
-  Bot,
   AppWindow,
   CircleOff,
   FlaskConical,
-  Hand,
-  Maximize2,
   MoreHorizontal,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
-  Send,
   Settings,
-  ShieldCheck,
-  Square,
   X,
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
@@ -24,17 +14,25 @@ import type { BenchmarkLabRunSpec, BenchmarkLabRunSummary } from "@/generated/ty
 import { useBenchmarkLabs, type LabEvent } from "@/hooks/use-benchmark-labs";
 import { useShellSession } from "@/hooks/use-shell-session";
 import type { ShellViewModel } from "@/session/view-model";
+import {
+  ConversationFeed,
+  ControlBar,
+  SurfaceViewer,
+  UnifiedComposer,
+} from "./collaboration-workspace";
 
 type LabsTab = "experiment" | "bad-cases" | "evidence";
 
 function statusLabel(status: string) {
   return ({
-    idle: "空闲",
-    running: "执行中",
-    waiting_user: "等待确认",
-    paused: "已暂停",
-    done: "已完成",
-    failed: "未完成",
+    idle: "等待任务",
+    running: "任务运行中",
+    waiting_user: "等待你的回答",
+    waiting_confirmation: "等待操作确认",
+    paused: "任务已暂停",
+    done: "任务已完成",
+    failed: "任务运行失败",
+    blocked: "需要处理后才能继续",
     cancelled: "已取消",
     completed: "已完成",
   } as Record<string, string>)[status] ?? status;
@@ -97,14 +95,7 @@ export function LiveView({ view, labFrameUrl = "", labRun = null }: {
   const [frameLoading, setFrameLoading] = useState(true);
   const surface = view.surface;
   return (
-    <section className="browser-panel" aria-labelledby="browserTitle">
-      <header className="browser-header">
-        <div className="title-block"><small>LIVE SURFACE</small><h2 id="browserTitle">实时浏览器</h2></div>
-        <div className="header-actions">
-          <span className="control-badge" data-testid="surface-control-state"><AppWindow size={14} /><span>{labRun ? "Agent 控制中" : surface.status === "unavailable" ? "等待浏览器" : surface.interactive ? "用户控制中" : "Agent 控制中 · 只读"}</span></span>
-          <button className="icon-button" type="button" aria-label="全屏浏览器" onClick={() => document.querySelector<HTMLElement>(".browser-stage")?.requestFullscreen()}><Maximize2 size={16} /></button>
-        </div>
-      </header>
+    <SurfaceViewer view={view} activeLabel={labRun ? "Agent 控制 · benchmark" : undefined}>
       <div className="browser-stage">
         {labRun && labFrameUrl ? (
           <figure className="browser-frame">
@@ -120,38 +111,13 @@ export function LiveView({ view, labFrameUrl = "", labRun = null }: {
         ) : (
           <div className="browser-empty" data-testid="surface-unavailable">
             <span className="browser-empty-icon">{labRun ? <AppWindow size={24} /> : <CircleOff size={24} />}</span>
-            <h3>{labRun ? "正在等待第一张画面" : "浏览器尚未打开"}</h3>
+            <h3>{labRun ? "正在等待第一张画面" : "Live surface 尚未连接"}</h3>
             <p>{labRun ? "Runtime 记录 observation 后会显示在这里。" : surface.reasonCode}</p>
           </div>
         )}
         {(labRun || surface.status !== "unavailable") && <div className="viewer-note"><i /><span>{surface.status === "interactive" && !labRun ? "用户控制模式" : "只读模式 · Agent 操作期间无法手动点击"}</span></div>}
       </div>
-    </section>
-  );
-}
-
-function RuntimeThread({ view }: { view: ShellViewModel }) {
-  const hasTask = Boolean(view.snapshot?.task_text);
-  if (!hasTask) {
-    return (
-      <div className="welcome">
-        <span className="welcome-orbit" aria-hidden="true"><i /></span>
-        <p className="welcome-kicker">GUI AGENT</p>
-        <h2>说出目标，观察每一步。</h2>
-        <p>Agent 会在真实浏览器中执行任务。需要确认时，它会回到这里问你。</p>
-      </div>
-    );
-  }
-  return (
-    <div className="thread-content">
-      <div className="message user"><div className="bubble">{view.taskText}</div></div>
-      <div className="message agent"><span className="avatar">A</span><div className="bubble">收到。我会根据当前页面逐步执行，并把重要状态同步在这里。</div></div>
-      <p className="activity-lead">当前进展</p>
-      <Progress view={view} />
-      {view.question && <div className="message agent" data-testid="pending-question"><span className="avatar">?</span><div className="bubble"><b>需要你的补充</b><br />{view.question.prompt}</div></div>}
-      <EffectReconciliationNotice view={view} />
-      {view.completion && <div className="message agent final-message" data-testid="completion"><span className="avatar"><ShieldCheck size={15} /></span><div className="bubble"><b>{view.completion.outcome}</b><br />{view.completion.message}</div></div>}
-    </div>
+    </SurfaceViewer>
   );
 }
 
@@ -169,35 +135,6 @@ function LabThread({ run, activity }: { run: BenchmarkLabRunSummary; activity: L
         {run.status === "running" && <div className="activity current"><span className="activity-copy"><b>正在读取当前页面并决定下一步</b><small>右侧会同步 Runtime 最新画面</small></span></div>}
       </div>
       {run.status !== "running" && <div className="message agent final-message"><span className="avatar">A</span><div className="bubble">{run.status === "completed" ? "任务运行已经结束。正式结果与完整证据保存在 Labs 中。" : "任务没有完成；失败阶段和完整证据已保留在 Labs。"}</div></div>}
-    </div>
-  );
-}
-
-function Composer({ view, submitMessage, revise }: {
-  view: ShellViewModel;
-  submitMessage: (message: string) => Promise<void>;
-  revise: (message: string) => Promise<void>;
-}) {
-  const [message, setMessage] = useState("");
-  const [revision, setRevision] = useState(false);
-  const enabled = revision ? view.actions.revise : view.composer.enabled;
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = message.trim();
-    if (!value || !enabled) return;
-    if (revision) await revise(value); else await submitMessage(value);
-    setMessage("");
-    setRevision(false);
-  };
-  return (
-    <div className="composer-wrap">
-      <div className="composer-hint">{revision ? "新目标会通过现有 TaskRevisionCompiler 校验。" : view.question ? "回答 Runtime 的问题后，任务会继续。" : view.composer.enabled ? "直接描述你希望 Agent 完成的任务。" : view.actions.revise ? "任务执行中；需要时可以修改目标。" : "当前任务暂时不接受新的输入。"}</div>
-      <form className="composer" onSubmit={submit}>
-        <Bot className="composer-tool" size={18} />
-        <textarea aria-label="Task command" rows={1} value={message} onChange={(event) => setMessage(event.target.value)} readOnly={!enabled} placeholder={revision ? "输入修订后的目标…" : view.question ? "输入回答…" : view.composer.enabled ? "描述一个任务…" : "Agent 正在执行…"} />
-        {view.actions.revise && <button className={`revision-toggle ${revision ? "active" : ""}`} type="button" onClick={() => setRevision((value) => !value)}>修改目标</button>}
-        <button className="send" type="submit" aria-label="Send" disabled={!enabled || !message.trim()}><Send size={16} /></button>
-      </form>
     </div>
   );
 }
@@ -292,7 +229,8 @@ export function ShellApp() {
   const labs = useBenchmarkLabs(labsOpen || showLabRun);
   const activeLab = showLabRun ? labs.selectedRun : null;
   const title = activeLab ? humanize(activeLab.spec.case_id) : view.snapshot?.task_text || "从一句话开始";
-  const status = activeLab?.status ?? view.runStatus;
+  const statusTone = activeLab?.status ?? view.status.tone;
+  const statusText = activeLab ? statusLabel(activeLab.status) : view.status.label;
   const recent = useMemo(() => labs.runs.slice(0, 8), [labs.runs]);
   const openLabs = (tab: LabsTab) => { setLabsTab(tab); setLabsOpen(true); };
   return (
@@ -300,25 +238,21 @@ export function ShellApp() {
       <aside className="sidebar" aria-label="主导航">
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><strong>Affordance</strong></div>
         <button className="new-task" type="button" onClick={() => { setShowLabRun(false); void shell.newSession(); }}><span>新建任务</span><Plus size={19} /></button>
-        <p className="nav-label">最近</p>
+        <p className="nav-label">Sessions · 会话</p>
         <nav className="session-list" aria-label="最近运行">
-          {view.snapshot?.task_text && <button className={`session ${!showLabRun ? "active" : ""}`} type="button" onClick={() => setShowLabRun(false)}><b>{view.taskText}</b><small><i className={`session-status ${view.runStatus}`} />{statusLabel(view.runStatus)}</small></button>}
+          {view.snapshot?.task_text && <button className={`session ${!showLabRun ? "active" : ""}`} type="button" onClick={() => setShowLabRun(false)}><b>{view.taskText}</b><small><i className={`session-status ${view.status.tone}`} />{view.status.label}</small></button>}
           {recent.map((run) => <button className={`session ${showLabRun && labs.selectedRun?.run_id === run.run_id ? "active" : ""}`} type="button" key={run.run_id} onClick={() => { labs.selectRun(run); setShowLabRun(true); }}><b>{humanize(run.spec.case_id)}</b><small><i className={`session-status ${run.status}`} />{statusLabel(run.status)}</small></button>)}
           {!view.snapshot?.task_text && !recent.length && <div className="session-placeholder">启动一个任务后，会话会出现在这里。</div>}
         </nav>
         <div className="sidebar-bottom"><button className="utility-link" type="button" aria-label="Labs" onClick={() => openLabs("experiment")}><FlaskConical size={17} /><span aria-hidden="true">Labs</span></button><button className="utility-link" type="button" disabled><Settings size={17} /><span>设置</span></button></div>
       </aside>
       <section className="conversation" aria-labelledby="taskTitle">
-        <header className="conversation-header"><div className="title-block"><small>{activeLab ? activeLab.spec.case_id : "CURRENT TASK"}</small><h1 id="taskTitle">{title}</h1></div><div className="header-actions">
-          {!activeLab && view.actions.returnControl && <button className="header-control" type="button" onClick={shell.returnControl}><RotateCcw size={13} />交还 Agent</button>}
-          {!activeLab && view.actions.takeOver && <button className="header-control" type="button" onClick={shell.takeOver}><Hand size={13} />接管</button>}
-          {!activeLab && view.actions.resume && <button className="header-control" type="button" onClick={shell.resume}><Play size={13} />继续</button>}
-          {!activeLab && view.actions.pause && <button className="header-control" type="button" onClick={shell.pause}><Pause size={13} />暂停</button>}
-          {!activeLab && view.actions.cancel && <button className="header-control danger" type="button" onClick={shell.cancel}><Square size={13} />停止</button>}
-          <span className={`status-pill ${status}`}><i /><span>{statusLabel(status)}</span></span><button className="icon-button" type="button" aria-label="打开运行详情" onClick={() => openLabs("evidence")}><MoreHorizontal size={17} /></button>
+        <header className="conversation-header"><div className="title-block"><small>{activeLab ? activeLab.spec.case_id : "COLLABORATION FEED"}</small><h1 id="taskTitle">{title}</h1></div><div className="header-actions">
+          {!activeLab && <ControlBar view={view} returnControl={shell.returnControl} takeOver={shell.takeOver} resume={shell.resume} pause={shell.pause} cancel={shell.cancel} />}
+          <span className={`status-pill ${statusTone}`}><i /><span>{statusText}</span></span><button className="icon-button" type="button" aria-label="打开运行详情" onClick={() => openLabs("evidence")}><MoreHorizontal size={17} /></button>
         </div></header>
-        <div className="thread" aria-live="polite">{activeLab ? <LabThread run={activeLab} activity={labs.activity} /> : <RuntimeThread view={view} />}</div>
-        {activeLab ? <div className="composer-wrap"><div className="composer-hint">正式 benchmark 由 Labs 管理；普通用户会话仍保留在左侧。</div><div className="composer disabled"><FlaskConical className="composer-tool" size={18} /><textarea rows={1} readOnly value="" placeholder="Labs 运行中…" /><button className="send" type="button" onClick={() => openLabs("evidence")}><FlaskConical size={16} /></button></div></div> : <Composer view={view} submitMessage={shell.submitMessage} revise={shell.revise} />}
+        <div className="thread" aria-live="polite">{activeLab ? <LabThread run={activeLab} activity={labs.activity} /> : <ConversationFeed view={view} respond={shell.respondInteraction} confirm={shell.confirm} />}</div>
+        {activeLab ? <div className="composer-wrap"><div className="composer-hint">正式 benchmark 由 Labs 管理；普通用户会话仍保留在左侧。</div><div className="composer disabled"><FlaskConical className="composer-tool" size={18} /><textarea rows={1} readOnly value="" placeholder="Labs 运行中…" /><button className="send" type="button" onClick={() => openLabs("evidence")}><FlaskConical size={16} /></button></div></div> : <UnifiedComposer view={view} submitMessage={shell.submitMessage} revise={shell.revise} />}
       </section>
       <LiveView view={view} labFrameUrl={labs.frameUrl} labRun={activeLab} />
       <LabsDrawer
@@ -330,7 +264,6 @@ export function ShellApp() {
         showRun={() => { setLabsOpen(false); setShowLabRun(true); }}
       />
       {shell.notice && <div className="toast" role="status">{shell.notice}</div>}
-      <AlertDialog.Root open={Boolean(view.confirmation)}><AlertDialog.Portal><AlertDialog.Overlay className="dialog-overlay" /><AlertDialog.Content className="dialog-content" data-testid="confirmation-dialog"><AlertDialog.Title>Runtime 请求确认</AlertDialog.Title><AlertDialog.Description>{view.confirmation?.summary}<br />风险：{view.confirmation?.risk}</AlertDialog.Description><div className="dialog-actions"><AlertDialog.Cancel asChild><button type="button" onClick={() => shell.confirm(false)}>拒绝操作</button></AlertDialog.Cancel><AlertDialog.Action asChild><button className="approve" type="button" onClick={() => shell.confirm(true)}>批准操作</button></AlertDialog.Action></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>
     </main>
   );
 }
