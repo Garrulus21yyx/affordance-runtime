@@ -4,9 +4,9 @@ import pytest
 from interaction_shell.assistant import (
     _ASSISTANT_INSTRUCTIONS,
     _GUI_AUTHENTICATION_CONTINGENCY,
-    _complete_gui_goal,
     GuiTaskResult,
     PydanticAssistantTurnRunner,
+    _complete_gui_goal,
 )
 from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
