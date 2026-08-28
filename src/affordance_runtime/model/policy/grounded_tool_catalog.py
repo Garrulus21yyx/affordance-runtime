@@ -131,7 +131,10 @@ class _EvidenceBinding:
         max_results = 1
         if purpose is ObservationPurpose.ENTITY_DISCOVERY:
             atomic_query = str(arguments["entity_query"]).strip()
-            max_results = int(arguments["max_results"])
+            raw_max_results = arguments["max_results"]
+            if not isinstance(raw_max_results, int) or isinstance(raw_max_results, bool):
+                raise ValueError("max_results must be an integer")
+            max_results = raw_max_results
         elif purpose is ObservationPurpose.VISUAL_PROPERTY:
             subject_ids = self._resolve_refs(arguments["subject_refs"])
             predicate = str(arguments["predicate"]).strip()
