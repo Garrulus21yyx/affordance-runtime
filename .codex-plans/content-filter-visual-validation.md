@@ -138,7 +138,7 @@ flagship uses the exact structural group counts and makes zero visual-provider c
 spatial/change fixtures still activate exactly their declared specialist; and a fresh-context review finds no second
 authority or bypass.
 
-### Phase 8 — runnable controlled shopping flagship (`in_progress`)
+### Phase 8 — runnable controlled shopping flagship (`done`)
 
 - Add one explicit benchmark entry for `candidate_comparison_flagship`; do not route it through the provider-free
   fixture validator or pretend that the earlier `visual-addition` diagnostic is the shopping flagship.
@@ -287,6 +287,36 @@ authority or bypass.
   an uncommitted observability-side `analysis_identity` constructor extension from the dirty main worktree. The
   benchmark runner now owns its redacted model identity directly and uses the committed `RunTraceRecorder` contract;
   no Runtime, trace owner, or provider behavior changed. The failed startup report contains no trace or provider call.
+- 2026-08-28: The final controlled shopping flagship ran from clean pushed commit `40520dd5` and exited zero. Its
+  25-event trace contains one three-subject `visual_property` request, fused predicate results `false/true/false`, one
+  three-option `single_select` interaction, admitted user choice `Field jacket`, a typed stale-binding refresh, one
+  `sent` DOM activation, fresh after-World label `Selected` within `Field jacket`, evaluator success, and one generic
+  `PublicArtifact`. The run used DeepSeek `deepseek-v4-flash` for the single ActionPolicy and the shared PydanticAI
+  visual role configured as `deepseek-v4-flash-vision-exp`; terminal status is `done` with no acceptance errors.
+  Local evidence is under `evidence/live/2026-08-28-controlled-shopping-flagship-final/`; report SHA-256 is
+  `ffe7b56b2170c75e35441790585f5ffbf87a04de995b09e6cbc62f15df4825cd` and trace SHA-256 is
+  `c2fe5058488cf32b88781c948a5f1b8e1390de9cf893427d3e62b671b0af4cb4`. The trace currently serializes visual source
+  lineage and screenshot identity but not the visual transport attempt/model/confidence metadata carried by the
+  internal evidence algebra; that observability gap is recorded as a non-blocking follow-up because the user narrowed
+  this milestone to one runnable flagship rather than broader assurance work.
+
+Rerun from the feature branch with a fresh output directory:
+
+```bash
+set -a
+source /home/yang/projects/affordance-runtime/.env
+set +a
+export LLM_ACTIVE_PROFILE=deepseek
+export LLM_VISUAL_PROFILE=deepseek
+export LLM_DEEPSEEK_VISION_MODEL=deepseek-v4-flash-vision-exp
+export LLM_OBSERVATION_TOOL_PROFILE=dynamic-visual.v1
+export LLM_INTERACTION_TOOL_PROFILE=structured-interaction.v1
+export LLM_PROFILE_FALLBACK_TO_LOCAL=false
+export PYTHONPATH=src:tests
+/home/yang/.venvs/affordance-browsergym-py312/bin/python \
+  -m affordance_runtime.benchmarks.supervised_gui_flagship \
+  --output evidence/live/<fresh-controlled-shopping-run>
+```
 
 ## Files changed by this plan
 
