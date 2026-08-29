@@ -2091,8 +2091,31 @@ Provider-free acceptance covers: safe relative/base URL normalization; current W
 compact read/search retention; expired-history removal of E/R/N/F handles while retaining the exact URL; pair-safe
 ToolCall/ToolReturn projection and Harness suffix preservation; first/second/later closed-route behavior; one-turn
 review consumption; review absence from checkpoint restore; review truncation fallback to the existing deliberate
-ActionPolicy; and zero-dispatch rejection of an immediate reviewed-route replay. A fresh Task554 rerun is still the
-live acceptance gate; until it completes, this item remains implemented but not live-verified. The focused owner,
-history, Surface, and vertical suite reports `294 passed, 3 skipped`. The fixed BrowserGym Python full suite reports
+ActionPolicy; and zero-dispatch rejection of an immediate reviewed-route replay. At that boundary, a fresh Task554
+rerun remained the live acceptance gate. The focused owner, history, Surface, and vertical suite reports
+`294 passed, 3 skipped`. The fixed BrowserGym Python full suite reports
 `2081 passed, 19 skipped, 1 deselected, 1 warning`; the sole deselection is the same repository-missing archived
 dashboard trace documented above. Ruff and `git diff --check` pass.
+
+[`memory-convergence-run2`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run2/run.json)
+is a failed post-memory-repair diagnostic, not a regression of that repair. It read all five requested movie URLs
+directly from current link semantics, switched tabs, and created `movie_space/urls.json`. After file creation, trace
+sequence 59 contains the fresh `Editor content` textbox and its current `type_text` binding, while the sequence-61
+model turn exposes 32 actions without that textbox. The policy consequently reactivated the already-open `urls.json`
+link; the action remained current and correctly bound, then produced unchanged outcomes and the existing Monitor
+terminated with `control_stalled`. This distinguishes action discoverability from ref mismatch, history loss, or
+executor failure.
+
+The post-run action-delivery repair adds a structural interaction obligation for current registered value-entry
+contracts (`text | option_value | native_value`) missing from the ordinary page/task-ranked route union. Existing
+visible routes retain their order and are not duplicated. Missing content dialog/form/region controls precede missing global
+search/navigation controls, with current viewport state and canonical source order as deterministic ordering facts.
+The ordinary 32-route ActionPager page remains intact, and all routes still compile from the same current
+ActionSpace through the same Catalog/Binder. A generated large-page regression places 40 links before a content
+editor and a global search field, proves the editor is outside the base page, then proves its fresh E-ref and
+`type_text` route are hard-admitted without exposing the private BrowserGym binding. A fresh Task554 run remains the
+live gate for this newly exposed owner invariant.
+
+Post-repair provider-free gates report `93 passed` for the focused delivery/packing/grounding set and
+`2083 passed, 19 skipped, 1 deselected, 1 warning` for the complete fixed-environment suite. The sole deselection is
+the already-documented absent archived dashboard trace; Ruff and `git diff --check` pass.

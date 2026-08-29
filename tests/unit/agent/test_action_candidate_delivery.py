@@ -143,6 +143,31 @@ def _binding(observation_id: str, target_id: str) -> ActionBinding:
     )
 
 
+def _text_binding(observation_id: str, target_id: str) -> ActionBinding:
+    return ActionBinding(
+        f"binding:{target_id}:type",
+        observation_id,
+        observation_id,
+        f"revision:{observation_id}",
+        f"fingerprint:{target_id}",
+        target_id,
+        target_id,
+        "browser",
+        "browsergym",
+        "type_text",
+        "fill",
+        "local_reversible",
+        ("query_changed",),
+        {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        {"private_bid": target_id},
+    )
+
+
 def _multi_verb_context():
     observation_id = "obs:multi-verb-focused-control"
     search = SemanticTarget(
@@ -649,6 +674,140 @@ def test_automatic_candidates_are_deterministic_top5_and_closed_by_current_autho
     assert all(item.target_ref in first_catalog.manifest.executable_refs for item in candidates)
     assert before_world == json.dumps(to_json_compatible(world), sort_keys=True)
     assert before_action_space == actions.action_space_id
+
+
+def test_large_page_preserves_current_content_editor_without_promoting_private_binding_or_old_ref() -> None:
+    observation_id = "obs:large-page-current-editor"
+    links = tuple(
+        SemanticTarget(f"target:link-{index:02d}", "link", f"Result {index:02d}", {"visible": True})
+        for index in range(40)
+    )
+    global_search = SemanticTarget(
+        "target:global-search",
+        "textbox",
+        "Search site",
+        {"visible": True, "value": ""},
+    )
+    editor = SemanticTarget(
+        "target:editor",
+        "textbox",
+        "Editor content",
+        {"visible": True, "value": ""},
+    )
+    link_nodes = tuple(f"link-{index:02d}" for index in range(len(links)))
+    structure = (
+        ObservationStructureNode(
+            "root",
+            "document",
+            "Workspace",
+            child_structure_ids=(*link_nodes, "site-search", "content-form"),
+        ),
+        *(
+            ObservationStructureNode(
+                f"link-{index:02d}",
+                "link",
+                target.label,
+                {"visible": True},
+                parent_structure_id="root",
+                semantic_target_id=target.target_id,
+            )
+            for index, target in enumerate(links)
+        ),
+        ObservationStructureNode(
+            "site-search",
+            "search",
+            "Site search",
+            parent_structure_id="root",
+            child_structure_ids=("site-search-input",),
+        ),
+        ObservationStructureNode(
+            "site-search-input",
+            "textbox",
+            global_search.label,
+            {"visible": True, "value": ""},
+            parent_structure_id="site-search",
+            semantic_target_id=global_search.target_id,
+        ),
+        ObservationStructureNode(
+            "content-form",
+            "form",
+            "Current editor",
+            parent_structure_id="root",
+            child_structure_ids=("editor-input",),
+        ),
+        ObservationStructureNode(
+            "editor-input",
+            "textbox",
+            editor.label,
+            {"visible": True, "value": ""},
+            parent_structure_id="content-form",
+            semantic_target_id=editor.target_id,
+        ),
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "browser",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (*links, global_search, editor),
+        bindings=(
+            *(_binding(observation_id, target.target_id) for target in links),
+            _text_binding(observation_id, global_search.target_id),
+            _text_binding(observation_id, editor.target_id),
+        ),
+        structure=structure,
+        structure_total_count=len(structure),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
+    task = TaskGoal(
+        "large-page-current-editor",
+        "Open Result 00, Result 01, Result 02, Result 03, and Result 04",
+        allowed_effects=("external_ui_interaction", "query_changed"),
+        risk_profile=RiskProfile.LOW,
+    )
+    actions = ActionSpaceBuilder().build(task, world)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "ongoing",
+    )
+    context = ContextBuilder().build(task, world, actions, evaluation)
+    plan = context.action_delivery_plan
+    assert plan is not None
+    editor_ref = context.grounding.target_refs[editor.target_id]
+    base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+    interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+    assert base is not None and interaction is not None
+    assert editor_ref not in {
+        record.candidate.target_ref
+        for record in base.records
+        if isinstance(record, ActionRouteFragment)
+    }
+    interaction_routes = tuple(
+        record
+        for record in interaction.records
+        if isinstance(record, ActionRouteFragment)
+    )
+    assert interaction_routes[0].candidate.target_ref == editor_ref
+    assert interaction_routes[0].inclusion_reason == "value_control"
+    assert interaction.required_record_count == 1
+
+    packed = _pack(ModelDecisionRequest("request:large-page-current-editor", context))
+    counts = dict(packed.admitted_record_counts)
+    assert counts[DeliveryObligationKind.INTERACTION.value] >= 1
+    assert editor_ref in packed.delivery.manifest.executable_refs
+    assert "private_bid" not in packed.delivery.view.text
+    resolved = resolve_grounded_tool_call(
+        packed.catalog,
+        ToolCall("type_text", {"target": editor_ref, "text": "[]"}, "call:current-editor"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=packed.delivery.delivery_id,
+    )
+    assert isinstance(resolved.decision, SelectAction)
+    assert resolved.decision.action_id == interaction_routes[0].candidate.action_id
 
 
 def test_every_delivery_prefix_projects_one_subject_per_target_with_exact_manifest_verbs() -> None:

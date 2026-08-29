@@ -13,6 +13,7 @@ from affordance_runtime.actions.capabilities import (
     INTERACTION_CAPABILITY_REGISTRY,
     DestinationMode,
     InteractionSubjectKind,
+    ParameterContractKind,
 )
 from affordance_runtime.actions.paging import ActionDiscoveryResult, ActionReranker
 from affordance_runtime.actions.space_contracts import ActionSpaceIssue
@@ -42,6 +43,25 @@ _FOCUS_CONTAINER_SOURCE_ROLES = frozenset(
         "textbox",
     }
 )
+
+_DIRECT_VALUE_CONTRACTS = frozenset(
+    {
+        ParameterContractKind.TEXT,
+        ParameterContractKind.OPTION_VALUE,
+        ParameterContractKind.NATIVE_VALUE,
+    }
+)
+
+_INTERACTION_CONTAINER_ORDER = {
+    FunctionalContainerKind.DIALOG: 0,
+    FunctionalContainerKind.FORM: 1,
+    FunctionalContainerKind.REGION: 2,
+    FunctionalContainerKind.GENERIC: 3,
+    FunctionalContainerKind.TABLE: 4,
+    FunctionalContainerKind.LIST: 5,
+    FunctionalContainerKind.SEARCH: 6,
+    FunctionalContainerKind.NAVIGATION: 7,
+}
 
 
 @dataclass(frozen=True)
@@ -539,6 +559,13 @@ def build_action_delivery_plan(
             raise ValueError("action discovery result must close every returned route over the current ActionSpace")
 
     options_by_target = {item.target_id: item for item in complete_actions}
+    already_present_routes = {
+        (item.target_ref, item.operation)
+        for item in base_actions
+    } | {
+        (ranked.target_ref, ranked.operation)
+        for ranked in automatic.candidates
+    }
     focused_containers = {
         target_context.primary_region_key
         for target_id, target_context in region_index.target_contexts.items()
@@ -550,8 +577,22 @@ def build_action_delivery_plan(
 
     def interaction_order(option: AgentActionOptionView) -> tuple[object, ...]:
         target_context = region_index.target_contexts.get(option.target_id)
+        direct_focus = bool(target_context is not None and target_context.focused)
+        same_focus_container = bool(
+            target_context is not None and target_context.primary_region_key in focused_containers
+        )
+        if direct_focus or same_focus_container:
+            return (
+                0 if direct_focus else 1,
+                *_public_option_view_order(option),
+            )
         return (
-            0 if target_context is not None and target_context.focused else 1,
+            2,
+            0 if target_context is not None and target_context.viewport == "visible" else 1,
+            _INTERACTION_CONTAINER_ORDER.get(
+                target_context.container_kind if target_context is not None else FunctionalContainerKind.GENERIC,
+                len(_INTERACTION_CONTAINER_ORDER),
+            ),
             *_public_option_view_order(option),
         )
 
@@ -561,11 +602,23 @@ def build_action_delivery_plan(
         same_focus_container = bool(
             target_context is not None and target_context.primary_region_key in focused_containers
         )
-        if direct or same_focus_container:
+        capability = INTERACTION_CAPABILITY_REGISTRY.require(option.operation)
+        direct_value_control = (
+            option.subject_kind == InteractionSubjectKind.ENTITY.value
+            and capability.parameter_contract in _DIRECT_VALUE_CONTRACTS
+            and (option.target_ref, option.operation) not in already_present_routes
+        )
+        if direct or same_focus_container or direct_value_control:
             append(
                 option,
                 kind=DeliveryObligationKind.INTERACTION,
-                reason="focused" if direct else "focus_container",
+                reason=(
+                    "focused"
+                    if direct
+                    else "focus_container"
+                    if same_focus_container
+                    else "value_control"
+                ),
             )
 
     interaction_target_refs = {

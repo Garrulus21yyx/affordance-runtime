@@ -2382,7 +2382,29 @@ ToolCall/ToolReturn pairing, cursor behavior, Executor, evaluator, and frontend 
 The provider-free convergence gate reports `294 passed, 3 skipped` for the focused owner/history/Surface/vertical
 set and `2081 passed, 19 skipped, 1 deselected, 1 warning` for the fixed BrowserGym Python full suite. The deselected
 test depends on the already-documented absent archived dashboard trace. Ruff and `git diff --check` pass. These gates
-prove the bounded contracts above, not live task success; Task554 remains open until its fresh rerun is inspected.
+prove the bounded contracts above, not live task success.
+
+Task554 run2 crossed those memory, URL, and current-ref boundaries: the policy read the five current movie links
+without opening every detail page, navigated to GitLab, and created the requested folder and file. It then exposed an
+independent action-delivery omission. The fresh BrowserGym World contained the open editor textbox and a valid
+`type_text` binding, but the ordinary ActionPager page was occupied by the first 32 source-order links and the
+interaction obligation admitted only focused controls. Because focus remained on the document body, the editor was
+absent from the model-visible catalog and the policy repeatedly activated the already-open file link until the
+existing Monitor blocked it.
+
+The action-delivery owner now treats current entity actions whose registered parameter contract is `text`,
+`option_value`, or `native_value` and which are absent from the ordinary page/task-ranked route union as direct
+interaction anchors alongside focused controls. Routes already present keep their existing order and are not duplicated. This
+is derived from the existing typed capability registry and functional World hierarchy, not from task words, site
+identity, DOM classes, or selectors. Fresh visible missing controls rank before unknown/offscreen controls; content
+dialog/form/region controls rank before global search/navigation controls; source order remains the deterministic
+tiebreaker. The first complete target bundle remains hard-admitted and optional breadth remains subject to the existing canonical request budget.
+The complete ActionSpace, disposable E-ref allocation, Catalog, Binder, Executor, and `find_controls` authority are
+unchanged, so this adds no alternate resolver and no durable handle.
+
+The focused action-delivery/packing/grounding set passes `93` tests. The complete fixed-environment provider-free
+suite passes `2083 passed, 19 skipped, 1 deselected, 1 warning`; the deselection remains the documented absent archived
+dashboard trace. Ruff and `git diff --check` pass. Live Task554 acceptance remains separate.
 
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
