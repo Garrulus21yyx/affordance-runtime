@@ -267,6 +267,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     assert browser_specs["tab_focus"].input_schema["properties"]["index"] == {
         "type": "integer",
         "minimum": 0,
+        "description": "Current non-active tab index from the fresh World.",
     }
     goto = next(item for item in catalog.specs if item.name == "goto")
     assert tuple(goto.input_schema["required"]) == ("url",)
@@ -524,7 +525,7 @@ def test_newly_projected_checkbox_is_observable_and_actionable_without_private_r
     assert (inventory.recognized_target_count, inventory.projected_target_count) == (4, 4)
 
 
-def test_focused_executable_bid_has_one_element_press_route_without_focused_fallback() -> None:
+def test_focused_executable_bid_keeps_one_element_press_and_one_distinct_hotkey_route() -> None:
     raw = raw_observation(ax_node("search", "searchbox", "Search"))
     raw[PRIVATE_CONTROL_PROPERTIES_KEY]["search"]["focused"] = True
 
@@ -535,20 +536,43 @@ def test_focused_executable_bid_has_one_element_press_route_without_focused_fall
     assert len(press_bindings) == 1
     assert press_bindings[0].target_id == focused_target.target_id
     assert press_bindings[0].primitive_action == "press"
-    assert all(item.role != "focused_context" for item in projected.world.targets)
+    focused_context = next(item for item in projected.world.targets if item.role == "focused_context")
+    focused_routes = tuple(
+        item for item in projected.world.bindings if item.target_id == focused_context.target_id
+    )
+    assert [(item.semantic_action, item.primitive_action) for item in focused_routes] == [
+        ("hotkey", "keyboard_hotkey")
+    ]
 
 
 def test_focused_context_fallback_remains_when_no_concrete_press_target_exists() -> None:
     projected = _project(raw_observation(ax_node("status", "status", "Ready")))
 
     focused = next(item for item in projected.world.targets if item.role == "focused_context")
-    binding = next(
+    bindings = tuple(item for item in projected.world.bindings if item.target_id == focused.target_id)
+
+    assert [(item.semantic_action, item.primitive_action) for item in bindings] == [
+        ("press_key", "keyboard_press"),
+        ("hotkey", "keyboard_hotkey"),
+    ]
+
+
+def test_slider_and_spinbutton_reuse_the_closed_discrete_key_contract() -> None:
+    projected = _project(
+        raw_observation(
+            ax_node("volume", "slider", "Volume"),
+            ax_node("quantity", "spinbutton", "Quantity"),
+        )
+    )
+    roles = {item.target_id: item.role for item in projected.world.targets}
+    key_bindings = tuple(
         item
-        for item in projected.world.bindings
-        if item.target_id == focused.target_id and item.semantic_action == "press_key"
+        for item in _page_bindings(projected.world)
+        if item.semantic_action == "press_key" and roles[item.target_id] in {"slider", "spinbutton"}
     )
 
-    assert binding.primitive_action == "keyboard_press"
+    assert {roles[item.target_id] for item in key_bindings} == {"slider", "spinbutton"}
+    assert all(item.primitive_action == "press" for item in key_bindings)
 
 
 def test_visible_structure_without_executable_binding_records_eligibility_reason() -> None:
@@ -875,7 +899,7 @@ def test_model_page_limit_does_not_delete_entities_or_action_bindings() -> None:
         action_space,
         evaluation,
     )
-    assert len(action_space.options) == 132
+    assert len(action_space.options) == 133
     document = context.actor_world.documents[0]
     assert document.total_node_count == 67
     assert document.retained_node_count == 67
@@ -971,7 +995,7 @@ def test_off_viewport_capabilities_remain_complete_across_action_pages() -> None
 
     assert page_count > 1
     assert seen == {item.action_id for item in action_space.options}
-    assert len(seen) == len(world.bindings) == 44
+    assert len(seen) == len(world.bindings) == 45
 
 
 def test_private_handles_and_benchmark_identity_are_absent_from_agent_context() -> None:

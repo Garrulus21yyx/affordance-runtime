@@ -68,7 +68,7 @@ _BROWSER_GLOBAL_ACTIONS = {
     "goto", "go_back", "go_forward", "new_tab", "tab_focus", "tab_close",
 }
 _CURRENT_ACTIONS = {"activate", "type_text", "select_option", "read", *_BROWSER_GLOBAL_ACTIONS}
-_FUTURE_ACTIONS = {"scroll", "press_key", "focus", "drag_to", "set_value", "hover"}
+_FUTURE_ACTIONS = {"scroll", "press_key", "hotkey", "drag_to", "set_value"}
 
 
 def _type_text_world() -> tuple[TaskGoal, WorldObservation]:
@@ -116,12 +116,35 @@ def test_registry_is_closed_unique_and_code_versioned() -> None:
     definitions = INTERACTION_CAPABILITY_REGISTRY.definitions
     names = tuple(item.semantic_action for item in definitions)
 
-    assert INTERACTION_CAPABILITY_REGISTRY.registry_id == "interaction-capabilities.v2"
-    assert len(names) == len(set(names)) == 16
+    assert INTERACTION_CAPABILITY_REGISTRY.registry_id == "interaction-capabilities.v3"
+    assert len(names) == len(set(names)) == 15
     assert set(names) == _CURRENT_ACTIONS | _FUTURE_ACTIONS
+    assert {"focus", "hover"}.isdisjoint(names)
     with pytest.raises(InteractionCapabilityError) as unsupported:
         INTERACTION_CAPABILITY_REGISTRY.require("click_button")
     assert unsupported.value.code is InteractionCapabilityIssueCode.UNSUPPORTED_SEMANTIC_ACTION
+
+
+def test_every_registry_action_owns_model_description_and_parameter_descriptions() -> None:
+    for definition in INTERACTION_CAPABILITY_REGISTRY.definitions:
+        current_value_schema = (
+            {"type": "string"}
+            if definition.parameter_contract is ParameterContractKind.NATIVE_VALUE
+            else {"type": "integer", "minimum": 0}
+            if definition.parameter_contract is ParameterContractKind.TAB_INDEX
+            else None
+        )
+        schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema(
+            definition.semantic_action,
+            current_value_schema=current_value_schema,
+        )
+
+        assert definition.description.strip()
+        assert set(definition.parameter_descriptions) == set(definition.parameter_names)
+        assert all(
+            property_schema.get("description", "").strip()
+            for property_schema in schema["properties"].values()
+        )
 
 
 @pytest.mark.parametrize(
@@ -165,6 +188,7 @@ def test_browsergym_capabilities_include_official_web_navigation_primitives() ->
         "drag_to",
         "scroll",
         "press_key",
+        "hotkey",
         *_BROWSER_GLOBAL_ACTIONS,
     }
     assert support["scroll"].primitive_actions == ("scroll",)
@@ -174,6 +198,8 @@ def test_browsergym_capabilities_include_official_web_navigation_primitives() ->
         InteractionSubjectKind.ENTITY,
         InteractionSubjectKind.FOCUSED_CONTEXT,
     )
+    assert support["hotkey"].primitive_actions == ("keyboard_hotkey",)
+    assert support["hotkey"].subject_kinds == (InteractionSubjectKind.FOCUSED_CONTEXT,)
     assert all(
         support[action].subject_kinds == (InteractionSubjectKind.BROWSER_CONTEXT,)
         and support[action].primitive_actions == (action,)
@@ -350,10 +376,18 @@ def test_existing_business_schema_is_conserved_binding_to_exact_resolution_and_a
     )
 
     assert binding.parameter_schema == option.parameter_schema == projected.parameter_schema
-    assert compiled.public_spec.input_schema["properties"]["text"] == {"type": "string"}
+    assert compiled.public_spec.input_schema["properties"]["text"] == {
+        "type": "string",
+        "description": (
+            "Complete replacement value for the editable control; use an empty string to clear it."
+        ),
+    }
     assert "enum" not in compiled.public_spec.input_schema["properties"]["target"]
     assert compiled.public_spec.input_schema["required"] == ("target", "text")
     assert admitted is not None
+    assert compiled.public_spec.description.startswith(
+        INTERACTION_CAPABILITY_REGISTRY.require("type_text").description
+    )
     assert admitted.parameters == {"text": "beta"}
     assert admitted.schema_digest == option.schema_digest
     assert isinstance(binding.verification_contract, VerificationContract)

@@ -2107,7 +2107,9 @@ class BrowserGymSurfaceAdapter:
         self.select_calls += int(request.binding.primitive_action == "select_option")
         self.scroll_calls += int(request.binding.primitive_action == "scroll")
         self.press_calls += int(request.binding.primitive_action == "press")
-        self.keyboard_press_calls += int(request.binding.primitive_action == "keyboard_press")
+        self.keyboard_press_calls += int(
+            request.binding.primitive_action in {"keyboard_press", "keyboard_hotkey"}
+        )
 
 
 def _focused_bid_is_current(raw: dict[str, object], private_bid: str) -> bool:

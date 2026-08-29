@@ -11,6 +11,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.execution.contracts import ActionIntent, BoundActionRequest
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.surfaces.wot import WotDeploymentScope
 from affordance_runtime.surfaces.wot.adapter import WotSurfaceAdapter
 from affordance_runtime.surfaces.wot.contracts import WotTransportResult, WotTransportStatus
@@ -299,7 +300,10 @@ def test_wot_write_property_uses_native_value_schema_and_rejects_invalid_before_
         observed = acquisition.observation
         options = ActionSpaceBuilder().build(_task(), observed).options
         option = next(item for item in options if item.semantic_action == "set_value")
-        assert option.parameter_schema["properties"]["value"] == value_schema
+        assert option.parameter_schema["properties"]["value"] == {
+            **to_json_compatible(value_schema),
+            "description": "Schema-valid native value for the current writable property.",
+        }
         valid = ActionSpaceBuilder().admit(option, {"value": valid_value})
         request = ActionBinder().bind(valid, observed, "context:test:set-value")
         invalid_selection = replace(valid, parameters={"value": invalid_value})

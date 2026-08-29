@@ -6,6 +6,45 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+### 2026-08-29 tool-contract convergence
+
+Stable interaction semantics now have one owner: `InteractionCapabilityRegistry`. Each registered action owns its
+purpose, parameter family, parameter descriptions, subject kind, destination rule, and verification families.
+Surface profiles only declare which of those actions their real executor primitives support; the grounded compiler
+only adds current E-ref selectors and assembles the disposable Catalog. Dormant `focus` and `hover` declarations were
+removed because no selected adapter implemented them.
+
+The BrowserGym profile exposes three distinct keyboard contracts through its existing binding and executor path:
+
+```text
+type_text(text)          -> replace the complete editable value; text="" clears it
+press_key(key)           -> one schema-bounded discrete key
+hotkey(modifiers, key)   -> one schema-bounded modifier chord
+```
+
+`hotkey` is a current `focused_context` action and dispatches through BrowserGym's existing `keyboard_press`; it does
+not create a macro scheduler or a second loop. Slider and spinbutton controls reuse `press_key` only when the fresh
+BrowserGym observation says they are attached, visible, enabled, and focusable. Focused-element identity, World
+lineage, Catalog resolution, Binder admission, pre-dispatch currentness, execution, and fresh capture remain the same
+single chain.
+
+Read pagination remains owner-local and stateless, but cursors are now opaque and bound to the exact
+`World + operation + region/query + ordered result inventory + page/budget` fingerprint. A cursor can advance only the
+same read/search/list request over the same World; cross-query, cross-region, cross-tool, stale-World, malformed, and
+out-of-range reuse returns typed `InvalidCursor`. No cursor inventory or continuation Store was added. Read metadata
+declares `executable_grounding` only when the returned items actually contain a current executable E-ref together with
+at least one verb; empty, invalid, stale, and capacity outcomes do not claim executable routes.
+
+The normative chain is unchanged:
+
+```text
+fresh World -> current ActionSpace -> disposable ToolCatalog -> one ToolCall
+-> local bounded result, or Binder -> BrowserGym executor -> fresh World
+-> committed StepResult -> same-call ToolReturn -> next model turn
+```
+
+CoreLoop, Monitor, Workspace, history compaction, ToolReturn projection, and evidence storage are unchanged.
+
 ### 2026-08-27 single Interaction Console
 
 The mint/apricot Next.js Interaction Shell is now the sole frontend. The initial Flight Deck presentation and the
@@ -1559,14 +1598,15 @@ Pagination, when needed, is deliberately small:
 
 ```text
 read_region(region_ref=R9)
--> bounded page + next_cursor="20"
-read_region(region_ref=R9, cursor="20")
+-> bounded page + next_cursor="cursor:<opaque>"
+read_region(region_ref=R9, cursor="cursor:<opaque>")
 -> next bounded page
 ```
 
-The cursor is only a bounded offset understood by that same read owner. It is not a Store capability, provider state,
-Workspace state, evidence cursor, GUI-effect cursor, or action-result cursor. The current catalog and resolver still
-own current-World and current-ref validation. An invalid offset returns `InvalidCursor` deterministically.
+The cursor encodes a bounded offset plus a fingerprint understood by that same read owner. It is not a Store
+capability, provider state, Workspace state, evidence cursor, GUI-effect cursor, or action-result cursor. The current
+catalog and resolver still own current-World and current-ref validation. A malformed cursor or a fingerprint/offset
+mismatch returns `InvalidCursor` deterministically.
 
 The read owner packs complete records first against the final serialized ToolReturn limit. It does not pre-truncate
 every field before calculating that total. Only a record that cannot fit on an empty page uses the individual

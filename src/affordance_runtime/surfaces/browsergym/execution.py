@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.execution import ActionError, BoundActionRequest
 from affordance_runtime.surfaces.browsergym.binding import (
     BrowserGymDragBinding,
@@ -67,10 +67,10 @@ def browsergym_action(request: BoundActionRequest, private: BrowserGymPrivateBin
         delta_x, delta_y = _scroll_delta(request, private)
         return f"scroll({delta_x}, {delta_y})"
     if isinstance(private, BrowserGymFocusedContextBinding):
-        if primitive != "keyboard_press":
+        if primitive not in {"keyboard_press", "keyboard_hotkey"}:
             raise ValueError("BrowserGym focused-context binding uses an unsupported primitive")
-        key = _key(request)
-        return f"keyboard_press({json.dumps(key, ensure_ascii=False)})"
+        key_combination = _key(request) if primitive == "keyboard_press" else _hotkey(request)
+        return f"keyboard_press({json.dumps(key_combination, ensure_ascii=False)})"
     assert isinstance(private, BrowserGymElementBinding)
     bid = json.dumps(private.private_element_id, ensure_ascii=False)
     if primitive == "click":
@@ -95,13 +95,20 @@ def _key(request: BoundActionRequest) -> str:
     value = request.intent.parameters.get("key")
     if not isinstance(value, str):
         raise ValueError("press_key requires one key value")
-    schema = request.binding.parameter_schema
-    properties = schema.get("properties") if isinstance(schema, Mapping) else None
-    key_schema = properties.get("key") if isinstance(properties, Mapping) else None
-    allowed = key_schema.get("enum") if isinstance(key_schema, Mapping) else None
-    if not isinstance(allowed, tuple | list) or value not in allowed:
-        raise ValueError("press_key key is outside the current schema")
+    validate_value({"key": value}, request.binding.parameter_schema)
     return value
+
+
+def _hotkey(request: BoundActionRequest) -> str:
+    modifiers = request.intent.parameters.get("modifiers")
+    key = request.intent.parameters.get("key")
+    if not isinstance(modifiers, str) or not isinstance(key, str):
+        raise ValueError("hotkey requires one modifier chord and one key")
+    validate_value(
+        {"modifiers": modifiers, "key": key},
+        request.binding.parameter_schema,
+    )
+    return f"{modifiers}+{key}"
 
 
 def _scroll_delta(

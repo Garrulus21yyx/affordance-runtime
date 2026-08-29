@@ -2,6 +2,26 @@
 
 ## Current status
 
+### 2026-08-29 tool-contract convergence — provider-free verified
+
+The tool-contract repair is implementation-complete on `codex/tool-contract-convergence`; no live benchmark was
+authorized or run. The positive gates cover:
+
+- every Registry action owns a non-empty action description and an exact description for each parameter;
+- `type_text` replaces or clears a full field, while `press_key` and `hotkey` keep separate closed schemas;
+- `hotkey -> focused-context binding -> BrowserGym keyboard_press -> fresh capture` succeeds, and unregistered chords
+  fail before dispatch;
+- slider/spinbutton key actions require truthful fresh focusability;
+- every registered local tool still resolves to its contract subtype and same-call ToolReturn;
+- valid same-request cursors advance without loss/duplication, while changed query, region, tool, World, malformed
+  token, and out-of-range offset return typed `InvalidCursor`;
+- executable-grounding metadata is absent unless returned records contain an executable E-ref plus verbs.
+
+The fixed BrowserGym Python full suite reports `2092 passed, 19 skipped, 1 deselected`. The one deselection is the
+repository's known missing historical dashboard trace. Ruff passes. Scoped Pyright reports the same 48 pre-existing
+errors as the untouched `d4cab7c0` baseline and therefore adds no type regression. This evidence does not claim live
+benchmark accuracy, latency, or token non-regression.
+
 ### 2026-08-27 unified Console integration
 
 The standalone benchmark Console has been retired. Its formal `run-case` launcher and bounded trace/frame reader now
@@ -1240,7 +1260,7 @@ Properties cover:
 
 - ordinary and Unicode result items;
 - final serialized ToolReturn byte fitting;
-- finite same-tool numeric page progress;
+- finite same-request opaque-cursor page progress;
 - invalid cursor as a typed result;
 - complete records packed first against the final serialized result limit;
 - oversized individual content returned as `partial_item` with `content_truncated=true`;

@@ -494,9 +494,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert "Use exactly one offered tool and follow its current schema" in system_content
     assert {item["name"] for item in public["tools"]} == {
         "type_text",
-        "activate",
-        "press_key",
-        "scroll",
+            "activate",
+            "press_key",
+            "hotkey",
+            "scroll",
         "read_region",
         "search_page_content",
         "list_regions",
@@ -1147,8 +1148,9 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
-        "press",
-        "scroll",
+            "press",
+            "hotkey",
+            "scroll",
         "read",
         "search",
         "find",

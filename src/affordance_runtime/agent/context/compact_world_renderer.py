@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.page_cursor import decode_cursor, encode_cursor
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _DROPPED_STATE_PREFIXES = ("appearance.",)
@@ -675,10 +677,19 @@ def inspect_actor_world(
                 grounding,
                 verbs_by_ref,
             )
+            cursor_fingerprint = _world_read_cursor_fingerprint(
+                observation.observation_id,
+                action,
+                region_ref,
+                items,
+                page_size,
+                hard_limit,
+            )
             return _page_region_items(
                 items,
                 cursor,
                 page_size,
+                cursor_fingerprint=cursor_fingerprint,
                 hard_limit=hard_limit,
                 source_coverage=region.source_coverage,
                 region_membership=region.region_membership,
@@ -702,12 +713,21 @@ def inspect_actor_world(
                     _index_coverage(region_index),
                     ("use fewer terms", "read a visible region"),
                 )
-            offset = _decode_simple_cursor(cursor, len(matches))
+            cursor_fingerprint = _world_read_cursor_fingerprint(
+                observation.observation_id,
+                action,
+                query,
+                matches,
+                page_size,
+                hard_limit,
+            )
+            offset = _decode_read_cursor(cursor, len(matches), cursor_fingerprint)
             return _page_read_items(
                 matches,
                 offset,
                 page_size,
                 hard_limit,
+                cursor_fingerprint,
                 lambda page, next_cursor: Matches(
                     page,
                     _index_coverage(region_index),
@@ -719,12 +739,21 @@ def inspect_actor_world(
                 _region_item(region, canonical_world.region_refs[region.key])
                 for region in region_index.regions
             )
-            offset = _decode_simple_cursor(cursor, len(items))
+            cursor_fingerprint = _world_read_cursor_fingerprint(
+                observation.observation_id,
+                action,
+                "",
+                items,
+                page_size,
+                hard_limit,
+            )
+            offset = _decode_read_cursor(cursor, len(items), cursor_fingerprint)
             return _page_read_items(
                 items,
                 offset,
                 page_size,
                 hard_limit,
+                cursor_fingerprint,
                 Page,
             )
         return Empty(action, _index_coverage(region_index), ("use read_region, search, or view_all",))
@@ -777,13 +806,32 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
 
 
 def _with_world_read_metadata(result: Mapping[str, object]) -> Mapping[str, object]:
-    return {
+    public = {
         **result,
         "searched_domain": "readable_content",
         "read_only": True,
         "zero_browser_dispatch": True,
-        "executable_grounding": "attached_to_returned_readable_targets",
     }
+    if _contains_executable_read_route(result.get("items")):
+        public["executable_grounding"] = "attached_to_returned_readable_targets"
+    return public
+
+
+def _contains_executable_read_route(value: object) -> bool:
+    if isinstance(value, Mapping):
+        target_ref = value.get("target_ref")
+        verbs = value.get("verbs")
+        if (
+            isinstance(target_ref, str)
+            and PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE)
+            and isinstance(verbs, tuple | list)
+            and any(isinstance(verb, str) and verb.strip() for verb in verbs)
+        ):
+            return True
+        return any(_contains_executable_read_route(item) for item in value.values())
+    if isinstance(value, tuple | list):
+        return any(_contains_executable_read_route(item) for item in value)
+    return False
 
 
 def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:
@@ -1960,19 +2008,24 @@ def _page_region_items(
     cursor: str,
     page_size: int,
     *,
+    cursor_fingerprint: str,
     hard_limit: int,
     source_coverage: str,
     region_membership: str,
 ) -> Opened | CapacityExceeded:
     """Pack stable public records against the final serialized result size."""
 
-    offset = _decode_simple_cursor(cursor, len(items))
+    offset = _decode_read_cursor(cursor, len(items), cursor_fingerprint)
     page: list[Mapping[str, object]] = []
     index = offset
     while index < len(items) and len(page) < page_size:
         candidate = (*page, items[index])
         candidate_end = index + 1
-        candidate_cursor = str(candidate_end) if candidate_end < len(items) else ""
+        candidate_cursor = (
+            encode_cursor(candidate_end, cursor_fingerprint)
+            if candidate_end < len(items)
+            else ""
+        )
         outcome = Opened(
             candidate,
             candidate_cursor,
@@ -1985,7 +2038,7 @@ def _page_region_items(
             index = candidate_end
             continue
         if page:
-            next_cursor = str(index)
+            next_cursor = encode_cursor(index, cursor_fingerprint)
             admitted = Opened(
                 tuple(page),
                 next_cursor,
@@ -2009,7 +2062,7 @@ def _page_region_items(
             index = candidate_end
             continue
         return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
-    next_cursor = str(index) if index < len(items) else ""
+    next_cursor = encode_cursor(index, cursor_fingerprint) if index < len(items) else ""
     return Opened(
         tuple(page),
         next_cursor,
@@ -2024,6 +2077,7 @@ def _page_read_items(
     offset: int,
     page_size: int,
     hard_limit: int,
+    cursor_fingerprint: str,
     outcome_factory,
 ) -> Matches | Page | CapacityExceeded:
     """Bound a simple read/search page against its final public ToolReturn size."""
@@ -2033,7 +2087,11 @@ def _page_read_items(
     while index < len(items) and len(page) < page_size:
         candidate = (*page, items[index])
         candidate_end = index + 1
-        candidate_cursor = str(candidate_end) if candidate_end < len(items) else ""
+        candidate_cursor = (
+            encode_cursor(candidate_end, cursor_fingerprint)
+            if candidate_end < len(items)
+            else ""
+        )
         outcome = outcome_factory(candidate, candidate_cursor)
         if _inspect_outcome_bytes(outcome) <= hard_limit:
             page.append(items[index])
@@ -2048,7 +2106,7 @@ def _page_read_items(
                 continue
             return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
         break
-    next_cursor = str(index) if index < len(items) else ""
+    next_cursor = encode_cursor(index, cursor_fingerprint) if index < len(items) else ""
     admitted = outcome_factory(tuple(page), next_cursor)
     required = _inspect_outcome_bytes(admitted)
     return admitted if required <= hard_limit else CapacityExceeded(required, hard_limit)
@@ -2081,21 +2139,40 @@ def _region_item(region, region_ref: str) -> Mapping[str, object]:
     }
 
 
-def _page_items(items, offset: int, page_size: int):
-    page = tuple(items[offset : offset + page_size])
-    next_offset = offset + len(page)
-    return page, str(next_offset) if next_offset < len(items) else ""
-
-
-def _decode_simple_cursor(cursor: str, total: int) -> int:
+def _decode_read_cursor(cursor: str, total: int, fingerprint: str) -> int:
     if not cursor:
         return 0
-    if not cursor.isdigit():
-        raise ValueError("invalid cursor")
-    offset = int(cursor)
+    offset = decode_cursor(cursor, fingerprint)
     if offset < 0 or offset > total:
         raise ValueError("cursor outside result")
     return offset
+
+
+def _world_read_cursor_fingerprint(
+    observation_id: str,
+    operation: str,
+    scope: str,
+    items: tuple[Mapping[str, object], ...],
+    page_size: int,
+    hard_limit: int,
+) -> str:
+    """Bind one stateless cursor to the exact owner-produced result inventory."""
+
+    payload = {
+        "world": observation_id,
+        "operation": operation,
+        "scope": scope,
+        "items": to_json_compatible(items),
+        "page_size": page_size,
+        "hard_limit": hard_limit,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def _index_coverage(index) -> str:

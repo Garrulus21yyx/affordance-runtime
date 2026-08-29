@@ -278,10 +278,11 @@ def project_browsergym_observation(
         episode_identity,
     )
     if focused is not None:
-        focused_target, focused_structure, focused_public, focused_private = focused
+        focused_target, focused_structure, focused_bindings = focused
         targets.append(focused_target)
-        bindings.append(focused_public)
-        private.append(focused_private)
+        for focused_public, focused_private in focused_bindings:
+            bindings.append(focused_public)
+            private.append(focused_private)
     fact_total = max(fact_total, len(facts))
     if fact_total > len(facts):
         issues.append(EntityInventoryIssueCode.FACT_CAPACITY_EXCEEDED)
@@ -641,7 +642,11 @@ def _focused_context_subject(
     revision: str,
     page_identity: str,
     episode_identity: str,
-) -> tuple[SemanticTarget, ObservationStructureNode, ActionBinding, BrowserGymFocusedContextBinding] | None:
+) -> tuple[
+    SemanticTarget,
+    ObservationStructureNode,
+    tuple[tuple[ActionBinding, BrowserGymFocusedContextBinding], ...],
+] | None:
     focused = tuple(
         control
         for control in controls
@@ -651,15 +656,10 @@ def _focused_context_subject(
     if len(focused) > 1:
         return None
     focused_control = focused[0] if focused else None
-    if focused_control is not None and any(
+    has_element_press = focused_control is not None and any(
         offer.semantic_action == "press_key" and offer.primitive_action == "press"
         for offer in focused_control.executable_offers
-    ):
-        # One physical intent gets one public route. BrowserGym's element
-        # press already focuses this exact BID before dispatch; exposing the
-        # page-level keyboard fallback as well would duplicate the intent and
-        # weaken binding/currentness semantics.
-        return None
+    )
     target_id = "focused-context:current"
     state: dict[str, object] = {"subject.kind": "focused_context"}
     relations: dict[str, object] = {}
@@ -685,40 +685,48 @@ def _focused_context_subject(
         target_id,
         False,
     )
-    schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("press_key")
-    binding_id = f"binding:{observation_id}:focused-context:press-key"
-    public = ActionBinding(
-        binding_id,
-        observation_id,
-        observation_id,
-        revision,
-        _public_fingerprint(("focused_context", target.label, tuple(sorted(state.items())), child_ids)),
-        target_id,
-        target_id,
-        "browsergym",
-        "browsergym",
-        "press_key",
-        "keyboard_press",
-        "local_reversible",
-        ("external_ui_interaction",),
-        schema,
-        {},
-        observation_barrier=True,
-        risk=ActionRisk.LOW,
-        verification_family=VerificationFamily.SEMANTIC.value,
+    fingerprint = _public_fingerprint(
+        ("focused_context", target.label, tuple(sorted(state.items())), child_ids)
     )
-    private = BrowserGymFocusedContextBinding(
-        binding_id,
-        observation_id,
-        revision,
-        page_identity,
-        episode_identity,
-        target_id,
-        "keyboard_press",
-        "",
-        focused_control.private_navigation_potential if focused_control is not None else False,
-    )
-    return target, structure, public, private
+    actions = [("hotkey", "keyboard_hotkey")]
+    if not has_element_press:
+        actions.insert(0, ("press_key", "keyboard_press"))
+    pairs = []
+    for semantic_action, primitive_action in actions:
+        binding_id = f"binding:{observation_id}:focused-context:{semantic_action.replace('_', '-')}"
+        public = ActionBinding(
+            binding_id,
+            observation_id,
+            observation_id,
+            revision,
+            fingerprint,
+            target_id,
+            target_id,
+            "browsergym",
+            "browsergym",
+            semantic_action,
+            primitive_action,
+            "local_reversible",
+            ("external_ui_interaction",),
+            INTERACTION_CAPABILITY_REGISTRY.parameter_schema(semantic_action),
+            {},
+            observation_barrier=True,
+            risk=ActionRisk.LOW,
+            verification_family=VerificationFamily.SEMANTIC.value,
+        )
+        runtime = BrowserGymFocusedContextBinding(
+            binding_id,
+            observation_id,
+            revision,
+            page_identity,
+            episode_identity,
+            target_id,
+            primitive_action,
+            focused_control.private_bid if focused_control is not None else "",
+            focused_control.private_navigation_potential if focused_control is not None else False,
+        )
+        pairs.append((public, runtime))
+    return target, structure, tuple(pairs)
 
 
 def _viewport_dimensions(raw: dict[str, object]) -> tuple[int, int]:

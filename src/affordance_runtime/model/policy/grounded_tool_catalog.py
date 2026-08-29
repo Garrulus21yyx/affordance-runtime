@@ -567,7 +567,10 @@ def compile_grounded_tool_catalog(
                             },
                             "cursor": {
                                 "type": "string",
-                                "description": "optional non-empty next_cursor returned by this same tool",
+                                "description": (
+                                    "optional opaque next_cursor from the immediately preceding result of this "
+                                    "same tool, World, and region"
+                                ),
                                 "minLength": 1,
                                 "maxLength": 512,
                             },
@@ -594,7 +597,10 @@ def compile_grounded_tool_catalog(
                             },
                             "cursor": {
                                 "type": "string",
-                                "description": "optional non-empty next_cursor returned by this same tool",
+                                "description": (
+                                    "optional opaque next_cursor from the immediately preceding result of this "
+                                    "same tool, World, and exact query"
+                                ),
                                 "minLength": 1,
                                 "maxLength": 512,
                             },
@@ -612,7 +618,10 @@ def compile_grounded_tool_catalog(
                         {
                             "cursor": {
                                 "type": "string",
-                                "description": "optional non-empty next_cursor returned by this same tool",
+                                "description": (
+                                    "optional opaque next_cursor from the immediately preceding result of this "
+                                    "same tool and World"
+                                ),
                                 "minLength": 1,
                                 "maxLength": 512,
                             }

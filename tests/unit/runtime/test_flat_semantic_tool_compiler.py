@@ -203,6 +203,7 @@ def test_browser_context_public_schema_is_stable_while_private_domain_stays_curr
     assert first.public_spec.input_schema["properties"]["index"] == {
         "type": "integer",
         "minimum": 0,
+        "description": "Current non-active tab index from the fresh World.",
     }
     with pytest.raises(GroundedToolResolutionError) as rejected:
         resolve_catalog_call(
@@ -309,7 +310,10 @@ def test_business_enums_merge_publicly_but_remain_exact_per_target() -> None:
     )[0]
     catalog = _catalog(tool)
 
-    assert tool.public_spec.input_schema["properties"]["value"] == {"type": "string"}
+    assert tool.public_spec.input_schema["properties"]["value"] == {
+        "type": "string",
+        "description": "Current option value to select.",
+    }
     accepted = resolve_catalog_call(
         catalog,
         ToolCall("select_option", {"target": "E2", "value": "C"}),

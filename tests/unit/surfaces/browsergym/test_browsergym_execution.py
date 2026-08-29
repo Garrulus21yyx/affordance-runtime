@@ -672,6 +672,25 @@ def test_press_key_dispatches_entity_press_and_focused_keyboard_press() -> None:
     asyncio.run(environment.close())
 
 
+def test_hotkey_dispatches_one_schema_bounded_keyboard_chord() -> None:
+    fake, environment, task, world = _fixture()
+    request = _request_for_role(
+        world,
+        task,
+        "hotkey",
+        "focused_context",
+        {"modifiers": "Control", "key": "A"},
+    )
+    fake.probe_task = {}
+
+    outcome = asyncio.run(environment.execute(request))
+
+    assert outcome.result.dispatch_status is DispatchStatus.SENT
+    assert fake.actions == ['keyboard_press("Control+A")']
+    assert environment.keyboard_press_calls == environment.step_calls == 1
+    asyncio.run(environment.close())
+
+
 def test_focused_context_fallback_uses_dispatch_time_focus_without_invented_bid_identity() -> None:
     initial = raw_observation(ax_node("status", "status", "Ready"))
     initial[PRIVATE_CONTROL_PROPERTIES_KEY]["status"]["focused"] = True
@@ -707,6 +726,24 @@ def test_press_key_rejects_keys_outside_current_closed_enum_before_dispatch() ->
     )
 
     result = builder.try_admit(option, {"key": 'Enter"); scroll(0, 9999); //'})
+
+    assert result.admitted is None
+    assert result.issue is not None
+    assert fake.actions == []
+    asyncio.run(environment.close())
+
+
+def test_hotkey_rejects_unregistered_chords_before_dispatch() -> None:
+    fake, environment, task, world = _fixture()
+    builder = ActionSpaceBuilder()
+    focused = next(item for item in world.targets if item.role == "focused_context")
+    option = next(
+        item
+        for item in builder.build(task, world).options
+        if item.semantic_action == "hotkey" and item.target_id == focused.target_id
+    )
+
+    result = builder.try_admit(option, {"modifiers": "Control+NotAKey", "key": "A"})
 
     assert result.admitted is None
     assert result.issue is not None

@@ -132,7 +132,10 @@ def test_bidless_recognized_interactive_unit_is_not_empty_or_projected() -> None
     assert inventory.omitted_target_count == 1
     assert inventory.recognized_target_count == 3
     assert _page_targets(projection.world) == ()
-    assert all(binding.semantic_action in {"scroll", "press_key"} for binding in projection.world.bindings)
+    assert all(
+        binding.semantic_action in {"scroll", "press_key", "hotkey"}
+        for binding in projection.world.bindings
+    )
 
 
 def test_ax_name_remains_authoritative_while_dom_semantics_are_preserved() -> None:

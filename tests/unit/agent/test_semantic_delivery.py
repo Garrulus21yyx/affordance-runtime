@@ -1110,16 +1110,20 @@ def test_inspect_world_closed_outcome_algebra_and_currentness() -> None:
 
     assert isinstance(inspect_actor_world(**kwargs, action="read_region", region_ref=region_ref), Opened)
     assert isinstance(inspect_actor_world(**kwargs, action="find", query="Item 1"), Matches)
-    assert isinstance(inspect_actor_world(**kwargs, action="find", query="absent"), Empty)
+    empty = inspect_actor_world(**kwargs, action="find", query="absent")
+    invalid_cursor = inspect_actor_world(**kwargs, action="view_all", cursor="bad")
+    assert isinstance(empty, Empty)
     assert isinstance(inspect_actor_world(**kwargs, action="view_all"), Page)
     assert isinstance(inspect_actor_world(**kwargs, action="read_region", region_ref="R999"), InvalidRegion)
-    assert isinstance(inspect_actor_world(**kwargs, action="view_all", cursor="bad"), InvalidCursor)
+    assert isinstance(invalid_cursor, InvalidCursor)
     assert isinstance(inspect_actor_world(**kwargs, action="view_all", hard_limit=1), CapacityExceeded)
     stale = replace(context.region_index, world_observation_id="world:stale")
     assert isinstance(
         inspect_actor_world(**{**kwargs, "region_index": stale}, action="view_all"),
         StaleContext,
     )
+    assert "executable_grounding" not in inspect_outcome_public(empty)
+    assert "executable_grounding" not in inspect_outcome_public(invalid_cursor)
 
 
 def test_search_result_region_ref_is_immediately_accepted_by_read_region() -> None:
@@ -1180,7 +1184,7 @@ def test_paginated_search_reuses_the_same_tool_with_its_returned_cursor() -> Non
         expected_context_id=context.context_id,
     )
     cursor = first.decision.result["next_cursor"]
-    assert cursor
+    assert cursor.startswith("cursor:")
     second = resolve_catalog_call(
         catalog,
         ToolCall("search_page_content", {"query": "Needle", "cursor": cursor}),
@@ -1193,6 +1197,53 @@ def test_paginated_search_reuses_the_same_tool_with_its_returned_cursor() -> Non
     assert first_regions.isdisjoint(second_regions)
     assert second.decision.arguments == {"query": "Needle", "cursor": cursor}
     assert "read_next_page" not in {item.name for item in catalog.specs}
+
+
+def test_search_cursor_is_stateless_but_bound_to_exact_world_tool_and_query() -> None:
+    world = _many_region_world(count=40, suffix="cursor-origin")
+    task = TaskGoal("search-cursor-scope", "Inspect matching content")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+    _, catalog = catalog_for(context)
+    first = resolve_catalog_call(
+        catalog,
+        ToolCall("search_page_content", {"query": "Needle"}),
+        expected_context_id=context.context_id,
+    )
+    cursor = first.decision.result["next_cursor"]
+    assert cursor.startswith("cursor:")
+
+    changed_query = resolve_catalog_call(
+        catalog,
+        ToolCall("search_page_content", {"query": "needle", "cursor": cursor}),
+        expected_context_id=context.context_id,
+    )
+    wrong_tool = resolve_catalog_call(
+        catalog,
+        ToolCall("list_regions", {"cursor": cursor}),
+        expected_context_id=context.context_id,
+    )
+    replacement_world = _many_region_world(count=40, suffix="cursor-replacement")
+    replacement_context = ContextBuilder().build(
+        task,
+        replacement_world,
+        ActionSpace(replacement_world.observation_id, ()),
+        _evaluation(task, replacement_world.observation_id),
+    )
+    _, replacement_catalog = catalog_for(replacement_context)
+    changed_world = resolve_catalog_call(
+        replacement_catalog,
+        ToolCall("search_page_content", {"query": "Needle", "cursor": cursor}),
+        expected_context_id=replacement_context.context_id,
+    )
+
+    assert changed_query.decision.result["kind"] == "InvalidCursor"
+    assert wrong_tool.decision.result["kind"] == "InvalidCursor"
+    assert changed_world.decision.result["kind"] == "InvalidCursor"
 
 
 def test_world_read_paging_is_tool_local_and_reuses_read_region() -> None:
@@ -1217,12 +1268,23 @@ def test_world_read_paging_is_tool_local_and_reuses_read_region() -> None:
 
     assert opened.result["has_more"] is True
     cursor = opened.result["next_cursor"]
-    assert cursor
+    assert cursor.startswith("cursor:")
+    different_region_ref = next(
+        first.canonical_world.region_refs[region.key]
+        for region in first.region_index.regions
+        if first.canonical_world.region_refs[region.key] != desired_region_ref
+    )
+    changed_region = resolve_catalog_call(
+        first_catalog,
+        ToolCall("read_region", {"region_ref": different_region_ref, "cursor": cursor}),
+        expected_context_id=first.context_id,
+    ).decision
     continued = resolve_catalog_call(
         first_catalog,
         ToolCall("read_region", {"region_ref": desired_region_ref, "cursor": cursor}),
         expected_context_id=first.context_id,
     ).decision
+    assert changed_region.result["kind"] == "InvalidCursor"
     assert continued.result["items"]
     assert continued.arguments["cursor"] == cursor
     assert "read_next_page" not in {item.name for item in first_catalog.specs}

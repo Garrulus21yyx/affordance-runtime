@@ -402,18 +402,16 @@ def _description(
     rows: tuple[ConcreteActionCandidateRow, ...],
     fields: tuple[CompiledSelectorField, ...],
 ) -> str:
+    del rows
+    definition = INTERACTION_CAPABILITY_REGISTRY.require(operation)
     if not fields:
-        return f"Use {operation} on the current browser context. Current URL and tab state come from the fresh World."
-    endpoints = " and ".join(field.public_name for field in fields)
-    if operation == "type_text":
         return (
-            f"Replace the editable value of current executable {endpoints} with the supplied text. "
-            "An empty string clears the value. The target must come from the current World or a same-World "
-            "read/search/find_controls result."
+            f"{definition.description} Current browser/focus state and legal parameters come from the fresh World."
         )
+    endpoints = " and ".join(field.public_name for field in fields)
     return (
-        f"Use {operation} on current executable {endpoints} from the current World "
-        "or a same-World read/search/find_controls result."
+        f"{definition.description} Select current executable {endpoints} from the current World or a same-World "
+        "read/search/find_controls result."
     )
 
 

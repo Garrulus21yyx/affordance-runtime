@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 
 from affordance_runtime.actions.schema_validation import validate_parameter_schema_contract
 from affordance_runtime.immutable import to_json_compatible
@@ -31,6 +32,7 @@ class ParameterContractKind(StrEnum):
     OPTION_VALUE = "option_value"
     SCROLL = "scroll"
     KEY = "key"
+    HOTKEY = "hotkey"
     NATIVE_VALUE = "native_value"
     URL = "url"
     TAB_INDEX = "tab_index"
@@ -73,14 +75,27 @@ class SemanticActionDefinition:
     parameter_contract: ParameterContractKind
     destination_mode: DestinationMode
     verification_families: tuple[VerificationFamily, ...]
+    description: str
+    parameter_descriptions: Mapping[str, str]
 
     def __post_init__(self) -> None:
-        if not self.semantic_action or len(set(self.subject_kinds)) != len(self.subject_kinds):
+        if (
+            not self.semantic_action
+            or not self.description.strip()
+            or len(set(self.subject_kinds)) != len(self.subject_kinds)
+        ):
             raise ValueError("semantic action definition is invalid")
         if not self.subject_kinds or not self.verification_families:
             raise ValueError("semantic action definition requires subjects and verification families")
         object.__setattr__(self, "subject_kinds", tuple(self.subject_kinds))
         object.__setattr__(self, "verification_families", tuple(self.verification_families))
+        descriptions = dict(self.parameter_descriptions)
+        if set(descriptions) != set(self.parameter_names) or any(
+            not value.strip() for value in descriptions.values()
+        ):
+            raise ValueError("semantic action parameters require complete descriptions")
+        object.__setattr__(self, "description", self.description.strip())
+        object.__setattr__(self, "parameter_descriptions", MappingProxyType(descriptions))
 
     @property
     def definition_digest(self) -> str:
@@ -90,6 +105,8 @@ class SemanticActionDefinition:
             self.parameter_contract.value,
             self.destination_mode.value,
             tuple(item.value for item in self.verification_families),
+            self.description,
+            tuple(sorted(self.parameter_descriptions.items())),
         )
         return "sha256:" + hashlib.sha256(
             json.dumps(payload, separators=(",", ":")).encode()
@@ -103,6 +120,7 @@ class SemanticActionDefinition:
             ParameterContractKind.OPTION_VALUE: ("value",),
             ParameterContractKind.SCROLL: ("direction", "extent"),
             ParameterContractKind.KEY: ("key",),
+            ParameterContractKind.HOTKEY: ("key", "modifiers"),
             ParameterContractKind.NATIVE_VALUE: ("value",),
             ParameterContractKind.URL: ("url",),
             ParameterContractKind.TAB_INDEX: ("index",),
@@ -222,9 +240,21 @@ class InteractionCapabilityRegistry:
         if definition.parameter_contract is ParameterContractKind.EMPTY:
             schema: dict[str, object] = _object_schema({})
         elif definition.parameter_contract is ParameterContractKind.TEXT:
-            schema = _object_schema({"text": {"type": "string"}}, ("text",))
+            schema = _object_schema(
+                {"text": {"type": "string", "description": definition.parameter_descriptions["text"]}},
+                ("text",),
+            )
         elif definition.parameter_contract is ParameterContractKind.OPTION_VALUE:
-            schema = _object_schema({"value": {"type": "string", **value_schema}}, ("value",))
+            schema = _object_schema(
+                {
+                    "value": {
+                        "type": "string",
+                        "description": definition.parameter_descriptions["value"],
+                        **value_schema,
+                    }
+                },
+                ("value",),
+            )
         elif definition.parameter_contract is ParameterContractKind.NATIVE_VALUE:
             value_schema = {
                 key: value
@@ -236,12 +266,28 @@ class InteractionCapabilityRegistry:
                     InteractionCapabilityIssueCode.SCHEMA_CONTRACT_MISMATCH,
                     semantic_action,
                 )
-            schema = _object_schema({"value": value_schema}, ("value",))
+            schema = _object_schema(
+                {
+                    "value": {
+                        **value_schema,
+                        "description": definition.parameter_descriptions["value"],
+                    }
+                },
+                ("value",),
+            )
         elif definition.parameter_contract is ParameterContractKind.SCROLL:
             schema = _object_schema(
                 {
-                    "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
-                    "extent": {"type": "string", "enum": ["small", "page"]},
+                    "direction": {
+                        "type": "string",
+                        "description": definition.parameter_descriptions["direction"],
+                        "enum": ["up", "down", "left", "right"],
+                    },
+                    "extent": {
+                        "type": "string",
+                        "description": definition.parameter_descriptions["extent"],
+                        "enum": ["small", "page"],
+                    },
                 },
                 ("direction", "extent"),
             )
@@ -250,6 +296,7 @@ class InteractionCapabilityRegistry:
                 {
                     "key": {
                         "type": "string",
+                        "description": definition.parameter_descriptions["key"],
                         "enum": [
                             "Enter", "Escape", "Tab", "ArrowUp", "ArrowDown",
                             "ArrowLeft", "ArrowRight", "Backspace", "Delete", "Space",
@@ -258,11 +305,34 @@ class InteractionCapabilityRegistry:
                 },
                 ("key",),
             )
+        elif definition.parameter_contract is ParameterContractKind.HOTKEY:
+            schema = _object_schema(
+                {
+                    "key": {
+                        "type": "string",
+                        "description": definition.parameter_descriptions["key"],
+                        "pattern": (
+                            r"(?:[A-Z]|[0-9]|F(?:[1-9]|1[0-2])|Enter|Escape|Tab|"
+                            r"Arrow(?:Up|Down|Left|Right)|Backspace|Delete|Space)"
+                        ),
+                    },
+                    "modifiers": {
+                        "type": "string",
+                        "description": definition.parameter_descriptions["modifiers"],
+                        "pattern": (
+                            r"(?:Alt(?:\+Control)?(?:\+Meta)?(?:\+Shift)?|"
+                            r"Control(?:\+Meta)?(?:\+Shift)?|Meta(?:\+Shift)?|Shift)"
+                        ),
+                    },
+                },
+                ("key", "modifiers"),
+            )
         elif definition.parameter_contract is ParameterContractKind.URL:
             schema = _object_schema(
                 {
                     "url": {
                         "type": "string",
+                        "description": definition.parameter_descriptions["url"],
                         "minLength": 1,
                         "maxLength": 2_048,
                         "pattern": r"^https?://.+",
@@ -281,7 +351,15 @@ class InteractionCapabilityRegistry:
                     InteractionCapabilityIssueCode.SCHEMA_CONTRACT_MISMATCH,
                     semantic_action,
                 )
-            schema = _object_schema({"index": value_schema}, ("index",))
+            schema = _object_schema(
+                {
+                    "index": {
+                        **value_schema,
+                        "description": definition.parameter_descriptions["index"],
+                    }
+                },
+                ("index",),
+            )
         else:  # pragma: no cover - closed enum guard
             raise AssertionError(definition.parameter_contract)
         self.validate_parameter_schema(semantic_action, schema)
@@ -470,6 +548,10 @@ def _validate_parameter_family(
     elif family is ParameterContractKind.KEY:
         expected_names = ("key",)
         _require_type(properties, "key", {"string"})
+    elif family is ParameterContractKind.HOTKEY:
+        expected_names = ("key", "modifiers")
+        _require_type(properties, "key", {"string"})
+        _require_type(properties, "modifiers", {"string"})
     elif family is ParameterContractKind.URL:
         expected_names = ("url",)
         _require_type(properties, "url", {"string"})
@@ -495,30 +577,43 @@ def _require_type(
 
 
 INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
-    "interaction-capabilities.v2",
+    "interaction-capabilities.v3",
     (
         SemanticActionDefinition(
             "activate", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN,
             (VerificationFamily.TARGET_STATE, VerificationFamily.NAVIGATION_CONTEXT, VerificationFamily.SEMANTIC),
+            "Activate one current control once, such as clicking a button, link, checkbox, radio, or tab.",
+            {},
         ),
         SemanticActionDefinition(
             "type_text", (InteractionSubjectKind.ENTITY,), ParameterContractKind.TEXT,
             DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,),
+            "Replace the editable value completely with the supplied text. An empty string clears the value. Do not erase a whole field with repeated Backspace presses.",
+            {"text": "Complete replacement value for the editable control; use an empty string to clear it."},
         ),
         SemanticActionDefinition(
             "select_option", (InteractionSubjectKind.ENTITY,), ParameterContractKind.OPTION_VALUE,
             DestinationMode.FORBIDDEN,
             (VerificationFamily.VALUE_STATE, VerificationFamily.RELATION_CHANGE),
+            "Select one value from the current option domain of a combobox or listbox.",
+            {"value": "Current option value to select."},
         ),
         SemanticActionDefinition(
             "read", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN,
             (VerificationFamily.TARGET_STATE, VerificationFamily.SEMANTIC),
+            "Read the current value of a readable external property without changing it.",
+            {},
         ),
         SemanticActionDefinition(
             "scroll", (InteractionSubjectKind.VIEWPORT,), ParameterContractKind.SCROLL,
             DestinationMode.FORBIDDEN, (VerificationFamily.SCROLL_STATE,),
+            "Scroll the current viewport in one direction by a bounded small or page-sized extent.",
+            {
+                "direction": "Direction in which to move the current viewport.",
+                "extent": "Bounded scroll distance: small for local movement or page for viewport-sized movement.",
+            },
         ),
         SemanticActionDefinition(
             "press_key", (InteractionSubjectKind.ENTITY, InteractionSubjectKind.FOCUSED_CONTEXT),
@@ -527,48 +622,70 @@ INTERACTION_CAPABILITY_REGISTRY = InteractionCapabilityRegistry(
                 VerificationFamily.VALUE_STATE, VerificationFamily.FOCUS_STATE,
                 VerificationFamily.NAVIGATION_CONTEXT, VerificationFamily.SEMANTIC,
             ),
+            "Press one discrete key for submission, navigation, focus movement, or a precise single edit. Use type_text to replace or clear a complete field, and hotkey for modifier combinations.",
+            {"key": "One discrete key to press once."},
         ),
         SemanticActionDefinition(
-            "focus", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
-            DestinationMode.FORBIDDEN, (VerificationFamily.FOCUS_STATE,),
+            "hotkey", (InteractionSubjectKind.FOCUSED_CONTEXT,), ParameterContractKind.HOTKEY,
+            DestinationMode.FORBIDDEN,
+            (
+                VerificationFamily.VALUE_STATE, VerificationFamily.FOCUS_STATE,
+                VerificationFamily.NAVIGATION_CONTEXT, VerificationFamily.SEMANTIC,
+            ),
+            "Press one bounded modifier-key chord in the current keyboard focus, such as Control+A or Control+F. Do not use it for ordinary text entry.",
+            {
+                "modifiers": "One or more of Alt, Control, Meta, and Shift in that order, joined with +.",
+                "key": "Non-modifier key pressed together with the modifier chord.",
+            },
         ),
         SemanticActionDefinition(
             "drag_to", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
             DestinationMode.REQUIRED,
             (VerificationFamily.RELATION_CHANGE, VerificationFamily.TARGET_STATE, VerificationFamily.SEMANTIC),
+            "Drag one current source control to one current compatible destination.",
+            {},
         ),
         SemanticActionDefinition(
             "set_value", (InteractionSubjectKind.ENTITY,), ParameterContractKind.NATIVE_VALUE,
             DestinationMode.FORBIDDEN, (VerificationFamily.VALUE_STATE,),
-        ),
-        SemanticActionDefinition(
-            "hover", (InteractionSubjectKind.ENTITY,), ParameterContractKind.EMPTY,
-            DestinationMode.FORBIDDEN,
-            (VerificationFamily.TARGET_STATE, VerificationFamily.SEMANTIC),
+            "Set one writable external property to a schema-valid native value.",
+            {"value": "Schema-valid native value for the current writable property."},
         ),
         SemanticActionDefinition(
             "goto", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.URL,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Navigate the current browser tab to an allowed HTTP(S) URL.",
+            {"url": "Allowed absolute HTTP(S) destination URL."},
         ),
         SemanticActionDefinition(
             "go_back", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Navigate the active browser tab one entry backward in its history.",
+            {},
         ),
         SemanticActionDefinition(
             "go_forward", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Navigate the active browser tab one entry forward in its history.",
+            {},
         ),
         SemanticActionDefinition(
             "new_tab", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Open one new browser tab.",
+            {},
         ),
         SemanticActionDefinition(
             "tab_focus", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.TAB_INDEX,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Focus one currently open non-active browser tab by its current index.",
+            {"index": "Current non-active tab index from the fresh World."},
         ),
         SemanticActionDefinition(
             "tab_close", (InteractionSubjectKind.BROWSER_CONTEXT,), ParameterContractKind.EMPTY,
             DestinationMode.FORBIDDEN, (VerificationFamily.NAVIGATION_CONTEXT,),
+            "Close the active browser tab when the environment exposes that capability.",
+            {},
         ),
     ),
 )

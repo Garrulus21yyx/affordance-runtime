@@ -113,9 +113,11 @@ def test_w1b_world_capability_census_reports_t1_browsergym_support() -> None:
     assert census["press_key"]["adapter_supported"] is True
     assert census["press_key"]["currently_eligible"] == 1
     assert census["press_key"]["model_exposed"] is True
-    assert census["hover"]["registry_defined"] is True
-    assert census["hover"]["adapter_supported"] is False
-    assert census["hover"]["absence_reason"] == "adapter_not_supported"
+    assert "hover" not in census
+    assert census["hotkey"]["registry_defined"] is True
+    assert census["hotkey"]["adapter_supported"] is True
+    assert census["hotkey"]["currently_eligible"] == 0
+    assert census["hotkey"]["model_exposed"] is False
 
 
 def test_w1b_cost_gate_treats_component_breakdowns_as_diagnostics_only() -> None:

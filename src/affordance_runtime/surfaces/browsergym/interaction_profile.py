@@ -93,6 +93,7 @@ _PRIMITIVE_EXECUTION_REQUIREMENTS = {
     "press": ("attached", "visible", "enabled", "focusable"),
     "scroll": (),
     "keyboard_press": (),
+    "keyboard_hotkey": (),
     "goto": (),
     "go_back": (),
     "go_forward": (),
@@ -171,14 +172,20 @@ _ROLE_SPECS = {
         _offer("drag_to", "drag_and_drop", ()),
     ),
     "drop_target": BrowserGymRoleSpec("drop_target", True, ()),
-    "slider": BrowserGymRoleSpec("slider", True, ()),
-    "spinbutton": BrowserGymRoleSpec("spinbutton", True, ()),
+    "slider": _role(
+        "slider",
+        _offer("press_key", "press", ("value",)),
+    ),
+    "spinbutton": _role(
+        "spinbutton",
+        _offer("press_key", "press", ("value",)),
+    ),
     **{role: BrowserGymRoleSpec(role, True, ()) for role in _INFORMATIONAL_ROLES},
 }
 
 
 BROWSERGYM_INTERACTION_PROFILE = AdapterInteractionProfile(
-    "browsergym-interactions.v1",
+    "browsergym-interactions.v2",
     "browsergym",
     "browsergym",
     (
@@ -191,6 +198,11 @@ BROWSERGYM_INTERACTION_PROFILE = AdapterInteractionProfile(
             "press_key",
             ("press", "keyboard_press"),
             (InteractionSubjectKind.ENTITY, InteractionSubjectKind.FOCUSED_CONTEXT),
+        ),
+        AdapterCapabilitySupport(
+            "hotkey",
+            ("keyboard_hotkey",),
+            (InteractionSubjectKind.FOCUSED_CONTEXT,),
         ),
         *(
             AdapterCapabilitySupport(
@@ -211,6 +223,7 @@ BROWSERGYM_PRIMITIVE_TRANSLATORS = (
     PrimitiveTranslator("scroll", "scroll"),
     PrimitiveTranslator("press_key", "press"),
     PrimitiveTranslator("press_key", "keyboard_press"),
+    PrimitiveTranslator("hotkey", "keyboard_hotkey"),
     *(PrimitiveTranslator(primitive, primitive) for primitive in BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES),
 )
 
