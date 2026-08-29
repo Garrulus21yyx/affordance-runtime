@@ -2041,3 +2041,27 @@ read-only mode, required strict filtering, and required live authorization. It a
 `live_execution_ready=false`: only the Shell browser-session owner may attest strict filter activation before an
 authorized navigation. No public page, DeepSeek VLM, ScreenSpot, MiniWoB, or other live benchmark was run in Phase 5;
 consequently this gate makes no live capability or benchmark non-regression claim.
+
+## 2026-08-29 — Clean strategy-revision extraction checkpoint
+
+Branch `codex/clean-strategy-revision` was created from accepted WebArena baseline `5ae9469b`, rather than from mixed
+commit `6c63f3f7`. The mixed commit touches 81 files and combines route recovery with World, Surface, BrowserGym, DOM,
+visual, ToolCatalog, cursor, benchmark, and frontend changes. This clean extraction is restricted to the typed
+StrategyRevision contract, existing Monitor/ActionPolicy/PydanticAI owners, context/checkpoint/trace projection,
+GoalCompiler and ActionPolicy prompts, tests, and these two maintained documents. It contains no production change
+under `world/`, `surfaces/`, `actions/`, `agent/decisions.py`, `agent/tool_result_projection.py`,
+`model/policy/grounded_tool_catalog.py`, `benchmarks/`, or frontend/Labs paths.
+
+Provider-free evidence from the fixed BrowserGym Python environment:
+
+- focused owner/vertical/failure/checkpoint/trace suite: `217 passed`;
+- complete repository suite: `2072 passed, 19 skipped, 1 deselected, 1 warning` in 118.76 seconds;
+- the sole deselection is the baseline-known test whose archived trace file
+  `w1b-one-task-0-zhipu-glm46-readable-tools-run2/.../trace.jsonl` is absent from the repository;
+- Ruff and `git diff --check`: passed;
+- scoped Mypy comparison: baseline and candidate both report `82 errors in 5 files`; the new typed contract adds no
+  error and no changed source file increases the baseline count.
+
+These results establish provider-free integration and absence of the mixed causal-surface changes. They do not prove
+live benchmark improvement or non-regression. No live provider or benchmark run was launched for this extraction; a
+fresh held-out long-route run remains the separate empirical gate.

@@ -87,10 +87,28 @@ def test_route_regression_uses_the_existing_operational_deliberate_profile() -> 
     assert profile.thinking_mode == "enabled"
 
 
+def test_completed_or_unavailable_strategy_revision_never_reenters_deliberate_output() -> None:
+    policy = ActionPolicyReasoningPolicy()
+
+    for status in ("accepted", "unavailable"):
+        context = SimpleNamespace(
+            control_feedback={
+                "kind": "route_regression",
+                "stable_signature": f"route:{status}",
+                "recovery_attempt": 2,
+                "strategy_revision_status": status,
+            }
+        )
+
+        profile = policy.select(context, frozenset())
+
+        assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
+        assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
+        assert profile.thinking_mode == "disabled"
+
+
 def test_representation_semantic_choice_is_operation_and_target_stable() -> None:
-    original = _semantic_choice(
-        {"name": "activate", "arguments": {"target": "E2", "extra": "ignored"}}
-    )
+    original = _semantic_choice({"name": "activate", "arguments": {"target": "E2", "extra": "ignored"}})
     same = _semantic_choice({"name": "activate", "arguments": {"target": "E2"}})
     changed = _semantic_choice({"name": "activate", "arguments": {"target": "E3"}})
     assert original == same

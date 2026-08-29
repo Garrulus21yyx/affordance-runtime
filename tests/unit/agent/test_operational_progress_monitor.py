@@ -134,6 +134,48 @@ def _rekeyed_world(observation_id: str, prefix: str):
     return fused_world(observation_id, targets, facts, (binding,))
 
 
+def _multi_route_world(
+    observation_id: str,
+    route: str,
+    controls: tuple[str, ...],
+):
+    targets = (
+        SemanticTarget("document", "document", "Routes", {"page.route": route}),
+        *(SemanticTarget(control, "button", control.replace("_", " ").title()) for control in controls),
+    )
+    facts = (
+        StateFact(
+            f"fact:{observation_id}:route",
+            "document",
+            "page.route",
+            route,
+            observation_id,
+        ),
+    )
+    bindings = tuple(
+        ActionBinding(
+            f"binding:{observation_id}:{control}",
+            observation_id,
+            observation_id,
+            f"revision:{observation_id}",
+            f"fingerprint:{control}",
+            control,
+            control,
+            "fixture",
+            "fixture",
+            "activate",
+            "click",
+            "local_reversible",
+            ("external_ui_interaction",),
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            {"fixture": control},
+            risk=ActionRisk.LOW,
+        )
+        for control in controls
+    )
+    return fused_world(observation_id, targets, facts, bindings)
+
+
 def _evaluation(world, status: TaskEvaluationStatus = TaskEvaluationStatus.INCOMPLETE) -> TaskEvaluation:
     return TaskEvaluation(_task().task_id, world.observation_id, status, "fixture evaluation")
 
@@ -157,9 +199,10 @@ def _local_step(before, after=None, *, query: str = "route", region: str = "") -
     )
 
 
-def _dispatched_step(world, after=None) -> StepResult:
+def _dispatched_step(world, after=None, *, target_id: str | None = None) -> StepResult:
     after = after or world
-    option = ActionSpaceBuilder().build(_task(), world).options[0]
+    options = ActionSpaceBuilder().build(_task(), world).options
+    option = options[0] if target_id is None else next(item for item in options if item.target_id == target_id)
     selection = ActionSpaceBuilder().admit(option, {})
     request = ActionBinder().bind(selection, world, "context:test", tool_call_id="call:test")
     execution = ExecutionOutcome(
@@ -859,10 +902,7 @@ def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
 
 
 def test_six_step_gui_excursion_recovers_on_first_return_to_origin() -> None:
-    worlds = tuple(
-        _world(f"observation:cycle-{index}", route=f"/state/{index}")
-        for index in range(6)
-    )
+    worlds = tuple(_world(f"observation:cycle-{index}", route=f"/state/{index}") for index in range(6))
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(worlds[0], _evaluation(worlds[0]))
 
@@ -874,15 +914,67 @@ def test_six_step_gui_excursion_recovers_on_first_return_to_origin() -> None:
         for index in range(6)
     )
 
-    assert all(
-        item.recommendation is EpisodeMonitorRecommendation.CONTINUE
-        for item in first_excursion[:-1]
-    )
+    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in first_excursion[:-1])
     recovery = first_excursion[-1]
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
     assert recovery.recovery_signal.observed_evidence["route_effectful_attempt_count"] == 6
+
+
+def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> None:
+    origin = _multi_route_world(
+        "observation:origin",
+        "/search",
+        ("first_candidate", "second_candidate"),
+    )
+    first_failed = _multi_route_world(
+        "observation:first-failed",
+        "/candidate/first",
+        ("return_to_results",),
+    )
+    returned_once = _multi_route_world(
+        "observation:returned-once",
+        "/search",
+        ("first_candidate", "second_candidate"),
+    )
+    second_failed = _multi_route_world(
+        "observation:second-failed",
+        "/candidate/second",
+        ("return_to_results",),
+    )
+    returned_twice = _multi_route_world(
+        "observation:returned-twice",
+        "/search",
+        ("first_candidate", "second_candidate"),
+    )
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(origin, _evaluation(origin))
+
+    _evaluate(monitor, _dispatched_step(origin, first_failed, target_id="first_candidate"))
+    first_recovery = _evaluate(
+        monitor,
+        _dispatched_step(first_failed, returned_once, target_id="return_to_results"),
+    )
+    _evaluate(
+        monitor,
+        _dispatched_step(returned_once, second_failed, target_id="second_candidate"),
+    )
+    second_recovery = _evaluate(
+        monitor,
+        _dispatched_step(second_failed, returned_twice, target_id="return_to_results"),
+    )
+
+    assert first_recovery.recovery_signal is not None
+    assert first_recovery.recovery_signal.recovery_attempt == 1
+    assert second_recovery.recovery_signal is not None
+    assert second_recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
+    assert second_recovery.recovery_signal.recovery_attempt == 2
+    assert (
+        second_recovery.recovery_signal.prohibited_attempt_signature
+        != first_recovery.recovery_signal.prohibited_attempt_signature
+    )
+    assert monitor.route_regression_count == 2
 
 
 def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
@@ -975,7 +1067,9 @@ def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery(
 def test_monitor_never_overrides_native_terminal_evaluation() -> None:
     world = _world("observation:stable")
     step = _local_step(world)
-    step = StepResult(step.decision, world, world, _evaluation(world, TaskEvaluationStatus.BLOCKED), feedback=step.feedback)
+    step = StepResult(
+        step.decision, world, world, _evaluation(world, TaskEvaluationStatus.BLOCKED), feedback=step.feedback
+    )
     monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, step.task_evaluation)
 
@@ -999,4 +1093,5 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "recent_gui_attempts",
         "recent_gui_results",
         "active_gui_cycle_digest",
+        "route_regression_count",
     } == set(vars(monitor)) - {"profile"}

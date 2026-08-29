@@ -52,6 +52,11 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
+from affordance_runtime.agent.strategy_revision import (
+    StrategyDisposition,
+    StrategyFact,
+    StrategyRevision,
+)
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
@@ -730,20 +735,29 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
-        ModelResponse(
-            parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
-        ),
-        ModelRequest(
-            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:checkpoint")]
-        ),
+        ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]),
+        ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:checkpoint")]),
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+    revision = StrategyRevision(
+        3,
+        "route:checkpoint",
+        2,
+        StrategyDisposition.CONTINUE,
+        (StrategyFact("Supported value", "33 km", "completed ToolReturn"),),
+        (),
+        ("One remaining answer field",),
+        "Resolve the remaining answer field",
+        ("Reopening the failed candidate route",),
+    )
+    object.__setattr__(policy, "active_strategy_revision", revision)
 
     serialized = policy.export_checkpoint_history()
 
     assert serialized["format"] == "pydantic-ai.messages.v1"
     assert serialized["active_task_identity"] == ["task:checkpoint", 3]
+    assert serialized["strategy_revision"]["revision_digest"] == revision.revision_digest
     assert [message["kind"] for message in serialized["messages"]] == [
         "request",
         "response",
@@ -758,6 +772,7 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
     )
     assert restored.port.message_history == history
     assert restored.port.active_task_identity == ("task:checkpoint", 3)
+    assert restored.active_strategy_revision == revision
 
     from affordance_runtime.immutable import freeze_json
 
@@ -769,15 +784,14 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
         task_revision=3,
     )
     assert restored_from_checkpoint.port.message_history == history
+    assert restored_from_checkpoint.active_strategy_revision == revision
 
 
 def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
     tmp_path,
 ) -> None:
     async def scenario() -> None:
-        step_persistence = pytest.importorskip(
-            "pydantic_ai_harness.step_persistence"
-        )
+        step_persistence = pytest.importorskip("pydantic_ai_harness.step_persistence")
         database = tmp_path / "model-steps.sqlite3"
         store = step_persistence.SqliteStepStore(database=database)
         policy = _policy(ScriptedModel(["first_gui_action"]).build())
@@ -785,12 +799,8 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
         object.__setattr__(policy.port, "step_conversation_id", "session:checkpoint")
         history = (
             ModelRequest(parts=[UserPromptPart("current task")]),
-            ModelResponse(
-                parts=[ToolCallPart("activate", {"target": "E1"}, "call:settled")]
-            ),
-            ModelRequest(
-                parts=[ToolReturnPart("activate", {"status": "paused"}, "call:settled")]
-            ),
+            ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:settled")]),
+            ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:settled")]),
         )
         object.__setattr__(policy.port, "message_history", history)
         object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
@@ -835,9 +845,7 @@ def test_pydantic_ai_empty_history_binds_and_restores_before_first_policy(
     tmp_path,
 ) -> None:
     async def scenario() -> None:
-        step_persistence = pytest.importorskip(
-            "pydantic_ai_harness.step_persistence"
-        )
+        step_persistence = pytest.importorskip("pydantic_ai_harness.step_persistence")
         database = tmp_path / "empty-model-steps.sqlite3"
         store = step_persistence.SqliteStepStore(database=database)
         policy = _policy(ScriptedModel(["first_gui_action"]).build())
@@ -883,11 +891,7 @@ def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
     object.__setattr__(
         policy.port,
         "message_history",
-        (
-            ModelResponse(
-                parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]
-            ),
-        ),
+        (ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]),),
     )
 
     with pytest.raises(ValueError, match="unclosed tool call"):
@@ -898,12 +902,8 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
-        ModelResponse(
-            parts=[ToolCallPart("activate", {"target": "E1"}, "call:revision")]
-        ),
-        ModelRequest(
-            parts=[ToolReturnPart("activate", {"status": "paused"}, "call:revision")]
-        ),
+        ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:revision")]),
+        ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:revision")]),
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
@@ -988,9 +988,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
 
 def test_pydantic_ai_step_persistence_records_each_action_policy_run() -> None:
     async def scenario() -> None:
-        step_persistence = pytest.importorskip(
-            "pydantic_ai_harness.step_persistence"
-        )
+        step_persistence = pytest.importorskip("pydantic_ai_harness.step_persistence")
         store = step_persistence.InMemoryStepStore()
         scripted = ScriptedModel(["first_gui_action"])
         policy = _policy(scripted.build())
@@ -1029,9 +1027,7 @@ def test_pydantic_ai_action_policy_emits_native_open_telemetry_spans() -> None:
     async def scenario() -> None:
         trace_module = pytest.importorskip("opentelemetry.sdk.trace")
         export_module = pytest.importorskip("opentelemetry.sdk.trace.export")
-        in_memory_module = pytest.importorskip(
-            "opentelemetry.sdk.trace.export.in_memory_span_exporter"
-        )
+        in_memory_module = pytest.importorskip("opentelemetry.sdk.trace.export.in_memory_span_exporter")
         exporter = in_memory_module.InMemorySpanExporter()
         tracer_provider = trace_module.TracerProvider()
         tracer_provider.add_span_processor(export_module.SimpleSpanProcessor(exporter))
@@ -1680,6 +1676,7 @@ def test_cancelled_length_fallback_closes_pending_history_without_rejected_outpu
         async def cancel_required_fallback(self, call, **kwargs):
             settings = kwargs.get("physical_settings")
             if isinstance(settings, Mapping) and settings.get("tool_choice") == "required":
+
                 async def cancelled_call():
                     raise asyncio.CancelledError
 
@@ -1869,9 +1866,7 @@ def test_unexecuted_second_proposal_can_be_reissued_after_the_fresh_world() -> N
             )
         )
 
-        assert second.failure is None and second.output is not None, json.dumps(
-            second.diagnostics, default=str
-        )
+        assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert second.output.decision.tool_name == "search_page_content"
         assert second.output.decision.arguments == {"query": "scope"}
         recorded = normalize_recorded_provider_input(scripted.records[1])
@@ -2152,16 +2147,11 @@ def test_control_boundary_closes_pending_pydantic_history_before_another_model_t
             ModelDecisionRequest("request:control:second", next_context, last_step=step)
         )
 
-        assert second.failure is None and second.output is not None, json.dumps(
-            second.diagnostics, default=str
-        )
+        assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert isinstance(second.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[1])
         paired = tuple(
-            part
-            for message in recorded["messages"]
-            for part in message["parts"]
-            if part["part_kind"] == "tool-return"
+            part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "tool-return"
         )
         assert len(paired) == 1
         assert paired[0]["content"]["completion"] == "not_dispatched"
@@ -5628,6 +5618,147 @@ def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
     assert isinstance(policy.port, PydanticAIGroundedDecisionPort)
     assert policy.port.provider_id == profile
     assert policy.port.model_id == model_id
+
+
+def test_second_route_regression_revises_progress_then_uses_one_ordinary_action() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "strategy_revision",
+                            {
+                                "disposition": "continue",
+                                "verified_facts": [
+                                    {
+                                        "claim": "Primary candidate distance",
+                                        "value": "33 km",
+                                        "source": "completed route ToolReturn",
+                                    }
+                                ],
+                                "working_hypotheses": [
+                                    {
+                                        "claim": "Another candidate may satisfy the constraint",
+                                        "needs_verification": True,
+                                    }
+                                ],
+                                "remaining_questions": ["Whether another candidate satisfies the user constraint"],
+                                "next_intent": (
+                                    "Verify remaining candidate coverage without reopening failed candidates"
+                                ),
+                                "failed_strategies": ["Opening candidates that return to the same results page"],
+                            },
+                            "recording-call:strategy-revision",
+                        )
+                    ],
+                    provider_response_id="recording-response:strategy-revision",
+                ),
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("strategy-revision", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = replace(
+            ContextBuilder().build(
+                task,
+                world,
+                ActionSpaceBuilder().build(task, world),
+                evaluation,
+            ),
+            control_feedback={
+                "kind": "route_regression",
+                "stable_signature": "route:second-distinct-failure",
+                "recovery_attempt": 2,
+                "observed_evidence": {"returned_to_prior_semantic_page": True},
+            },
+        )
+
+        decision = await policy.decide(context)
+
+        assert not isinstance(decision, PolicyFailure)
+        assert scripted.calls == 2
+        assert policy.active_strategy_revision is not None
+        assert policy.active_strategy_revision.source_recovery_signature == "route:second-distinct-failure"
+        assert policy.last_strategy_revision_invocation is not None
+        assert policy.last_strategy_revision_invocation.accepted
+        assert policy.last_strategy_revision_invocation.attempts[0].role == "strategy_reviser"
+        assert policy.port.last_call_profile is not None
+        assert policy.port.last_call_profile.phase.value == "ordinary"
+        assert [record.model_settings["max_tokens"] for record in scripted.records] == [
+            2048,
+            1024,
+        ]
+        action_input = json.dumps(
+            normalize_recorded_provider_input(scripted.records[1]),
+            sort_keys=True,
+        )
+        assert "strategy_revision" in action_input
+        assert "Verify remaining candidate coverage" in action_input
+
+    asyncio.run(scenario())
+
+
+def test_truncated_strategy_revision_is_discarded_and_falls_back_to_ordinary_action() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "strategy_revision",
+                            {
+                                "disposition": "continue",
+                                "verified_facts": [],
+                                "working_hypotheses": [],
+                                "remaining_questions": ["One unresolved requirement"],
+                                "next_intent": "Resolve the remaining requirement",
+                                "failed_strategies": [],
+                            },
+                            "recording-call:truncated-strategy-revision",
+                        )
+                    ],
+                    finish_reason="length",
+                    provider_response_id="recording-response:truncated-strategy-revision",
+                ),
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("truncated-strategy-revision", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = replace(
+            ContextBuilder().build(
+                task,
+                world,
+                ActionSpaceBuilder().build(task, world),
+                evaluation,
+            ),
+            control_feedback={
+                "kind": "route_regression",
+                "stable_signature": "route:truncated-strategy-revision",
+                "recovery_attempt": 2,
+            },
+        )
+
+        decision = await policy.decide(context)
+
+        assert not isinstance(decision, PolicyFailure)
+        assert scripted.calls == 2
+        assert policy.active_strategy_revision is None
+        assert policy.last_strategy_revision_invocation is not None
+        assert policy.last_strategy_revision_invocation.failure is not None
+        assert (
+            policy.last_strategy_revision_invocation.attempts[0].output_failure_kind
+            is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+        )
+        assert policy.port.last_call_profile is not None
+        assert policy.port.last_call_profile.phase.value == "ordinary"
+
+    asyncio.run(scenario())
 
 
 def test_local_openai_compatible_profile_uses_the_single_pydantic_ai_policy() -> None:

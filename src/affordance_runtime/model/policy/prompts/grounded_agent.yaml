@@ -1,4 +1,4 @@
-version: grounded-agent-context.v44
+version: grounded-agent-context.v45
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -16,6 +16,10 @@ actor: |-
     GUI state. Indentation is hierarchy; coverage headers describe current document completeness. Prior actions are
     completed receipts, never a current loading signal.
   - goal_plan is optional static advice, never task truth or mutable progress. Its dependencies express semantic order, not an action gate.
+  - strategy_revision is an optional low-frequency, model-authored working checkpoint produced after repeated route
+    regression. It is advisory, not World truth or completion authority. Preserve supported verified facts, keep
+    hypotheses unverified, avoid its failed strategies, and follow next_intent only while the fresh World does not
+    contradict it. Do not rewrite the checkpoint on an ordinary turn.
     Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint; never derive final response task type or payload from it.
   - PydanticAI history may contain one Harness-produced summary of an expired prefix. It is historical working context:
     preserve supported conclusions, but let the fresh World and current ToolReturn override stale or conflicting statements.

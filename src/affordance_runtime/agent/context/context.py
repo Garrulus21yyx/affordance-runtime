@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.agent.run_state import StepResult
+    from affordance_runtime.agent.strategy_revision import StrategyRevision
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
     from affordance_runtime.world.contracts import WorldObservation
 
@@ -116,14 +117,8 @@ class VisualEvidenceFragment:
             or len(self.sha256) != 64
             or hashlib.sha256(self.data).hexdigest() != self.sha256
             or not self.coordinate_space_id.strip()
-            or (
-                self.mime_type == "image/png"
-                and not self.data.startswith(b"\x89PNG\r\n\x1a\n")
-            )
-            or (
-                self.mime_type == "image/jpeg"
-                and not self.data.startswith(b"\xff\xd8\xff")
-            )
+            or (self.mime_type == "image/png" and not self.data.startswith(b"\x89PNG\r\n\x1a\n"))
+            or (self.mime_type == "image/jpeg" and not self.data.startswith(b"\xff\xd8\xff"))
         ):
             raise ValueError("visual evidence fragment is invalid")
         marks = tuple(self.marks)
@@ -248,6 +243,12 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    strategy_revision: StrategyRevision | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -258,6 +259,13 @@ class AgentContext:
         if len(guidance) > FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS:
             raise ValueError("AgentContext final response guidance exceeds its bound")
         object.__setattr__(self, "final_response_guidance", guidance)
+        if self.strategy_revision is not None:
+            from affordance_runtime.agent.strategy_revision import StrategyRevision
+
+            if not isinstance(self.strategy_revision, StrategyRevision):
+                raise TypeError("AgentContext strategy revision must be typed")
+            if self.strategy_revision.task_revision != self.goal_plan.task_revision:
+                raise ValueError("AgentContext strategy revision belongs to another task revision")
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(
             not isinstance(item, VisualEvidenceFragment) for item in self.image_inputs
@@ -282,8 +290,7 @@ class AgentContext:
             raise ValueError("AgentContext episode bounds are invalid")
         controls = tuple(self.runtime_controls)
         if len(set(controls)) != len(controls) or any(
-            not isinstance(item, str) or not item.strip() or len(item) > 64
-            for item in controls
+            not isinstance(item, str) or not item.strip() or len(item) > 64 for item in controls
         ):
             raise ValueError("AgentContext runtime controls must be bounded and unique")
         object.__setattr__(self, "runtime_controls", controls)
@@ -317,14 +324,10 @@ class AgentContext:
                 raise ValueError("AgentContext candidates belong to another ActionSpace")
             if (
                 self.current_observation is not None
-                and self.action_candidates.world_observation_id
-                != self.current_observation.observation_id
+                and self.action_candidates.world_observation_id != self.current_observation.observation_id
             ):
                 raise ValueError("AgentContext candidates belong to another World")
-            current_candidates = {
-                (item.action_id, item.target_ref, item.operation)
-                for item in complete_actions
-            }
+            current_candidates = {(item.action_id, item.target_ref, item.operation) for item in complete_actions}
             if any(
                 (item.action_id, item.target_ref, item.operation) not in current_candidates
                 for item in self.action_candidates.candidates
@@ -356,15 +359,10 @@ class AgentContext:
                     fragment.candidate.operation,
                 )
                 not in current_candidates
-                or not {
-                    destination.target_ref
-                    for destination in fragment.candidate.destinations
-                }.issubset(
+                or not {destination.target_ref for destination in fragment.candidate.destinations}.issubset(
                     {
                         destination.grounding_ref
-                        for destination in current_by_action[
-                            fragment.candidate.action_id
-                        ].destinations.items
+                        for destination in current_by_action[fragment.candidate.action_id].destinations.items
                     }
                 )
                 for fragment in self.action_candidates.route_fragments
@@ -377,8 +375,7 @@ class AgentContext:
                 raise ValueError("AgentContext action delivery plan belongs to another ActionSpace")
             if (
                 self.current_observation is not None
-                and self.action_delivery_plan.world_observation_id
-                != self.current_observation.observation_id
+                and self.action_delivery_plan.world_observation_id != self.current_observation.observation_id
             ):
                 raise ValueError("AgentContext action delivery plan belongs to another World")
         if self.region_index is not None:

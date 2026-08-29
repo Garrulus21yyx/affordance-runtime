@@ -67,8 +67,11 @@ class ScriptedModelPort:
         self.schemas.append(output_schema)
         self.configs.append(config)
         self.last_call = SimpleNamespace(
-            response_id=f"response:{index}", latency_ms=float(index),
-            prompt_tokens=10 * index, completion_tokens=2 * index, total_tokens=12 * index,
+            response_id=f"response:{index}",
+            latency_ms=float(index),
+            prompt_tokens=10 * index,
+            completion_tokens=2 * index,
+            total_tokens=12 * index,
         )
         self.last_transcript = {
             "llm.input_messages": [{"role": "user", "content": f"input:{index}"}],
@@ -83,14 +86,26 @@ class ScriptedModelPort:
 def test_model_schema_is_five_field_fixed_depth_and_tolerant_of_surplus() -> None:
     schema = json.dumps(GoalCompilerModelResponse.model_json_schema(), sort_keys=True)
     assert all(name in schema for name in ("id", "objective", "done_when", "depends_on", "final"))
-    assert all(name not in schema for name in (
-        "edge_path", "predicate", "target_kind", "target_facts", "EntityFilter", "Relation", "FactEquals", "node_id",
-    ))
-    response = GoalCompilerModelResponse.model_validate({
-        "disposition": "ready",
-        "items": ({**_item(), "label": "ignored description", "relation": "ignored"},),
-        "unexpected_envelope_note": "ignored",
-    })
+    assert all(
+        name not in schema
+        for name in (
+            "edge_path",
+            "predicate",
+            "target_kind",
+            "target_facts",
+            "EntityFilter",
+            "Relation",
+            "FactEquals",
+            "node_id",
+        )
+    )
+    response = GoalCompilerModelResponse.model_validate(
+        {
+            "disposition": "ready",
+            "items": ({**_item(), "label": "ignored description", "relation": "ignored"},),
+            "unexpected_envelope_note": "ignored",
+        }
+    )
     assert response.items[0].model_dump() == _item()
 
 
@@ -108,10 +123,12 @@ def test_initial_attempt_uses_independent_prompt_and_preserves_transcript() -> N
 
 
 def test_needs_input_contract_reserves_environment_facts_for_action_policy() -> None:
-    assert GOAL_COMPILER_PROMPT_VERSION == "goal-plan-compiler.v6"
+    assert GOAL_COMPILER_PROMPT_VERSION == "goal-plan-compiler.v7"
     assert "user exclusively owns" in GOAL_COMPILER_INSTRUCTIONS
     assert "GUI surface, screenshot, page, application, file" in GOAL_COMPILER_INSTRUCTIONS
     assert "never ask the user to supply the requested result" in GOAL_COMPILER_INSTRUCTIONS
+    assert "Do not collapse a genuinely multi-stage information task" in GOAL_COMPILER_INSTRUCTIONS
+    assert "separate dependent items" in GOAL_COMPILER_INSTRUCTIONS
 
 
 def test_generation_attempt_records_role_thinking_contract() -> None:
@@ -127,24 +144,35 @@ def test_generation_attempt_records_role_thinking_contract() -> None:
 
 
 def test_schema_repair_preserves_both_raw_attempts() -> None:
-    port = ScriptedModelPort([
-        StructuredOutputError("invalid", violations=(StructuredOutputViolation("$", "json_invalid"),)),
-        _ready(),
-    ])
+    port = ScriptedModelPort(
+        [
+            StructuredOutputError("invalid", violations=(StructuredOutputViolation("$", "json_invalid"),)),
+            _ready(),
+        ]
+    )
     compiler = ModelBackedGoalCompiler(port)
     outcome = asyncio.run(compiler.compile(GoalCompilerRequest(_task())))
     assert isinstance(outcome, GoalPlanProposal)
     assert compiler.last_schema_repair_count == 1
     assert [item.phase for item in compiler.last_generation_attempts] == [
-        "goal_compile_initial", "goal_compile_schema_repair",
+        "goal_compile_initial",
+        "goal_compile_schema_repair",
     ]
-    assert [item.transcript["llm.output_messages"][0]["content"] for item in compiler.last_generation_attempts] == ["raw:1", "raw:2"]
+    assert [item.transcript["llm.output_messages"][0]["content"] for item in compiler.last_generation_attempts] == [
+        "raw:1",
+        "raw:2",
+    ]
 
 
 def test_initial_and_repair_failure_degrade_advisory_with_transcripts() -> None:
-    compiler = ModelBackedGoalCompiler(ScriptedModelPort([
-        StructuredOutputError("invalid"), StructuredOutputError("still invalid"),
-    ]))
+    compiler = ModelBackedGoalCompiler(
+        ScriptedModelPort(
+            [
+                StructuredOutputError("invalid"),
+                StructuredOutputError("still invalid"),
+            ]
+        )
+    )
     result = asyncio.run(compiler.compile(GoalCompilerRequest(_task())))
     assert result == Failed(1, "goal_compiler_model_failed")
     assert len(compiler.last_generation_attempts) == 2
@@ -159,15 +187,20 @@ def test_provider_failure_is_typed_and_exception_visible() -> None:
 
 
 def test_transient_rate_limit_retries_once_and_preserves_both_attempts() -> None:
-    port = ScriptedModelPort([
-        ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
-        _ready(),
-    ])
-    compiler = ModelBackedGoalCompiler(port, ModelConfig(
-        rate_limit_retries=0,
-        transient_retries=0,
-        rate_limit_backoff_s=0,
-    ))
+    port = ScriptedModelPort(
+        [
+            ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
+            _ready(),
+        ]
+    )
+    compiler = ModelBackedGoalCompiler(
+        port,
+        ModelConfig(
+            rate_limit_retries=0,
+            transient_retries=0,
+            rate_limit_backoff_s=0,
+        ),
+    )
 
     result = asyncio.run(compiler.compile(GoalCompilerRequest(_task())))
 
@@ -178,16 +211,19 @@ def test_transient_rate_limit_retries_once_and_preserves_both_attempts() -> None
     ]
     assert [item.status for item in compiler.last_generation_attempts] == ["failed", "accepted"]
     assert [item.transcript["llm.output_messages"][0]["content"] for item in compiler.last_generation_attempts] == [
-        "raw:1", "raw:2",
+        "raw:1",
+        "raw:2",
     ]
 
 
 def test_transient_rate_limit_retry_is_bounded_to_one() -> None:
     compiler = ModelBackedGoalCompiler(
-        ScriptedModelPort([
-            ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
-            ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
-        ]),
+        ScriptedModelPort(
+            [
+                ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
+                ProviderModelError(ProviderFailureKind.RATE_LIMIT_TRANSIENT),
+            ]
+        ),
         ModelConfig(rate_limit_retries=0, transient_retries=0, rate_limit_backoff_s=0),
     )
 
@@ -215,6 +251,7 @@ def test_contract_repair_appends_to_initial_lineage() -> None:
     compiler = ModelBackedGoalCompiler(port)
     original = compiler.compile
     calls = 0
+
     async def compile_with_bad_first(request):
         nonlocal calls
         calls += 1
@@ -222,21 +259,26 @@ def test_contract_repair_appends_to_initial_lineage() -> None:
             await original(request)
             return bad
         return await original(request)
+
     object.__setattr__(compiler, "compile", compile_with_bad_first)
     result = asyncio.run(GoalPlanBoundary().resolve(compiler, _task(), next_plan_version=1))
     assert isinstance(result, Ready)
     assert [item.phase for item in compiler.last_generation_attempts] == [
-        "goal_compile_initial", "goal_compile_contract_repair",
+        "goal_compile_initial",
+        "goal_compile_contract_repair",
     ]
 
 
-@pytest.mark.parametrize("payload", (
-    {"disposition": "ready"},
-    {"disposition": "needs_input", "question": "Which?", "missing_fields": ()},
-    {"disposition": "unsupported"},
-    {"disposition": "ready", "items": (_item(depends_on=("missing",)),)},
-    {"disposition": "ready", "items": (_item(depends_on=("complete_requested_changes",)),)},
-))
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"disposition": "ready"},
+        {"disposition": "needs_input", "question": "Which?", "missing_fields": ()},
+        {"disposition": "unsupported"},
+        {"disposition": "ready", "items": (_item(depends_on=("missing",)),)},
+        {"disposition": "ready", "items": (_item(depends_on=("complete_requested_changes",)),)},
+    ),
+)
 def test_invalid_envelope_shapes_fail_typed(payload) -> None:
     with pytest.raises(ValidationError):
         GoalCompilerModelResponse.model_validate(payload)
@@ -245,17 +287,23 @@ def test_invalid_envelope_shapes_fail_typed(payload) -> None:
 def test_role_factory_uses_distinct_better_compiler_model(monkeypatch) -> None:
     from affordance_runtime.model import goal_compiler as module
     from affordance_runtime.model.policy import factory
+
     def build(environment):
         port = ScriptedModelPort([])
         port.model = environment["LLM_ZHIPU_MODEL"]
         return port
+
     action_policy = object()
     monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
     monkeypatch.setattr(module, "model_port_from_environment", build)
-    roles = model_roles_from_environment({
-        "LLM_ACTIVE_PROFILE": "zhipu", "LLM_ZHIPU_API_KEY": "secret",
-        "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx", "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-    })
+    roles = model_roles_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "zhipu",
+            "LLM_ZHIPU_API_KEY": "secret",
+            "LLM_ZHIPU_MODEL": "glm-4.1v-thinking-flashx",
+            "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
+        }
+    )
     assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "glm-4.7-flash"
 
@@ -273,13 +321,15 @@ def test_role_factory_uses_aliyun_compiler_model_override(monkeypatch) -> None:
     monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
     monkeypatch.setattr(module, "model_port_from_environment", build)
 
-    roles = model_roles_from_environment({
-        "LLM_ACTIVE_PROFILE": "aliyun",
-        "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
-        "LLM_ALIYUN_API_KEY": "secret",
-        "LLM_ALIYUN_MODEL": "glm-5.2",
-        "LLM_GOAL_COMPILER_MODEL": "glm-5.2-compiler",
-    })
+    roles = model_roles_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "aliyun",
+            "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
+            "LLM_ALIYUN_API_KEY": "secret",
+            "LLM_ALIYUN_MODEL": "glm-5.2",
+            "LLM_GOAL_COMPILER_MODEL": "glm-5.2-compiler",
+        }
+    )
 
     assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "glm-5.2-compiler"
@@ -298,37 +348,43 @@ def test_role_factory_uses_deepseek_compiler_model_override(monkeypatch) -> None
     monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
     monkeypatch.setattr(module, "model_port_from_environment", build)
 
-    roles = model_roles_from_environment({
-        "LLM_ACTIVE_PROFILE": "deepseek",
-        "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-        "LLM_DEEPSEEK_API_KEY": "secret",
-        "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
-        "LLM_GOAL_COMPILER_MODEL": "deepseek-v4-pro",
-    })
+    roles = model_roles_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_GOAL_COMPILER_MODEL": "deepseek-v4-pro",
+        }
+    )
 
     assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "deepseek-v4-pro"
 
 
 def test_deepseek_goal_compiler_disables_provider_thinking_for_structured_role() -> None:
-    compiler = model_goal_compiler_from_environment({
-        "LLM_ACTIVE_PROFILE": "deepseek",
-        "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-        "LLM_DEEPSEEK_API_KEY": "secret",
-        "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
-    })
+    compiler = model_goal_compiler_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+        }
+    )
 
     assert compiler.port.supports_thinking_control is True
     assert compiler.config.thinking_mode == "disabled"
 
 
 def test_goal_compiler_does_not_send_thinking_to_provider_without_control() -> None:
-    compiler = model_goal_compiler_from_environment({
-        "LLM_ACTIVE_PROFILE": "aliyun",
-        "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
-        "LLM_ALIYUN_API_KEY": "secret",
-        "LLM_ALIYUN_MODEL": "glm-5.2",
-    })
+    compiler = model_goal_compiler_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "aliyun",
+            "LLM_ALIYUN_BASE_URL": "https://aliyun.invalid/compatible-mode/v1",
+            "LLM_ALIYUN_API_KEY": "secret",
+            "LLM_ALIYUN_MODEL": "glm-5.2",
+        }
+    )
 
     assert compiler.port.supports_thinking_control is False
     assert compiler.config.thinking_mode is None
@@ -347,12 +403,14 @@ def test_pydantic_policy_keeps_distinct_compiler_model_override(monkeypatch) -> 
     monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
     monkeypatch.setattr(module, "model_port_from_environment", build)
 
-    roles = model_roles_from_environment({
-        "LLM_ACTIVE_PROFILE": "zhipu",
-        "LLM_ZHIPU_API_KEY": "secret",
-        "LLM_ZHIPU_MODEL": "glm-4.6",
-        "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-    })
+    roles = model_roles_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "zhipu",
+            "LLM_ZHIPU_API_KEY": "secret",
+            "LLM_ZHIPU_MODEL": "glm-4.6",
+            "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
+        }
+    )
 
     assert roles.action_policy is action_policy
     assert roles.goal_compiler.port.model == "glm-4.7-flash"
@@ -365,17 +423,21 @@ def test_role_factory_can_explicitly_disable_goal_compiler(monkeypatch) -> None:
     action_policy = object()
     monkeypatch.setattr(factory, "model_policy_from_environment", lambda *args, **kwargs: action_policy)
 
-    roles = model_roles_from_environment({
-        "LLM_ACTIVE_PROFILE": "zhipu",
-        "LLM_ZHIPU_MODEL": "glm-4.6",
-        "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
-        "LLM_GOAL_COMPILER_MODE": "disabled",
-    })
+    roles = model_roles_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "zhipu",
+            "LLM_ZHIPU_MODEL": "glm-4.6",
+            "LLM_GOAL_COMPILER_MODEL": "glm-4.7-flash",
+            "LLM_GOAL_COMPILER_MODE": "disabled",
+        }
+    )
 
     assert roles.action_policy is action_policy
     assert isinstance(roles.goal_compiler, UnavailableGoalCompiler)
 
     with pytest.raises(ValueError, match="must be model or disabled"):
-        model_roles_from_environment({
-            "LLM_GOAL_COMPILER_MODE": "unknown",
-        })
+        model_roles_from_environment(
+            {
+                "LLM_GOAL_COMPILER_MODE": "unknown",
+            }
+        )

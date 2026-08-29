@@ -53,12 +53,19 @@ class ActionPolicyReasoningPolicy:
     ) -> ActionPolicyCallProfile:
         feedback = context.control_feedback
         signature = str(feedback.get("stable_signature", ""))
-        trigger = _deliberate_trigger(str(feedback.get("kind", "")))
-        if (
-            signature
-            and signature not in consumed_recovery_events
-            and trigger is not None
+        revision = getattr(context, "strategy_revision", None)
+        if signature and (
+            str(feedback.get("strategy_revision_status", "")) in {"accepted", "unavailable"}
+            or (revision is not None and revision.source_recovery_signature == signature)
         ):
+            return ActionPolicyCallProfile(
+                ActionPolicyInvocationPhase.ORDINARY,
+                ActionPolicyInvocationTrigger.ORDINARY,
+                self.ordinary_max_tokens,
+                "disabled",
+            )
+        trigger = _deliberate_trigger(str(feedback.get("kind", "")))
+        if signature and signature not in consumed_recovery_events and trigger is not None:
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.DELIBERATE,
                 trigger,
@@ -80,6 +87,7 @@ class ActionPolicyReasoningPolicy:
             self.repair_max_tokens,
             "disabled",
         )
+
 
 def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
     if kind == "grounding_stall":

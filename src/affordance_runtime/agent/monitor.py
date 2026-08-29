@@ -59,6 +59,7 @@ class EpisodeMonitor:
     current_findings_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
+    route_regression_count: int = 0
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
@@ -72,6 +73,7 @@ class EpisodeMonitor:
         self.current_findings_digest = current_findings_digest(world)
         self.observation_only_streak = 0
         self.recovery_count = 0
+        self.route_regression_count = 0
         self.latest_attempt_signature = None
         self.same_attempt_streak = 0
         self.no_progress_count = 0
@@ -99,15 +101,13 @@ class EpisodeMonitor:
             (
                 next_world_digest != self.world_digest,
                 findings_digest != self.current_findings_digest,
-                information_delta is not None
-                and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
+                information_delta is not None and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
             )
         )
         gui_dispatched = _gui_dispatched(result)
         control_discovery = isinstance(result.decision, RequestActionPage)
         durable_progress = bool(
-            information_delta is not None
-            and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+            information_delta is not None and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
         ) or (gui_dispatched and _gui_has_operational_result(result))
 
         self.world_digest = next_world_digest
@@ -127,6 +127,7 @@ class EpisodeMonitor:
         }:
             self.observation_only_streak = 0
             self.recovery_count = 0
+            self.route_regression_count = 0
             self.same_attempt_streak = 0
             self.recent_gui_attempts = ()
             self.recent_gui_results = ()
@@ -199,12 +200,14 @@ class EpisodeMonitor:
             self.same_attempt_streak = 1
             self.latest_attempt_signature = route_origin
             self.recovery_count = 1
+            self.route_regression_count = min(3, self.route_regression_count + 1)
             self.active_gui_cycle_digest = ""
             signal = _route_regression_recovery_signal(
                 result,
                 self,
                 outbound_attempt=route_origin,
                 route_length=route_length,
+                recovery_attempt=self.route_regression_count,
             )
             return EpisodeMonitorTransition(
                 tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REGRESSION))),
@@ -257,10 +260,7 @@ class EpisodeMonitor:
             self.recovery_count = 0
             self.latest_attempt_signature = None
             self.same_attempt_streak = 0
-            if (
-                information_delta is not None
-                and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-            ):
+            if information_delta is not None and information_delta.kind is InformationDeltaKind.NEW_INFORMATION:
                 # New public content closes a same-screen read stall, but it
                 # does not prove that the surrounding GUI route advanced the
                 # task.  Keep the bounded effectful route so a later return to
@@ -283,8 +283,7 @@ class EpisodeMonitor:
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         exact_replay = bool(
-            information_delta is not None
-            and information_delta.kind is InformationDeltaKind.EXACT_REPLAY
+            information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY
         )
         signature = _same_world_attempt_signature(result)
         repeats_latest = signature == self.latest_attempt_signature
@@ -326,8 +325,7 @@ class EpisodeMonitor:
             (
                 exact_replay,
                 gui_dispatched and self.same_attempt_streak >= 2,
-                control_discovery
-                and self.observation_only_streak >= _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS,
+                control_discovery and self.observation_only_streak >= _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS,
                 not gui_dispatched
                 and not control_discovery
                 and not exact_replay
@@ -387,8 +385,7 @@ def _diagnostic_events(result: StepResult) -> list[EpisodeMonitorEvent]:
 def _gui_dispatched(result: StepResult) -> bool:
     batch = result.execution_receipts
     return bool(
-        batch is not None
-        and any(item.result.dispatch_status is not DispatchStatus.NOT_SENT for item in batch.receipts)
+        batch is not None and any(item.result.dispatch_status is not DispatchStatus.NOT_SENT for item in batch.receipts)
     )
 
 
@@ -412,8 +409,7 @@ def _control_stall_signal(
 ) -> RecoverySignal:
     prohibited_attempt_signature = (
         monitor.latest_attempt_signature
-        if result.feedback == "recovery_repeat_rejected"
-        and monitor.latest_attempt_signature is not None
+        if result.feedback == "recovery_repeat_rejected" and monitor.latest_attempt_signature is not None
         else _same_world_attempt_signature(result)
     )
     signature_payload: tuple[object, ...] = (
@@ -484,9 +480,7 @@ def _repeated_gui_result_signal(
 ) -> RecoverySignal:
     """Request a new route when one action reaches an already-seen public result."""
 
-    digest = hashlib.sha256(
-        _canonical_json((gui_signature.digest, result_world_digest)).encode()
-    ).hexdigest()
+    digest = hashlib.sha256(_canonical_json((gui_signature.digest, result_world_digest)).encode()).hexdigest()
     return RecoverySignal(
         RecoveryKind.STATE_OSCILLATION,
         "state_oscillation:sha256:" + digest,
@@ -515,18 +509,22 @@ def _route_regression_recovery_signal(
     *,
     outbound_attempt: PublicAttemptSignature,
     route_length: int,
+    recovery_attempt: int,
 ) -> RecoverySignal:
     """Request semantic review after one effectful excursion returns to its origin."""
 
     returned_page_digest = public_page_semantic_digest(result.after_world)
-    signature = "route_regression:sha256:" + hashlib.sha256(
-        _canonical_json(
-            (
-                outbound_attempt.digest,
-                returned_page_digest,
-            )
-        ).encode()
-    ).hexdigest()
+    signature = (
+        "route_regression:sha256:"
+        + hashlib.sha256(
+            _canonical_json(
+                (
+                    outbound_attempt.digest,
+                    returned_page_digest,
+                )
+            ).encode()
+        ).hexdigest()
+    )
     current_attempt = _gui_attempt_signature(result)
     attempted_modes = tuple(
         dict.fromkeys(
@@ -557,7 +555,7 @@ def _route_regression_recovery_signal(
             "requirements. Do not immediately replay that exact outbound attempt; choose a different current route, "
             "use the acquired result, or finish when the requested answer is already supported."
         ),
-        recovery_attempt=1,
+        recovery_attempt=recovery_attempt,
     )
 
 
@@ -593,9 +591,7 @@ def _short_gui_cycle(
             continue
         rotations = tuple(current[index:] + current[:index] for index in range(period))
         canonical = min(rotations)
-        digest = "sha256:" + hashlib.sha256(
-            _canonical_json(("effectful_gui_cycle", canonical)).encode()
-        ).hexdigest()
+        digest = "sha256:" + hashlib.sha256(_canonical_json(("effectful_gui_cycle", canonical)).encode()).hexdigest()
         return digest, period
     return "", 0
 
@@ -696,10 +692,7 @@ def _gui_has_operational_result(result: StepResult) -> bool:
         outcome is not None
         and (
             outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
-            or (
-                outcome.observed_change is ObservedChange.CHANGED
-                and result.public_world_delta.semantic_changed
-            )
+            or (outcome.observed_change is ObservedChange.CHANGED and result.public_world_delta.semantic_changed)
         )
     )
 

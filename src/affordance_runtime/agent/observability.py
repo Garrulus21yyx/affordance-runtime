@@ -1259,7 +1259,12 @@ def _langfuse_generation_name(
     attempt: Mapping[str, object],
 ) -> str:
     del event
-    return "history-compaction-generation" if attempt.get("role") == "history_compactor" else "action-policy-generation"
+    role = attempt.get("role")
+    if role == "history_compactor":
+        return "history-compaction-generation"
+    if role == "strategy_reviser":
+        return "strategy-revision-generation"
+    return "action-policy-generation"
 
 
 def _langfuse_generation_attempts(
@@ -1309,6 +1314,7 @@ def _langfuse_event_projection(event: Mapping[str, object]) -> dict[str, object]
             "outcome",
             "decision",
             "policy_failure",
+            "strategy_revision",
             "model_metadata",
             "tool_catalog",
             "visible_action_count",
@@ -1578,8 +1584,12 @@ def model_turn_payload(
 
     backed = _model_backed_policy(policy)
     invocation = getattr(backed, "last_invocation_result", None)
+    strategy_invocation = getattr(backed, "last_strategy_revision_invocation", None)
     metadata = getattr(invocation, "metadata", None)
-    attempts = tuple(getattr(invocation, "attempts", ()))
+    attempts = (
+        *tuple(getattr(strategy_invocation, "attempts", ())),
+        *tuple(getattr(invocation, "attempts", ())),
+    )
     diagnostics = getattr(invocation, "diagnostics", {}) if invocation is not None else {}
     diagnostics = diagnostics if isinstance(diagnostics, Mapping) else {}
     payload: dict[str, object] = {
@@ -1589,6 +1599,10 @@ def model_turn_payload(
         "model_metadata": _json_value(metadata, None),
         "exception": exception,
         "decision": _json_value(outcome, None),
+        "strategy_revision": _json_value(
+            getattr(strategy_invocation, "output", None),
+            None,
+        ),
         "outcome": (getattr(getattr(outcome, "kind", None), "value", "") or type(outcome).__name__)
         if not exception
         else "exception",

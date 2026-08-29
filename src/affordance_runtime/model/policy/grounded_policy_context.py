@@ -86,6 +86,10 @@ class GroundedPolicyContextBinder:
             control_feedback = project_public_value(context.control_feedback)
             public["control_feedback"] = control_feedback
             current_turn["control_feedback"] = control_feedback
+        if context.strategy_revision is not None:
+            strategy_revision = project_public_value(context.strategy_revision.public_projection())
+            public["strategy_revision"] = strategy_revision
+            current_turn["strategy_revision"] = strategy_revision
         return {
             "public": public,
             "task_plan": {"task": task, "goal_plan": public["goal_plan"]},

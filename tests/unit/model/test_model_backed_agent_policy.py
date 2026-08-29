@@ -95,12 +95,14 @@ def test_private_binding_route_and_credentials_never_enter_model_request() -> No
 
         await ModelBackedAgentPolicy(port).decide(context)
 
-        request = repr((
-            port.request.agent_context.task,
-            port.request.agent_context.goal_plan,
-            port.request.agent_context.actions,
-            port.request.agent_context.actor_world,
-        ))
+        request = repr(
+            (
+                port.request.agent_context.task,
+                port.request.agent_context.goal_plan,
+                port.request.agent_context.actions,
+                port.request.agent_context.actor_world,
+            )
+        )
         for private in ("#private", "private.example", "top-secret", "private-executor"):
             assert private not in request
 
@@ -111,10 +113,12 @@ def test_model_backed_policy_makes_one_structured_call_and_returns_typed_decisio
     async def scenario() -> None:
         context = await _context()
         option = context.actions.options[0]
-        port = ScriptedPort(_decision_result(
-            SelectAction(context.context_id, option.action_id),
-            ModelMetadata("fixture", "scripted", "response:1"),
-        ))
+        port = ScriptedPort(
+            _decision_result(
+                SelectAction(context.context_id, option.action_id),
+                ModelMetadata("fixture", "scripted", "response:1"),
+            )
+        )
 
         decision = await ModelBackedAgentPolicy(port).decide(context)
 
@@ -210,10 +214,12 @@ def test_policy_failure_is_terminal_zero_call_and_not_recorded_as_agent_abort() 
         result = await TargetRuntime(
             AgentDecisionPorts(
                 ModelBackedAgentPolicy(
-                    ScriptedPort(ModelInvocationResult(
-                        failure=ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False),
-                        attempts=(ModelGenerationAttempt(1, "initial", "fixture", "failed"),),
-                    ))
+                    ScriptedPort(
+                        ModelInvocationResult(
+                            failure=ModelFailure(ModelFailureKind.TIMEOUT, "timed out", False),
+                            attempts=(ModelGenerationAttempt(1, "initial", "fixture", "failed"),),
+                        )
+                    )
                 )
             ),
             SharedActionOutcomeProjector(),
@@ -238,5 +244,101 @@ def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
         ).decide(context)
 
         assert isinstance(decision, Abort)
+
+    asyncio.run(scenario())
+
+
+def test_strategy_revision_failure_degrades_to_one_ordinary_action_request() -> None:
+    @dataclass
+    class RecoveryPort:
+        revision_calls: int = 0
+        action_calls: int = 0
+        action_request: object | None = None
+
+        async def revise_strategy(self, request):
+            self.revision_calls += 1
+            return ModelInvocationResult(
+                failure=ModelFailure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "strategy revision was invalid",
+                    False,
+                )
+            )
+
+        async def generate(self, request):
+            self.action_calls += 1
+            self.action_request = request
+            return _decision_result(Abort(request.context_id, "choose one supported fallback", "policy"))
+
+    async def scenario() -> None:
+        context = replace(
+            await _context(),
+            control_feedback={
+                "kind": "route_regression",
+                "stable_signature": "route:revision-failed",
+                "recovery_attempt": 2,
+            },
+        )
+        port = RecoveryPort()
+        policy = ModelBackedAgentPolicy(port)
+
+        decision = await policy.decide(context)
+
+        assert isinstance(decision, Abort)
+        assert port.revision_calls == 1
+        assert port.action_calls == 1
+        assert port.action_request.agent_context.control_feedback["strategy_revision_status"] == "unavailable"
+        assert port.action_request.agent_context.strategy_revision is None
+        assert policy.last_strategy_revision_invocation is not None
+        assert policy.last_strategy_revision_invocation.failure is not None
+
+    asyncio.run(scenario())
+
+
+def test_failed_strategy_revision_is_not_rescheduled_on_later_recovery_attempts() -> None:
+    @dataclass
+    class RecoveryPort:
+        revision_calls: int = 0
+
+        async def revise_strategy(self, request):
+            self.revision_calls += 1
+            return ModelInvocationResult(
+                failure=ModelFailure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "strategy revision was invalid",
+                    False,
+                )
+            )
+
+        async def generate(self, request):
+            return _decision_result(Abort(request.context_id, "continue recovery", "policy"))
+
+    async def scenario() -> None:
+        base = await _context()
+        port = RecoveryPort()
+        policy = ModelBackedAgentPolicy(port)
+
+        await policy.decide(
+            replace(
+                base,
+                control_feedback={
+                    "kind": "route_regression",
+                    "stable_signature": "route:second",
+                    "recovery_attempt": 2,
+                },
+            )
+        )
+        await policy.decide(
+            replace(
+                base,
+                control_feedback={
+                    "kind": "route_regression",
+                    "stable_signature": "route:third",
+                    "recovery_attempt": 3,
+                },
+            )
+        )
+
+        assert port.revision_calls == 1
 
     asyncio.run(scenario())

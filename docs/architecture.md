@@ -2345,3 +2345,30 @@ use, submission, purchase, and download. Its provider-free preflight never opens
 persists only redacted origins. It cannot attest filter activation: the Shell browser-session owner must still admit
 and attest the required strict profile before navigation. Actual public navigation remains authorization-gated and
 cannot contribute formal benchmark truth.
+
+## 2026-08-29 — Clean low-frequency strategy revision boundary
+
+Long-route recovery remains inside the existing `EpisodeMonitor → RecoverySignal → ActionPolicy` chain. The Monitor
+does not infer task truth or choose an alternative route. It only counts completed semantic route regressions already
+identified from typed GUI transitions. The first closed route continues through the existing deliberate ActionPolicy;
+the second distinct closed route carries `recovery_attempt=2` and admits exactly one optional strategy-revision call
+for that task revision. Later recoveries do not reschedule that call.
+
+`ModelBackedAgentPolicy` owns this low-frequency scheduling because it already owns ActionPolicy model invocation.
+The existing PydanticAI provider boundary produces one bounded, complete replacement `StrategyRevision` containing
+model-authored verified facts, explicitly unverified hypotheses, remaining questions, next intent, and failed
+strategies. Its input is the official settled PydanticAI history plus the current TaskGoal/GoalPlan, one fresh World,
+and the typed recovery signal. The value is advisory working state: it cannot modify World, authorize an action,
+prove task completion, or become a second history. It is projected into the next ordinary ActionPolicy request and
+persisted only with the existing policy checkpoint; Trace observes the same typed invocation before the action call.
+
+Provider failure, schema failure, timeout, or `finish_reason=length|max_tokens` discards the revision and immediately
+falls back to one ordinary ActionPolicy call. The truncation rule rejects an incomplete provider envelope; Runtime
+does not truncate an accepted progress record. The ordinary action path applies the same physical-response check so
+a syntactically parseable but provider-truncated ToolCall cannot be accepted as complete. Existing ToolCall/ToolReturn
+pairing, history compaction, cursor behavior, World projection, BrowserGym acquisition, Binder, Executor, evaluator,
+and frontend contracts are unchanged.
+
+GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
+in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
+per-step planner was added.
