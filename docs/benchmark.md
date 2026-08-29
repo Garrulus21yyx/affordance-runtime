@@ -2173,3 +2173,17 @@ was manually interrupted after 63 policy turns and 1,441,577 provider tokens bec
 than a Monitor-detectable unchanged loop. The catalog description had omitted the already-supported replacement
 semantics of `type_text`. A provider-free contract test now verifies that the current tool explicitly says replacement
 and empty-string clearing; the executor and action schema are unchanged. A fresh live run remains required.
+
+[`memory-convergence-run7`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run7/run.json)
+ended after 28 turns when DeepSeek returned non-retryable HTTP 402. It recorded 27 valid tool calls, zero unknown-tool
+calls, and no ref/grounding failure, so the terminal status is an external provider-availability block rather than a
+GUI contract witness. The trace also records one successful `history_pressure` compaction followed by repeated
+`ValueError: compact PydanticAI history has an invalid summary position` attempts; those failures forced later
+ActionPolicy calls to retain roughly 30k-token raw histories.
+
+The incremental-compaction regression now supplies a current World identity so it crosses the same degrounding pass
+as live traffic, preserves the exact Harness summary prefix, and successfully recompacts while conserving every
+ToolCall/ToolReturn pair and pending suffix. A second regression removes a local E-ref without changing the prefix and
+migrates the formerly flattened legacy form. The complete PydanticAI integration file reports `110 passed`. A fresh
+provider-free suite reports `2087 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented absent
+archived trace deselected. A fresh live rerun is blocked until provider quota is available.

@@ -3592,7 +3592,12 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
     projected = pydantic_bridge._project_expired_history(
         tuple(messages),
         max_estimated_tokens=6_000,
+        current_world_observation_id="current-world",
     )
+    projected_summary = projected[0]
+    assert isinstance(projected_summary, ModelRequest)
+    assert isinstance(projected_summary.parts[0], SystemPromptPart)
+    assert projected_summary.parts[0].content.startswith("Summary of previous conversation:\n\n")
     scripted = ScriptedModel([ModelResponse(parts=[TextPart("## Verified facts\n- Stable generic fact.")])])
 
     run = asyncio.run(
@@ -3626,6 +3631,33 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
     assert return_ids == call_ids - pending_ids
     assert pending_ids == {"call:5"}
     canonical_envelope_module._project_pydantic_history(run.messages)
+
+
+def test_compaction_summary_degrounding_preserves_incremental_harness_prefix() -> None:
+    summary = ModelRequest(
+        parts=[
+            SystemPromptPart(
+                "Summary of previous conversation:\n\n## Verified facts\n- E23 was a call-local editor ref."
+            )
+        ]
+    )
+
+    projected = pydantic_bridge._deground_compaction_summaries((summary,))
+
+    assert isinstance(projected[0], ModelRequest)
+    part = projected[0].parts[0]
+    assert isinstance(part, SystemPromptPart)
+    assert part.content.startswith("Summary of previous conversation:\n\n")
+    assert "E23" not in part.content
+    legacy = replace(
+        summary,
+        parts=[SystemPromptPart("Summary of previous conversation: ## Verified facts - stable value")],
+    )
+    migrated = pydantic_bridge._deground_compaction_summaries((legacy,))
+    assert isinstance(migrated[0], ModelRequest)
+    migrated_part = migrated[0].parts[0]
+    assert isinstance(migrated_part, SystemPromptPart)
+    assert migrated_part.content.startswith("Summary of previous conversation:\n\n")
 
 
 @given(turns=st.integers(min_value=5, max_value=12))

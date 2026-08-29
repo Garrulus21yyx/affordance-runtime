@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -117,12 +118,15 @@ from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
+from affordance_runtime.world.public_refs import PublicRefCodec
 
 _MAX_PROVIDER_RETRIES = 1
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
+_HISTORY_COMPACTION_SUMMARY_PREFIX = "Summary of previous conversation:\n\n"
+_HISTORY_GENERATION_REF = re.compile(rf"\b{PublicRefCodec.token_pattern()}\b")
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
 _HISTORY_ECONOMY_PRESSURE_RATIO = 0.5
 _HISTORY_COMPACTION_TARGET_RATIO = 0.3
@@ -3067,7 +3071,7 @@ def _deground_expired_tool_exchanges(
 
 
 def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Keep Harness summaries semantic if an older run emitted a local ref."""
+    """Remove local refs without changing Harness' incremental-summary identity."""
 
     from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
@@ -3080,7 +3084,7 @@ def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object
         changed = False
         for part in message.parts:
             if isinstance(part, SystemPromptPart) and part.content.startswith("Summary of previous conversation"):
-                content = str(sanitize_history_value(part.content))
+                content = _canonical_compaction_summary(part.content)
                 if content != part.content:
                     changed = True
                     parts.append(replace(part, content=content))
@@ -3088,6 +3092,22 @@ def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object
             parts.append(part)
         projected.append(replace(message, parts=tuple(parts)) if changed else message)
     return tuple(projected)
+
+
+def _canonical_compaction_summary(content: str) -> str:
+    """Preserve the exact Harness prefix while degrounding only its semantic body."""
+
+    marker = _HISTORY_COMPACTION_SUMMARY_PREFIX.rstrip()
+    if content.startswith(_HISTORY_COMPACTION_SUMMARY_PREFIX):
+        body = content[len(_HISTORY_COMPACTION_SUMMARY_PREFIX) :]
+    elif content.startswith(marker):
+        # Migrate summaries flattened by the former generic history sanitizer.
+        body = content[len(marker) :].lstrip(": \r\n")
+    else:
+        return content
+    if _HISTORY_GENERATION_REF.search(body):
+        body = str(sanitize_history_value(body))
+    return _HISTORY_COMPACTION_SUMMARY_PREFIX + body
 
 
 def _strip_completed_private_reasoning(

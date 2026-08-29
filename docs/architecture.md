@@ -2460,6 +2460,21 @@ executes semantic `type_text` as replacement/fill, while the Catalog described o
 postcondition.  The ToolCatalog owner now states that `type_text` replaces the editable value and that an empty string
 clears it.  This exposes existing executor semantics; it adds no hotkey, action, retry, or Monitor heuristic.
 
+Task554 run7 ended on the provider's non-retryable HTTP 402 before reaching text entry. It nevertheless exposed why
+history cost rose again after an initially successful Harness compaction. The generic degrounding pass rewrote
+Harness' exact `Summary of previous conversation:\n\n` prefix by collapsing its newlines. Incremental Harness then
+treated that prior summary as an ordinary leading system prompt, generated a second summary, and the canonical
+history validator correctly rejected the two-summary result as an invalid summary position. Later turns retried the
+same doomed compaction and sent the uncompressed history to ActionPolicy.
+
+The history projection owner now preserves Harness' exact summary identity. A summary without local refs is not
+rewritten; if its body contains generation-local refs, only the body is sanitized and the exact prefix remains. A
+legacy flattened summary is migrated back to the same canonical prefix. Incremental compaction remains the sole
+semantic memory owner, and the existing pair-safe suffix/canonical-history validation remains unchanged. No new
+summary model, scheduler, checkpoint, or failure fallback was added.
+The PydanticAI integration file passes `110` tests; the complete fixed-environment provider-free suite passes
+`2087 passed, 19 skipped, 1 deselected, 1 warning`, with the same absent archived trace deselected.
+
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
 per-step planner was added.
