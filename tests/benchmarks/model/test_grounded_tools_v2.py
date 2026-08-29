@@ -494,10 +494,10 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
     assert "Use exactly one offered tool and follow its current schema" in system_content
     assert {item["name"] for item in public["tools"]} == {
         "type_text",
-            "activate",
-            "press_key",
-            "hotkey",
-            "scroll",
+        "activate",
+        "press_key",
+        "hotkey",
+        "scroll",
         "read_region",
         "search_page_content",
         "list_regions",
@@ -759,9 +759,7 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
     assert "find_controls returns no usable control" in spec.description
     point_variant = next(
-        item
-        for item in spec.input_schema["oneOf"]
-        if item["properties"]["purpose"]["enum"] == ["point_grounding"]
+        item for item in spec.input_schema["oneOf"] if item["properties"]["purpose"]["enum"] == ["point_grounding"]
     )
     assert "no executable current ref" in point_variant["properties"]["purpose"]["description"]
     assert "find_controls returns empty" in point_variant["properties"]["target_description"]["description"]
@@ -1148,9 +1146,9 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
     assert {item["name"].split("_")[0] for item in public["tools"]} == {
         "type",
         "activate",
-            "press",
-            "hotkey",
-            "scroll",
+        "press",
+        "hotkey",
+        "scroll",
         "read",
         "search",
         "find",
@@ -2640,7 +2638,7 @@ def test_representation_repair_preserves_operation_and_semantic_target() -> None
     assert outcome.diagnostics["representation_repair_count"] == 1
 
 
-def test_one_typed_recovery_event_uses_one_deliberate_provider_configuration() -> None:
+def test_active_recovery_epoch_keeps_deliberate_provider_configuration() -> None:
     class ConfigPort(_ActionPort):
         supports_thinking_control = True
 
@@ -2668,12 +2666,12 @@ def test_one_typed_recovery_event_uses_one_deliberate_provider_configuration() -
     )
     first = asyncio.run(adapter.generate(_action_request(context)))
     second = asyncio.run(adapter.generate(_action_request(context)))
-    assert tuple(config.max_tokens for config in port.configs) == (2048, 1024)
-    assert tuple(config.thinking_mode for config in port.configs) == ("enabled", "disabled")
+    assert tuple(config.max_tokens for config in port.configs) == (2048, 2048)
+    assert tuple(config.thinking_mode for config in port.configs) == ("enabled", "enabled")
     assert first.attempts[0].phase == "deliberate"
     assert first.attempts[0].trigger == "control_stall"
-    assert second.attempts[0].phase == "ordinary"
-    assert second.attempts[0].trigger == "ordinary"
+    assert second.attempts[0].phase == "deliberate"
+    assert second.attempts[0].trigger == "control_stall"
 
 
 def test_exhausted_provider_retry_keeps_failure_attempt_observable() -> None:

@@ -524,7 +524,7 @@ async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request
         ActionSpaceBuilder().build(task, world),
         await SharedTaskEvaluator().evaluate(task, world),
     )
-    profile = port.reasoning_policy.select(context, frozenset())
+    profile = port.reasoning_policy.select(context)
     return (
         turn_packer_module.TurnPacker()
         .pack(
@@ -1081,6 +1081,67 @@ def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> Non
         assert rejected_return["content"]["kind"] == "proven_failed_attempt_rejected"
         assert rejected_return["content"]["dispatch"] == "not_sent"
         assert rejected_return["content"]["transport_success"] is False
+
+    asyncio.run(scenario())
+
+
+def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() -> None:
+    class VerifiedNoEffectProjector:
+        async def evaluate(self, task, before, request, result, after, public_world_delta):
+            del task, result, public_world_delta
+            return ActionOutcome(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.UNCHANGED,
+                LocalPostconditionStatus.UNSATISFIED,
+                EvidenceMethod.STRUCTURAL,
+                "postcondition remained unsatisfied",
+                (after.facts[0].fact_id,),
+            )
+
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                "first_gui_action",
+                "first_gui_action",
+                ("list_regions", {}),
+                ("abort", {"reason": "stop after recovery inspection", "category": "user_request"}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("lease-before", False),
+            post_observations=(
+                shared_world("lease-after-1", False),
+                shared_world("lease-after-2", False),
+            ),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(2)),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            VerifiedNoEffectProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("persistent_deliberate_lease_test"),
+            episode_monitor=EpisodeMonitor(),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert environment.execute_calls == 2
+        assert scripted.calls == 4
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [
+            1024,
+            1024,
+            2048,
+            2048,
+        ]
+        fourth = normalize_recorded_provider_input(scripted.records[3])
+        current_prompt = next(part for part in fourth["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
+        current = json.loads(current_prompt["content"][0]["content"])
+        assert current["control_feedback"]["kind"] == "control_stall"
+        assert current["control_feedback"]["epoch_id"].startswith("recovery:1:")
+        assert current["recent_trajectory"][-1]["action"]["tool"] == "list_regions"
 
     asyncio.run(scenario())
 
@@ -4170,7 +4231,7 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
     asyncio.run(scenario())
 
 
-def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> None:
+def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
         policy = _policy(scripted.build())
@@ -4210,11 +4271,11 @@ def test_native_action_policy_uses_one_deliberate_call_per_recovery_event() -> N
         assert first.attempts[0].trigger == "grounding_gap"
         assert first.attempts[0].thinking_requested == "enabled"
         assert first.attempts[0].max_output_tokens == 2048
-        assert second.attempts[0].phase == "ordinary"
-        assert second.attempts[0].trigger == "ordinary"
-        assert second.attempts[0].thinking_requested == "disabled"
-        assert second.attempts[0].max_output_tokens == 1024
-        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 1024]
+        assert second.attempts[0].phase == "deliberate"
+        assert second.attempts[0].trigger == "grounding_gap"
+        assert second.attempts[0].thinking_requested == "enabled"
+        assert second.attempts[0].max_output_tokens == 2048
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 2048]
 
     asyncio.run(scenario())
 
@@ -5797,46 +5858,12 @@ def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
     assert policy.port.model_id == model_id
 
 
-def test_second_closed_route_produces_one_turn_review_then_one_ordinary_action() -> None:
+def test_strategy_review_signal_goes_directly_to_one_deliberate_action_policy_call() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(
-            [
-                ModelResponse(
-                    parts=[
-                        ToolCallPart(
-                            "strategy_revision",
-                            {
-                                "disposition": "continue",
-                                "verified_facts": [
-                                    {
-                                        "claim": "Primary candidate distance",
-                                        "value": "33 km",
-                                        "source": "completed route ToolReturn",
-                                    }
-                                ],
-                                "working_hypotheses": [
-                                    {
-                                        "claim": "Another candidate may satisfy the constraint",
-                                        "needs_verification": True,
-                                    }
-                                ],
-                                "remaining_questions": ["Whether another candidate satisfies the user constraint"],
-                                "next_intent": (
-                                    "Verify remaining candidate coverage without reopening failed candidates"
-                                ),
-                                "failed_strategies": ["Opening candidates that return to the same results page"],
-                            },
-                            "recording-call:strategy-revision",
-                        )
-                    ],
-                    provider_response_id="recording-response:strategy-revision",
-                ),
-                ("list_regions", {}),
-            ]
-        )
+        scripted = ScriptedModel([("list_regions", {})])
         policy = _policy(scripted.build())
         task = shared_task()
-        world = shared_world("strategy-revision", False)
+        world = shared_world("direct-deliberate-recovery", False)
         evaluation = await SharedTaskEvaluator().evaluate(task, world)
         context = replace(
             ContextBuilder().build(
@@ -5855,85 +5882,19 @@ def test_second_closed_route_produces_one_turn_review_then_one_ordinary_action()
 
         decision = await policy.decide(context)
 
-        assert not isinstance(decision, PolicyFailure)
-        assert scripted.calls == 2
-        assert not hasattr(policy, "active_strategy_revision")
-        assert policy.last_strategy_revision_invocation is not None
-        assert policy.last_strategy_revision_invocation.accepted
-        assert policy.last_strategy_revision_invocation.attempts[0].role == "strategy_reviser"
-        assert policy.port.last_call_profile is not None
-        assert policy.port.last_call_profile.phase.value == "ordinary"
-        assert [record.model_settings["max_tokens"] for record in scripted.records] == [
-            2048,
-            1024,
-        ]
-        action_input = json.dumps(
-            normalize_recorded_provider_input(scripted.records[1]),
-            sort_keys=True,
-        )
-        assert "strategy_revision" in action_input
-        assert "Verify remaining candidate coverage" in action_input
-
-    asyncio.run(scenario())
-
-
-def test_truncated_strategy_review_is_discarded_and_falls_back_to_deliberate_action() -> None:
-    async def scenario() -> None:
-        scripted = ScriptedModel(
-            [
-                ModelResponse(
-                    parts=[
-                        ToolCallPart(
-                            "strategy_revision",
-                            {
-                                "disposition": "continue",
-                                "verified_facts": [],
-                                "working_hypotheses": [],
-                                "remaining_questions": ["One unresolved requirement"],
-                                "next_intent": "Resolve the remaining requirement",
-                                "failed_strategies": [],
-                            },
-                            "recording-call:truncated-strategy-revision",
-                        )
-                    ],
-                    finish_reason="length",
-                    provider_response_id="recording-response:truncated-strategy-revision",
-                ),
-                ("list_regions", {}),
-            ]
-        )
-        policy = _policy(scripted.build())
-        task = shared_task()
-        world = shared_world("truncated-strategy-revision", False)
-        evaluation = await SharedTaskEvaluator().evaluate(task, world)
-        context = replace(
-            ContextBuilder().build(
-                task,
-                world,
-                ActionSpaceBuilder().build(task, world),
-                evaluation,
-            ),
-            control_feedback={
-                "kind": "strategy_review",
-                "stable_signature": "route:truncated-strategy-revision",
-                "recovery_attempt": 2,
-            },
-        )
-
-        decision = await policy.decide(context)
-
-        assert not isinstance(decision, PolicyFailure)
-        assert scripted.calls == 2
-        assert not hasattr(policy, "active_strategy_revision")
-        assert policy.last_strategy_revision_invocation is not None
-        assert policy.last_strategy_revision_invocation.failure is not None
-        assert (
-            policy.last_strategy_revision_invocation.attempts[0].output_failure_kind
-            is StructuredOutputFailureKind.OUTPUT_TRUNCATED
-        )
+        assert isinstance(decision, ReadRegionResult)
+        assert scripted.calls == 1
+        assert not hasattr(policy, "last_strategy_revision_invocation")
+        assert not hasattr(policy.port, "revise_strategy")
         assert policy.port.last_call_profile is not None
         assert policy.port.last_call_profile.phase.value == "deliberate"
-        assert scripted.records[1].model_settings["max_tokens"] == 2048
+        assert [record.model_settings["max_tokens"] for record in scripted.records] == [2048]
+        action_input = json.dumps(
+            normalize_recorded_provider_input(scripted.records[0]),
+            sort_keys=True,
+        )
+        assert "strategy_revision" not in action_input
+        assert "route:second-distinct-failure" in action_input
 
     asyncio.run(scenario())
 

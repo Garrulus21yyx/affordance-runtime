@@ -15,11 +15,9 @@ import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import uuid4
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
@@ -31,10 +29,7 @@ from affordance_runtime.agent.context.failures import (
     ProviderAttemptOrigin,
     ProviderFailureCode,
 )
-from affordance_runtime.agent.context.model_turn_delivery import (
-    ModelTurnDelivery,
-    build_model_turn_delivery,
-)
+from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
 from affordance_runtime.agent.decision_capability import (
     GROUNDED_ACTION_DECISION_CAPABILITIES,
     DecisionCapability,
@@ -42,13 +37,6 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     AgentDecision,
     DecisionKind,
-)
-from affordance_runtime.agent.strategy_revision import (
-    StrategyDisposition,
-    StrategyFact,
-    StrategyRevision,
-    WorkingHypothesis,
-    strategy_revision_due,
 )
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
@@ -127,8 +115,6 @@ _HISTORY_RECENT_EXACT_TOKENS_RATIO = 0.12
 _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS = 1024
 _TASK_ANCHOR_METADATA_KEY = "affordance_runtime.task_anchor"
 _STEP_PERSISTENCE_HISTORY_FORMAT = "pydantic-ai.step-persistence.v1"
-_STRATEGY_REVISION_SCHEMA = "strategy-revision.v1"
-_STRATEGY_REVISION_MAX_OUTPUT_TOKENS = 2048
 _HISTORY_COMPACTION_SUMMARY_PROMPT = f"""
 You are compacting an expired prefix of a GUI agent trajectory. The summary replaces that
 prefix, so preserve only information needed to continue the user's task correctly.
@@ -178,24 +164,6 @@ _HISTORY_COMPACTION_INSTRUCTIONS = (
     "Summarize only stable completed outcomes, verified facts, and failed strategies from an expired "
     "GUI-agent trajectory prefix; do not invent current or prospective task state."
 )
-_STRATEGY_REVISION_INSTRUCTIONS = f"""
-You are the low-frequency StrategyReviser inside one general GUI agent. A mechanical monitor has
-reported a bounded route/cycle recovery point. Produce one concise review for the immediately following
-ActionPolicy call; do not choose or call a GUI tool. This review is not durable progress and will
-not be replayed on later turns.
-
-Use completed ToolReturns and explicit prior model conclusions as historical evidence, and use the
-supplied fresh World as the only current-state authority. Apply this evidence rule:
-{MODEL_POLICY_EVIDENCE_STATUS}
-
-Separate exact supported facts from hypotheses. Keep only questions that remain necessary for the
-user's requested result. A value already present in verified_facts must not also remain a question.
-Record route-level failures worth avoiding, not individual clicks, reads, URLs, control IDs, or
-call-local E/R/F/N refs. next_intent is one semantic direction for the ActionPolicy, not a selector,
-URL, tool call, or executable plan. Set ready_to_submit only when every requested answer field is
-supported; set no_supported_route only when the available evidence shows no currently supported
-route. This output is advisory: Runtime and the native evaluator remain authoritative.
-""".strip()
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelResponse
     from pydantic_ai.models import Model
@@ -209,45 +177,6 @@ class ConfiguredPydanticAIModel:
     model_id: str
     endpoint_host: str
     supports_multimodal: bool
-
-
-class _StrategyFactModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    claim: str = Field(min_length=1, max_length=240)
-    value: str = Field(min_length=1, max_length=500)
-    source: str = Field(min_length=1, max_length=240)
-
-
-class _WorkingHypothesisModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    claim: str = Field(min_length=1, max_length=300)
-    needs_verification: Literal[True] = True
-
-
-class StrategyRevisionModelResponse(BaseModel):
-    """Provider-facing replacement frame; Runtime-owned identity is added later."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-    disposition: Literal["continue", "ready_to_submit", "no_supported_route"]
-    verified_facts: list[_StrategyFactModel] = Field(default_factory=list, max_length=8)
-    working_hypotheses: list[_WorkingHypothesisModel] = Field(default_factory=list, max_length=4)
-    remaining_questions: list[str] = Field(default_factory=list, max_length=8)
-    next_intent: str = Field(min_length=1, max_length=400)
-    failed_strategies: list[str] = Field(default_factory=list, max_length=3)
-
-    @model_validator(mode="after")
-    def _closed_shape(self) -> StrategyRevisionModelResponse:
-        if self.disposition == "ready_to_submit" and (self.working_hypotheses or self.remaining_questions):
-            raise ValueError("ready-to-submit revision cannot retain unresolved claims")
-        if any(not item.strip() or len(item) > 300 for item in self.remaining_questions):
-            raise ValueError("strategy revision remaining questions are invalid")
-        if any(not item.strip() or len(item) > 300 for item in self.failed_strategies):
-            raise ValueError("strategy revision failed strategies are invalid")
-        if len(set(self.remaining_questions)) != len(self.remaining_questions):
-            raise ValueError("strategy revision remaining questions must be unique")
-        if len(set(self.failed_strategies)) != len(self.failed_strategies):
-            raise ValueError("strategy revision failed strategies must be unique")
-        return self
 
 
 @dataclass(frozen=True)
@@ -332,7 +261,6 @@ class PydanticAIGroundedDecisionPort:
     envelope_binder: CanonicalProviderEnvelopeBinder = field(default_factory=CanonicalProviderEnvelopeBinder)
     reasoning_policy: ActionPolicyReasoningPolicy = field(default_factory=ActionPolicyReasoningPolicy)
     history_compaction_timeout_s: float = 10.0
-    consumed_recovery_events: frozenset[str] = field(default_factory=frozenset, init=False, compare=False)
     last_call_profile: ActionPolicyCallProfile | None = field(default=None, init=False, compare=False)
     last_catalog_count: int = field(default=0, init=False, compare=False)
     last_catalog_bytes: int = field(default=0, init=False, compare=False)
@@ -678,215 +606,6 @@ class PydanticAIGroundedDecisionPort:
             )
         )
 
-    async def revise_strategy(
-        self,
-        request: ModelDecisionRequest,
-    ) -> ModelInvocationResult[StrategyRevision]:
-        """Produce one advisory frame for the immediately following action call."""
-
-        feedback = request.agent_context.control_feedback
-        signature = str(feedback.get("stable_signature", ""))
-        attempt = feedback.get("recovery_attempt", 0)
-        kind = str(feedback.get("kind", ""))
-        if not signature or not strategy_revision_due(kind, attempt):
-            return ModelInvocationResult(
-                failure=ModelFailure(
-                    ModelFailureKind.INVALID_RESPONSE,
-                    "strategy revision trigger is invalid",
-                    False,
-                ),
-                lineage={"role": "StrategyReviser", "trigger": kind or "invalid"},
-            )
-        task_identity = (
-            request.agent_context.task.task_id,
-            request.agent_context.goal_plan.task_revision,
-        )
-        previous_task_identity = self.active_task_identity
-        if previous_task_identity is not None and previous_task_identity[0] != task_identity[0]:
-            object.__setattr__(self, "message_history", ())
-        object.__setattr__(self, "active_task_identity", task_identity)
-        try:
-            pending = _pending_tool_parts_from_history(self.message_history)
-            if pending:
-                last_step = request.last_step
-                call_id = str(getattr(getattr(last_step, "decision", None), "tool_call_id", ""))
-                if last_step is None or call_id != str(getattr(pending[0], "tool_call_id", "")):
-                    raise ValueError("strategy revision requires the committed pending ToolReturn")
-                self.close_deferred_call(last_step)
-            history = _normalize_pydantic_history_for_current_task(
-                self.message_history,
-                task_plan=self.envelope_binder.context_binder.public_task_plan(request.agent_context),
-            )
-            delivery = build_model_turn_delivery(
-                request.agent_context,
-                include_images=False,
-            )
-            payload = {
-                "task_plan": self.envelope_binder.context_binder.public_task_plan(request.agent_context),
-                "fresh_world": delivery.view.text,
-                "recovery": to_json_compatible(feedback),
-            }
-            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            if len(encoded.encode()) > 64 * 1024:
-                raise ValueError("strategy revision input exceeds its bounded workspace")
-        except Exception as error:
-            return ModelInvocationResult(
-                failure=ModelFailure(
-                    ModelFailureKind.INTERNAL_ERROR,
-                    "strategy revision context is unavailable",
-                    False,
-                ),
-                attempts=(_strategy_revision_failure_attempt(self, kind, error),),
-                lineage={
-                    "role": "StrategyReviser",
-                    "trigger": kind,
-                    "source_recovery_signature": signature,
-                },
-            )
-
-        captured_messages: tuple[object, ...] = ()
-        started = time.perf_counter()
-        settings = {
-            "max_tokens": _STRATEGY_REVISION_MAX_OUTPUT_TOKENS,
-            "temperature": 0.0,
-            "thinking": False,
-            "tool_choice": "auto",
-            "timeout": min(40.0, self.transport_timeout_s),
-        }
-        failure_error: Exception
-        try:
-            from pydantic_ai import Agent, ToolOutput, capture_run_messages
-            from pydantic_ai.exceptions import (
-                ModelAPIError,
-                UnexpectedModelBehavior,
-                UsageLimitExceeded,
-            )
-            from pydantic_ai.usage import RunUsage, UsageLimits
-
-            reviser = Agent(  # type: ignore[call-overload]
-                self.model,
-                name="strategy-reviser",
-                instructions=_STRATEGY_REVISION_INSTRUCTIONS,
-                output_type=ToolOutput(
-                    StrategyRevisionModelResponse,
-                    name="strategy_revision",
-                    description="One bounded strategy review for the next ActionPolicy call.",
-                    strict=True,
-                ),
-                retries={"tools": 0, "output": 1},
-            )
-            with capture_run_messages() as current_messages:
-                try:
-                    result = await reviser.run(
-                        encoded,
-                        message_history=history,
-                        usage=RunUsage(),
-                        usage_limits=UsageLimits(request_limit=2),
-                        model_settings=settings,
-                    )
-                finally:
-                    captured_messages = tuple(current_messages)
-            _response_count, output_failure = _captured_output_failure(
-                _serialized_current_pydantic_invocation(
-                    captured_messages,
-                    max_response_count=2,
-                )
-            )
-            if output_failure is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
-                raise UnexpectedModelBehavior("strategy revision provider output was truncated")
-            response = result.output
-            revision = StrategyRevision(
-                task_revision=task_identity[1],
-                source_recovery_signature=signature,
-                source_recovery_attempt=attempt,
-                disposition=StrategyDisposition(response.disposition),
-                verified_facts=tuple(
-                    StrategyFact(item.claim, item.value, item.source) for item in response.verified_facts
-                ),
-                working_hypotheses=tuple(
-                    WorkingHypothesis(item.claim, item.needs_verification) for item in response.working_hypotheses
-                ),
-                remaining_questions=tuple(response.remaining_questions),
-                next_intent=response.next_intent,
-                failed_strategies=tuple(response.failed_strategies),
-            )
-            attempt_record = _strategy_revision_success_attempt(
-                self,
-                kind,
-                result,
-                captured_messages,
-                settings,
-                latency_ms=(time.perf_counter() - started) * 1000,
-            )
-            return ModelInvocationResult(
-                output=revision,
-                metadata=ModelMetadata(
-                    provider_id=self.provider_id,
-                    model_id=self.model_id,
-                    response_id=attempt_record.response_id,
-                    endpoint_class="openai-compatible",
-                    prompt_version=_STRATEGY_REVISION_SCHEMA,
-                    schema_version=StrategyRevisionModelResponse.__name__,
-                    latency_ms=attempt_record.latency_ms,
-                    prompt_tokens=attempt_record.prompt_tokens,
-                    completion_tokens=attempt_record.completion_tokens,
-                    total_tokens=attempt_record.total_tokens,
-                    endpoint_host=self.endpoint_host,
-                ),
-                attempts=(attempt_record,),
-                diagnostics={"revision_digest": revision.revision_digest},
-                lineage={
-                    "role": "StrategyReviser",
-                    "trigger": kind,
-                    "source_recovery_signature": signature,
-                    "source_recovery_attempt": attempt,
-                },
-            )
-        except asyncio.CancelledError:
-            raise
-        except UsageLimitExceeded as error:
-            failure_error = error
-            failure = _failure(
-                ModelFailureKind.INVALID_RESPONSE,
-                "strategy revision output retries were exhausted",
-                attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
-            )
-        except ModelAPIError as error:
-            failure_error = error
-            detail = _classify_provider_failure(error)
-            failure = _failure(
-                ModelFailureKind.PROVIDER_UNAVAILABLE,
-                detail.reason,
-                retryable=detail.retryable,
-                provider_code=detail.code,
-                retry_after_s=detail.retry_after_s,
-            )
-        except Exception as error:
-            failure_error = error
-            failure = _failure(
-                ModelFailureKind.INVALID_RESPONSE,
-                "strategy revision provider response was invalid",
-                attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
-            )
-        return ModelInvocationResult(
-            failure=failure,
-            attempts=(
-                _strategy_revision_failure_attempt(
-                    self,
-                    kind,
-                    failure_error,
-                    captured_messages=captured_messages,
-                    settings=settings,
-                    latency_ms=(time.perf_counter() - started) * 1000,
-                ),
-            ),
-            lineage={
-                "role": "StrategyReviser",
-                "trigger": kind,
-                "source_recovery_signature": signature,
-            },
-        )
-
     async def generate(
         self,
         request: ModelDecisionRequest,
@@ -921,17 +640,8 @@ class PydanticAIGroundedDecisionPort:
         if previous_task_identity is not None and previous_task_identity[0] != task_identity[0]:
             object.__setattr__(self, "message_history", ())
         object.__setattr__(self, "active_task_identity", task_identity)
-        call_profile = self.reasoning_policy.select(
-            request.agent_context,
-            self.consumed_recovery_events,
-        )
+        call_profile = self.reasoning_policy.select(request.agent_context)
         object.__setattr__(self, "last_call_profile", call_profile)
-        if call_profile.recovery_event_signature:
-            object.__setattr__(
-                self,
-                "consumed_recovery_events",
-                self.consumed_recovery_events | frozenset((call_profile.recovery_event_signature,)),
-            )
         try:
             from pydantic_ai import (
                 Agent,
@@ -3822,126 +3532,6 @@ def _tool_transcript(specs: tuple[object, ...]) -> list[dict[str, object]]:
         }
         for spec in specs
     ]
-
-
-def _strategy_revision_success_attempt(
-    port: PydanticAIGroundedDecisionPort,
-    trigger: str,
-    result: object,
-    captured_messages: tuple[object, ...],
-    settings: Mapping[str, object],
-    *,
-    latency_ms: float,
-) -> ModelGenerationAttempt:
-    messages = _serialized_current_pydantic_invocation(
-        captured_messages,
-        max_response_count=2,
-    )
-    responses = tuple(item for item in messages if item.get("kind") == "response")
-    response = responses[-1] if responses else {}
-    usage = getattr(result, "usage", None)
-    prompt_tokens = int(getattr(usage, "input_tokens", 0))
-    completion_tokens = int(getattr(usage, "output_tokens", 0))
-    reasoning_content_present, reasoning_tokens = _response_reasoning_observation(response)
-    transcript = {
-        "openinference.span.kind": "LLM",
-        "llm.system": port.provider_id,
-        "llm.model_name": port.model_id,
-        "llm.configured_endpoint_host": port.endpoint_host,
-        "llm.actual_messages": messages,
-        "llm.tools": (
-            {
-                "tool.name": "strategy_revision",
-                "tool.description": "One bounded strategy review for the next ActionPolicy call.",
-                "tool.json_schema": StrategyRevisionModelResponse.model_json_schema(),
-            },
-        ),
-        "llm.model_settings": to_json_compatible(settings),
-        "llm.token_count.prompt": prompt_tokens,
-        "llm.token_count.completion": completion_tokens,
-        "llm.token_count.total": prompt_tokens + completion_tokens,
-        "llm.token_count.reasoning": reasoning_tokens,
-        "llm.output_messages": responses,
-        "status": "accepted",
-    }
-    return ModelGenerationAttempt(
-        attempt=1,
-        phase="strategy_revision",
-        schema_name=StrategyRevisionModelResponse.__name__,
-        status="accepted",
-        response_id=str(response.get("provider_response_id") or ""),
-        latency_ms=latency_ms,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=prompt_tokens + completion_tokens,
-        finish_reason=str(response.get("finish_reason") or "")[:80],
-        max_output_tokens=_STRATEGY_REVISION_MAX_OUTPUT_TOKENS,
-        final_content_present=True,
-        reasoning_content_present=reasoning_content_present,
-        role="strategy_reviser",
-        mode="one_turn_strategy_review",
-        schema_version=_STRATEGY_REVISION_SCHEMA,
-        thinking_requested="disabled",
-        thinking_effective="disabled",
-        trigger=trigger,
-        reasoning_tokens=reasoning_tokens,
-        final_content_tokens=max(0, completion_tokens - reasoning_tokens),
-        final_tool_call_present=True,
-        transcript=transcript,
-    )
-
-
-def _strategy_revision_failure_attempt(
-    port: PydanticAIGroundedDecisionPort,
-    trigger: str,
-    error: Exception,
-    *,
-    captured_messages: tuple[object, ...] = (),
-    settings: Mapping[str, object] | None = None,
-    latency_ms: float = 0.0,
-) -> ModelGenerationAttempt:
-    messages = (
-        _serialized_current_pydantic_invocation(
-            captured_messages,
-            max_response_count=2,
-        )
-        if captured_messages
-        else []
-    )
-    responses = tuple(item for item in messages if item.get("kind") == "response")
-    response = responses[-1] if responses else {}
-    _response_count, output_failure = _captured_output_failure(messages)
-    transcript = {
-        "openinference.span.kind": "LLM",
-        "llm.system": port.provider_id,
-        "llm.model_name": port.model_id,
-        "llm.configured_endpoint_host": port.endpoint_host,
-        "llm.actual_messages": messages,
-        "llm.output_messages": responses,
-        "llm.model_settings": to_json_compatible(settings or {}),
-        "status": "failed",
-        "error.class": type(error).__name__,
-        "error": str(error)[:500],
-    }
-    return ModelGenerationAttempt(
-        attempt=1,
-        phase="strategy_revision",
-        schema_name=StrategyRevisionModelResponse.__name__,
-        status="failed",
-        response_id=str(response.get("provider_response_id") or ""),
-        latency_ms=latency_ms,
-        exception_class=type(error).__name__,
-        output_failure_kind=output_failure,
-        finish_reason=str(response.get("finish_reason") or "")[:80],
-        max_output_tokens=_STRATEGY_REVISION_MAX_OUTPUT_TOKENS,
-        role="strategy_reviser",
-        mode="one_turn_strategy_review",
-        schema_version=_STRATEGY_REVISION_SCHEMA,
-        thinking_requested="disabled",
-        thinking_effective="disabled",
-        trigger=trigger or "invalid",
-        transcript=transcript,
-    )
 
 
 def _classify_provider_failure(error: Exception) -> _ProviderFailureDetail:

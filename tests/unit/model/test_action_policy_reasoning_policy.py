@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyInvocationPhase,
     ActionPolicyInvocationTrigger,
@@ -26,9 +28,10 @@ def _context(kind: str = "", signature: str = "", *, recovery_attempt: int = 1):
 
 def test_ordinary_deliberate_and_repair_profiles_are_disjoint_and_bounded() -> None:
     policy = ActionPolicyReasoningPolicy(768, 1536, 384)
-    ordinary = policy.select(_context(), frozenset())
-    deliberate = policy.select(_context("grounding_stall", "event:one"), frozenset())
+    ordinary = policy.select(_context())
+    deliberate = policy.select(_context("grounding_stall", "event:one"))
     repair = policy.repair()
+
     assert (ordinary.phase, ordinary.trigger, ordinary.max_output_tokens, ordinary.thinking_mode) == (
         ActionPolicyInvocationPhase.ORDINARY,
         ActionPolicyInvocationTrigger.ORDINARY,
@@ -49,79 +52,46 @@ def test_ordinary_deliberate_and_repair_profiles_are_disjoint_and_bounded() -> N
     )
 
 
-def test_one_recovery_event_purchases_at_most_one_deliberate_call() -> None:
+def test_active_recovery_epoch_keeps_every_action_policy_call_deliberate() -> None:
     policy = ActionPolicyReasoningPolicy()
-    context = _context("control_stall", "event:stable")
-    first = policy.select(context, frozenset())
-    second = policy.select(context, frozenset({"event:stable"}))
-    assert first.phase is ActionPolicyInvocationPhase.DELIBERATE
-    assert second.phase is ActionPolicyInvocationPhase.ORDINARY
+    context = _context("control_stall", "epoch:stable")
+
+    profiles = tuple(policy.select(context) for _ in range(4))
+
+    assert {item.phase for item in profiles} == {ActionPolicyInvocationPhase.DELIBERATE}
+    assert {item.trigger for item in profiles} == {ActionPolicyInvocationTrigger.CONTROL_STALL}
+    assert {item.thinking_mode for item in profiles} == {"enabled"}
 
 
-def test_each_new_typed_recovery_event_gets_one_deliberate_call_regardless_of_episode_attempt() -> None:
-    policy = ActionPolicyReasoningPolicy()
-    consumed = frozenset({"route:earlier"})
-    later_event = _context(
-        "control_stall",
-        "control:new",
-        recovery_attempt=2,
-    )
-
-    first = policy.select(later_event, consumed)
-    repeated = policy.select(later_event, consumed | {"control:new"})
-
-    assert first.phase is ActionPolicyInvocationPhase.DELIBERATE
-    assert first.trigger is ActionPolicyInvocationTrigger.CONTROL_STALL
-    assert first.recovery_event_signature == "control:new"
-    assert repeated.phase is ActionPolicyInvocationPhase.ORDINARY
-
-
-def test_strategy_review_uses_the_existing_operational_deliberate_profile() -> None:
-    profile = ActionPolicyReasoningPolicy().select(
-        _context("strategy_review", "route:stable"),
-        frozenset(),
-    )
+@pytest.mark.parametrize(
+    ("kind", "trigger"),
+    (
+        ("grounding_stall", ActionPolicyInvocationTrigger.GROUNDING_GAP),
+        ("capability_gap", ActionPolicyInvocationTrigger.EVIDENCE_GAP),
+        ("control_stall", ActionPolicyInvocationTrigger.CONTROL_STALL),
+        ("effect_stall", ActionPolicyInvocationTrigger.OPERATIONAL_STALL),
+        ("uncertain_effect", ActionPolicyInvocationTrigger.OPERATIONAL_STALL),
+        ("state_oscillation", ActionPolicyInvocationTrigger.OPERATIONAL_STALL),
+        ("strategy_review", ActionPolicyInvocationTrigger.OPERATIONAL_STALL),
+    ),
+)
+def test_each_supported_monitor_recovery_kind_owns_one_deliberate_lease(
+    kind: str,
+    trigger: ActionPolicyInvocationTrigger,
+) -> None:
+    profile = ActionPolicyReasoningPolicy().select(_context(kind, f"event:{kind}"))
 
     assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
-    assert profile.trigger is ActionPolicyInvocationTrigger.OPERATIONAL_STALL
+    assert profile.trigger is trigger
     assert profile.thinking_mode == "enabled"
 
 
-def test_accepted_one_turn_strategy_review_uses_one_ordinary_action() -> None:
-    policy = ActionPolicyReasoningPolicy()
-    context = SimpleNamespace(
-        control_feedback={
-            "kind": "strategy_review",
-            "stable_signature": "route:accepted",
-            "recovery_attempt": 2,
-            "strategy_revision_status": "accepted",
-        },
-        strategy_revision=SimpleNamespace(source_recovery_signature="route:accepted"),
-    )
-
-    profile = policy.select(context, frozenset())
+def test_recovery_kind_without_epoch_identity_cannot_enable_deliberate_mode() -> None:
+    profile = ActionPolicyReasoningPolicy().select(_context("control_stall", ""))
 
     assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
     assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
     assert profile.thinking_mode == "disabled"
-
-
-def test_unavailable_strategy_review_falls_back_to_deliberate_action_policy() -> None:
-    context = SimpleNamespace(
-        control_feedback={
-            "kind": "strategy_review",
-            "stable_signature": "route:unavailable",
-            "recovery_attempt": 2,
-            "strategy_revision_status": "unavailable",
-        },
-        strategy_revision=None,
-    )
-
-    profile = ActionPolicyReasoningPolicy().select(context, frozenset())
-
-    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
-    assert profile.trigger is ActionPolicyInvocationTrigger.OPERATIONAL_STALL
-    assert profile.thinking_mode == "enabled"
 
 
 def test_representation_semantic_choice_is_operation_and_target_stable() -> None:

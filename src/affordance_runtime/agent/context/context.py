@@ -29,7 +29,6 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
     from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
     from affordance_runtime.agent.run_state import StepResult
-    from affordance_runtime.agent.strategy_revision import StrategyRevision
     from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
     from affordance_runtime.world.contracts import WorldObservation
 
@@ -243,12 +242,6 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
-    strategy_revision: StrategyRevision | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-        metadata={"serialize": False},
-    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -259,13 +252,6 @@ class AgentContext:
         if len(guidance) > FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS:
             raise ValueError("AgentContext final response guidance exceeds its bound")
         object.__setattr__(self, "final_response_guidance", guidance)
-        if self.strategy_revision is not None:
-            from affordance_runtime.agent.strategy_revision import StrategyRevision
-
-            if not isinstance(self.strategy_revision, StrategyRevision):
-                raise TypeError("AgentContext strategy revision must be typed")
-            if self.strategy_revision.task_revision != self.goal_plan.task_revision:
-                raise ValueError("AgentContext strategy revision belongs to another task revision")
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(
             not isinstance(item, VisualEvidenceFragment) for item in self.image_inputs

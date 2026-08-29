@@ -313,7 +313,6 @@ class CompactJsonDecisionPort:
         init=False,
         compare=False,
     )
-    deliberate_recovery_events: tuple[str, ...] = field(default=(), init=False, compare=False)
 
     def __post_init__(self) -> None:
         configured_timeout_retries = (
@@ -769,19 +768,7 @@ class CompactJsonDecisionPort:
                 supports_multimodal=self.port.supports_multimodal,
                 perception_profile=self.perception_profile,
             )
-            profile = self.reasoning_policy.select(
-                request.agent_context,
-                frozenset(self.deliberate_recovery_events),
-            )
-            if profile.recovery_event_signature:
-                object.__setattr__(
-                    self,
-                    "deliberate_recovery_events",
-                    (
-                        *self.deliberate_recovery_events,
-                        profile.recovery_event_signature,
-                    )[-32:],
-                )
+            profile = self.reasoning_policy.select(request.agent_context)
             thinking = profile.thinking_mode if bool(getattr(self.port, "supports_thinking_control", False)) else None
             invocation_config = self.config.model_copy(
                 update={

@@ -29,7 +29,6 @@ class ActionPolicyCallProfile:
     trigger: ActionPolicyInvocationTrigger
     max_output_tokens: int
     thinking_mode: str
-    recovery_event_signature: str = ""
 
 
 @dataclass(frozen=True)
@@ -46,34 +45,16 @@ class ActionPolicyReasoningPolicy:
         if not 256 <= self.repair_max_tokens <= 512:
             raise ValueError("representation repair cap must be within [256, 512]")
 
-    def select(
-        self,
-        context: AgentContext,
-        consumed_recovery_events: frozenset[str],
-    ) -> ActionPolicyCallProfile:
+    def select(self, context: AgentContext) -> ActionPolicyCallProfile:
         feedback = context.control_feedback
         signature = str(feedback.get("stable_signature", ""))
-        revision = getattr(context, "strategy_revision", None)
-        if (
-            signature
-            and str(feedback.get("strategy_revision_status", "")) == "accepted"
-            and revision is not None
-            and revision.source_recovery_signature == signature
-        ):
-            return ActionPolicyCallProfile(
-                ActionPolicyInvocationPhase.ORDINARY,
-                ActionPolicyInvocationTrigger.ORDINARY,
-                self.ordinary_max_tokens,
-                "disabled",
-            )
         trigger = _deliberate_trigger(str(feedback.get("kind", "")))
-        if signature and signature not in consumed_recovery_events and trigger is not None:
+        if signature and trigger is not None:
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.DELIBERATE,
                 trigger,
                 self.deliberate_max_tokens,
                 "enabled",
-                signature,
             )
         return ActionPolicyCallProfile(
             ActionPolicyInvocationPhase.ORDINARY,

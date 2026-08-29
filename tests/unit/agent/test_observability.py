@@ -271,72 +271,7 @@ def test_model_turn_trace_reads_explicit_invocation_result_before_adapter_mirror
     assert "envelope_projection" not in payload["generation_attempts"][0]
     assert json.dumps(payload).count("from-result") == 1
     assert "canonical-input" not in json.dumps(payload)
-
-
-def test_model_turn_trace_orders_strategy_revision_before_ordinary_action() -> None:
-    from types import SimpleNamespace
-
-    from affordance_runtime.agent import Abort
-    from affordance_runtime.agent.observability import model_turn_payload
-    from affordance_runtime.agent.strategy_revision import (
-        StrategyDisposition,
-        StrategyRevision,
-    )
-    from affordance_runtime.model.policy import ModelInvocationResult, ResolvedModelDecision
-
-    context = SimpleNamespace(
-        context_id="context:strategy-trace",
-        actions=SimpleNamespace(options=()),
-        image_inputs=(),
-    )
-    revision = StrategyRevision(
-        1,
-        "route:second",
-        2,
-        StrategyDisposition.CONTINUE,
-        (),
-        (),
-        ("Remaining answer field",),
-        "Resolve the remaining answer field",
-    )
-
-    class Policy:
-        last_strategy_revision_invocation = ModelInvocationResult(
-            output=revision,
-            attempts=(
-                ModelGenerationAttempt(
-                    1,
-                    "strategy_revision",
-                    "StrategyRevisionModelResponse",
-                    "accepted",
-                    role="strategy_reviser",
-                ),
-            ),
-        )
-        last_invocation_result = ModelInvocationResult(
-            output=ResolvedModelDecision(Abort(context.context_id, "done", "policy")),
-            attempts=(
-                ModelGenerationAttempt(
-                    1,
-                    "ordinary",
-                    "grounded_tools.v2",
-                    "accepted",
-                    role="action_policy",
-                ),
-            ),
-        )
-
-    payload = model_turn_payload(
-        context,
-        Abort(context.context_id, "done", "policy"),
-        Policy(),
-    )
-
-    assert [item["role"] for item in payload["generation_attempts"]] == [
-        "strategy_reviser",
-        "action_policy",
-    ]
-    assert payload["strategy_revision"]["next_intent"] == ("Resolve the remaining answer field")
+    assert "strategy_revision" not in payload
 
 
 def test_goal_compiler_trace_event_keeps_attempt_transcripts_out_of_run_state(tmp_path) -> None:

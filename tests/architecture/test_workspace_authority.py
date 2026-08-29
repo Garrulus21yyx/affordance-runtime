@@ -95,21 +95,18 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
     assert '"control_stalled"' in monitor_source
 
 
-def test_strategy_revision_is_one_turn_policy_input_not_runtime_or_checkpoint_truth() -> None:
-    core = (_SRC / "agent" / "core_loop.py").read_text()
-    decisions = (_SRC / "agent" / "decisions.py").read_text()
-    tool_projection = (_SRC / "agent" / "tool_result_projection.py").read_text()
-    catalog = (_SRC / "model" / "policy" / "grounded_tool_catalog.py").read_text()
+def test_action_policy_is_the_only_semantic_recovery_owner() -> None:
+    production = "\n".join(path.read_text() for path in _SRC.rglob("*.py"))
     policy = (_SRC / "model" / "policy" / "policy.py").read_text()
-    world_source = "\n".join(path.read_text() for path in (_SRC / "world").rglob("*.py"))
+    reasoning = (_SRC / "model" / "policy" / "reasoning_policy.py").read_text()
 
-    assert "StrategyRevision" not in core
-    assert "StrategyRevision" not in decisions
-    assert "strategy_revision" not in tool_projection
-    assert "strategy_revision" not in catalog
-    assert "strategy_revision" not in world_source
-    assert "active_strategy_revision" not in policy
-    assert 'history["strategy_revision"]' not in policy
+    assert not (_SRC / "agent" / "strategy_revision.py").exists()
+    assert "StrategyRevision" not in production
+    assert "strategy_revision" not in production
+    assert "revise_strategy" not in production
+    assert "consumed_recovery_events" not in production
+    assert "request = _build_request(context)" in policy
+    assert "if signature and trigger is not None" in reasoning
 
 
 def test_superseded_delivery_capacity_and_error_mapping_paths_are_absent() -> None:

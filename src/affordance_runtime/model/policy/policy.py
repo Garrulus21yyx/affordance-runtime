@@ -7,7 +7,7 @@ import hashlib
 import inspect
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.failures import ModelFailure, ModelFailureKind
@@ -16,7 +16,6 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
-from affordance_runtime.agent.strategy_revision import StrategyRevision, strategy_revision_due
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelInvocationResult,
@@ -47,9 +46,6 @@ class ModelBackedAgentPolicy:
         default=None, init=False, compare=False
     )
     last_fallback_count: int = field(default=0, init=False, compare=False)
-    last_strategy_revision_invocation: ModelInvocationResult[StrategyRevision] | None = field(
-        default=None, init=False, compare=False, repr=False
-    )
 
     def __post_init__(self) -> None:
         if not 0 < self.call_timeout_s <= 300:
@@ -83,57 +79,9 @@ class ModelBackedAgentPolicy:
 
     async def decide(self, context: AgentContext) -> AgentPolicyOutcome:
         object.__setattr__(self, "last_invocation_result", None)
-        object.__setattr__(self, "last_strategy_revision_invocation", None)
         object.__setattr__(self, "last_fallback_count", 0)
-        turn_revision: StrategyRevision | None = None
-        revision_status = ""
-        if _strategy_revision_due(context):
-            reviser = getattr(self.port, "revise_strategy", None)
-            if callable(reviser):
-                revision_status = "unavailable"
-                try:
-                    revision_invocation = await asyncio.wait_for(
-                        reviser(_build_request(context)),
-                        timeout=min(45.0, max(1.0, self.call_timeout_s / 2)),
-                    )
-                except TimeoutError:
-                    revision_invocation = ModelInvocationResult(
-                        failure=ModelFailure(
-                            ModelFailureKind.TIMEOUT,
-                            "strategy revision provider timed out",
-                            False,
-                        )
-                    )
-                except Exception:
-                    revision_invocation = ModelInvocationResult(
-                        failure=ModelFailure(
-                            ModelFailureKind.INTERNAL_ERROR,
-                            "strategy revision could not be produced",
-                            False,
-                        )
-                    )
-                if isinstance(revision_invocation, ModelInvocationResult):
-                    object.__setattr__(self, "last_strategy_revision_invocation", revision_invocation)
-                    if isinstance(revision_invocation.output, StrategyRevision) and _strategy_revision_matches_context(
-                        revision_invocation.output,
-                        context,
-                    ):
-                        turn_revision = revision_invocation.output
-                        revision_status = "accepted"
-        decision_feedback = dict(context.control_feedback)
-        if revision_status:
-            decision_feedback["strategy_revision_status"] = revision_status
-        decision_context = (
-            replace(
-                context,
-                strategy_revision=turn_revision,
-                control_feedback=decision_feedback,
-            )
-            if revision_status or turn_revision is not None
-            else context
-        )
         try:
-            request = _build_request(decision_context)
+            request = _build_request(context)
         except Exception:
             return _policy_failure(ModelFailure(ModelFailureKind.INTERNAL_ERROR, "request construction failed", False))
         try:
@@ -168,7 +116,7 @@ class ModelBackedAgentPolicy:
         if invocation.failure is not None:
             return _policy_failure(invocation.failure)
         outcome = invocation.output
-        if outcome.decision.context_id != decision_context.context_id:
+        if outcome.decision.context_id != context.context_id:
             return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
         return outcome.decision
 
@@ -266,28 +214,6 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
         request_id=f"model-request:{suffix}",
         agent_context=context,
         last_step=context.last_step,
-    )
-
-
-def _strategy_revision_due(
-    context: AgentContext,
-) -> bool:
-    feedback = context.control_feedback
-    kind = str(feedback.get("kind", ""))
-    signature = str(feedback.get("stable_signature", ""))
-    attempt = feedback.get("recovery_attempt", 0)
-    return bool(signature and strategy_revision_due(kind, attempt))
-
-
-def _strategy_revision_matches_context(
-    revision: StrategyRevision,
-    context: AgentContext,
-) -> bool:
-    feedback = context.control_feedback
-    return (
-        revision.task_revision == context.goal_plan.task_revision
-        and revision.source_recovery_signature == str(feedback.get("stable_signature", ""))
-        and revision.source_recovery_attempt == feedback.get("recovery_attempt")
     )
 
 

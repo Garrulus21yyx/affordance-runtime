@@ -1,22 +1,10 @@
 import asyncio
 from dataclasses import dataclass, replace
 
-from affordance_runtime.actions import (
-    ActionSpaceBuilder,
-)
-from affordance_runtime.agent import (
-    Abort,
-    RunStatus,
-    SelectAction,
-)
+from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.agent import Abort, RunStatus, SelectAction
 from affordance_runtime.agent.context import ContextBuilder, ModelFailure, ModelFailureKind
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
-from affordance_runtime.agent.strategy_revision import (
-    StrategyDisposition,
-    StrategyFact,
-    StrategyRevision,
-    strategy_revision_due,
-)
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.goals import NotRequiredGoalCompiler
@@ -27,7 +15,12 @@ from affordance_runtime.model.policy import (
     ModelMetadata,
     ResolvedModelDecision,
 )
-from tests.support.agent.core_loop_support import SharedActionOutcomeProjector, SharedTaskEvaluator, _task, _world
+from tests.support.agent.core_loop_support import (
+    SharedActionOutcomeProjector,
+    SharedTaskEvaluator,
+    _task,
+    _world,
+)
 
 
 async def _context():
@@ -36,14 +29,6 @@ async def _context():
     evaluation = await SharedTaskEvaluator().evaluate(task, observation)
     space = ActionSpaceBuilder().build(task, observation)
     return ContextBuilder().build(task, observation, space, evaluation)
-
-
-def test_strategy_revision_schedule_uses_each_monitor_lifecycles_last_recoverable_point() -> None:
-    assert strategy_revision_due("strategy_review", 2)
-    assert not strategy_revision_due("strategy_review", 1)
-    assert strategy_revision_due("state_oscillation", 1)
-    assert not strategy_revision_due("state_oscillation", 2)
-    assert not strategy_revision_due("control_stall", 1)
 
 
 @dataclass
@@ -262,245 +247,46 @@ def test_model_authored_abort_remains_a_typed_agent_decision() -> None:
     asyncio.run(scenario())
 
 
-def test_strategy_revision_failure_degrades_to_existing_deliberate_action_request() -> None:
+def test_recovery_context_calls_only_the_single_action_policy_owner() -> None:
     @dataclass
     class RecoveryPort:
         revision_calls: int = 0
         action_calls: int = 0
-        action_request: object | None = None
+        contexts: list[object] | None = None
 
         async def revise_strategy(self, request):
+            del request
             self.revision_calls += 1
-            return ModelInvocationResult(
-                failure=ModelFailure(
-                    ModelFailureKind.INVALID_RESPONSE,
-                    "strategy revision was invalid",
-                    False,
-                )
-            )
+            raise AssertionError("independent strategy revision must not be called")
 
         async def generate(self, request):
             self.action_calls += 1
-            self.action_request = request
-            return _decision_result(Abort(request.context_id, "choose one supported fallback", "policy"))
+            assert self.contexts is not None
+            self.contexts.append(request.agent_context)
+            return _decision_result(Abort(request.context_id, "choose a different attempt", "policy"))
 
     async def scenario() -> None:
         context = replace(
             await _context(),
             control_feedback={
-                "kind": "strategy_review",
-                "stable_signature": "route:revision-failed",
-                "recovery_attempt": 2,
+                "kind": "control_stall",
+                "epoch_id": "recovery:1:fixture",
+                "stable_signature": "control:fixture",
+                "recovery_attempt": 1,
             },
         )
-        port = RecoveryPort()
+        port = RecoveryPort(contexts=[])
         policy = ModelBackedAgentPolicy(port)
 
-        decision = await policy.decide(context)
+        first = await policy.decide(context)
+        second = await policy.decide(context)
 
-        assert isinstance(decision, Abort)
-        assert port.revision_calls == 1
-        assert port.action_calls == 1
-        assert port.action_request.agent_context.control_feedback["strategy_revision_status"] == "unavailable"
-        assert port.action_request.agent_context.strategy_revision is None
-        assert policy.last_strategy_revision_invocation is not None
-        assert policy.last_strategy_revision_invocation.failure is not None
-
-    asyncio.run(scenario())
-
-
-def test_accepted_strategy_revision_is_consumed_once_and_never_replayed() -> None:
-    @dataclass
-    class RecoveryPort:
-        action_contexts: list[object]
-        revision_calls: int = 0
-
-        async def revise_strategy(self, request):
-            self.revision_calls += 1
-            return ModelInvocationResult(
-                output=StrategyRevision(
-                    request.agent_context.goal_plan.task_revision,
-                    "route:review-once",
-                    2,
-                    StrategyDisposition.CONTINUE,
-                    (StrategyFact("Known URL", "https://example.test/item", "completed ToolReturn"),),
-                    (),
-                    ("One item remains",),
-                    "Acquire the remaining item",
-                    ("Reopening the first item",),
-                )
-            )
-
-        async def generate(self, request):
-            self.action_contexts.append(request.agent_context)
-            return _decision_result(Abort(request.context_id, "fixture", "policy"))
-
-    async def scenario() -> None:
-        base = await _context()
-        port = RecoveryPort([])
-        policy = ModelBackedAgentPolicy(port)
-        recovery = replace(
-            base,
-            control_feedback={
-                "kind": "strategy_review",
-                "stable_signature": "route:review-once",
-                "recovery_attempt": 2,
-            },
-        )
-
-        await policy.decide(recovery)
-        await policy.decide(base)
-
-        assert port.revision_calls == 1
-        assert port.action_contexts[0].strategy_revision is not None
-        assert port.action_contexts[0].strategy_revision.next_intent == "Acquire the remaining item"
-        assert port.action_contexts[1].strategy_revision is None
-        assert not hasattr(policy, "active_strategy_revision")
-
-    asyncio.run(scenario())
-
-
-def test_first_recoverable_state_oscillation_gets_one_revision_before_terminal_attempt() -> None:
-    @dataclass
-    class RecoveryPort:
-        action_context: object | None = None
-        revision_calls: int = 0
-
-        async def revise_strategy(self, request):
-            self.revision_calls += 1
-            return ModelInvocationResult(
-                output=StrategyRevision(
-                    request.agent_context.goal_plan.task_revision,
-                    "oscillation:recoverable",
-                    1,
-                    StrategyDisposition.CONTINUE,
-                    (),
-                    (),
-                    ("Commit remains incomplete",),
-                    "Use a different current commit control",
-                    ("Repeating the unchanged active control",),
-                )
-            )
-
-        async def generate(self, request):
-            self.action_context = request.agent_context
-            return _decision_result(Abort(request.context_id, "fixture", "policy"))
-
-    async def scenario() -> None:
-        base = await _context()
-        port = RecoveryPort()
-        policy = ModelBackedAgentPolicy(port)
-
-        await policy.decide(
-            replace(
-                base,
-                control_feedback={
-                    "kind": "state_oscillation",
-                    "stable_signature": "oscillation:recoverable",
-                    "recovery_attempt": 1,
-                },
-            )
-        )
-
-        assert port.revision_calls == 1
-        assert port.action_context is not None
-        assert port.action_context.strategy_revision is not None
-        assert port.action_context.strategy_revision.source_recovery_attempt == 1
-        assert port.action_context.control_feedback["strategy_revision_status"] == "accepted"
-
-    asyncio.run(scenario())
-
-
-def test_strategy_revision_from_another_recovery_event_is_not_admitted() -> None:
-    @dataclass
-    class RecoveryPort:
-        action_context: object | None = None
-
-        async def revise_strategy(self, request):
-            return ModelInvocationResult(
-                output=StrategyRevision(
-                    request.agent_context.goal_plan.task_revision,
-                    "route:different-event",
-                    2,
-                    StrategyDisposition.CONTINUE,
-                    (),
-                    (),
-                    ("Current requirement",),
-                    "Continue current work",
-                )
-            )
-
-        async def generate(self, request):
-            self.action_context = request.agent_context
-            return _decision_result(Abort(request.context_id, "fixture", "policy"))
-
-    async def scenario() -> None:
-        base = await _context()
-        port = RecoveryPort()
-        policy = ModelBackedAgentPolicy(port)
-
-        await policy.decide(
-            replace(
-                base,
-                control_feedback={
-                    "kind": "strategy_review",
-                    "stable_signature": "route:current-event",
-                    "recovery_attempt": 2,
-                },
-            )
-        )
-
-        assert port.action_context is not None
-        assert port.action_context.strategy_revision is None
-        assert port.action_context.control_feedback["strategy_revision_status"] == "unavailable"
-
-    asyncio.run(scenario())
-
-
-def test_failed_strategy_revision_is_not_rescheduled_on_later_recovery_attempts() -> None:
-    @dataclass
-    class RecoveryPort:
-        revision_calls: int = 0
-
-        async def revise_strategy(self, request):
-            self.revision_calls += 1
-            return ModelInvocationResult(
-                failure=ModelFailure(
-                    ModelFailureKind.INVALID_RESPONSE,
-                    "strategy revision was invalid",
-                    False,
-                )
-            )
-
-        async def generate(self, request):
-            return _decision_result(Abort(request.context_id, "continue recovery", "policy"))
-
-    async def scenario() -> None:
-        base = await _context()
-        port = RecoveryPort()
-        policy = ModelBackedAgentPolicy(port)
-
-        await policy.decide(
-            replace(
-                base,
-                control_feedback={
-                    "kind": "strategy_review",
-                    "stable_signature": "route:second",
-                    "recovery_attempt": 2,
-                },
-            )
-        )
-        await policy.decide(
-            replace(
-                base,
-                control_feedback={
-                    "kind": "strategy_review",
-                    "stable_signature": "route:third",
-                    "recovery_attempt": 3,
-                },
-            )
-        )
-
-        assert port.revision_calls == 1
+        assert isinstance(first, Abort)
+        assert isinstance(second, Abort)
+        assert port.revision_calls == 0
+        assert port.action_calls == 2
+        assert port.contexts == [context, context]
+        assert not hasattr(context, "strategy_revision")
+        assert not hasattr(policy, "last_strategy_revision_invocation")
 
     asyncio.run(scenario())
