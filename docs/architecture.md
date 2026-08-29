@@ -2452,6 +2452,14 @@ No Monitor rule, memory, resolver, or alternate execution path was added.
 The focused PydanticAI integration file passes `109` tests; the complete fixed-environment provider-free suite passes
 `2086 passed, 19 skipped, 1 deselected, 1 warning`. The deselection remains the documented absent archived trace.
 
+Task554 run6 crossed the run5 boundary but was manually interrupted after 63 turns.  The current editor and
+`type_text` route remained visible and valid; nevertheless the model issued one current `Backspace` per turn to clear
+the existing JSON.  Each action really shortened the fresh editor value, so Monitor correctly treated it as progress
+rather than an oscillation.  The contract defect was in the model-visible tool description: every supported adapter
+executes semantic `type_text` as replacement/fill, while the Catalog described only “use type_text” and omitted that
+postcondition.  The ToolCatalog owner now states that `type_text` replaces the editable value and that an empty string
+clears it.  This exposes existing executor semantics; it adds no hotkey, action, retry, or Monitor heuristic.
+
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
 per-step planner was added.

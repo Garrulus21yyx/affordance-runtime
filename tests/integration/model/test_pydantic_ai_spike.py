@@ -663,6 +663,9 @@ def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_polic
         assert base_refs.isdisjoint(interaction_refs)
         delivery = build_model_turn_delivery(context, include_images=False)
         catalog = compile_grounded_action_catalog(context, delivery)
+        type_text_spec = next(item for item in catalog.specs if item.name == "type_text")
+        assert "Replace the editable value" in type_text_spec.description
+        assert "An empty string clears the value" in type_text_spec.description
         with pytest.raises(GroundedToolResolutionError) as direct_rejection:
             resolve_grounded_action_call(
                 catalog,

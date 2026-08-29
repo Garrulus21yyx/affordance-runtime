@@ -2165,3 +2165,11 @@ tool set plus the SDK retry explanation, accepts one current tool, and proves ne
 prose enters canonical history. The focused PydanticAI integration file reports `109 passed`; the complete
 fixed-environment provider-free suite reports `2086 passed, 19 skipped, 1 deselected, 1 warning`, with only the
 documented absent archived trace deselected. Fresh live acceptance of the StrategyRevision schedule remains pending.
+
+[`memory-convergence-run6`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run6/run.json)
+crossed the run5 unknown-tool failure and reached a fresh editor with current `press_key` and `type_text` routes. It
+was manually interrupted after 63 policy turns and 1,441,577 provider tokens because the model repeatedly chose one
+`Backspace` to clear the editor. Every step shortened the current value, so this was inefficient real progress rather
+than a Monitor-detectable unchanged loop. The catalog description had omitted the already-supported replacement
+semantics of `type_text`. A provider-free contract test now verifies that the current tool explicitly says replacement
+and empty-string clearing; the executor and action schema are unchanged. A fresh live run remains required.
