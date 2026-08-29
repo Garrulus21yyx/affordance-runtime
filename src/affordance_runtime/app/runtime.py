@@ -275,7 +275,7 @@ class TargetRuntime:
                     return self.run_control.fail_pending("deferred_history_closure_failed")
         outcome = self.run_control.acknowledge(boundary)
         if outcome is not None:
-            state.apply_control_boundary(outcome)
+            self.build_loop().commit_control_boundary(state, outcome)
             emit = getattr(self.trace_sink, "control_boundary_reached", None)
             if callable(emit):
                 emit(outcome)

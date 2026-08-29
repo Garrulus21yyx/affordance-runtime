@@ -22,6 +22,7 @@ from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.profile import AgentLoopProfile
+from affordance_runtime.agent.recovery import RecoveryKind, RecoverySignal
 from affordance_runtime.agent.run_control import (
     RunControlBoundary,
     RunControlKind,
@@ -626,6 +627,17 @@ def _runtime(choice: str, *, wait_controller=None) -> TargetRuntime:
     )
 
 
+def _active_boundary_recovery(*, epoch: str = "recovery:1:boundary") -> RecoverySignal:
+    return RecoverySignal(
+        RecoveryKind.CONTROL_STALL,
+        "boundary-recovery",
+        {"origin_dispatch": DispatchStatus.SENT.value},
+        attempted_modes=("activate",),
+        human_instruction="choose a different normal action",
+        epoch_id=epoch,
+    )
+
+
 def test_same_observation_reuses_one_expensive_context_projection(monkeypatch) -> None:
     calls: list[str] = []
     original = ContextBuilder.project_observation
@@ -706,6 +718,249 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
         assert environment.execute_calls == 1
         assert state.last_step is not None
         assert state.last_step.decision.tool_call_id == "provider-call:recovered-action"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "refresh_method",
+    (
+        "refresh_after_pause_persistence_failure",
+        "refresh_after_user_control",
+    ),
+)
+def test_passive_currentness_refresh_preserves_the_monitor_owned_recovery_epoch(refresh_method) -> None:
+    async def scenario() -> None:
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("passive_refresh_recovery"),
+            episode_monitor=monitor,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(
+            initial_observation=_world("refresh-before", False),
+            independent_observations=(_world("refresh-after", False),),
+        )
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery()
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+
+        loop = runtime.build_loop()
+        await getattr(loop, refresh_method)(environment, task, state)
+
+        assert state.status is RunStatus.RUNNING
+        assert state.recovery_signal is not None
+        assert state.recovery_signal.epoch_id == signal.epoch_id
+        assert state.last_step is not None
+        assert state.last_step.recovery_signal == state.recovery_signal
+        assert monitor.active_recovery == state.recovery_signal
+
+    asyncio.run(scenario())
+
+
+def test_confirmation_dispatch_cannot_drop_an_active_recovery_epoch() -> None:
+    @dataclass
+    class ConfirmationRecoveryPolicy:
+        turns: int = 0
+        seen_feedback: dict[str, object] | None = None
+        seen_postcondition: object = None
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                assert context.control_feedback["epoch_id"] == "recovery:1:confirmation"
+                return SelectAction(context.context_id, context.actions.options[0].action_id)
+            assert self.turns == 2
+            self.seen_feedback = dict(context.control_feedback)
+            self.seen_postcondition = context.workspace.recent_steps[-1].local_postcondition
+            return Abort(context.context_id, "recovery survived confirmation", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        policy = ConfirmationRecoveryPolicy()
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("confirmation_recovery"),
+            episode_monitor=monitor,
+        )
+        task = replace(_task(), risk_profile=RiskProfile.MEDIUM)
+        environment = ScriptedEnvironment(
+            initial_observation=_world("confirmation-before", False),
+            post_observations=(_world("confirmation-after", False),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:confirmation")
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+
+        await runtime.continue_task(environment, task, state)
+        assert state.status is RunStatus.WAITING_CONFIRMATION
+        assert state.recovery_signal == signal
+
+        await runtime.resume_confirmation(environment, task, state, approved=True)
+
+        assert policy.turns == 2
+        assert policy.seen_feedback is not None
+        assert policy.seen_feedback["epoch_id"] == "recovery:1:confirmation"
+        assert policy.seen_feedback["evidence_revision"] > 1
+        assert policy.seen_postcondition == LocalPostconditionStatus.UNSATISFIED.value
+        assert environment.execute_calls == 1
+        assert state.status is RunStatus.CANCELLED
+
+    asyncio.run(scenario())
+
+
+def test_user_task_revision_starts_a_new_monitor_episode_without_old_recovery() -> None:
+    @dataclass
+    class RevisionRecoveryPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                assert context.control_feedback["epoch_id"] == "recovery:1:old-task"
+                return AskUser(context.context_id, "Which value?", ("value",))
+            assert self.turns == 2
+            assert context.goal_plan.task_revision == 2
+            assert not context.control_feedback
+            return Abort(context.context_id, "new revision has a new episode", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        policy = RevisionRecoveryPolicy()
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("revision_recovery"),
+            episode_monitor=monitor,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(initial_observation=_world("revision-before", False))
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:old-task")
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+
+        await runtime.continue_task(environment, task, state)
+        assert state.status is RunStatus.WAITING_USER
+        assert state.recovery_signal == signal
+
+        revised = replace(task, inputs={"value": "provided"}, revision=2)
+        await runtime.resume_user(environment, revised, state)
+
+        assert policy.turns == 2
+        assert state.status is RunStatus.CANCELLED
+        assert state.recovery_signal is None
+        assert monitor.active_recovery is None
+
+    asyncio.run(scenario())
+
+
+def test_restored_terminal_currentness_closes_both_recovery_projections() -> None:
+    async def scenario() -> None:
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("restored_terminal_recovery"),
+            episode_monitor=monitor,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(initial_observation=_world("restored-terminal", False))
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:restored")
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+        state.current_task_evaluation = TaskEvaluation(
+            task.task_id,
+            state.current_world.observation_id,
+            TaskEvaluationStatus.BLOCKED,
+            "native evaluator proved impossibility after restore",
+        )
+
+        runtime.build_loop().settle_restored_currentness(state)
+
+        assert state.status is RunStatus.BLOCKED
+        assert state.recovery_signal is None
+        assert monitor.active_recovery is None
+
+    asyncio.run(scenario())
+
+
+def test_before_policy_cancel_closes_both_recovery_projections() -> None:
+    async def scenario() -> None:
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        policy = CorePolicy("first_action")
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("before_policy_cancel_recovery"),
+            episode_monitor=monitor,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(initial_observation=_world("cancel-before-policy", False))
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:cancel")
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+        runtime.request_control("command:cancel-recovery", RunControlKind.CANCEL)
+
+        await runtime.continue_task(environment, task, state)
+
+        assert policy.turns == 0
+        assert state.status is RunStatus.CANCELLED
+        assert state.recovery_signal is None
+        assert monitor.active_recovery is None
+
+    asyncio.run(scenario())
+
+
+def test_waiting_control_cancel_closes_both_recovery_projections() -> None:
+    @dataclass
+    class WaitingPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            assert context.control_feedback["epoch_id"] == "recovery:1:waiting-cancel"
+            return AskUser(context.context_id, "Which value?", ("value",))
+
+    async def scenario() -> None:
+        monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+        policy = WaitingPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("waiting_cancel_recovery"),
+            episode_monitor=monitor,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(initial_observation=_world("cancel-waiting", False))
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:waiting-cancel")
+        monitor.restore_episode(state.current_world, state.current_task_evaluation, signal)
+        state.recovery_signal = signal
+        await runtime.continue_task(environment, task, state)
+        assert state.status is RunStatus.WAITING_USER
+        runtime.request_control("command:cancel-waiting", RunControlKind.CANCEL)
+
+        outcome = runtime.apply_waiting_control(state)
+
+        assert outcome is not None
+        assert state.status is RunStatus.CANCELLED
+        assert state.recovery_signal is None
+        assert monitor.active_recovery is None
 
     asyncio.run(scenario())
 

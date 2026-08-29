@@ -256,9 +256,7 @@ class CoreAgentLoop:
         )
         state.install_delivery_index(initial_index)
         state.install_canonical_world(initial_projection)
-        start_episode = getattr(self.episode_monitor, "start_episode", None)
-        if callable(start_episode):
-            start_episode(initial, evaluation)
+        self._start_episode(initial, evaluation)
         if isinstance(goal_resolution, NeedsInput) and initial_status is RunStatus.WAITING_USER:
             request = _admit_goal_input_request(initial, task.revision, goal_resolution)
             state.apply(
@@ -441,9 +439,7 @@ class CoreAgentLoop:
         )
         candidate.install_delivery_index(region_index)
         candidate.install_canonical_world(projection)
-        start_episode = getattr(self.episode_monitor, "start_episode", None)
-        if callable(start_episode):
-            start_episode(current, evaluation)
+        self._start_episode(current, evaluation)
         self.trace_sink.goal_compiler_completed(
             goal_compiler_trace_diagnostic(
                 self.goal_compiler,
@@ -502,6 +498,7 @@ class CoreAgentLoop:
         if status not in {RunStatus.DONE, RunStatus.BLOCKED}:
             return
         state.status = status
+        self._settle_terminal_episode(state)
         self._record_official_outcome(evaluation)
         self.trace_sink.run_finished(state)
 
@@ -635,7 +632,6 @@ class CoreAgentLoop:
             result = self._apply_control_after_closed_step(state, result)
             result = self._attach_canonical_worlds(task, state, result)
             delivery = state.delivery_store.reduce(result, step_index=max(1, state.step_count + 1))
-            result = self._apply_episode_monitor(result, state, delivery)
             self._commit_step(state, result, delivery_transition=delivery)
         if state.terminal:
             self.run_control.resolve_terminal()
@@ -656,7 +652,7 @@ class CoreAgentLoop:
         outcome = self.run_control.acknowledge(RunControlBoundary.BEFORE_POLICY)
         if outcome is None:
             return False
-        state.apply_control_boundary(outcome)
+        self.commit_control_boundary(state, outcome)
         return True
 
     def _pause_unavailable_reconciliation(
@@ -842,6 +838,7 @@ class CoreAgentLoop:
             decision=decision,
             task_evaluation=evaluation,
             status_after=status,
+            recovery_signal=None,
             feedback=(
                 "goal_compiler_needs_input"
                 if isinstance(resolution, NeedsInput) and status is RunStatus.WAITING_USER
@@ -852,6 +849,8 @@ class CoreAgentLoop:
         state.install_delivery_index(region_index)
         state.install_canonical_world(projection)
         state.goal_resolution = resolution
+        state.recovery_signal = None
+        self._start_episode(state.current_world, evaluation)
         if isinstance(resolution, Ready):
             state.goal_plan_version_counter = resolution.accepted_plan.plan_version
         state.resume(RunStatus.WAITING_USER)
@@ -900,6 +899,17 @@ class CoreAgentLoop:
                 result,
                 step_index=max(1, state.step_count + int(consume_step)),
             )
+        result = self._apply_episode_monitor(
+            result,
+            state,
+            delivery_transition,
+            advance=(
+                consume_step
+                or result.execution_receipts is not None
+                or result.action_outcome is not None
+                or isinstance(result.decision, ToolRejectedResult)
+            ),
+        )
         information_delta = delivery_transition.information_delta
         projected = (
             None
@@ -994,6 +1004,8 @@ class CoreAgentLoop:
         result: StepResult,
         state: RunState,
         delivery_transition: DeliveryTransition,
+        *,
+        advance: bool,
     ) -> StepResult:
         monitor = self.episode_monitor
         if monitor is None:
@@ -1004,10 +1016,10 @@ class CoreAgentLoop:
             RunStatus.CANCELLED,
             RunStatus.FAILED,
         }:
-            end_episode = getattr(monitor, "end_episode", None)
-            if callable(end_episode):
-                end_episode()
+            self._end_episode()
             return replace(result, recovery_signal=None)
+        if not advance:
+            return replace(result, recovery_signal=state.recovery_signal)
         if result.task_evaluation is None:
             return replace(result, recovery_signal=state.recovery_signal)
         if (
@@ -1017,7 +1029,7 @@ class CoreAgentLoop:
             return replace(result, recovery_signal=state.recovery_signal)
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
-            return result
+            return replace(result, recovery_signal=state.recovery_signal)
         transition = evaluate(
             result,
             current_findings_digest(result.after_world),
@@ -1051,6 +1063,29 @@ class CoreAgentLoop:
                 "episode_monitor",
             ),
         )
+
+    def _start_episode(self, world: WorldObservation, evaluation: TaskEvaluation) -> None:
+        start_episode = getattr(self.episode_monitor, "start_episode", None)
+        if callable(start_episode):
+            start_episode(world, evaluation)
+
+    def _end_episode(self) -> None:
+        end_episode = getattr(self.episode_monitor, "end_episode", None)
+        if callable(end_episode):
+            end_episode()
+
+    def _settle_terminal_episode(self, state: RunState) -> None:
+        if not state.terminal:
+            raise ValueError("episode terminal settlement requires a terminal run")
+        state.recovery_signal = None
+        self._end_episode()
+
+    def commit_control_boundary(self, state: RunState, outcome: RunControlOutcome) -> None:
+        """Commit one non-StepResult control transition without splitting recovery truth."""
+
+        state.apply_control_boundary(outcome)
+        if state.terminal:
+            self._settle_terminal_episode(state)
 
     async def resume_confirmation(
         self,
