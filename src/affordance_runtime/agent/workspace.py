@@ -39,11 +39,7 @@ class SemanticEvent:
     def __post_init__(self) -> None:
         if type(self.step_index) is not int or self.step_index < 0:
             raise ValueError("semantic event step index must be non-negative")
-        if (
-            not isinstance(self.kind, SemanticEventKind)
-            or not self.summary.strip()
-            or len(self.summary) > 240
-        ):
+        if not isinstance(self.kind, SemanticEventKind) or not self.summary.strip() or len(self.summary) > 240:
             raise TypeError("semantic event requires typed kind and summary")
         if len(self.operation) > 80 or len(self.result_lineage) > 96:
             raise ValueError("semantic event lineage is not bounded")
@@ -76,11 +72,7 @@ class ActivitySummary:
     def __post_init__(self) -> None:
         if not isinstance(self.family, ActivityFamily):
             raise TypeError("activity family must be typed")
-        if (
-            not self.world_digest.strip()
-            or not self.last_outcome.strip()
-            or len(self.last_outcome) > 240
-        ):
+        if not self.world_digest.strip() or not self.last_outcome.strip() or len(self.last_outcome) > 240:
             raise ValueError("activity summary requires digest and outcome")
         if (
             type(self.attempt_count) is not int
@@ -316,9 +308,11 @@ def _event_summary(step: AgentTurnView | None, fallback: str) -> str:
 
 def _is_typed_failure(step: object) -> bool:
     status = str(getattr(getattr(step, "status_after", ""), "value", getattr(step, "status_after", "")))
-    return status in {"blocked", "failed"} or getattr(step, "failure_code", None) is not None or getattr(
-        step, "runtime_failure", None
-    ) is not None
+    return (
+        status in {"blocked", "failed"}
+        or getattr(step, "failure_code", None) is not None
+        or getattr(step, "runtime_failure", None) is not None
+    )
 
 
 def _failure_summary(step: object) -> str:

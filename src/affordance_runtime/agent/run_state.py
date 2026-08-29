@@ -392,14 +392,12 @@ class RunCheckpointFacts:
         )
         if (
             self.pause_boundary.kind is not RunControlKind.PAUSE
-            or self.pause_boundary.outcome
-            is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
+            or self.pause_boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
         ):
             raise ValueError("checkpoint facts require one reached pause boundary")
         counts = dict(self.decision_counts)
         if any(
-            not isinstance(kind, DecisionKind) or type(count) is not int or count < 0
-            for kind, count in counts.items()
+            not isinstance(kind, DecisionKind) or type(count) is not int or count < 0 for kind, count in counts.items()
         ):
             raise ValueError("checkpoint decision counts are invalid")
         object.__setattr__(self, "decision_counts", counts)
@@ -550,9 +548,7 @@ class RunState:
                 raise ValueError("durable paused run requires its committed checkpoint boundary")
         elif self.durable_checkpoint_id or self.paused_from_status is not None:
             raise ValueError("only a durable paused run may retain a checkpoint identity")
-        if self.action_discovery is not None and not isinstance(
-            self.action_discovery, ActionDiscoveryResult
-        ):
+        if self.action_discovery is not None and not isinstance(self.action_discovery, ActionDiscoveryResult):
             raise TypeError("run action discovery must be typed")
         if self.observation_projection is not None:
             if not isinstance(self.observation_projection, ObservationContextProjection):
@@ -561,8 +557,7 @@ class RunState:
                 raise ValueError("run observation context projection belongs to another World")
             if (
                 self.canonical_world is None
-                or self.observation_projection.canonical_projection_lineage
-                != self.canonical_world.projection_lineage
+                or self.observation_projection.canonical_projection_lineage != self.canonical_world.projection_lineage
             ):
                 raise ValueError("run observation context projection requires its canonical World")
         _validate_effect_state(
@@ -684,16 +679,11 @@ class RunState:
             self.durable_checkpoint_id = ""
             self.paused_from_status = None
             self.status = RunStatus.CANCELLED
-            self.control_termination = ControlTermination(
-                ControlTerminationKind.USER_CANCELLED
-            )
+            self.control_termination = ControlTermination(ControlTerminationKind.USER_CANCELLED)
 
     def resume_control_boundary(self) -> None:
         boundary = self.control_boundary
-        if (
-            boundary is None
-            or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
-        ):
+        if boundary is None or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED:
             raise ValueError("run has no internal pause boundary")
         if self.status is RunStatus.PAUSED:
             assert self.paused_from_status is not None
@@ -723,7 +713,8 @@ class RunState:
             boundary is None
             or boundary.kind is not RunControlKind.PAUSE
             or boundary.outcome is not RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED
-            or self.status not in {
+            or self.status
+            not in {
                 RunStatus.RUNNING,
                 RunStatus.WAITING_USER,
                 RunStatus.WAITING_CONFIRMATION,
@@ -779,9 +770,7 @@ class RunState:
         if result.control_boundary is not None:
             self.control_boundary = result.control_boundary
             if result.control_boundary.kind is RunControlKind.CANCEL:
-                self.control_termination = ControlTermination(
-                    ControlTerminationKind.USER_CANCELLED
-                )
+                self.control_termination = ControlTermination(ControlTerminationKind.USER_CANCELLED)
         if consume_step:
             self.remaining_steps = max(0, self.remaining_steps - 1)
         self.observation_count += int(acquired_new_world)
@@ -796,10 +785,7 @@ class RunState:
                     task_revision=self.task_revision,
                 )
                 reconciliation = self.effect_reconciliation
-                if (
-                    reconciliation is not None
-                    and reconciliation.status is EffectReconciliationStatus.PENDING
-                ):
+                if reconciliation is not None and reconciliation.status is EffectReconciliationStatus.PENDING:
                     if len(result.execution_receipts.receipts) != 1:
                         self.effect_reconciliation = reconciliation.needs_input(
                             EffectReconciliationReason.COMPENSATION_MULTIPLE_EFFECTS,
@@ -810,8 +796,7 @@ class RunState:
                             committed,
                             verified=(
                                 result.action_outcome is not None
-                                and result.action_outcome.local_postcondition
-                                is LocalPostconditionStatus.SATISFIED
+                                and result.action_outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
                             ),
                         )
                 self.latest_effect = committed

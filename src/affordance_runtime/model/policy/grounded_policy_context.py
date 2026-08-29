@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from affordance_runtime.agent.context.budgets import BoundedSection
 from affordance_runtime.agent.context.context import AgentContext
@@ -56,12 +56,18 @@ class GroundedPolicyContextBinder:
         include_images: bool,
         delivery: ModelTurnDelivery,
     ) -> dict[str, object]:
+        public = GroundedPolicyContextBinder._public_context_sections(
+            context,
+            include_images,
+            delivery,
+        )["public"]
+        if not isinstance(public, dict):
+            raise TypeError("grounded policy public context must be a mapping")
         return dict(
-            GroundedPolicyContextBinder._public_context_sections(
-                context,
-                include_images,
-                delivery,
-            )["public"]
+            cast(
+                dict[str, object],
+                public,
+            )
         )
 
     @staticmethod

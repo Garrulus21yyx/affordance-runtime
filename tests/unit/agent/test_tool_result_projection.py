@@ -184,9 +184,7 @@ def test_scope_unknown_projects_no_ref_or_executable_grounding() -> None:
 
     assert projected is not None
     assert projected["status"] == "unknown"
-    assert projected["unknown_items"] == (
-        {"locator": {"kind": "query_scope"}, "reason": "target_not_visible"},
-    )
+    assert projected["unknown_items"] == ({"locator": {"kind": "query_scope"}, "reason": "target_not_visible"},)
     assert "target_ref" not in repr(projected)
     assert "executable_grounding" not in projected
 

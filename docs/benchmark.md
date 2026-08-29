@@ -2,6 +2,65 @@
 
 ## Current status
 
+### 2026-08-30 recovery-owner convergence — provider-free verified, live-open
+
+Task554
+[`tool-contract-live-run8`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-tool-contract-live-run8/traces/webarena-verified-w2-task-554/trace.jsonl)
+is the frozen pre-repair witness. Its repeated `Commit` actions were physically sent but did not open the dialog.
+Monitor emitted `control_stall`; the next deliberate ActionPolicy explicitly recognized the failed effect and selected
+`read_region`; the returned records incorrectly closed the GUI recovery; a later independent strategy review advised
+against the repeated action but caused the actual ActionPolicy call to run ordinary and thinking-disabled. The trace
+therefore demonstrates reflection capability and a Runtime feedback/ownership break, not a total absence of model
+reflection.
+
+Four independently committed owner repairs implement the bounded causal surface:
+
+- `e479d3d0 Close GUI outcome feedback to action policy`: same-call GUI ToolReturn now separates dispatch receipts
+  from `ActionOutcome`, and the existing latest-four ref-free Workspace trajectory enters the ActionPolicy request;
+- `e2d27d33 Persist monitor-owned recovery epochs`: GUI recovery survives read/search/control discovery, pause, and
+  checkpoint restore until owner-produced operational recovery or termination;
+- `4cce34a4 Enforce proven failed attempts at runtime`: only an exact, sent, transport-successful, verified unchanged,
+  explicitly unsatisfied action with stable action-scoped preconditions enters a bounded prohibition set; Runtime
+  returns typed same-ID `not_sent` feedback before Binder/Executor;
+- `24bebb0a Unify recovery reasoning in action policy`: the separate StrategyRevision provider/schema/context/prompt/
+  trace path and consumed-event downgrade state are removed; every ActionPolicy call in an active recovery epoch uses
+  the existing deliberate profile.
+
+The positive provider-free gates cover the following invariants:
+
+- a completed GUI call reaches the next provider request under the same call ID with both receipt and effect fields;
+- recent trajectory contains semantic action, ref-free target, dispatch, local postcondition, public World transition,
+  and reason, without private IDs or a new memory Store;
+- a GUI-origin recovery keeps one epoch and increasing evidence revision across `list_regions`, `read_region`,
+  `search_page_content`, and `find_controls`; a local-origin recovery alone may close on typed new information;
+- after a diagnostic `list_regions` call, the next ActionPolicy request still contains the same recovery epoch and
+  uses the 2,048-token deliberate profile rather than reverting to ordinary;
+- unrelated page-content changes cannot invalidate an exact-attempt identity, target-state changes do invalidate it,
+  and duplicate same-label controls remain distinct but stable across observation rekeying;
+- `unknown`, `sent_unknown`, screenshot-only change, closed route, repeated result, short cycle, or an unverifiable
+  no-effect remains advisory and cannot create a hard dispatch prohibition;
+- a proven exact replay produces `ToolRejectedResult(kind=proven_failed_attempt_rejected, dispatch=not_sent)` under
+  the provider call's original ID and performs zero additional environment executions;
+- progressive keyboard actions continue dispatching when each fresh World advances;
+- production contains no `StrategyRevision`, `revise_strategy`, `strategy_revision`, or
+  `consumed_recovery_events` path.
+
+Repository-level verification used the required fixed BrowserGym Python with `PYTHONPATH=src:tests` and reports
+`2101 passed, 19 skipped, 1 deselected, 1 warning` in 113.74 seconds. The one deselection is
+`test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action`; running it separately fails before
+product code with `FileNotFoundError` because the repository does not contain
+`evidence/live/w1b-one-task-0-zhipu-glm46-readable-tools-run2/.../trace.jsonl`. Repository Ruff check, Ruff format on
+all 27 changed Python files, compileall, negative production-source scans, and `git diff --check` pass. Checkpoint
+round-trip and legacy-v5 migration tests cover the new v6 attempt identity. Changed-file mypy is not a passing
+repository gate: under the same installed toolchain it reports 83 errors in three files, versus 89 errors in six files
+for the same 14-source-file surface at base commit `56682593`. The convergence introduces no new mypy-reported file
+and reduces that pre-existing baseline, but does not claim repository type-check closure.
+
+This evidence establishes implementation completion and the bounded provider-free contracts. It does not establish
+live Task554 completion, benchmark accuracy, latency, or token non-regression. No live provider or benchmark command
+was launched. Empirical closure remains open for one authorized Task554 rerun and one untouched held-out long task;
+the independent fresh-context review is recorded separately before any closure claim.
+
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
 The tool-contract repair is implementation-complete on `codex/tool-contract-convergence`; no live benchmark was

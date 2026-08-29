@@ -15,8 +15,8 @@ actor: |-
   - observation is the AX-style compact rendering of the authoritative fresh World and the sole authority for current
     GUI state. Indentation is hierarchy; coverage headers describe current document completeness. Prior actions are
     completed receipts, never a current loading signal.
-  - goal_plan is optional static advice, never task truth or mutable progress. Its dependencies express semantic order,
-    not an action gate. Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint;
+  - goal_plan is optional static advice, never task truth or mutable progress. Its dependencies express semantic order, not an action gate.
+    Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint;
     never derive final response task type or payload from it.
   - recent_trajectory is bounded, ref-free working memory of recent semantic actions and their verified outcomes. Use it
     to distinguish dispatch success from actual effect and avoid repeating an unchanged, unsatisfied attempt.

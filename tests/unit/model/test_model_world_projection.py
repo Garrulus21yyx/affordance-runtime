@@ -41,9 +41,8 @@ from tests.support.world import fused_world
 
 
 def project_model_world(observation, budget, *args, **kwargs):
-    return _project_model_world(
-        observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs
-    )
+    return _project_model_world(observation, budget, *args, canonical_projection=canonical_world(observation), **kwargs)
+
 
 _EMPTY_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -193,9 +192,7 @@ def test_task_view_contains_only_evaluator_supported_facts() -> None:
     )
 
     verified_facts = context.task.evaluation.verified_public_facts
-    assert tuple(item.fact_ref for item in verified_facts) == (
-        context.canonical_world.fact_refs["fact:verified"],
-    )
+    assert tuple(item.fact_ref for item in verified_facts) == (context.canonical_world.fact_refs["fact:verified"],)
     assert tuple(item.subject_id for item in verified_facts) == ("N1",)
     verified = verified_facts[0]
     matching = tuple(
@@ -621,9 +618,7 @@ def test_read_region_returns_directly_without_changing_next_context_action_autho
 
     assert any(projection in rendered for projection in ("projection=page_map", "projection=full"))
     activate_binding = second_catalog.bindings[second_catalog.specs.index(activate)]
-    assert {
-        item.selector_values["target"] for item in activate_binding.private_resolutions
-    } == {
+    assert {item.selector_values["target"] for item in activate_binding.private_resolutions} == {
         item.target_ref for item in second.complete_actions if item.operation == "activate"
     }
     assert f'[{second.grounding.target_refs["target:1"]}] button "Button 1" verbs=["activate"]' not in rendered
@@ -847,9 +842,7 @@ def test_policy_current_turn_projects_only_the_bounded_ref_free_recent_trajector
     )
 
     trajectory = sections["current_turn"]["recent_trajectory"]
-    assert tuple(item["result"]["reason"] for item in trajectory) == tuple(
-        f"step:{index}" for index in range(4)
-    )
+    assert tuple(item["result"]["reason"] for item in trajectory) == tuple(f"step:{index}" for index in range(4))
     assert sections["public"]["recent_trajectory"] == trajectory
     assert "semantic_events" not in sections["current_turn"]
     assert "activity_summaries" not in sections["current_turn"]

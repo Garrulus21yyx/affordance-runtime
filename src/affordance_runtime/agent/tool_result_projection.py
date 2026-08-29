@@ -124,7 +124,7 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
                 "error": terminal_failure.error.value if terminal_failure.error is not None else None,
                 **({"currentness": currentness} if currentness else {}),
             }
-        result: dict[str, object] = {
+        gui_result: dict[str, object] = {
             "run_status": step.status_after.value,
             "runtime_failed": failure is not None,
             "kind": "gui_action_result",
@@ -132,8 +132,8 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
             "effect": _public_gui_effect(step),
         }
         if failure is not None:
-            result["runtime_failure"] = failure
-        return freeze_json(result)
+            gui_result["runtime_failure"] = failure
+        return freeze_json(gui_result)
     if isinstance(decision, RequestObservation):
         outcome = step.observation_outcome
         if outcome is None:
@@ -172,11 +172,11 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
             common["executable_grounding"] = "attached_to_returned_readable_targets"
         return freeze_json(common)
     if isinstance(decision, RequestActionPage):
-        result = step.action_page_result
-        if result is None:
+        action_page_result = step.action_page_result
+        if action_page_result is None:
             common.update({"kind": "discovery", "matches": ()})
             return freeze_json(common)
-        return freeze_json(result.to_public_value())
+        return freeze_json(action_page_result.to_public_value())
     if isinstance(decision, InteractionRequest):
         common.update(
             {
@@ -230,7 +230,7 @@ def _public_gui_effect(step: StepResult) -> Mapping[str, object]:
             "reason": _gui_effect_unavailable_reason(step),
         }
     projection = step.after_public_world
-    refs = ()
+    refs: tuple[str, ...] = ()
     if projection is not None:
         refs = tuple(
             dict.fromkeys(
@@ -277,18 +277,12 @@ def _public_observed_item(step: StepResult, item) -> Mapping[str, object]:
     target_refs = projection.target_refs if projection is not None else {}
     fact_refs = projection.fact_refs if projection is not None else {}
     private_fact_refs = projection.private_fact_id_refs if projection is not None else {}
-    public_targets = tuple(
-        target_refs[subject]
-        for subject in item.subject_ids
-        if subject in target_refs
-    )
+    public_targets = tuple(target_refs[subject] for subject in item.subject_ids if subject in target_refs)
     public_evidence = tuple(
         dict.fromkeys(
             public
             for evidence in item.evidence_refs
-            for public in (
-                private_fact_refs.get(evidence, fact_refs.get(evidence, "")),
-            )
+            for public in (private_fact_refs.get(evidence, fact_refs.get(evidence, "")),)
             if public
         )
     )
@@ -325,8 +319,6 @@ def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:
             "tool_name": getattr(decision, "tool_name", decision.kind.value),
             "before_world": step.before_world.observation_id,
             "after_world": step.after_world.observation_id,
-            "runtime_failure": (
-                to_json_compatible(step.runtime_failure) if step.runtime_failure is not None else None
-            ),
+            "runtime_failure": (to_json_compatible(step.runtime_failure) if step.runtime_failure is not None else None),
         }
     )

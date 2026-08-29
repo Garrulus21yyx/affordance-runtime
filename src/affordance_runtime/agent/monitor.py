@@ -240,9 +240,11 @@ class EpisodeMonitor:
 
         if not findings_digest:
             raise ValueError("episode monitor requires a nonblank findings digest")
-        next_world_digest = result.public_world_delta.after_world_digest
+        world_delta = result.public_world_delta
+        assert world_delta is not None  # StepResult establishes this committed invariant.
+        next_world_digest = world_delta.after_world_digest
         if not self.world_digest:
-            self.world_digest = result.public_world_delta.before_world_digest
+            self.world_digest = world_delta.before_world_digest
             self.current_findings_digest = current_findings_digest(result.before_world)
 
         events = _diagnostic_events(result)
@@ -913,11 +915,13 @@ def _same_world_attempt_signature(result: StepResult) -> PublicAttemptSignature:
 
 def _gui_has_operational_result(result: StepResult) -> bool:
     outcome = result.action_outcome
+    world_delta = result.public_world_delta
+    assert world_delta is not None  # StepResult establishes this committed invariant.
     return bool(
         outcome is not None
         and (
             outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
-            or (outcome.observed_change is ObservedChange.CHANGED and result.public_world_delta.semantic_changed)
+            or (outcome.observed_change is ObservedChange.CHANGED and world_delta.semantic_changed)
         )
     )
 
@@ -928,6 +932,8 @@ def _proven_failed_gui_attempt_signature(result: StepResult) -> PublicAttemptSig
     record = _gui_attempt_record(result)
     receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
     outcome = result.action_outcome
+    world_delta = result.public_world_delta
+    assert world_delta is not None  # StepResult establishes this committed invariant.
     if record is None or not receipts or outcome is None:
         return None
     receipt = receipts[-1]
@@ -938,7 +944,7 @@ def _proven_failed_gui_attempt_signature(result: StepResult) -> PublicAttemptSig
         or outcome.observed_change is not ObservedChange.UNCHANGED
         or outcome.local_postcondition is not LocalPostconditionStatus.UNSATISFIED
         or outcome.evidence_method is EvidenceMethod.NONE
-        or result.public_world_delta.semantic_changed
+        or world_delta.semantic_changed
     ):
         return None
     intent = receipt.request.intent

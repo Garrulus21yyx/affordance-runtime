@@ -115,10 +115,18 @@ class ModelBackedAgentPolicy:
         object.__setattr__(self, "last_invocation_result", invocation)
         if invocation.failure is not None:
             return _policy_failure(invocation.failure)
-        outcome = invocation.output
-        if outcome.decision.context_id != context.context_id:
+        resolved = invocation.output
+        if resolved is None:
+            return _policy_failure(
+                ModelFailure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "provider returned neither an output nor a typed failure",
+                    False,
+                )
+            )
+        if resolved.decision.context_id != context.context_id:
             return _policy_failure(ModelFailure(ModelFailureKind.SCHEMA_ERROR, "decision context is stale", False))
-        return outcome.decision
+        return resolved.decision
 
     def close_deferred_call(self, step: object) -> None:
         close = getattr(self.port, "close_deferred_call", None)

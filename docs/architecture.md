@@ -6,6 +6,131 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+### 2026-08-30 single-owner action-outcome and recovery convergence
+
+This section supersedes the later chronological sections that describe `StrategyRevision` as an active component.
+The failed Task554
+[`tool-contract-live-run8`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-tool-contract-live-run8/traces/webarena-verified-w2-task-554/trace.jsonl)
+is the pre-repair witness. The policy repeatedly activated the sidebar `Commit`; BrowserGym sent each click, but the
+fresh World never contained the expected dialog. Monitor emitted `control_stall`, one deliberate ActionPolicy call
+correctly noticed that the click had no effect, and then selected `read_region`. The read returned records, so the old
+Monitor cleared the GUI recovery. The next ActionPolicy call became ordinary and selected `Commit` again. A later
+`StrategyRevision` correctly advised against that route, but its immediately following ActionPolicy call was
+explicitly downgraded to ordinary, thinking-disabled mode and repeated the same action.
+
+The symptom was repeated `Commit`; the trigger was a sent action whose local UI postcondition remained unsatisfied;
+the immediate mechanisms were four disconnected projections; and the shared root cause was missing ownership of one
+closed action-to-outcome-to-recovery loop:
+
+- same-call GUI ToolReturn reported dispatch success as `failed=false` but did not project the committed
+  `ActionOutcome`;
+- `AgentWorkspace` already retained a correct ref-free recent trajectory, but the ActionPolicy request omitted it;
+- GUI recovery could be closed by new information from a local read even though the failed GUI postcondition remained
+  unresolved;
+- `StrategyRevision` and ActionPolicy both interpreted failure, while only ActionPolicy could choose an executable
+  action and Runtime did not enforce the review.
+
+The positive authority contract is now:
+
+| Fact or decision | Sole owner | Contract |
+|---|---|---|
+| dispatch, transport, and fresh post-action capture | Executor and `ExecutionReceipt` | hard fact; never implies UI effect |
+| local UI change and postcondition | `ActionOutcome` projector | hard typed outcome; never implies task completion |
+| exact repetition, verified no-effect, short cycle, and recovery lifecycle | `EpisodeMonitor` | mechanical fact and bounded constraint only |
+| explanation of failure and next semantic action | the single `ActionPolicy` | sole semantic decision authority |
+| exact proven-failed replay admission | Runtime after `ActionSpace` admission | typed zero-dispatch rejection |
+| task completion or impossibility | native `TaskEvaluator` | sole terminal authority |
+| stable historical outcomes and facts | official PydanticAI history plus Harness compaction | historical context, never current recovery state |
+
+The one normative loop is:
+
+```text
+TaskGoal
++ optional static GoalPlan
++ fresh World
++ current ToolCatalog
++ latest four ref-free action -> committed outcome records
++ Harness summary of stable completed outcomes/facts/failed strategies
++ active Monitor recovery facts and exact hard constraints
+-> one ActionPolicy call
+-> one normal ToolCall
+-> Runtime admission, currentness, binding, risk, and proven-failure replay check
+-> Executor/BrowserGym
+-> fresh World + ExecutionReceipt + ActionOutcome
+-> same-call ToolReturn
+-> next turn
+```
+
+GUI ToolReturn now preserves the orthogonal outcome algebra instead of collapsing transport and effect:
+
+```text
+dispatch.completion/receipts[*].dispatch_status/transport_success/error
+effect.availability/observed_change/local_postcondition/evidence_method/reason/evidence_refs
+```
+
+`dispatch_status=sent` proves only that the executor sent the request. A hard failed-attempt proof requires all of:
+
+1. the final receipt is exactly `sent`, transport succeeded, and has no execution error;
+2. `ActionOutcome.observed_change=unchanged`;
+3. `ActionOutcome.local_postcondition=unsatisfied`, not `unknown` or merely non-satisfied;
+4. the outcome has a real evidence method and the public semantic World did not change; and
+5. the ref-free exact-attempt signature is identical before and after the action.
+
+The exact signature contains the semantic operation, route and relevant source preconditions, ref-free target and
+destination semantics, bounded structural occurrence, and semantic parameters. It follows canonical-to-source entity
+lineage so fused DOM/visual identities share one public attempt. Unrelated page text is excluded; a target state,
+route, relevant source assurance/coverage, destination, parameter, or duplicate-control occurrence change invalidates
+the proof. Repeated results, closed routes, screenshot-only changes, unverified no-effect, and short cycles remain
+advisory Monitor facts and cannot create a Runtime blacklist.
+
+Recovery is one Monitor-owned epoch:
+
+```text
+inactive
+  -- mechanical stall/cycle/no-effect --> active(epoch, evidence_revision=1, bounded constraints)
+active
+  -- read/search/find_controls -------> active(same epoch, evidence_revision+1)
+  -- exact replay rejected -----------> active(same epoch, typed zero-dispatch result)
+  -- verified GUI operational result -> inactive
+  -- native terminal evaluation ------> inactive
+  -- task revision -------------------> new episode
+```
+
+Only a local-origin observation recovery may close on owner-produced `NEW_INFORMATION`. A GUI-origin recovery remains
+active across `read_region`, `search_page_content`, and `find_controls`; those tools may improve evidence but cannot
+prove that the failed GUI postcondition recovered. Pause/checkpoint persists the epoch in checkpoint v6. Restoring a
+v5 checkpoint preserves the epoch but drops its old whole-page hard signature because that identity is not comparable
+with the v6 action-scoped signature. Unsupported or legacy constraints therefore fail open without inventing a
+dispatch prohibition.
+
+While the recovery epoch is active, every ActionPolicy call uses the existing deliberate profile. A diagnostic read
+does not consume a one-shot reasoning token or downgrade the following call. `StrategyRevision`, its provider schema,
+prompt field, trace branch, context field, and scheduling state have been removed. Monitor still cannot name a
+business control or route; it supplies only typed evidence, attempted modes, lifecycle identity, and any exactly
+proved prohibited attempt. Runtime still cannot choose the alternative action.
+
+This is the thin inference-time design supported by the primary-source comparison below, rechecked on 2026-08-30.
+These papers and reference implementations are research evidence about responsibility placement, not claims of
+production assurance. In particular,
+[UI-TARS-2](https://arxiv.org/html/2509.02544v2) feeds high-fidelity working memory and compressed episodic outcomes
+to one acting policy; [AgentOccam](https://proceedings.iclr.cc/paper_files/paper/2025/file/f2c6e459b95694a24ac69c469a4ee746-Paper-Conference.pdf)
+keeps branch/prune choices in the actor's action space and uses the resulting active plan to filter replayed history.
+[Agent S2](https://arxiv.org/abs/2504.00906) is a consciously heavier Manager/Worker/grounding hierarchy; its pinned
+[Worker implementation](https://github.com/simular-ai/Agent-S/blob/bffdb59c60cbbb38c3a190b2e91da12039e4063c/gui_agents/s2/agents/worker.py#L157-L210)
+injects optional Reflector output into the Worker call, while its
+[orchestrator](https://github.com/simular-ai/Agent-S/blob/bffdb59c60cbbb38c3a190b2e91da12039e4063c/gui_agents/s2/agents/agent_s.py#L222-L313)
+asks the Manager to replan on Worker `FAIL`/`DONE` rather than letting the Reflector execute. In
+[MGA](https://arxiv.org/html/2510.24168v3), a separate Memory Agent validates action effects and injects repetition or
+stagnation alerts into the next step-wise Planning Agent; the planner still selects the action. The project does not
+partially import either hierarchy: its deterministic Monitor is the thin failure detector, and the existing
+ActionPolicy remains the only semantic actor.
+
+The migration is bounded to the proven causal surface: ToolReturn projection, Workspace delivery, Monitor recovery
+state, exact attempt identity, Runtime admission, checkpoint schema, ActionPolicy reasoning profile, provider prompt,
+trace projection, and their tests. It adds no memory Store, Manager/Worker, semantic Monitor rules, alternative Binder
+or executor, task-specific labels, retries around unknown effects, or evaluator shortcut. No live benchmark was run;
+provider-free implementation completion and empirical benchmark closure remain separate.
+
 ### 2026-08-29 tool-contract convergence
 
 Stable interaction semantics now have one owner: `InteractionCapabilityRegistry`. Each registered action owns its
