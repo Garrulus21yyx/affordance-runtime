@@ -70,12 +70,13 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v5"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v6"
 _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
     {
         "affordance-runtime.checkpoint.v2",
         "affordance-runtime.checkpoint.v3",
         "affordance-runtime.checkpoint.v4",
+        "affordance-runtime.checkpoint.v5",
         RUNTIME_CHECKPOINT_SCHEMA_VERSION,
     }
 )
@@ -136,9 +137,7 @@ class RuntimeCheckpoint:
             raise RuntimeCheckpointError("checkpoint_timestamp_invalid")
         if len(self.environment_reference) > 2_000:
             raise RuntimeCheckpointError("checkpoint_environment_reference_invalid")
-        recoverable_history = (
-            self.model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
-        )
+        recoverable_history = self.model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
         if self.resume_eligible != (bool(self.environment_reference) and recoverable_history):
             raise RuntimeCheckpointError("checkpoint_resume_eligibility_invalid")
         expected = _checkpoint_digest(self._unsigned_payload())
@@ -176,9 +175,7 @@ class RuntimeCheckpoint:
         timestamp = created_at or datetime.now(UTC)
         if timestamp.tzinfo is None:
             raise RuntimeCheckpointError("checkpoint_timestamp_invalid")
-        recoverable_history = (
-            model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
-        )
+        recoverable_history = model_history.get("format") in _RECOVERABLE_MODEL_HISTORY_FORMATS
         resume_eligible = bool(environment_reference) and recoverable_history
         unsigned = {
             "schema_version": RUNTIME_CHECKPOINT_SCHEMA_VERSION,
@@ -356,10 +353,7 @@ class RuntimeCheckpointRevisionOutcome:
             or len(self.payload_digest) != 64
             or any(character not in "0123456789abcdef" for character in self.payload_digest)
             or len(self.message) > 2000
-            or (
-                self.outcome != "effect_reconciliation_required"
-                and result_code != self.outcome
-            )
+            or (self.outcome != "effect_reconciliation_required" and result_code != self.outcome)
             or (
                 self.outcome == "effect_reconciliation_required"
                 and result_code
@@ -370,14 +364,8 @@ class RuntimeCheckpointRevisionOutcome:
                     "effect_reconciliation_unsupported",
                 }
             )
-            or (
-                self.outcome == "revised"
-                and self.result_checkpoint_id == self.source_checkpoint_id
-            )
-            or (
-                self.outcome != "revised"
-                and self.result_checkpoint_id != self.source_checkpoint_id
-            )
+            or (self.outcome == "revised" and self.result_checkpoint_id == self.source_checkpoint_id)
+            or (self.outcome != "revised" and self.result_checkpoint_id != self.source_checkpoint_id)
         ):
             raise RuntimeCheckpointError("checkpoint_revision_outcome_invalid")
 
@@ -409,9 +397,7 @@ class RuntimeCheckpointStore(Protocol):
         outcome: RuntimeCheckpointRevisionOutcome,
     ) -> None: ...
 
-    async def revision_outcome(
-        self, session_id: str, command_id: str
-    ) -> RuntimeCheckpointRevisionOutcome | None: ...
+    async def revision_outcome(self, session_id: str, command_id: str) -> RuntimeCheckpointRevisionOutcome | None: ...
 
     async def checkpoint_revision_outcome(
         self, session_id: str, checkpoint_id: str
@@ -721,8 +707,7 @@ class SQLiteRuntimeCheckpointStore:
         try:
             connection.execute("BEGIN IMMEDIATE")
             source = connection.execute(
-                "SELECT 1 FROM runtime_checkpoints "
-                "WHERE session_id = ? AND checkpoint_id = ?",
+                "SELECT 1 FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
                 (outcome.session_id, outcome.source_checkpoint_id),
             ).fetchone()
             if source is None:
@@ -865,9 +850,7 @@ def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, obje
         "pause_boundary": to_json_compatible(boundary),
         "current_observation_id": state.current_world.observation_id,
         "latest_effect": _committed_effect_payload(state.latest_effect),
-        "effect_reconciliation": _effect_reconciliation_payload(
-            state.effect_reconciliation
-        ),
+        "effect_reconciliation": _effect_reconciliation_payload(state.effect_reconciliation),
     }
 
 
@@ -897,9 +880,7 @@ def _recovery_signal_payload(signal: RecoverySignal | None) -> dict[str, object]
         "evidence_revision": signal.evidence_revision,
         "observed_evidence": to_json_compatible(signal.observed_evidence),
         "attempted_modes": list(signal.attempted_modes),
-        "prohibited_attempt_signatures": [
-            to_json_compatible(item) for item in signal.prohibited_attempt_signatures
-        ],
+        "prohibited_attempt_signatures": [to_json_compatible(item) for item in signal.prohibited_attempt_signatures],
         "human_instruction": signal.human_instruction,
         "recovery_attempt": signal.recovery_attempt,
     }
@@ -912,12 +893,13 @@ def _restore_recovery_signal(payload: object) -> RecoverySignal | None:
     prohibited = tuple(
         PublicAttemptSignature(
             str(item["operation"]),
-            str(item["page_semantic_digest"]),
+            str(item["precondition_digest"]),
             str(item["target_semantic_digest"]),
             str(item["destination_semantic_digest"]),
             str(item["parameter_digest"]),
         )
         for item in _mapping_sequence(value.get("prohibited_attempt_signatures", []))
+        if "precondition_digest" in item
     )
     return RecoverySignal(
         RecoveryKind(str(value["kind"])),
@@ -959,9 +941,7 @@ def _effect_reconciliation_payload(
         "revised_task_revision": reconciliation.revised_task_revision,
         "status": reconciliation.status.value,
         "reason": reconciliation.reason.value,
-        "compensation_effect": _committed_effect_payload(
-            reconciliation.compensation_effect
-        ),
+        "compensation_effect": _committed_effect_payload(reconciliation.compensation_effect),
     }
 
 
@@ -1123,9 +1103,7 @@ def _restore_run_facts(
         )
         counts_payload = _mapping(run_payload.get("decision_counts", {}))
         latest_effect = _restore_committed_effect(run_payload.get("latest_effect"))
-        reconciliation = _restore_effect_reconciliation(
-            run_payload.get("effect_reconciliation")
-        )
+        reconciliation = _restore_effect_reconciliation(run_payload.get("effect_reconciliation"))
         recovery_signal = _restore_recovery_signal(run_payload.get("recovery_signal"))
         return RunCheckpointFacts(
             status_before_pause=status,
@@ -1138,13 +1116,8 @@ def _restore_run_facts(
             task_revision=_integer(run_payload["task_revision"]),
             goal_resolution=resolution,
             goal_plan_version_counter=_integer(run_payload["goal_plan_version_counter"]),
-            committed_sent_unknown_count=_integer(
-                run_payload["committed_sent_unknown_count"]
-            ),
-            decision_counts={
-                DecisionKind(str(kind)): _integer(value)
-                for kind, value in counts_payload.items()
-            },
+            committed_sent_unknown_count=_integer(run_payload["committed_sent_unknown_count"]),
+            decision_counts={DecisionKind(str(kind)): _integer(value) for kind, value in counts_payload.items()},
             currentness_probe_count=_integer(run_payload["currentness_probe_count"]),
             workspace=workspace,
             pause_boundary=boundary,
@@ -1366,8 +1339,7 @@ def _persist_checkpoint_identity(
         ),
     )
     row = connection.execute(
-        "SELECT digest, payload_json FROM runtime_checkpoints "
-        "WHERE session_id = ? AND checkpoint_id = ?",
+        "SELECT digest, payload_json FROM runtime_checkpoints WHERE session_id = ? AND checkpoint_id = ?",
         (checkpoint.session_id, checkpoint.checkpoint_id),
     ).fetchone()
     if row != (checkpoint.digest, checkpoint.to_json()):
@@ -1451,23 +1423,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS runtime_revision_source_consumed
 def _migrate_revision_outcome_schema(connection: sqlite3.Connection) -> None:
     """Add bounded idempotency result fields without discarding legacy outcomes."""
 
-    columns = {
-        str(row[1])
-        for row in connection.execute("PRAGMA table_info(runtime_revision_outcomes)")
-    }
+    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(runtime_revision_outcomes)")}
     additions = {
         "payload_digest": (
             "ALTER TABLE runtime_revision_outcomes ADD COLUMN payload_digest "
             f"TEXT NOT NULL DEFAULT '{_LEGACY_REVISION_PAYLOAD_DIGEST}'"
         ),
-        "message": (
-            "ALTER TABLE runtime_revision_outcomes ADD COLUMN message "
-            "TEXT NOT NULL DEFAULT ''"
-        ),
-        "result_code": (
-            "ALTER TABLE runtime_revision_outcomes ADD COLUMN result_code "
-            "TEXT NOT NULL DEFAULT ''"
-        ),
+        "message": ("ALTER TABLE runtime_revision_outcomes ADD COLUMN message TEXT NOT NULL DEFAULT ''"),
+        "result_code": ("ALTER TABLE runtime_revision_outcomes ADD COLUMN result_code TEXT NOT NULL DEFAULT ''"),
     }
     for name, statement in additions.items():
         if name in columns:

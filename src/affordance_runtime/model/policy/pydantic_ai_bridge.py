@@ -22,10 +22,6 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from affordance_runtime.actions.schema_validation import validate_value_issue
-from affordance_runtime.agent.attempt_signature import (
-    PublicAttemptSignature,
-    public_attempt_signature,
-)
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.contracts import sanitize_history_value
@@ -46,10 +42,6 @@ from affordance_runtime.agent.decision_capability import (
 from affordance_runtime.agent.decisions import (
     AgentDecision,
     DecisionKind,
-    LocalToolResult,
-    RequestActionPage,
-    RequestObservation,
-    ToolRejectedResult,
 )
 from affordance_runtime.agent.strategy_revision import (
     StrategyDisposition,
@@ -696,10 +688,7 @@ class PydanticAIGroundedDecisionPort:
         signature = str(feedback.get("stable_signature", ""))
         attempt = feedback.get("recovery_attempt", 0)
         kind = str(feedback.get("kind", ""))
-        if (
-            not signature
-            or not strategy_revision_due(kind, attempt)
-        ):
+        if not signature or not strategy_revision_due(kind, attempt):
             return ModelInvocationResult(
                 failure=ModelFailure(
                     ModelFailureKind.INVALID_RESPONSE,
@@ -1385,11 +1374,6 @@ class PydanticAIGroundedDecisionPort:
                     request.agent_context,
                     catalog.manifest,
                     source_response=source_response,
-                )
-            if accepted_exchange is not None:
-                accepted_exchange = _reject_prohibited_recovery_replay(
-                    accepted_exchange,
-                    request.agent_context,
                 )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
             if accepted_exchange is None and initial_calls:
@@ -2603,81 +2587,6 @@ def _grounded_rejection_exchange(
     )
 
 
-def _reject_prohibited_recovery_replay(
-    accepted: AcceptedToolExchange,
-    context: AgentContext,
-) -> AcceptedToolExchange:
-    """Return one typed zero-dispatch result for an exact advisory-recovery replay."""
-
-    raw_signature = context.control_feedback.get("prohibited_attempt_signature")
-    if not isinstance(raw_signature, Mapping):
-        return accepted
-    try:
-        prohibited = PublicAttemptSignature(
-            operation=str(raw_signature["operation"]),
-            page_semantic_digest=str(raw_signature["page_semantic_digest"]),
-            target_semantic_digest=str(raw_signature["target_semantic_digest"]),
-            destination_semantic_digest=str(raw_signature["destination_semantic_digest"]),
-            parameter_digest=str(raw_signature["parameter_digest"]),
-        )
-    except (KeyError, TypeError, ValueError):
-        return accepted
-    if context.current_observation is None:
-        return accepted
-    decision = accepted.decision
-    if isinstance(decision, LocalToolResult):
-        current = decision.rejected_attempt_signature or public_attempt_signature(
-            decision.tool_name,
-            "",
-            "",
-            decision.arguments,
-            context.current_observation,
-        )
-    elif isinstance(decision, RequestActionPage):
-        current = public_attempt_signature(
-            "find_controls",
-            "",
-            "",
-            {"query": decision.query},
-            context.current_observation,
-        )
-    elif isinstance(decision, RequestObservation):
-        current = public_attempt_signature(
-            "request_observation",
-            "",
-            "",
-            {
-                "purpose": decision.purpose.value,
-                "subject_ids": decision.subject_ids,
-                "candidate_ids": decision.candidate_ids,
-                "atomic_query": decision.atomic_query,
-                "predicate": decision.predicate,
-                "max_results": decision.max_results,
-            },
-            context.current_observation,
-        )
-    else:
-        return accepted
-    if current != prohibited:
-        return accepted
-    rejected = ToolRejectedResult(
-        context.context_id,
-        accepted.call.name,
-        accepted.call.arguments,
-        {
-            "kind": "recovery_repeat_rejected",
-            "failure_kind": "control_feedback_prohibited_attempt",
-            "attempted_operation": accepted.call.name,
-            "dispatch": "not_sent",
-            "world_changed": False,
-            "must_change": ("operation", "arguments"),
-        },
-        accepted.call.call_id,
-        rejected_attempt_signature=current,
-    )
-    return replace(accepted, decision=rejected)
-
-
 def _latest_model_response(result):
     """Return the current SDK response, excluding earlier supplied history."""
 
@@ -3343,9 +3252,7 @@ def _accepted_message_history(
             if not retry_parts or len(retry_parts) != len(retry_request.parts):
                 raise ValueError("PydanticAI output retry request mixed canonical context")
             rejected_calls = {
-                (part.tool_name, part.tool_call_id)
-                for part in message.parts
-                if isinstance(part, ToolCallPart)
+                (part.tool_name, part.tool_call_id) for part in message.parts if isinstance(part, ToolCallPart)
             }
             retry_calls = {
                 (part.tool_name, part.tool_call_id)

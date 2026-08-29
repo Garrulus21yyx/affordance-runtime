@@ -35,6 +35,7 @@ from affordance_runtime.agent.recovery import (
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation.contracts import (
+    EvidenceMethod,
     LocalPostconditionStatus,
     ObservedChange,
     TaskEvaluationStatus,
@@ -51,6 +52,12 @@ _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
 _MAX_RECENT_GUI_ATTEMPTS = 16
 
 
+@dataclass(frozen=True)
+class _GuiAttemptRecord:
+    signature: PublicAttemptSignature
+    page_semantic_digest: str
+
+
 @dataclass
 class EpisodeMonitor:
     """Own one no-progress state machine; query and region identities are not progress."""
@@ -64,7 +71,7 @@ class EpisodeMonitor:
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
-    recent_gui_attempts: tuple[PublicAttemptSignature, ...] = ()
+    recent_gui_attempts: tuple[_GuiAttemptRecord, ...] = ()
     recent_gui_results: tuple[tuple[str, str], ...] = ()
     active_gui_cycle_digest: str = ""
     active_recovery: RecoverySignal | None = None
@@ -104,7 +111,9 @@ class EpisodeMonitor:
             return
         self.active_recovery = recovery_signal
         self.recovery_count = recovery_signal.recovery_attempt
-        self.latest_attempt_signature = recovery_signal.prohibited_attempt_signature
+        self.latest_attempt_signature = (
+            recovery_signal.prohibited_attempt_signatures[-1] if recovery_signal.prohibited_attempt_signatures else None
+        )
         self.same_attempt_streak = int(self.latest_attempt_signature is not None)
         parts = recovery_signal.epoch_id.split(":", 2)
         if len(parts) == 3 and parts[1].isdigit():
@@ -136,9 +145,7 @@ class EpisodeMonitor:
         evidence["latest_recovery_kind"] = candidate.kind.value
         attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, *candidate.attempted_modes)))
         prohibited = tuple(
-            dict.fromkeys(
-                (*active.prohibited_attempt_signatures, *candidate.prohibited_attempt_signatures)
-            )
+            dict.fromkeys((*active.prohibited_attempt_signatures, *candidate.prohibited_attempt_signatures))
         )[-_MAX_RECENT_GUI_ATTEMPTS:]
         signal = replace(
             active,
@@ -332,14 +339,15 @@ class EpisodeMonitor:
                 signal,
             )
 
-        gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+        gui_record = _gui_attempt_record(result) if gui_dispatched else None
+        gui_signature = gui_record.signature if gui_record is not None else None
         repeated_gui_result = self._record_gui_result(gui_signature, next_world_digest)
         route_origin, route_length = _closed_gui_route(
             self.recent_gui_attempts,
-            gui_signature,
+            gui_record,
             result.after_world,
         )
-        cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)
+        cycle_digest, cycle_period = self._record_gui_attempt(gui_record)
 
         if self.active_recovery is not None and gui_dispatched and _gui_has_operational_result(result):
             self.observation_only_streak = 0
@@ -545,13 +553,13 @@ class EpisodeMonitor:
 
     def _record_gui_attempt(
         self,
-        signature: PublicAttemptSignature | None,
+        record: _GuiAttemptRecord | None,
     ) -> tuple[str, int]:
         """Record bounded effectful attempts and identify a repeated short cycle."""
 
-        if signature is None:
+        if record is None:
             return "", 0
-        self.recent_gui_attempts = (*self.recent_gui_attempts, signature)[-_MAX_RECENT_GUI_ATTEMPTS:]
+        self.recent_gui_attempts = (*self.recent_gui_attempts, record)[-_MAX_RECENT_GUI_ATTEMPTS:]
         return _short_gui_cycle(self.recent_gui_attempts)
 
     def _record_gui_result(
@@ -614,7 +622,7 @@ def _control_stall_signal(
     prohibited_attempt_signature = (
         monitor.latest_attempt_signature
         if result.feedback == "recovery_repeat_rejected" and monitor.latest_attempt_signature is not None
-        else _same_world_attempt_signature(result)
+        else _proven_failed_gui_attempt_signature(result)
     )
     signature_payload: tuple[object, ...] = (
         monitor.world_digest,
@@ -698,7 +706,7 @@ def _repeated_gui_result_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signatures=(gui_signature,),
+        prohibited_attempt_signatures=(),
         human_instruction=(
             "The same semantic GUI action has reached this public result before. Preserve current evidence and "
             "choose a materially different offered control or observation route; do not replay this action. If "
@@ -754,7 +762,7 @@ def _closed_route_review_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=attempted_modes,
-        prohibited_attempt_signatures=(outbound_attempt,),
+        prohibited_attempt_signatures=(),
         human_instruction=(
             "The latest effectful GUI excursion returned to the semantic page where an earlier outbound attempt "
             "began. Preserve facts acquired during the excursion and reassess them against the unresolved task "
@@ -766,8 +774,8 @@ def _closed_route_review_signal(
 
 
 def _closed_gui_route(
-    prior_attempts: tuple[PublicAttemptSignature, ...],
-    current_attempt: PublicAttemptSignature | None,
+    prior_attempts: tuple[_GuiAttemptRecord, ...],
+    current_attempt: _GuiAttemptRecord | None,
     after_world: WorldObservation,
 ) -> tuple[PublicAttemptSignature | None, int]:
     """Return the most recent outbound attempt whose semantic origin was revisited."""
@@ -780,16 +788,19 @@ def _closed_gui_route(
     bounded_prior = prior_attempts[-(_MAX_RECENT_GUI_ATTEMPTS - 1) :]
     for offset, attempt in enumerate(reversed(bounded_prior)):
         if attempt.page_semantic_digest == returned_page_digest:
-            return attempt, offset + 2
+            return attempt.signature, offset + 2
     return None, 0
 
 
 def _short_gui_cycle(
-    attempts: tuple[PublicAttemptSignature, ...],
+    attempts: Sequence[_GuiAttemptRecord | PublicAttemptSignature],
 ) -> tuple[str, int]:
     """Return one phase-independent digest for any repeated suffix in the bounded window."""
 
-    digests = tuple(item.digest for item in attempts[-_MAX_RECENT_GUI_ATTEMPTS:])
+    digests = tuple(
+        (item.signature if isinstance(item, _GuiAttemptRecord) else item).digest
+        for item in attempts[-_MAX_RECENT_GUI_ATTEMPTS:]
+    )
     for period in range(2, len(digests) // 2 + 1):
         previous = digests[-period * 2 : -period]
         current = digests[-period:]
@@ -833,18 +844,26 @@ def _attempted_mode(result: StepResult) -> str:
 
 
 def _gui_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
+    record = _gui_attempt_record(result)
+    return record.signature if record is not None else None
+
+
+def _gui_attempt_record(result: StepResult) -> _GuiAttemptRecord | None:
     if not isinstance(result.decision, SelectAction):
         return None
     receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
     if not receipts:
         return None
     intent = receipts[-1].request.intent
-    return public_attempt_signature(
-        intent.semantic_action,
-        intent.target_id,
-        intent.destination_id,
-        intent.parameters,
-        result.before_world,
+    return _GuiAttemptRecord(
+        public_attempt_signature(
+            intent.semantic_action,
+            intent.target_id,
+            intent.destination_id,
+            intent.parameters,
+            result.before_world,
+        ),
+        public_page_semantic_digest(result.before_world),
     )
 
 
@@ -901,6 +920,36 @@ def _gui_has_operational_result(result: StepResult) -> bool:
             or (outcome.observed_change is ObservedChange.CHANGED and result.public_world_delta.semantic_changed)
         )
     )
+
+
+def _proven_failed_gui_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
+    """Return an exact hard constraint only from a sent, verified stable no-effect."""
+
+    record = _gui_attempt_record(result)
+    receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
+    outcome = result.action_outcome
+    if record is None or not receipts or outcome is None:
+        return None
+    receipt = receipts[-1]
+    if (
+        receipt.result.dispatch_status is not DispatchStatus.SENT
+        or not receipt.result.transport_success
+        or receipt.result.error is not None
+        or outcome.observed_change is not ObservedChange.UNCHANGED
+        or outcome.local_postcondition is not LocalPostconditionStatus.UNSATISFIED
+        or outcome.evidence_method is EvidenceMethod.NONE
+        or result.public_world_delta.semantic_changed
+    ):
+        return None
+    intent = receipt.request.intent
+    after_signature = public_attempt_signature(
+        intent.semantic_action,
+        intent.target_id,
+        intent.destination_id,
+        intent.parameters,
+        result.after_world,
+    )
+    return record.signature if after_signature == record.signature else None
 
 
 def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:

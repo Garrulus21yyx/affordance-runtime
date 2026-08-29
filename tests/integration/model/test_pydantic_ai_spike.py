@@ -50,12 +50,17 @@ from affordance_runtime.agent.decisions import (
     SelectAction,
     ToolRejectedResult,
 )
+from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
+    ActionOutcome,
     EvaluatedOutput,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
     TaskEvaluation,
     TaskEvaluationStatus,
 )
@@ -1010,13 +1015,72 @@ def test_next_provider_request_closes_gui_call_with_effect_and_recent_trajectory
             "reason": "state did not change",
             "evidence_refs": ["F1"],
         }
-        current_prompt = next(
-            part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt"
-        )
+        current_prompt = next(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
         current = json.loads(current_prompt["content"][0]["content"])
         assert set(current) == {"observation", "recent_trajectory"}
         assert current["recent_trajectory"][-1]["result"]["transition"]["observed_change"] == "unchanged"
         assert "target_ref" not in json.dumps(current["recent_trajectory"])
+
+    asyncio.run(scenario())
+
+
+def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> None:
+    class VerifiedNoEffectProjector:
+        async def evaluate(self, task, before, request, result, after, public_world_delta):
+            del task, result, public_world_delta
+            return ActionOutcome(
+                request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.UNCHANGED,
+                LocalPostconditionStatus.UNSATISFIED,
+                EvidenceMethod.STRUCTURAL,
+                "postcondition remained unsatisfied",
+                (after.facts[0].fact_id,),
+            )
+
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action"] * 4)
+        policy = _policy(scripted.build())
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("replay-before", False),
+            post_observations=(
+                shared_world("replay-after-1", False),
+                shared_world("replay-after-2", False),
+            ),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(2)),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            VerifiedNoEffectProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("runtime_exact_replay_admission_test"),
+            episode_monitor=EpisodeMonitor(),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.BLOCKED
+        assert state.execution_count == 2
+        assert environment.execute_calls == 2
+        assert scripted.calls == 4
+        assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.result["kind"] == "proven_failed_attempt_rejected"
+        assert state.last_step.execution_receipts is None
+
+        recorded = normalize_recorded_provider_input(scripted.records[3])
+        parts = tuple(part for message in recorded["messages"] for part in message["parts"])
+        rejected_call = next(
+            part for part in parts if part["part_kind"] == "tool-call" and part["tool_call_id"] == "recording-call:3"
+        )
+        rejected_return = next(
+            part for part in parts if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
+        )
+        assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
+        assert rejected_return["tool_name"] == rejected_call["tool_name"]
+        assert rejected_return["content"]["kind"] == "proven_failed_attempt_rejected"
+        assert rejected_return["content"]["dispatch"] == "not_sent"
+        assert rejected_return["content"]["transport_success"] is False
 
     asyncio.run(scenario())
 
@@ -1213,7 +1277,7 @@ def test_historical_tool_name_uses_one_pydantic_retry_against_the_current_catalo
     asyncio.run(scenario())
 
 
-def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
+def test_provider_bridge_does_not_own_recovery_replay_admission() -> None:
     async def scenario() -> None:
         repeated_call_id = "recording-call:prohibited-read"
         scripted = ScriptedModel(
@@ -1230,20 +1294,15 @@ def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
             ActionSpaceBuilder().build(task, world),
             await SharedTaskEvaluator().evaluate(task, world),
         )
-        prohibited = pydantic_bridge.public_attempt_signature(
-            "list_regions",
-            "",
-            "",
-            {},
-            world,
-        )
         context = replace(
             context,
             control_feedback={
                 "kind": "control_stall",
+                "epoch_id": "recovery:1:fixture",
+                "evidence_revision": 1,
                 "stable_signature": "control-stall:fixture",
                 "recovery_attempt": 1,
-                "prohibited_attempt_signature": pydantic_bridge.to_json_compatible(prohibited),
+                "prohibited_attempt_signatures": (),
             },
         )
 
@@ -1251,11 +1310,9 @@ def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
 
         assert result.failure is None
         assert result.output is not None
-        assert result.output.decision.kind.value == "tool_rejected"
+        assert isinstance(result.output.decision, ReadRegionResult)
         assert result.output.decision.tool_name == "list_regions"
         assert result.output.decision.tool_call_id == repeated_call_id
-        assert result.output.decision.result["kind"] == "recovery_repeat_rejected"
-        assert result.output.decision.result["dispatch"] == "not_sent"
         assert scripted.calls == 1
         assert [attempt.phase for attempt in result.attempts] == ["deliberate"]
         assert [attempt.status for attempt in result.attempts] == ["accepted"]
@@ -2882,9 +2939,7 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
                                 "target_ref": "E6",
                                 "verbs": ("activate",),
                                 "region_ref": "R2",
-                                "state": {
-                                    "semantic.link.destination": "https://example.test/results/6"
-                                },
+                                "state": {"semantic.link.destination": "https://example.test/results/6"},
                             },
                         ),
                         "next_cursor": "opaque-old-page",

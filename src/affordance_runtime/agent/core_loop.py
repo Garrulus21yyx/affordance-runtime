@@ -41,6 +41,7 @@ from affordance_runtime.agent.decisions import (
     RequestObservation,
     SelectAction,
     TextFieldDraft,
+    ToolRejectedResult,
     Wait,
 )
 from affordance_runtime.agent.evaluation_control import (
@@ -378,10 +379,7 @@ class CoreAgentLoop:
                 "fresh World after task revision",
             )
         )
-        if (
-            acquisition.status is not AcquisitionStatus.ACQUIRED
-            or acquisition.observation is None
-        ):
+        if acquisition.status is not AcquisitionStatus.ACQUIRED or acquisition.observation is None:
             raise CoreLoopStartError("task_revision_fresh_world_unavailable")
         current = acquisition.observation
         projection, region_index = self._canonical_world_for(revised_task, current)
@@ -413,8 +411,7 @@ class CoreAgentLoop:
                 RunStatus.WAITING_USER,
                 feedback="goal_compiler_needs_input",
             )
-            if isinstance(resolution, NeedsInput)
-            and status is RunStatus.WAITING_USER
+            if isinstance(resolution, NeedsInput) and status is RunStatus.WAITING_USER
             else None
         )
         candidate = RunState(
@@ -673,13 +670,10 @@ class CoreAgentLoop:
         if reconciliation.status is EffectReconciliationStatus.PENDING:
             action_space = self.action_space_builder.build(task, state.current_world)
             if any(
-                option.resource_ref == reconciliation.original_effect.resource_ref
-                for option in action_space.options
+                option.resource_ref == reconciliation.original_effect.resource_ref for option in action_space.options
             ):
                 return False
-            state.require_reconciliation_input(
-                EffectReconciliationReason.COMPENSATION_UNAVAILABLE
-            )
+            state.require_reconciliation_input(EffectReconciliationReason.COMPENSATION_UNAVAILABLE)
         elif reconciliation.status is not EffectReconciliationStatus.NEEDS_INPUT:
             return False
         self._request_reconciliation_pause(state, "needs-input")
@@ -1129,9 +1123,7 @@ class CoreAgentLoop:
             complete_action_space,
         )
         canonical_world = (
-            state.canonical_world
-            if action_space.action_space_id == complete_action_space.action_space_id
-            else None
+            state.canonical_world if action_space.action_space_id == complete_action_space.action_space_id else None
         )
         region_index = state.delivery_index
         if (
@@ -1196,9 +1188,7 @@ class CoreAgentLoop:
                 action_discovery=state.action_discovery,
                 last_step=state.last_step,
                 observation_projection=observation_projection,
-                final_response_guidance=final_response_model_guidance(
-                    environment.final_response_codec
-                ),
+                final_response_guidance=final_response_model_guidance(environment.final_response_codec),
             )
         except PublicGroundingAmbiguousError:
             return StepResult(
@@ -1302,9 +1292,7 @@ class CoreAgentLoop:
                 ),
             )
         if state.reconciliation_pending and isinstance(decision, (FinalResponse, Abort)):
-            state.require_reconciliation_input(
-                EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED
-            )
+            state.require_reconciliation_input(EffectReconciliationReason.COMPENSATION_ACTION_NOT_ALLOWED)
             self._request_reconciliation_pause(state, "action-not-allowed")
             return _same_world_step(
                 state,
@@ -1354,7 +1342,9 @@ class CoreAgentLoop:
                         state,
                         decision,
                         RunStatus.FAILED,
-                        admission.rejection_code.value if admission.rejection_code is not None else "interaction_invalid",
+                        admission.rejection_code.value
+                        if admission.rejection_code is not None
+                        else "interaction_invalid",
                     )
                 else:
                     result = _same_world_step(
@@ -1393,19 +1383,12 @@ class CoreAgentLoop:
         action_space: ActionSpace,
     ) -> ActionSpace:
         reconciliation = state.effect_reconciliation
-        if (
-            reconciliation is None
-            or reconciliation.status is not EffectReconciliationStatus.PENDING
-        ):
+        if reconciliation is None or reconciliation.status is not EffectReconciliationStatus.PENDING:
             return action_space
         resource_ref = reconciliation.original_effect.resource_ref
         return ActionSpace(
             action_space.observation_id,
-            tuple(
-                option
-                for option in action_space.options
-                if option.resource_ref == resource_ref
-            ),
+            tuple(option for option in action_space.options if option.resource_ref == resource_ref),
             action_space.issues,
         )
 
@@ -1416,11 +1399,7 @@ class CoreAgentLoop:
     ) -> StepResult:
         if not state.reconciliation_pending or self.run_control.pending is not None:
             return result
-        receipts = (
-            ()
-            if result.execution_receipts is None
-            else result.execution_receipts.receipts
-        )
+        receipts = () if result.execution_receipts is None else result.execution_receipts.receipts
         if receipts:
             if result.task_evaluation is None:
                 return result
@@ -1798,9 +1777,9 @@ class CoreAgentLoop:
                 ObservationAssurance.WEAK
                 if purpose in agent_visual_purposes
                 else _criterion_assurance(
-                task,
-                state.current_task_evaluation,
-                purpose,
+                    task,
+                    state.current_task_evaluation,
+                    purpose,
                     assurance_subject,
                 )
             ),
@@ -1882,8 +1861,7 @@ class CoreAgentLoop:
         if (
             reconciliation is not None
             and reconciliation.status is EffectReconciliationStatus.PENDING
-            and selection.resource_ref
-            != reconciliation.original_effect.resource_ref
+            and selection.resource_ref != reconciliation.original_effect.resource_ref
         ):
             return _same_world_step(
                 state,
@@ -1891,10 +1869,16 @@ class CoreAgentLoop:
                 RunStatus.BLOCKED,
                 "effect_reconciliation:resource_mismatch",
             )
-        if _repeats_recovery_signature(state.recovery_signal, selection, state.current_world):
+        recovery_rejection = _proven_failure_replay_rejection(
+            state.recovery_signal,
+            decision,
+            selection,
+            state.current_world,
+        )
+        if recovery_rejection is not None:
             return _same_world_step(
                 state,
-                decision,
+                recovery_rejection,
                 RunStatus.RUNNING,
                 "recovery_repeat_rejected",
             )
@@ -2483,11 +2467,7 @@ def _admit_goal_input_request(
     draft = InteractionRequestDraft(
         f"context:goal-compiler:{task_revision}",
         resolution.question,
-        (
-            InteractionResponseKind.STRUCTURED_FIELDS
-            if fields
-            else InteractionResponseKind.FREE_TEXT
-        ),
+        (InteractionResponseKind.STRUCTURED_FIELDS if fields else InteractionResponseKind.FREE_TEXT),
         fields,
     )
     admission = admit_interaction_request(world, draft)
@@ -2519,11 +2499,6 @@ def _recovery_feedback(signal) -> dict[str, object]:
         "prohibited_attempt_signatures": tuple(
             to_json_compatible(item) for item in signal.prohibited_attempt_signatures
         ),
-        "prohibited_attempt_signature": (
-            to_json_compatible(signal.prohibited_attempt_signature)
-            if signal.prohibited_attempt_signature is not None
-            else None
-        ),
         "human_instruction": signal.human_instruction,
         "recovery_attempt": signal.recovery_attempt,
     }
@@ -2532,10 +2507,7 @@ def _recovery_feedback(signal) -> dict[str, object]:
 def _control_feedback(state: RunState) -> dict[str, object]:
     feedback = _recovery_feedback(state.recovery_signal)
     reconciliation = state.effect_reconciliation
-    if (
-        reconciliation is not None
-        and reconciliation.status is EffectReconciliationStatus.PENDING
-    ):
+    if reconciliation is not None and reconciliation.status is EffectReconciliationStatus.PENDING:
         feedback["effect_reconciliation"] = {
             **reconciliation.public_summary(),
             "instruction": (
@@ -2547,9 +2519,9 @@ def _control_feedback(state: RunState) -> dict[str, object]:
     return feedback
 
 
-def _repeats_recovery_signature(signal, selection, world) -> bool:
-    if signal is None or signal.prohibited_attempt_signature is None:
-        return False
+def _proven_failure_replay_rejection(signal, decision, selection, world) -> ToolRejectedResult | None:
+    if signal is None or not signal.prohibited_attempt_signatures:
+        return None
     current = public_attempt_signature(
         selection.semantic_action,
         selection.target_id,
@@ -2557,7 +2529,29 @@ def _repeats_recovery_signature(signal, selection, world) -> bool:
         selection.parameters,
         world,
     )
-    return current == signal.prohibited_attempt_signature
+    if current not in signal.prohibited_attempt_signatures:
+        return None
+    return ToolRejectedResult(
+        decision.context_id,
+        selection.semantic_action,
+        {
+            "operation": selection.semantic_action,
+            "attempt_signature": current.digest,
+        },
+        {
+            "kind": "proven_failed_attempt_rejected",
+            "failure_kind": "recovery_proven_failure_replay",
+            "epoch_id": signal.epoch_id,
+            "evidence_revision": signal.evidence_revision,
+            "attempted_operation": selection.semantic_action,
+            "dispatch": "not_sent",
+            "transport_success": False,
+            "world_changed": False,
+            "must_change": ("attempt",),
+        },
+        decision.tool_call_id,
+        rejected_attempt_signature=current,
+    )
 
 
 def _criterion_assurance(

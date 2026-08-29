@@ -18,7 +18,6 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SearchPageContentResult,
     SelectAction,
-    ToolRejectedResult,
 )
 from affordance_runtime.agent import monitor as monitor_module
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
@@ -655,8 +654,7 @@ def test_new_read_information_does_not_close_an_unresolved_gui_effect_recovery()
     assert carried.recovery_signal.epoch_id == recovery.recovery_signal.epoch_id
     assert carried.recovery_signal.evidence_revision == recovery.recovery_signal.evidence_revision + 1
     assert (
-        carried.recovery_signal.prohibited_attempt_signatures
-        == recovery.recovery_signal.prohibited_attempt_signatures
+        carried.recovery_signal.prohibited_attempt_signatures == recovery.recovery_signal.prohibited_attempt_signatures
     )
     assert resolved.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
@@ -680,42 +678,16 @@ def test_same_attempt_after_recovery_is_control_stalled() -> None:
     assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
 
 
-def test_typed_recovery_replay_rejection_gets_one_bounded_fallback_turn() -> None:
-    world = _world("observation:typed-recovery-rejection")
+def test_local_recovery_does_not_create_a_hard_gui_prohibition() -> None:
+    world = _world("observation:local-recovery")
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
 
     _evaluate(monitor, _local_step(world, query="one"))
     recovery = _evaluate(monitor, _local_step(world, query="two"))
+
     assert recovery.recovery_signal is not None
-    prohibited = recovery.recovery_signal.prohibited_attempt_signature
-    assert prohibited is not None
-    rejected = StepResult(
-        ToolRejectedResult(
-            "context:test",
-            "search_page_content",
-            {"query": "two"},
-            {
-                "kind": "recovery_repeat_rejected",
-                "dispatch": "not_sent",
-                "world_changed": False,
-            },
-            rejected_attempt_signature=prohibited,
-        ),
-        world,
-        world,
-        _evaluation(world),
-        feedback="local_tool_result",
-    )
-
-    fallback = _evaluate(monitor, rejected)
-    blocked = _evaluate(monitor, rejected)
-
-    assert fallback.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert fallback.recovery_signal is not None
-    assert fallback.recovery_signal.recovery_attempt == 2
-    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
-    assert blocked.reason == "control_stalled"
+    assert recovery.recovery_signal.prohibited_attempt_signatures == ()
 
 
 def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
@@ -764,7 +736,7 @@ def test_first_gui_dispatch_without_information_increment_records_no_progress() 
     assert monitor.latest_attempt_signature is not None
 
 
-def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature() -> None:
+def test_unverified_same_gui_no_progress_recovers_without_a_hard_prohibition() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -777,12 +749,51 @@ def test_second_same_gui_no_progress_recovers_with_existing_prohibited_signature
     assert second.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second.recovery_signal is not None
     assert third.recommendation is EpisodeMonitorRecommendation.BLOCK
-    assert second.recovery_signal.prohibited_attempt_signature == monitor.latest_attempt_signature
+    assert second.recovery_signal.prohibited_attempt_signatures == ()
     assert "entity_discovery" in second.recovery_signal.human_instruction
     assert monitor.same_attempt_streak == 3
     assert monitor.no_progress_count == 3
     assert monitor.latest_attempt_signature is not None
     assert monitor.latest_attempt_signature.digest.startswith("sha256:")
+
+
+def test_verified_stable_gui_no_effect_creates_one_exact_hard_prohibition() -> None:
+    first_world = _world("observation:verified-no-effect-before")
+    second_world = _world("observation:verified-no-effect-after-1")
+    third_world = _world("observation:verified-no-effect-after-2")
+
+    def verified_no_effect(before, after):
+        step = _dispatched_step(before, after)
+        assert step.execution_receipts is not None
+        receipt = step.execution_receipts.receipts[-1]
+        return replace(
+            step,
+            action_outcome=ActionOutcome(
+                receipt.request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.UNCHANGED,
+                LocalPostconditionStatus.UNSATISFIED,
+                EvidenceMethod.NATIVE,
+                "native verifier observed a stable unsatisfied postcondition",
+                ("artifact:verification:stable-no-effect",),
+                {
+                    "observed_change": "unchanged",
+                    "local_postcondition": "unsatisfied",
+                },
+                step.public_world_delta,
+            ),
+        )
+
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+    _evaluate(monitor, verified_no_effect(first_world, second_world))
+
+    recovery = _evaluate(monitor, verified_no_effect(second_world, third_world))
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.prohibited_attempt_signatures == (monitor.latest_attempt_signature,)
 
 
 def test_screenshot_only_change_does_not_hide_repeated_gui_stall() -> None:
@@ -823,7 +834,7 @@ def test_screenshot_only_change_does_not_hide_repeated_gui_stall() -> None:
     assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.prohibited_attempt_signature is not None
+    assert recovery.recovery_signal.prohibited_attempt_signatures == ()
 
 
 def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None:
@@ -847,7 +858,7 @@ def test_identity_rekeyed_fresh_world_does_not_hide_repeated_gui_stall() -> None
     assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.prohibited_attempt_signature is not None
+    assert recovery.recovery_signal.prohibited_attempt_signatures == ()
 
 
 def test_repeated_gui_operation_across_semantically_changed_worlds_is_not_a_same_world_stall() -> None:
@@ -890,7 +901,7 @@ def test_same_gui_operation_reaching_a_seen_result_world_requests_new_route() ->
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
-    assert recovery.recovery_signal.prohibited_attempt_signature is not None
+    assert recovery.recovery_signal.prohibited_attempt_signatures == ()
     assert recovery.recovery_signal.observed_evidence["repeated_result_world"] is True
 
 
@@ -1025,9 +1036,7 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
     )
     resolved = _evaluate(
         monitor,
-        _with_projected_outcome(
-            _dispatched_step(returned_twice, third_result, target_id="third_candidate")
-        ),
+        _with_projected_outcome(_dispatched_step(returned_twice, third_result, target_id="third_candidate")),
     )
     third_return = _evaluate(
         monitor,

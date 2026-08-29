@@ -116,6 +116,32 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
     assert restored == signal
 
 
+def test_legacy_page_digest_recovery_resumes_without_an_invalid_hard_prohibition() -> None:
+    prohibited = PublicAttemptSignature(
+        "activate",
+        "a" * 64,
+        "b" * 64,
+        "",
+        "c" * 64,
+    )
+    signal = RecoverySignal(
+        RecoveryKind.EFFECT_STALL,
+        "effect_stall:sha256:" + "d" * 64,
+        {"dispatch": "sent", "observed_change": "unchanged"},
+        prohibited_attempt_signatures=(prohibited,),
+        epoch_id="recovery:7:" + "e" * 32,
+    )
+    legacy = json.loads(json.dumps(_recovery_signal_payload(signal)))
+    signature = legacy["prohibited_attempt_signatures"][0]
+    signature["page_semantic_digest"] = signature.pop("precondition_digest")
+
+    restored = _restore_recovery_signal(legacy)
+
+    assert restored is not None
+    assert restored.epoch_id == signal.epoch_id
+    assert restored.prohibited_attempt_signatures == ()
+
+
 def test_revision_command_digest_remains_compatible_across_snapshot_v2() -> None:
     command = _revision_command(
         "revise:digest-compatibility",
@@ -779,9 +805,7 @@ async def test_waiting_user_takeover_reuses_pause_checkpoint_and_grants_control_
     assert waiting.status is PublicSessionStatus.WAITING_USER
     assert waiting.checkpoint_id is None
     assert PublicSessionCapability.TAKE_OVER in waiting.capabilities
-    assert PublicSessionCommandKind.TAKE_OVER in {
-        capability.kind for capability in waiting.command_capabilities
-    }
+    assert PublicSessionCommandKind.TAKE_OVER in {capability.kind for capability in waiting.command_capabilities}
 
     controlled = await handle.take_over("takeover:direct")
 
@@ -825,9 +849,7 @@ async def test_running_takeover_waits_for_the_existing_safe_pause_boundary(tmp_p
     policy = BlockingAskPolicy()
     factory = TargetRuntimeSessionFactory(
         lambda _session_id: _runtime(policy),
-        lambda _session_id: RuntimeEnvironmentLease(
-            ScriptedEnvironment(initial_observation=_world())
-        ),
+        lambda _session_id: RuntimeEnvironmentLease(ScriptedEnvironment(initial_observation=_world())),
         checkpoint_store=store,
     )
     handle = await factory.open(
@@ -838,9 +860,7 @@ async def test_running_takeover_waits_for_the_existing_safe_pause_boundary(tmp_p
     await asyncio.wait_for(policy.entered.wait(), timeout=1)
     running = await handle.snapshot()
     assert running.status is PublicSessionStatus.RUNNING
-    assert PublicSessionCommandKind.TAKE_OVER in {
-        capability.kind for capability in running.command_capabilities
-    }
+    assert PublicSessionCommandKind.TAKE_OVER in {capability.kind for capability in running.command_capabilities}
 
     takeover = asyncio.create_task(handle.take_over("takeover:running"))
     for _ in range(100):
@@ -863,9 +883,7 @@ async def test_running_takeover_waits_for_the_existing_safe_pause_boundary(tmp_p
 
 @pytest.mark.asyncio
 async def test_paused_takeover_still_requires_the_exact_checkpoint(tmp_path) -> None:
-    handle, _store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(
-        tmp_path
-    )
+    handle, _store, _policy, _environment, checkpoint_id = await _takeover_checkpoint_session(tmp_path)
 
     with pytest.raises(PublicSessionConflict, match="checkpoint_mismatch"):
         await handle.take_over("takeover:missing-checkpoint")

@@ -16,7 +16,7 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
-from affordance_runtime.agent.decisions import AbortCategory
+from affordance_runtime.agent.decisions import AbortCategory, ToolRejectedResult
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.observability import RunTraceRecorder
@@ -133,8 +133,7 @@ def _task() -> TaskGoal:
 def _route_world(observation_id: str, route: str, controls: tuple[str, ...]) -> WorldObservation:
     document = SemanticTarget("route-document", "document", "Route test", {"page.route": route})
     targets = (document,) + tuple(
-        SemanticTarget(control, "button", control.replace("-", " ").title())
-        for control in controls
+        SemanticTarget(control, "button", control.replace("-", " ").title()) for control in controls
     )
     bindings = tuple(
         ActionBinding(
@@ -711,7 +710,7 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
-def test_second_closed_gui_route_gets_one_review_and_exact_replay_is_not_dispatched() -> None:
+def test_closed_gui_route_review_is_advisory_without_a_verified_no_effect() -> None:
     @dataclass
     class RouteRecoveryPolicy:
         turns: int = 0
@@ -760,11 +759,7 @@ def test_second_closed_gui_route_gets_one_review_and_exact_replay_is_not_dispatc
                 assert context.control_feedback["kind"] == "strategy_review"
                 assert context.control_feedback["observed_evidence"]["returned_to_prior_semantic_page"] is True
                 return self.select(context, "second-route", "provider-call:second-replay")
-            if self.turns == 8:
-                assert context.control_feedback["kind"] == "control_stall"
-                assert context.control_feedback["recovery_attempt"] == 2
-                return self.select(context, "completion-route", "provider-call:completion")
-            raise AssertionError("route recovery should finish after the alternate route")
+            raise AssertionError("the advisory replay should reach the evaluator-confirmed result")
 
     async def scenario() -> None:
         first = _route_world(
@@ -802,11 +797,11 @@ def test_second_closed_gui_route_gets_one_review_and_exact_replay_is_not_dispatc
         state = await runtime.run_task(environment, _route_task())
 
         assert state.status is RunStatus.DONE
-        assert policy.turns == 8
+        assert policy.turns == 7
         assert state.execution_count == 5
         assert environment.execute_calls == 5
         assert state.last_step is not None
-        assert state.last_step.decision.tool_call_id == "provider-call:completion"
+        assert state.last_step.decision.tool_call_id == "provider-call:second-replay"
 
     asyncio.run(scenario())
 
@@ -1140,8 +1135,7 @@ def test_internal_resume_reselects_from_fresh_context_without_dispatching_stale_
         assert state.last_step is not None
         assert state.last_step.execution_receipts is not None
         assert (
-            state.last_step.execution_receipts.receipts[-1].request.tool_call_id
-            == "provider-call:fresh-after-resume"
+            state.last_step.execution_receipts.receipts[-1].request.tool_call_id == "provider-call:fresh-after-resume"
         )
 
     asyncio.run(scenario())
@@ -1172,11 +1166,7 @@ def test_pause_during_dispatch_waits_for_receipt_fresh_world_and_evaluation(
                     dispatch_status,
                     "dom",
                     dispatch_status is DispatchStatus.SENT,
-                    (
-                        None
-                        if dispatch_status is DispatchStatus.SENT
-                        else ActionError.EXECUTION_FAILED
-                    ),
+                    (None if dispatch_status is DispatchStatus.SENT else ActionError.EXECUTION_FAILED),
                 ),
             ),
         )
@@ -1456,7 +1446,7 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         monitor = EpisodeMonitor()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
-            ProductionActionOutcomeProjector(),
+            DispatchPostconditionProjector(),
             IncompleteEvaluator(),
             goal_compiler=NotRequiredGoalCompiler("search_enter_repeat_regression"),
             episode_monitor=monitor,
@@ -1486,6 +1476,10 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
             "press_key",
         ]
         assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.result["kind"] == "proven_failed_attempt_rejected"
+        assert state.last_step.decision.result["dispatch"] == "not_sent"
+        assert state.last_step.execution_receipts is None
         assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
         assert state.workspace.recent_steps[-1].reason == "episode_monitor_blocked:control_stalled"
         assert monitor.same_attempt_streak == 4
@@ -1513,9 +1507,7 @@ def test_repeated_keyboard_navigation_is_dispatched_while_each_fresh_world_advan
 
     class AutocompleteEvaluator:
         async def evaluate(self, task, observation):
-            value = next(item for item in observation.targets if item.target_id == "autocomplete-search").state[
-                "value"
-            ]
+            value = next(item for item in observation.targets if item.target_id == "autocomplete-search").state["value"]
             status = (
                 TaskEvaluationStatus.COMPLETE
                 if value == "Shanksville, Pennsylvania"

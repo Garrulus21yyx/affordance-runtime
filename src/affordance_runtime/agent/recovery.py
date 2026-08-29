@@ -85,12 +85,6 @@ class RecoverySignal:
         if len(self.human_instruction) > 1_000 or not 1 <= self.recovery_attempt <= 3:
             raise ValueError("recovery signal exceeds bounds")
 
-    @property
-    def prohibited_attempt_signature(self) -> PublicAttemptSignature | None:
-        """Compatibility projection while consumers migrate to the bounded set."""
-
-        return self.prohibited_attempt_signatures[-1] if self.prohibited_attempt_signatures else None
-
 
 @dataclass(frozen=True)
 class EpisodeMonitorTransition:
@@ -110,10 +104,14 @@ class EpisodeMonitorTransition:
             raise TypeError("episode monitor recovery signal must be typed")
         if not isinstance(self.recovery_lifecycle, RecoveryLifecycleTransition):
             raise TypeError("episode monitor recovery lifecycle must be typed")
-        if self.recovery_lifecycle in {
-            RecoveryLifecycleTransition.STARTED,
-            RecoveryLifecycleTransition.CONTINUED,
-        } and self.recovery_signal is None:
+        if (
+            self.recovery_lifecycle
+            in {
+                RecoveryLifecycleTransition.STARTED,
+                RecoveryLifecycleTransition.CONTINUED,
+            }
+            and self.recovery_signal is None
+        ):
             raise ValueError("active recovery lifecycle requires its signal")
         if self.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED and self.recovery_signal is not None:
             raise ValueError("closed recovery lifecycle cannot retain a signal")
