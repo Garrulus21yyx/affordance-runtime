@@ -32,7 +32,12 @@ from affordance_runtime.world import (
     EntityInventoryStatus,
     SemanticInventoryStatus,
 )
-from tests.support.surfaces.browsergym.browsergym_adapter_support import ax_node, raw_observation, reset_task_state
+from tests.support.surfaces.browsergym.browsergym_adapter_support import (
+    ax_node,
+    dom_snapshot,
+    raw_observation,
+    reset_task_state,
+)
 from tests.support.surfaces.browsergym.projection_support import (
     project_browsergym_observation,
 )
@@ -140,7 +145,16 @@ def test_structural_projection_is_bounded_truthful_and_private() -> None:
 
 
 def test_explicit_browser_profile_projects_navigation_without_page_identity_inference() -> None:
-    raw = raw_observation(ax_node("search", "textbox", "Search"), url="https://docs.example.test/guide")
+    raw = raw_observation(
+        ax_node("search", "textbox", "Search"),
+        ax_node("guide", "link", "Advanced guide"),
+        url="https://docs.example.test/guide",
+    )
+    raw["dom_object"] = dom_snapshot((
+        "a",
+        "guide",
+        {"href": "/advanced?format=full#examples"},
+    ))
     raw["open_pages_urls"] = np.asarray(
         (
             "https://example.test/start?private=1",
@@ -240,6 +254,7 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     assert '"active_tab_index":1' in model_observation
     assert '"index":0,"route":"https://example.test/start"' in model_observation
     assert '"index":1,"route":"https://docs.example.test/guide"' in model_observation
+    assert "https://docs.example.test/advanced?format=full#examples" in model_observation
     catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     browser_specs = {
         item.name: item
@@ -264,6 +279,19 @@ def test_explicit_browser_profile_projects_navigation_without_page_identity_infe
     )
     assert resolved.decision.action_id == actions["goto"].action_id
     assert resolved.decision.parameters == {"url": "https://docs.example.test/guide"}
+    direct_link = resolve_grounded_tool_call(
+        catalog,
+        ToolCall(
+            "goto",
+            {"url": "https://docs.example.test/advanced?format=full#examples"},
+            "call:goto-link-destination",
+        ),
+        expected_context_id=context.context_id,
+        expected_delivery_id=delivery.delivery_id,
+    )
+    assert direct_link.decision.parameters == {
+        "url": "https://docs.example.test/advanced?format=full#examples"
+    }
 
     with pytest.raises(ValueError, match="browser-action profile"):
         project_browsergym_observation(

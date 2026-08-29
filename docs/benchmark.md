@@ -318,12 +318,12 @@ invalid responses, and no STOP/native evaluation. Canonical history recovery is 
 benchmark, the environment-invalid status above supersedes the failed-route classification. After W0 and Map data restoration,
 closure remains open for a clean Task426 rerun and a new untouched task-success witness.
 
-The provider-free failed-route repair now recognizes the first bounded ref-free `A -> ... -> A` GUI excursion as
-typed `route_regression`, even when the visited branch produced new public text. It sends that mechanical fact through
-the existing recovery feedback into one deliberate ActionPolicy call; Runtime neither judges task relevance nor
-chooses the alternate route. The exact outbound replay is rejected before dispatch, one bounded fallback remains
-available, and a different current route executes normally. Focused owner/consumer verification reports 331 passed
-and 3 skipped; PydanticAI/grounded-tool verification reports 137 passed. This is implementation evidence only:
+The provider-free failed-route repair distinguishes ordinary acquisition from strategy review. The first bounded
+ref-free `A -> ... -> A` GUI excursion continues; the second distinct closure emits typed `strategy_review` and
+supplies one model review to the immediately following ActionPolicy call. Runtime neither judges task relevance nor
+chooses the alternate route. The exact reviewed outbound replay is rejected before dispatch, one bounded fallback
+remains available, and a different current route executes normally. Focused owner/consumer verification reports 331
+passed and 3 skipped; PydanticAI/grounded-tool verification reports 137 passed. This is implementation evidence only:
 After W0 deployment consistency and Map data restoration, Task426 and one fresh held-out long task remain the live
 acceptance gate.
 The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped, with only the pre-existing
@@ -2065,3 +2065,34 @@ Provider-free evidence from the fixed BrowserGym Python environment:
 These results establish provider-free integration and absence of the mixed causal-surface changes. They do not prove
 live benchmark improvement or non-regression. No live provider or benchmark run was launched for this extraction; a
 fresh held-out long-route run remains the separate empirical gate.
+
+## 2026-08-29 — Task554 pre-repair witness and memory/currentness convergence
+
+[`clean-strategy-run1`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-clean-strategy-run1/run.json) is a
+failed pre-repair witness, not closure evidence. The task asked for the five most recent movie-forum URLs and a
+committed `movie_space/urls.json`. The run blocked after 28 ActionPolicy calls and 20 recovery turns, with 740,178
+provider tokens. The initial page read already identified all five records, but BrowserGym's public semantics omitted
+their link destinations, so the policy had to open each detail page only to acquire its URL. Every normal
+`list -> detail -> list` acquisition was then classified as a route regression. A model review correctly synthesized
+partial progress once, but Runtime persisted and replayed that review after later official ToolReturns had added
+another URL, leaving two contradictory semantic progress frames in one request.
+
+The convergence repair keeps two and only two semantic timelines. Official PydanticAI history plus Harness compaction
+owns cross-turn facts and completed outcomes; the latest fresh World owns current state and executable refs. A
+strategy review is one-turn input to the next ActionPolicy call and is absent from policy checkpoints. The first
+closed route continues, the second requests one review, and later distinct acquisitions continue; existing exact
+action/result and short-cycle detection still handle genuine repetition. BrowserGym Surface semantics now expose a
+bounded normalized `semantic.link.destination` for current HTTP(S) links. The URL remains readable through compact
+World/read/search and can feed the existing browser-context `goto(url)` contract, but it is not an element binding and
+does not make an expired E-ref executable. Unsupported schemes and credential-bearing destinations remain private;
+overlong values are marked truncated.
+
+Provider-free acceptance covers: safe relative/base URL normalization; current World-to-existing-goto resolution;
+compact read/search retention; expired-history removal of E/R/N/F handles while retaining the exact URL; pair-safe
+ToolCall/ToolReturn projection and Harness suffix preservation; first/second/later closed-route behavior; one-turn
+review consumption; review absence from checkpoint restore; review truncation fallback to the existing deliberate
+ActionPolicy; and zero-dispatch rejection of an immediate reviewed-route replay. A fresh Task554 rerun is still the
+live acceptance gate; until it completes, this item remains implemented but not live-verified. The focused owner,
+history, Surface, and vertical suite reports `294 passed, 3 skipped`. The fixed BrowserGym Python full suite reports
+`2081 passed, 19 skipped, 1 deselected, 1 warning`; the sole deselection is the same repository-missing archived
+dashboard trace documented above. Ruff and `git diff --check` pass.

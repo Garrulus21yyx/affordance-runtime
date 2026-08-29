@@ -368,16 +368,15 @@ This was initially classified as a long-horizon failed-route convergence and eff
 invalidation above supersedes that classification; it still does not justify reopening the action projection or
 canonical provider-history contracts.
 
-The failed-route owner repair is implemented but not yet live-verified. `EpisodeMonitor` now retains its existing
-bounded ref-free GUI-attempt window across local `NEW_INFORMATION`, because new public text does not prove task
-progress. When a dispatched action returns to a semantic page where an earlier outbound attempt began, the Monitor
-emits the already-declared `ROUTE_REGRESSION` fact on that first closed excursion. It does not classify the route as
-semantically wrong. The signal purchases one existing deliberate `ActionPolicy` call over `TaskGoal`, fresh World,
-recent completed results, and the outbound signature; the model owns whether the acquired result is useful and which
-different action to take. An immediate exact outbound replay is rejected by the existing CoreLoop before dispatch,
-with the same one-fallback-then-block algebra already used for rejected local-tool recovery. The unowned
-`STRATEGY_STALL` recovery kind was removed. No Replanner, planning tree, progress state, Store, cursor, history path,
-or task/site keyword rule was added.
+The failed-route owner repair is implemented but not yet live-verified. `EpisodeMonitor` retains its bounded ref-free
+GUI-attempt window across local `NEW_INFORMATION`, because new public text does not itself prove task progress. One
+closed `A -> ... -> A` excursion is nevertheless normal information acquisition—for example, opening a record,
+reading it, and returning to a list—so Runtime lets the first closure continue. The second distinct closure emits one
+typed `STRATEGY_REVIEW` fact. It does not classify either route as semantically wrong. The signal purchases one
+model review over `TaskGoal`, fresh World, official completed history, and the outbound signature; the immediately
+following `ActionPolicy` owns whether the acquired results are useful and which current action to take. An immediate
+exact replay of the reviewed outbound action remains rejected by the existing CoreLoop before dispatch. No Replanner,
+planning tree, persistent progress state, Store, cursor, alternate history path, or task/site keyword rule was added.
 
 This boundary follows the useful separation in current primary work: VeriGUI verifies local action effects against
 the next observation, while AgentOccam exposes model-owned branch/prune decisions and Agent S2 delegates semantic
@@ -385,10 +384,10 @@ plan revision to a model role rather than a deterministic executor
 ([VeriGUI](https://arxiv.org/abs/2604.05477),
 [AgentOccam](https://arxiv.org/abs/2410.13825),
 [Agent S2](https://arxiv.org/abs/2504.00906)). The project-level inference is narrower than those systems: Runtime
-proves only the closed route and exact replay; the single ActionPolicy performs the reflection. Provider-free
-verification covers first-return recovery, an intervening informative read, forward-only non-regression, one
-deliberate event, exact GUI replay with zero additional dispatch, and a materially different route reaching task
-completion. After W0 deployment consistency and the Map website data are restored, Task426 and one fresh held-out
+proves only closed-route structure and exact replay; model policy owns reflection. Provider-free verification covers
+first-return continuation, an intervening informative read, forward-only behavior, one second-closure review, exact
+GUI replay with zero additional dispatch, and a materially different route reaching task completion. After W0
+deployment consistency and the Map website data are restored, Task426 and one fresh held-out
 long task remain required before this gap can be closed.
 The fixed BrowserGym Python full suite reports 1,822 passed and 19 skipped; its sole failure remains the pre-existing
 `docs/interaction-shell.md` documentation-governance count, not a product or recovery regression.
@@ -2346,28 +2345,44 @@ persists only redacted origins. It cannot attest filter activation: the Shell br
 and attest the required strict profile before navigation. Actual public navigation remains authorization-gated and
 cannot contribute formal benchmark truth.
 
-## 2026-08-29 — Clean low-frequency strategy revision boundary
+## 2026-08-29 — Clean history, currentness, and low-frequency strategy-review boundary
 
 Long-route recovery remains inside the existing `EpisodeMonitor → RecoverySignal → ActionPolicy` chain. The Monitor
-does not infer task truth or choose an alternative route. It only counts completed semantic route regressions already
-identified from typed GUI transitions. The first closed route continues through the existing deliberate ActionPolicy;
-the second distinct closed route carries `recovery_attempt=2` and admits exactly one optional strategy-revision call
-for that task revision. Later recoveries do not reschedule that call.
+does not infer task truth or choose an alternative route. It counts typed closed GUI excursions. The first closed
+route is treated as ordinary acquisition; the second distinct closed route carries `recovery_attempt=2` and admits
+one optional strategy-review call. Later distinct acquisitions continue, while the existing same-action/result and
+short-cycle producers still detect true repetition.
 
 `ModelBackedAgentPolicy` owns this low-frequency scheduling because it already owns ActionPolicy model invocation.
-The existing PydanticAI provider boundary produces one bounded, complete replacement `StrategyRevision` containing
-model-authored verified facts, explicitly unverified hypotheses, remaining questions, next intent, and failed
-strategies. Its input is the official settled PydanticAI history plus the current TaskGoal/GoalPlan, one fresh World,
-and the typed recovery signal. The value is advisory working state: it cannot modify World, authorize an action,
-prove task completion, or become a second history. It is projected into the next ordinary ActionPolicy request and
-persisted only with the existing policy checkpoint; Trace observes the same typed invocation before the action call.
+The existing PydanticAI provider boundary produces one bounded `StrategyRevision` containing model-authored verified
+facts, explicitly unverified hypotheses, remaining questions, next intent, and failed strategies. Its input is the
+official settled PydanticAI history plus current TaskGoal/GoalPlan, one fresh World, and the typed recovery signal.
+The value is consumed only by the immediately following ActionPolicy request. It is not checkpointed, restored, or
+replayed, cannot modify World, authorize an action, prove task completion, or become a second history. Trace observes
+the typed invocation without becoming state.
 
-Provider failure, schema failure, timeout, or `finish_reason=length|max_tokens` discards the revision and immediately
-falls back to one ordinary ActionPolicy call. The truncation rule rejects an incomplete provider envelope; Runtime
-does not truncate an accepted progress record. The ordinary action path applies the same physical-response check so
-a syntactically parseable but provider-truncated ToolCall cannot be accepted as complete. Existing ToolCall/ToolReturn
-pairing, history compaction, cursor behavior, World projection, BrowserGym acquisition, Binder, Executor, evaluator,
-and frontend contracts are unchanged.
+Provider failure, schema failure, timeout, or `finish_reason=length|max_tokens` discards the review and falls back to
+the existing deliberate ActionPolicy profile. The truncation rule rejects an incomplete provider envelope; Runtime
+does not truncate an accepted review. The action path applies the same physical-response check so a syntactically
+parseable but provider-truncated ToolCall cannot be accepted as complete.
+
+Cross-turn semantics have exactly two authorities. Official PydanticAI messages retain the pair-safe recent suffix;
+PydanticAI Harness is the sole semantic compactor of expired history and retains bounded completed outcomes, exact
+task-required facts, and route-level failures. It removes prospective next-intent state and observation-local
+`E/R/N/F` refs. The one fresh `WorldObservation` is the sole current-state and executable-ref authority.
+
+BrowserGym's SurfaceAdapter now also projects a normalized, bounded HTTP(S) link destination as
+`semantic.link.destination` for current link records. This is read-only page semantics, so compact World/read/search
+can return a requested exact URL without opening each detail page merely to rediscover it. It never enters a private
+element binding or extends a BID/E-ref lifetime. Execution remains on the existing paths: current `activate(E-ref)` or,
+when the selected browser profile exposes it, current browser-context `goto(url) → Binder → BrowserGym`. Unsupported
+schemes and credential-bearing URLs are not projected, and overlong destinations carry an honest truncation marker.
+ToolCall/ToolReturn pairing, cursor behavior, Executor, evaluator, and frontend contracts remain unchanged.
+
+The provider-free convergence gate reports `294 passed, 3 skipped` for the focused owner/history/Surface/vertical
+set and `2081 passed, 19 skipped, 1 deselected, 1 warning` for the fixed BrowserGym Python full suite. The deselected
+test depends on the already-documented absent archived dashboard trace. Ruff and `git diff --check` pass. These gates
+prove the bounded contracts above, not live task success; Task554 remains open until its fresh rerun is inspected.
 
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or

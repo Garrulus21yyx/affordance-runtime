@@ -711,7 +711,7 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
-def test_closed_gui_route_gets_one_deliberate_turn_and_exact_replay_is_not_dispatched() -> None:
+def test_second_closed_gui_route_gets_one_review_and_exact_replay_is_not_dispatched() -> None:
     @dataclass
     class RouteRecoveryPolicy:
         turns: int = 0
@@ -740,42 +740,73 @@ def test_closed_gui_route_gets_one_deliberate_turn_and_exact_replay_is_not_dispa
             if self.turns == 3:
                 return self.select(context, "return-route", "provider-call:return")
             if self.turns == 4:
-                assert context.control_feedback["kind"] == "route_regression"
-                assert context.control_feedback["observed_evidence"]["returned_to_prior_semantic_page"] is True
-                return self.select(context, "primary-route", "provider-call:primary-replay")
+                assert not context.control_feedback
+                return self.select(context, "second-route", "provider-call:second-first")
             if self.turns == 5:
+                return SearchPageContentResult(
+                    context.context_id,
+                    "search_page_content",
+                    {"query": "second destination status"},
+                    {
+                        "kind": "Matches",
+                        "items": ({"label": "Second destination status", "value": "Not Found"},),
+                        "total_count": 1,
+                    },
+                    "provider-call:read-second-destination",
+                )
+            if self.turns == 6:
+                return self.select(context, "return-route", "provider-call:second-return")
+            if self.turns == 7:
+                assert context.control_feedback["kind"] == "strategy_review"
+                assert context.control_feedback["observed_evidence"]["returned_to_prior_semantic_page"] is True
+                return self.select(context, "second-route", "provider-call:second-replay")
+            if self.turns == 8:
                 assert context.control_feedback["kind"] == "control_stall"
                 assert context.control_feedback["recovery_attempt"] == 2
-                return self.select(context, "alternate-route", "provider-call:alternate")
+                return self.select(context, "completion-route", "provider-call:completion")
             raise AssertionError("route recovery should finish after the alternate route")
 
     async def scenario() -> None:
-        first = _route_world("route-a:first", "/search", ("primary-route", "alternate-route"))
+        first = _route_world(
+            "route-a:first",
+            "/search",
+            ("primary-route", "second-route", "completion-route"),
+        )
         failed = _route_world("route-b", "/relation/failed", ("return-route",))
-        returned = _route_world("route-a:returned", "/search", ("primary-route", "alternate-route"))
+        returned = _route_world(
+            "route-a:returned",
+            "/search",
+            ("primary-route", "second-route", "completion-route"),
+        )
+        second_failed = _route_world("route-b:second", "/relation/second-failed", ("return-route",))
+        returned_twice = _route_world(
+            "route-a:returned-twice",
+            "/search",
+            ("primary-route", "second-route", "completion-route"),
+        )
         complete = _route_world("route-c", "/done", ())
         policy = RouteRecoveryPolicy()
         runtime = TargetRuntime(
             AgentDecisionPorts(policy),
             CoreActionOutcomeProjector(),
             RouteTaskEvaluator(),
-            goal_compiler=NotRequiredGoalCompiler("route_regression_test"),
+            goal_compiler=NotRequiredGoalCompiler("strategy_review_test"),
             episode_monitor=EpisodeMonitor(AgentLoopProfile(8, 1)),
         )
         environment = ScriptedEnvironment(
             initial_observation=first,
-            post_observations=(failed, returned, complete),
-            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(3)),
+            post_observations=(failed, returned, second_failed, returned_twice, complete),
+            results=tuple(ActionResult("*", DispatchStatus.SENT, "dom", True) for _ in range(5)),
         )
 
         state = await runtime.run_task(environment, _route_task())
 
         assert state.status is RunStatus.DONE
-        assert policy.turns == 5
-        assert state.execution_count == 3
-        assert environment.execute_calls == 3
+        assert policy.turns == 8
+        assert state.execution_count == 5
+        assert environment.execute_calls == 5
         assert state.last_step is not None
-        assert state.last_step.decision.tool_call_id == "provider-call:alternate"
+        assert state.last_step.decision.tool_call_id == "provider-call:completion"
 
     asyncio.run(scenario())
 

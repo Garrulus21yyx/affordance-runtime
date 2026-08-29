@@ -76,9 +76,9 @@ def test_each_new_typed_recovery_event_gets_one_deliberate_call_regardless_of_ep
     assert repeated.phase is ActionPolicyInvocationPhase.ORDINARY
 
 
-def test_route_regression_uses_the_existing_operational_deliberate_profile() -> None:
+def test_strategy_review_uses_the_existing_operational_deliberate_profile() -> None:
     profile = ActionPolicyReasoningPolicy().select(
-        _context("route_regression", "route:stable"),
+        _context("strategy_review", "route:stable"),
         frozenset(),
     )
 
@@ -87,24 +87,41 @@ def test_route_regression_uses_the_existing_operational_deliberate_profile() -> 
     assert profile.thinking_mode == "enabled"
 
 
-def test_completed_or_unavailable_strategy_revision_never_reenters_deliberate_output() -> None:
+def test_accepted_one_turn_strategy_review_uses_one_ordinary_action() -> None:
     policy = ActionPolicyReasoningPolicy()
+    context = SimpleNamespace(
+        control_feedback={
+            "kind": "strategy_review",
+            "stable_signature": "route:accepted",
+            "recovery_attempt": 2,
+            "strategy_revision_status": "accepted",
+        },
+        strategy_revision=SimpleNamespace(source_recovery_signature="route:accepted"),
+    )
 
-    for status in ("accepted", "unavailable"):
-        context = SimpleNamespace(
-            control_feedback={
-                "kind": "route_regression",
-                "stable_signature": f"route:{status}",
-                "recovery_attempt": 2,
-                "strategy_revision_status": status,
-            }
-        )
+    profile = policy.select(context, frozenset())
 
-        profile = policy.select(context, frozenset())
+    assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
+    assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
+    assert profile.thinking_mode == "disabled"
 
-        assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
-        assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
-        assert profile.thinking_mode == "disabled"
+
+def test_unavailable_strategy_review_falls_back_to_deliberate_action_policy() -> None:
+    context = SimpleNamespace(
+        control_feedback={
+            "kind": "strategy_review",
+            "stable_signature": "route:unavailable",
+            "recovery_attempt": 2,
+            "strategy_revision_status": "unavailable",
+        },
+        strategy_revision=None,
+    )
+
+    profile = ActionPolicyReasoningPolicy().select(context, frozenset())
+
+    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
+    assert profile.trigger is ActionPolicyInvocationTrigger.OPERATIONAL_STALL
+    assert profile.thinking_mode == "enabled"
 
 
 def test_representation_semantic_choice_is_operation_and_target_stable() -> None:

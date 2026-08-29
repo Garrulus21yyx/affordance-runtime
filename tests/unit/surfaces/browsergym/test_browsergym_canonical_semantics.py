@@ -13,6 +13,7 @@ from affordance_runtime.surfaces.browsergym.entity_identity import (
 )
 from affordance_runtime.surfaces.browsergym.semantics import (
     ACCESSIBLE_NAME_TRUNCATED_STATE_KEY,
+    MAX_LINK_DESTINATION_TEXT,
     MAX_SEMANTIC_TEXT,
     PRIVATE_CONTROL_PROPERTIES_KEY,
     BrowserGymSemanticError,
@@ -151,6 +152,71 @@ def test_ax_name_remains_authoritative_while_dom_semantics_are_preserved() -> No
         "semantic.dom.attribute.aria-label": "conflicting DOM label",
         "semantic.dom.attribute.class_tokens": ("primary", "action"),
     }
+
+
+def test_link_destination_is_current_read_only_semantics_not_a_binding() -> None:
+    raw = raw_observation(
+        ax_node("control", "link", "Movie post"),
+        url="https://forum.example/movies?page=2",
+    )
+    raw["dom_object"] = dom_snapshot((
+        "a",
+        "control",
+        {"href": "/movies/42?view=full#reviews", "class": "post-link"},
+    ))
+
+    projection = _projection(raw)
+    target = next(item for item in _page_targets(projection.world) if item.role == "link")
+
+    assert dict(target.state)["semantic.link.destination"] == (
+        "https://forum.example/movies/42?view=full#reviews"
+    )
+    bindings = tuple(
+        binding
+        for binding in _page_bindings(projection.world)
+        if binding.target_id == target.target_id
+    )
+    assert bindings
+    assert all(not binding.destination_required for binding in bindings)
+    assert all("https://forum.example/movies/42" not in repr(binding.payload) for binding in bindings)
+
+
+@pytest.mark.parametrize("href", ("javascript:alert(1)", "mailto:user@example.com", "data:text/plain,x"))
+def test_non_http_link_destinations_remain_private(href: str) -> None:
+    raw = raw_observation(
+        ax_node("control", "link", "Unsafe link"),
+        url="https://forum.example/",
+    )
+    raw["dom_object"] = dom_snapshot(("a", "control", {"href": href}),)
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert "semantic.link.destination" not in dict(control.public_state)
+
+
+def test_link_destination_uses_document_base_and_marks_honest_truncation() -> None:
+    long_path = "/movies/" + ("segment/" * 400)
+    snapshot = dom_snapshot(("a", "control", {"href": long_path}),)
+    strings = snapshot["strings"]
+    assert isinstance(strings, list)
+    strings.append("https://cdn.example/catalog/")
+    documents = snapshot["documents"]
+    assert isinstance(documents, list) and isinstance(documents[0], dict)
+    documents[0]["baseURL"] = len(strings) - 1
+    raw = raw_observation(
+        ax_node("control", "link", "Long link"),
+        url="https://forum.example/",
+    )
+    raw["dom_object"] = snapshot
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    state = dict(control.public_state)
+    assert state["semantic.link.destination"].startswith("https://cdn.example/movies/")
+    assert len(state["semantic.link.destination"]) == MAX_LINK_DESTINATION_TEXT
+    assert state["semantic.link.destination.truncated"] is True
 
 
 def test_informational_ax_text_is_not_reduced_to_the_control_label_limit() -> None:

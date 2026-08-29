@@ -1,10 +1,9 @@
-"""Bounded, non-authoritative semantic progress for recovery turns."""
+"""Bounded, non-authoritative strategy review for one recovery turn."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 
@@ -52,10 +51,11 @@ class WorkingHypothesis:
 
 @dataclass(frozen=True)
 class StrategyRevision:
-    """One whole replacement produced only at a typed strategy-recovery boundary.
+    """One review consumed by the immediately following ActionPolicy call.
 
-    This value records model-authored working state. It is neither World truth,
-    task completion evidence, nor a mutable plan maintained by Runtime.
+    This value is neither World truth, durable task progress, task completion
+    evidence, nor a mutable plan maintained by Runtime.  Official PydanticAI
+    history and Harness compaction remain the sole cross-turn semantic memory.
     """
 
     task_revision: int
@@ -138,55 +138,6 @@ class StrategyRevision:
             "source_recovery_attempt": self.source_recovery_attempt,
             "revision_digest": self.revision_digest,
         }
-
-    def checkpoint_projection(self) -> dict[str, object]:
-        return {
-            "task_revision": self.task_revision,
-            "source_recovery_signature": self.source_recovery_signature,
-            **self.public_projection(),
-        }
-
-    @classmethod
-    def from_checkpoint(cls, payload: object) -> StrategyRevision:
-        if not isinstance(payload, Mapping):
-            raise TypeError("strategy revision checkpoint must be a mapping")
-        raw_facts = payload.get("verified_facts", ())
-        raw_hypotheses = payload.get("working_hypotheses", ())
-        raw_questions = payload.get("remaining_questions", ())
-        raw_failed = payload.get("failed_strategies", ())
-        if (
-            not isinstance(raw_facts, Sequence)
-            or isinstance(raw_facts, str | bytes)
-            or not isinstance(raw_hypotheses, Sequence)
-            or isinstance(raw_hypotheses, str | bytes)
-            or not isinstance(raw_questions, Sequence)
-            or isinstance(raw_questions, str | bytes)
-            or not isinstance(raw_failed, Sequence)
-            or isinstance(raw_failed, str | bytes)
-            or any(not isinstance(item, Mapping) for item in raw_facts)
-            or any(not isinstance(item, Mapping) for item in raw_hypotheses)
-        ):
-            raise TypeError("strategy revision checkpoint collections are invalid")
-        revision = cls(
-            task_revision=int(payload["task_revision"]),
-            source_recovery_signature=str(payload["source_recovery_signature"]),
-            source_recovery_attempt=int(payload["source_recovery_attempt"]),
-            disposition=StrategyDisposition(str(payload["disposition"])),
-            verified_facts=tuple(
-                StrategyFact(str(item["claim"]), str(item["value"]), str(item["source"])) for item in raw_facts
-            ),
-            working_hypotheses=tuple(
-                WorkingHypothesis(str(item["claim"]), item.get("needs_verification") is True) for item in raw_hypotheses
-            ),
-            remaining_questions=tuple(str(item) for item in raw_questions),
-            next_intent=str(payload["next_intent"]),
-            failed_strategies=tuple(str(item) for item in raw_failed),
-        )
-        expected = payload.get("revision_digest")
-        if expected is not None and expected != revision.revision_digest:
-            raise ValueError("strategy revision checkpoint digest is invalid")
-        return revision
-
 
 __all__ = [
     "StrategyDisposition",

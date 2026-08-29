@@ -839,7 +839,7 @@ def test_same_gui_operation_reaching_a_seen_result_world_requests_new_route() ->
     assert recovery.recovery_signal.observed_evidence["repeated_result_world"] is True
 
 
-def test_first_closed_gui_route_requests_deliberate_review() -> None:
+def test_first_closed_gui_route_is_normal_information_acquisition() -> None:
     portland = _world("observation:portland", route="/wiki/Portland_Maine")
     acadia = _world("observation:acadia", route="/wiki/Acadia_National_Park")
     returned_portland = _world("observation:portland-returned", route="/wiki/Portland_Maine")
@@ -847,17 +847,14 @@ def test_first_closed_gui_route_requests_deliberate_review() -> None:
     monitor.start_episode(portland, _evaluation(portland))
 
     first = _evaluate(monitor, _dispatched_step(portland, acadia))
-    recovery = _evaluate(monitor, _dispatched_step(acadia, returned_portland))
+    returned = _evaluate(monitor, _dispatched_step(acadia, returned_portland))
 
     assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert EpisodeMonitorEvent.STATE_CHANGED in recovery.events
-    assert EpisodeMonitorEvent.ROUTE_REGRESSION in recovery.events
-    assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
-    assert recovery.recovery_signal.observed_evidence["route_effectful_attempt_count"] == 2
-    assert recovery.recovery_signal.prohibited_attempt_signature == monitor.recent_gui_attempts[0]
-    assert "returned to the semantic page" in recovery.recovery_signal.human_instruction
+    assert returned.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert EpisodeMonitorEvent.STATE_CHANGED in returned.events
+    assert EpisodeMonitorEvent.ROUTE_REVIEW not in returned.events
+    assert returned.recovery_signal is None
+    assert monitor.closed_route_count == 1
     assert len(monitor.recent_gui_attempts) <= 16
 
 
@@ -901,7 +898,7 @@ def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
     assert period == 0
 
 
-def test_six_step_gui_excursion_recovers_on_first_return_to_origin() -> None:
+def test_six_step_gui_excursion_is_not_declared_failed_on_first_return_to_origin() -> None:
     worlds = tuple(_world(f"observation:cycle-{index}", route=f"/state/{index}") for index in range(6))
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(worlds[0], _evaluation(worlds[0]))
@@ -914,19 +911,16 @@ def test_six_step_gui_excursion_recovers_on_first_return_to_origin() -> None:
         for index in range(6)
     )
 
-    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in first_excursion[:-1])
-    recovery = first_excursion[-1]
-    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
-    assert recovery.recovery_signal.observed_evidence["route_effectful_attempt_count"] == 6
+    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in first_excursion)
+    assert all(item.recovery_signal is None for item in first_excursion)
+    assert monitor.closed_route_count == 1
 
 
 def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> None:
     origin = _multi_route_world(
         "observation:origin",
         "/search",
-        ("first_candidate", "second_candidate"),
+        ("first_candidate", "second_candidate", "third_candidate"),
     )
     first_failed = _multi_route_world(
         "observation:first-failed",
@@ -936,7 +930,7 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
     returned_once = _multi_route_world(
         "observation:returned-once",
         "/search",
-        ("first_candidate", "second_candidate"),
+        ("first_candidate", "second_candidate", "third_candidate"),
     )
     second_failed = _multi_route_world(
         "observation:second-failed",
@@ -946,7 +940,17 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
     returned_twice = _multi_route_world(
         "observation:returned-twice",
         "/search",
-        ("first_candidate", "second_candidate"),
+        ("first_candidate", "second_candidate", "third_candidate"),
+    )
+    third_result = _multi_route_world(
+        "observation:third-result",
+        "/candidate/third",
+        ("return_to_results",),
+    )
+    returned_thrice = _multi_route_world(
+        "observation:returned-thrice",
+        "/search",
+        ("first_candidate", "second_candidate", "third_candidate"),
     )
     monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
     monitor.start_episode(origin, _evaluation(origin))
@@ -964,17 +968,26 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
         monitor,
         _dispatched_step(second_failed, returned_twice, target_id="return_to_results"),
     )
-
-    assert first_recovery.recovery_signal is not None
-    assert first_recovery.recovery_signal.recovery_attempt == 1
-    assert second_recovery.recovery_signal is not None
-    assert second_recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
-    assert second_recovery.recovery_signal.recovery_attempt == 2
-    assert (
-        second_recovery.recovery_signal.prohibited_attempt_signature
-        != first_recovery.recovery_signal.prohibited_attempt_signature
+    _evaluate(
+        monitor,
+        _dispatched_step(returned_twice, third_result, target_id="third_candidate"),
     )
-    assert monitor.route_regression_count == 2
+    third_return = _evaluate(
+        monitor,
+        _dispatched_step(third_result, returned_thrice, target_id="return_to_results"),
+    )
+
+    assert first_recovery.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert first_recovery.recovery_signal is None
+    assert second_recovery.recovery_signal is not None
+    assert second_recovery.recovery_signal.kind is RecoveryKind.STRATEGY_REVIEW
+    assert second_recovery.recovery_signal.recovery_attempt == 2
+    assert second_recovery.recovery_signal.observed_evidence["closed_route_count"] == 2
+    assert EpisodeMonitorEvent.ROUTE_REVIEW in second_recovery.events
+    assert third_return.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert third_return.recovery_signal is None
+    assert EpisodeMonitorEvent.ROUTE_REVIEW not in third_return.events
+    assert monitor.closed_route_count == 3
 
 
 def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
@@ -1002,12 +1015,11 @@ def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
     assert len(monitor.recent_gui_attempts) == 1
     assert monitor.active_gui_cycle_digest == ""
 
-    recovery = _evaluate(monitor, _dispatched_step(second, first))
+    returned = _evaluate(monitor, _dispatched_step(second, first))
 
-    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert recovery.recovery_signal is not None
-    assert recovery.recovery_signal.kind is RecoveryKind.ROUTE_REGRESSION
-    assert recovery.recovery_signal.prohibited_attempt_signature == monitor.recent_gui_attempts[0]
+    assert returned.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert returned.recovery_signal is None
+    assert monitor.closed_route_count == 1
 
 
 def test_forward_only_gui_route_does_not_invent_a_regression() -> None:
@@ -1022,7 +1034,7 @@ def test_forward_only_gui_route_does_not_invent_a_regression() -> None:
 
     assert first_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert second_transition.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert EpisodeMonitorEvent.ROUTE_REGRESSION not in second_transition.events
+    assert EpisodeMonitorEvent.ROUTE_REVIEW not in second_transition.events
 
 
 def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> None:
@@ -1093,5 +1105,5 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "recent_gui_attempts",
         "recent_gui_results",
         "active_gui_cycle_digest",
-        "route_regression_count",
+        "closed_route_count",
     } == set(vars(monitor)) - {"profile"}

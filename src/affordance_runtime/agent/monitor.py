@@ -59,7 +59,7 @@ class EpisodeMonitor:
     current_findings_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
-    route_regression_count: int = 0
+    closed_route_count: int = 0
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
@@ -73,7 +73,7 @@ class EpisodeMonitor:
         self.current_findings_digest = current_findings_digest(world)
         self.observation_only_streak = 0
         self.recovery_count = 0
-        self.route_regression_count = 0
+        self.closed_route_count = 0
         self.latest_attempt_signature = None
         self.same_attempt_streak = 0
         self.no_progress_count = 0
@@ -127,7 +127,7 @@ class EpisodeMonitor:
         }:
             self.observation_only_streak = 0
             self.recovery_count = 0
-            self.route_regression_count = 0
+            self.closed_route_count = 0
             self.same_attempt_streak = 0
             self.recent_gui_attempts = ()
             self.recent_gui_results = ()
@@ -196,23 +196,32 @@ class EpisodeMonitor:
         cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)
         if route_origin is not None:
             self.observation_only_streak = 0
-            self.no_progress_count += 1
+            self.active_gui_cycle_digest = ""
+            self.closed_route_count = min(3, self.closed_route_count + 1)
+            if self.closed_route_count != 2:
+                # Returning from a distinct page is a normal acquisition pattern
+                # (for example open an item, read it, then return to the list).
+                # Runtime cannot call it failed merely because the route closed.
+                self.recovery_count = 0
+                self.same_attempt_streak = 1
+                self.latest_attempt_signature = gui_signature
+                return EpisodeMonitorTransition(
+                    tuple(dict.fromkeys(events)),
+                    EpisodeMonitorRecommendation.CONTINUE,
+                )
             self.same_attempt_streak = 1
             self.latest_attempt_signature = route_origin
             self.recovery_count = 1
-            self.route_regression_count = min(3, self.route_regression_count + 1)
-            self.active_gui_cycle_digest = ""
-            signal = _route_regression_recovery_signal(
+            signal = _closed_route_review_signal(
                 result,
                 self,
                 outbound_attempt=route_origin,
                 route_length=route_length,
-                recovery_attempt=self.route_regression_count,
             )
             return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REGRESSION))),
+                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REVIEW))),
                 EpisodeMonitorRecommendation.RECOVER,
-                RecoveryKind.ROUTE_REGRESSION.value,
+                RecoveryKind.STRATEGY_REVIEW.value,
                 signal,
             )
         if repeated_gui_result and state_changed and gui_signature is not None:
@@ -503,19 +512,18 @@ def _repeated_gui_result_signal(
     )
 
 
-def _route_regression_recovery_signal(
+def _closed_route_review_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
     *,
     outbound_attempt: PublicAttemptSignature,
     route_length: int,
-    recovery_attempt: int,
 ) -> RecoverySignal:
-    """Request semantic review after one effectful excursion returns to its origin."""
+    """Request one semantic review after the second distinct closed route."""
 
     returned_page_digest = public_page_semantic_digest(result.after_world)
     signature = (
-        "route_regression:sha256:"
+        "strategy_review:sha256:"
         + hashlib.sha256(
             _canonical_json(
                 (
@@ -537,10 +545,11 @@ def _route_regression_recovery_signal(
         )
     )
     return RecoverySignal(
-        RecoveryKind.ROUTE_REGRESSION,
+        RecoveryKind.STRATEGY_REVIEW,
         signature,
         {
             "returned_to_prior_semantic_page": True,
+            "closed_route_count": monitor.closed_route_count,
             "route_effectful_attempt_count": route_length,
             "outbound_operation": outbound_attempt.operation,
             "return_operation": current_attempt.operation if current_attempt is not None else "",
@@ -555,7 +564,7 @@ def _route_regression_recovery_signal(
             "requirements. Do not immediately replay that exact outbound attempt; choose a different current route, "
             "use the acquired result, or finish when the requested answer is already supported."
         ),
-        recovery_attempt=recovery_attempt,
+        recovery_attempt=2,
     )
 
 

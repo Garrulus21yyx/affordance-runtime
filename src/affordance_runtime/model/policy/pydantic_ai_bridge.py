@@ -139,7 +139,7 @@ prefix, so preserve only information needed to continue the user's task correctl
 Use these exact headings, omitting empty sections:
 
 ## Completed outcomes
-At most three stable user-requirement outcomes already completed. Record outcomes, not actions
+At most eight stable user-requirement outcomes already completed. Record outcomes, not actions
 taken, current stage, or a future plan.
 
 ## Verified facts
@@ -164,7 +164,9 @@ At most two terse strategy-level failures worth avoiding. Never enumerate attemp
 individual clicks, reads, tab switches, or other action history.
 
 Fresh World supplied to the continuing agent is authoritative. Focus on conclusions and
-outcomes rather than narrating steps. Do not preserve current URLs, stale loading state,
+outcomes rather than narrating steps. Preserve an exact link destination when it is a requested
+output or the public source of a retained fact; do not preserve incidental current browser URLs,
+stale loading state,
 selectors, call-local E/R/F/N refs, old control IDs, or incidental page metadata. Do not write
 remaining questions, working hypotheses, current stage, next intent, or any other prospective
 task state: the continuing ActionPolicy derives its next action from the current TaskGoal,
@@ -181,8 +183,9 @@ _HISTORY_COMPACTION_INSTRUCTIONS = (
 )
 _STRATEGY_REVISION_INSTRUCTIONS = f"""
 You are the low-frequency StrategyReviser inside one general GUI agent. A mechanical monitor has
-reported a second or later closed route/cycle. Produce one concise replacement of the agent's
-semantic working state; do not choose or call a GUI tool.
+reported a second closed route/cycle. Produce one concise review for the immediately following
+ActionPolicy call; do not choose or call a GUI tool. This review is not durable progress and will
+not be replayed on later turns.
 
 Use completed ToolReturns and explicit prior model conclusions as historical evidence, and use the
 supplied fresh World as the only current-state authority. Apply this evidence rule:
@@ -682,14 +685,14 @@ class PydanticAIGroundedDecisionPort:
         self,
         request: ModelDecisionRequest,
     ) -> ModelInvocationResult[StrategyRevision]:
-        """Produce one advisory replacement frame from the official settled history."""
+        """Produce one advisory frame for the immediately following action call."""
 
         feedback = request.agent_context.control_feedback
         signature = str(feedback.get("stable_signature", ""))
         attempt = feedback.get("recovery_attempt", 0)
         kind = str(feedback.get("kind", ""))
         if (
-            kind not in {"route_regression", "state_oscillation"}
+            kind not in {"strategy_review", "state_oscillation"}
             or not signature
             or type(attempt) is not int
             or attempt != 2
@@ -730,11 +733,6 @@ class PydanticAIGroundedDecisionPort:
                 "task_plan": self.envelope_binder.context_binder.public_task_plan(request.agent_context),
                 "fresh_world": delivery.view.text,
                 "recovery": to_json_compatible(feedback),
-                "prior_strategy_revision": (
-                    request.agent_context.strategy_revision.public_projection()
-                    if request.agent_context.strategy_revision is not None
-                    else None
-                ),
             }
             encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             if len(encoded.encode()) > 64 * 1024:
@@ -780,7 +778,7 @@ class PydanticAIGroundedDecisionPort:
                 output_type=ToolOutput(
                     StrategyRevisionModelResponse,
                     name="strategy_revision",
-                    description="One complete replacement of semantic task progress.",
+                    description="One bounded strategy review for the next ActionPolicy call.",
                     strict=True,
                 ),
                 retries={"tools": 0, "output": 1},
@@ -3895,7 +3893,7 @@ def _strategy_revision_success_attempt(
         "llm.tools": (
             {
                 "tool.name": "strategy_revision",
-                "tool.description": "One complete replacement of semantic task progress.",
+                "tool.description": "One bounded strategy review for the next ActionPolicy call.",
                 "tool.json_schema": StrategyRevisionModelResponse.model_json_schema(),
             },
         ),
@@ -3922,7 +3920,7 @@ def _strategy_revision_success_attempt(
         final_content_present=True,
         reasoning_content_present=reasoning_content_present,
         role="strategy_reviser",
-        mode="replacement_progress",
+        mode="one_turn_strategy_review",
         schema_version=_STRATEGY_REVISION_SCHEMA,
         thinking_requested="disabled",
         thinking_effective="disabled",
@@ -3978,7 +3976,7 @@ def _strategy_revision_failure_attempt(
         finish_reason=str(response.get("finish_reason") or "")[:80],
         max_output_tokens=_STRATEGY_REVISION_MAX_OUTPUT_TOKENS,
         role="strategy_reviser",
-        mode="replacement_progress",
+        mode="one_turn_strategy_review",
         schema_version=_STRATEGY_REVISION_SCHEMA,
         thinking_requested="disabled",
         thinking_effective="disabled",

@@ -52,11 +52,6 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
-from affordance_runtime.agent.strategy_revision import (
-    StrategyDisposition,
-    StrategyFact,
-    StrategyRevision,
-)
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.evaluation import (
@@ -731,7 +726,7 @@ def test_schema_valid_grounding_rejection_returns_on_same_call_before_next_polic
     asyncio.run(scenario())
 
 
-def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
+def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
@@ -740,24 +735,11 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
-    revision = StrategyRevision(
-        3,
-        "route:checkpoint",
-        2,
-        StrategyDisposition.CONTINUE,
-        (StrategyFact("Supported value", "33 km", "completed ToolReturn"),),
-        (),
-        ("One remaining answer field",),
-        "Resolve the remaining answer field",
-        ("Reopening the failed candidate route",),
-    )
-    object.__setattr__(policy, "active_strategy_revision", revision)
-
     serialized = policy.export_checkpoint_history()
 
     assert serialized["format"] == "pydantic-ai.messages.v1"
     assert serialized["active_task_identity"] == ["task:checkpoint", 3]
-    assert serialized["strategy_revision"]["revision_digest"] == revision.revision_digest
+    assert "strategy_revision" not in serialized
     assert [message["kind"] for message in serialized["messages"]] == [
         "request",
         "response",
@@ -772,7 +754,6 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
     )
     assert restored.port.message_history == history
     assert restored.port.active_task_identity == ("task:checkpoint", 3)
-    assert restored.active_strategy_revision == revision
 
     from affordance_runtime.immutable import freeze_json
 
@@ -784,7 +765,7 @@ def test_pydantic_ai_checkpoint_history_uses_official_message_adapter() -> None:
         task_revision=3,
     )
     assert restored_from_checkpoint.port.message_history == history
-    assert restored_from_checkpoint.active_strategy_revision == revision
+    assert "strategy_revision" not in restored_from_checkpoint.export_checkpoint_history()
 
 
 def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
@@ -2804,6 +2785,9 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
                                 "target_ref": "E6",
                                 "verbs": ("activate",),
                                 "region_ref": "R2",
+                                "state": {
+                                    "semantic.link.destination": "https://example.test/results/6"
+                                },
                             },
                         ),
                         "next_cursor": "opaque-old-page",
@@ -2862,7 +2846,14 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
     assert calls["call:search"].args == {"query": "More results"}
     assert calls["call:activate"].args == {}
     assert calls["call:pending"].args == {"query": "different route"}
-    assert search_content == {"items": ({"label": "More results"},)}
+    assert search_content == {
+        "items": (
+            {
+                "label": "More results",
+                "state": {"semantic.link.destination": "https://example.test/results/6"},
+            },
+        )
+    }
     assert returns["call:activate"].content == {
         "status": "stable",
         "outcome": "Not Found page loaded",
@@ -3048,7 +3039,7 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     prompt = pydantic_bridge._HISTORY_COMPACTION_SUMMARY_PROMPT
 
     assert "## Completed outcomes" in prompt
-    assert "At most three stable user-requirement outcomes" in prompt
+    assert "At most eight stable user-requirement outcomes" in prompt
     assert "## Verified facts" in prompt
     assert "At most eight exact facts" in prompt
     assert "directly fill requested final-answer fields have highest priority" in prompt
@@ -3062,6 +3053,8 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "the continuing ActionPolicy derives its next action" in prompt
     assert "## Action outcomes" not in prompt
     assert "Never enumerate attempted URLs" in prompt
+    assert "Preserve an exact link destination when it is a requested" in prompt
+    assert "do not preserve incidental current browser URLs" in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
     assert "When every requested field is supported" in MODEL_POLICY_INSTRUCTIONS
@@ -4058,7 +4051,7 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
         first_context = replace(
             base_context,
             control_feedback={
-                "kind": "route_regression",
+                "kind": "strategy_review",
                 "stable_signature": "route:first",
                 "recovery_attempt": 1,
             },
@@ -5620,7 +5613,7 @@ def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
     assert policy.port.model_id == model_id
 
 
-def test_second_route_regression_revises_progress_then_uses_one_ordinary_action() -> None:
+def test_second_closed_route_produces_one_turn_review_then_one_ordinary_action() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -5669,7 +5662,7 @@ def test_second_route_regression_revises_progress_then_uses_one_ordinary_action(
                 evaluation,
             ),
             control_feedback={
-                "kind": "route_regression",
+                "kind": "strategy_review",
                 "stable_signature": "route:second-distinct-failure",
                 "recovery_attempt": 2,
                 "observed_evidence": {"returned_to_prior_semantic_page": True},
@@ -5680,8 +5673,7 @@ def test_second_route_regression_revises_progress_then_uses_one_ordinary_action(
 
         assert not isinstance(decision, PolicyFailure)
         assert scripted.calls == 2
-        assert policy.active_strategy_revision is not None
-        assert policy.active_strategy_revision.source_recovery_signature == "route:second-distinct-failure"
+        assert not hasattr(policy, "active_strategy_revision")
         assert policy.last_strategy_revision_invocation is not None
         assert policy.last_strategy_revision_invocation.accepted
         assert policy.last_strategy_revision_invocation.attempts[0].role == "strategy_reviser"
@@ -5701,7 +5693,7 @@ def test_second_route_regression_revises_progress_then_uses_one_ordinary_action(
     asyncio.run(scenario())
 
 
-def test_truncated_strategy_revision_is_discarded_and_falls_back_to_ordinary_action() -> None:
+def test_truncated_strategy_review_is_discarded_and_falls_back_to_deliberate_action() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -5738,7 +5730,7 @@ def test_truncated_strategy_revision_is_discarded_and_falls_back_to_ordinary_act
                 evaluation,
             ),
             control_feedback={
-                "kind": "route_regression",
+                "kind": "strategy_review",
                 "stable_signature": "route:truncated-strategy-revision",
                 "recovery_attempt": 2,
             },
@@ -5748,7 +5740,7 @@ def test_truncated_strategy_revision_is_discarded_and_falls_back_to_ordinary_act
 
         assert not isinstance(decision, PolicyFailure)
         assert scripted.calls == 2
-        assert policy.active_strategy_revision is None
+        assert not hasattr(policy, "active_strategy_revision")
         assert policy.last_strategy_revision_invocation is not None
         assert policy.last_strategy_revision_invocation.failure is not None
         assert (
@@ -5756,7 +5748,8 @@ def test_truncated_strategy_revision_is_discarded_and_falls_back_to_ordinary_act
             is StructuredOutputFailureKind.OUTPUT_TRUNCATED
         )
         assert policy.port.last_call_profile is not None
-        assert policy.port.last_call_profile.phase.value == "ordinary"
+        assert policy.port.last_call_profile.phase.value == "deliberate"
+        assert scripted.records[1].model_settings["max_tokens"] == 2048
 
     asyncio.run(scenario())
 

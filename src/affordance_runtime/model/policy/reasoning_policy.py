@@ -54,9 +54,11 @@ class ActionPolicyReasoningPolicy:
         feedback = context.control_feedback
         signature = str(feedback.get("stable_signature", ""))
         revision = getattr(context, "strategy_revision", None)
-        if signature and (
-            str(feedback.get("strategy_revision_status", "")) in {"accepted", "unavailable"}
-            or (revision is not None and revision.source_recovery_signature == signature)
+        if (
+            signature
+            and str(feedback.get("strategy_revision_status", "")) == "accepted"
+            and revision is not None
+            and revision.source_recovery_signature == signature
         ):
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.ORDINARY,
@@ -96,6 +98,6 @@ def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
         return ActionPolicyInvocationTrigger.EVIDENCE_GAP
     if kind == "control_stall":
         return ActionPolicyInvocationTrigger.CONTROL_STALL
-    if kind in {"effect_stall", "uncertain_effect", "state_oscillation", "route_regression"}:
+    if kind in {"effect_stall", "uncertain_effect", "state_oscillation", "strategy_review"}:
         return ActionPolicyInvocationTrigger.OPERATIONAL_STALL
     return None

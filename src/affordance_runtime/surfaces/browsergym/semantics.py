@@ -8,6 +8,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import TypeAlias
+from urllib.parse import urljoin, urlsplit
 
 from affordance_runtime.surfaces.browsergym.interaction_profile import (
     BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
@@ -20,6 +21,7 @@ from affordance_runtime.surfaces.browsergym.interaction_profile import (
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
+MAX_LINK_DESTINATION_TEXT = 2048
 ACCESSIBLE_NAME_TRUNCATED_STATE_KEY = "semantic.accessible_name.truncated"
 MAX_DOM_ATTRIBUTE_TOKENS = 32
 MIN_DOM_CLICKABLE_AREA = 20.0
@@ -421,8 +423,10 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
 
     BrowserGym already aligns DOM and AX nodes with one private BID.  AX
     remains authoritative for accessible role/name/state; salient DOM
-    attributes are preserved as parallel, explicitly-provenanced evidence.
-    BrowserGym's routing and rendering attributes are never projected.
+    attributes are preserved as parallel, explicitly-provenanced evidence. Raw
+    routing/rendering attributes remain private. For links, this owner exposes
+    one normalized HTTP(S) destination as read-only page semantics; it is not an
+    executable binding and never extends the lifetime of a BrowserGym BID.
     """
 
     snapshot = raw.get("dom_object")
@@ -448,6 +452,7 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
 
     result: dict[str, _DomSemanticEvidence] = {}
     for document in documents:
+        document_base_url = _dom_document_base_url(document, strings, raw)
         nodes = document.get("nodes") if isinstance(document, dict) else None
         attributes = nodes.get("attributes") if isinstance(nodes, dict) else None
         node_names = nodes.get("nodeName") if isinstance(nodes, dict) else None
@@ -479,6 +484,18 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
             state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = []
             if tag:
                 state.append(("semantic.dom.tag", tag[:MAX_SEMANTIC_TEXT]))
+            if tag in {"a", "area"}:
+                destination = _public_link_destination(
+                    decoded.get("href", ""),
+                    document_base_url,
+                )
+                if destination:
+                    state.append((
+                        "semantic.link.destination",
+                        destination[:MAX_LINK_DESTINATION_TEXT],
+                    ))
+                    if len(destination) > MAX_LINK_DESTINATION_TEXT:
+                        state.append(("semantic.link.destination.truncated", True))
             for name in sorted(_DOM_SCALAR_ATTRIBUTES):
                 value = " ".join(decoded.get(name, "").split())
                 if value:
@@ -502,6 +519,41 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     f"BID {bid!r} has conflicting DOM semantic evidence",
                 )
     return result
+
+
+def _dom_document_base_url(
+    document: object,
+    strings: list[str],
+    raw: dict[str, object],
+) -> str:
+    if isinstance(document, dict):
+        for key in ("baseURL", "documentURL"):
+            value = document.get(key)
+            if isinstance(value, str):
+                return value
+            if isinstance(value, int) and not isinstance(value, bool):
+                return _dom_string(strings, value)
+    current_url = raw.get("url")
+    return current_url if isinstance(current_url, str) else ""
+
+
+def _public_link_destination(href: str, base_url: str) -> str:
+    href = href.strip()
+    if not href:
+        return ""
+    try:
+        destination = urljoin(base_url, href)
+        parsed = urlsplit(destination)
+        if (
+            parsed.scheme.casefold() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return ""
+    except ValueError:
+        return ""
+    return destination
 
 
 def _dom_string(strings: list[str], value: object, *, allow_missing: bool = False) -> str:

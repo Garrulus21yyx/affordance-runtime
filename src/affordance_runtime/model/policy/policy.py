@@ -47,8 +47,6 @@ class ModelBackedAgentPolicy:
         default=None, init=False, compare=False
     )
     last_fallback_count: int = field(default=0, init=False, compare=False)
-    active_strategy_revision: StrategyRevision | None = field(default=None, init=False, compare=False, repr=False)
-    active_strategy_task_id: str = field(default="", init=False, compare=False, repr=False)
     last_strategy_revision_invocation: ModelInvocationResult[StrategyRevision] | None = field(
         default=None, init=False, compare=False, repr=False
     )
@@ -87,23 +85,15 @@ class ModelBackedAgentPolicy:
         object.__setattr__(self, "last_invocation_result", None)
         object.__setattr__(self, "last_strategy_revision_invocation", None)
         object.__setattr__(self, "last_fallback_count", 0)
-        active_revision = self.active_strategy_revision
-        if active_revision is not None and (
-            active_revision.task_revision != context.goal_plan.task_revision
-            or self.active_strategy_task_id != context.task.task_id
-        ):
-            active_revision = None
-            object.__setattr__(self, "active_strategy_revision", None)
-            object.__setattr__(self, "active_strategy_task_id", "")
+        turn_revision: StrategyRevision | None = None
         revision_status = ""
-        if _strategy_revision_due(context, active_revision):
+        if _strategy_revision_due(context):
             reviser = getattr(self.port, "revise_strategy", None)
             if callable(reviser):
                 revision_status = "unavailable"
-                revision_context = replace(context, strategy_revision=active_revision)
                 try:
                     revision_invocation = await asyncio.wait_for(
-                        reviser(_build_request(revision_context)),
+                        reviser(_build_request(context)),
                         timeout=min(45.0, max(1.0, self.call_timeout_s / 2)),
                     )
                 except TimeoutError:
@@ -124,22 +114,23 @@ class ModelBackedAgentPolicy:
                     )
                 if isinstance(revision_invocation, ModelInvocationResult):
                     object.__setattr__(self, "last_strategy_revision_invocation", revision_invocation)
-                    if isinstance(revision_invocation.output, StrategyRevision):
-                        active_revision = revision_invocation.output
+                    if isinstance(revision_invocation.output, StrategyRevision) and _strategy_revision_matches_context(
+                        revision_invocation.output,
+                        context,
+                    ):
+                        turn_revision = revision_invocation.output
                         revision_status = "accepted"
-                        object.__setattr__(self, "active_strategy_revision", active_revision)
-                        object.__setattr__(self, "active_strategy_task_id", context.task.task_id)
         decision_feedback = dict(context.control_feedback)
         if revision_status:
             decision_feedback["strategy_revision_status"] = revision_status
         decision_context = (
-            context
-            if active_revision is context.strategy_revision and not revision_status
-            else replace(
+            replace(
                 context,
-                strategy_revision=active_revision,
+                strategy_revision=turn_revision,
                 control_feedback=decision_feedback,
             )
+            if revision_status or turn_revision is not None
+            else context
         )
         try:
             request = _build_request(decision_context)
@@ -193,7 +184,7 @@ class ModelBackedAgentPolicy:
         history = exporter()
         if not isinstance(history, Mapping):
             raise TypeError("model checkpoint history must be a mapping")
-        return _with_strategy_revision(history, self.active_strategy_revision)
+        return history
 
     def bind_checkpoint_history_identity(
         self,
@@ -201,18 +192,10 @@ class ModelBackedAgentPolicy:
         task_id: str,
         task_revision: int,
     ) -> None:
-        previous_identity = getattr(self.port, "active_task_identity", None)
         binder = getattr(self.port, "bind_checkpoint_history_identity", None)
         if not callable(binder):
             return
         binder(task_id=task_id, task_revision=task_revision)
-        revision = self.active_strategy_revision
-        if revision is not None and (
-            revision.task_revision != task_revision
-            or (isinstance(previous_identity, tuple) and previous_identity and previous_identity[0] != task_id)
-        ):
-            object.__setattr__(self, "active_strategy_revision", None)
-            object.__setattr__(self, "active_strategy_task_id", "")
 
     async def persist_checkpoint_history(self) -> Mapping[str, object]:
         persister = getattr(self.port, "persist_checkpoint_history", None)
@@ -223,7 +206,7 @@ class ModelBackedAgentPolicy:
             history = await history
         if not isinstance(history, Mapping):
             raise TypeError("model persisted checkpoint history must be a mapping")
-        return _with_strategy_revision(history, self.active_strategy_revision)
+        return history
 
     def restore_checkpoint_history(
         self,
@@ -236,16 +219,6 @@ class ModelBackedAgentPolicy:
         if not callable(restorer):
             raise TypeError("model port does not support checkpoint history restoration")
         restorer(payload, task_id=task_id, task_revision=task_revision)
-        object.__setattr__(
-            self,
-            "active_strategy_revision",
-            _strategy_revision_from_checkpoint(payload, task_revision=task_revision),
-        )
-        object.__setattr__(
-            self,
-            "active_strategy_task_id",
-            task_id if self.active_strategy_revision is not None else "",
-        )
 
     async def restore_persisted_checkpoint_history(
         self,
@@ -269,16 +242,6 @@ class ModelBackedAgentPolicy:
         )
         if inspect.isawaitable(restored):
             await restored
-        object.__setattr__(
-            self,
-            "active_strategy_revision",
-            _strategy_revision_from_checkpoint(payload, task_revision=task_revision),
-        )
-        object.__setattr__(
-            self,
-            "active_strategy_task_id",
-            task_id if self.active_strategy_revision is not None else "",
-        )
 
     def rebind_checkpoint_history(
         self,
@@ -295,8 +258,6 @@ class ModelBackedAgentPolicy:
             current_revision=current_revision,
             revised_revision=revised_revision,
         )
-        object.__setattr__(self, "active_strategy_revision", None)
-        object.__setattr__(self, "active_strategy_task_id", "")
 
 
 def _build_request(context: AgentContext) -> ModelDecisionRequest:
@@ -310,43 +271,29 @@ def _build_request(context: AgentContext) -> ModelDecisionRequest:
 
 def _strategy_revision_due(
     context: AgentContext,
-    active_revision: StrategyRevision | None,
 ) -> bool:
     feedback = context.control_feedback
     kind = str(feedback.get("kind", ""))
     signature = str(feedback.get("stable_signature", ""))
     attempt = feedback.get("recovery_attempt", 0)
     return bool(
-        kind in {"route_regression", "state_oscillation"}
+        kind in {"strategy_review", "state_oscillation"}
         and signature
         and type(attempt) is int
         and attempt == 2
-        and active_revision is None
     )
 
 
-def _with_strategy_revision(
-    history: Mapping[str, object],
-    revision: StrategyRevision | None,
-) -> Mapping[str, object]:
-    return {
-        **dict(history),
-        "strategy_revision": (revision.checkpoint_projection() if revision is not None else None),
-    }
-
-
-def _strategy_revision_from_checkpoint(
-    payload: Mapping[str, object],
-    *,
-    task_revision: int,
-) -> StrategyRevision | None:
-    raw = payload.get("strategy_revision")
-    if raw is None:
-        return None
-    revision = StrategyRevision.from_checkpoint(raw)
-    if revision.task_revision != task_revision:
-        raise ValueError("model strategy revision belongs to another task revision")
-    return revision
+def _strategy_revision_matches_context(
+    revision: StrategyRevision,
+    context: AgentContext,
+) -> bool:
+    feedback = context.control_feedback
+    return (
+        revision.task_revision == context.goal_plan.task_revision
+        and revision.source_recovery_signature == str(feedback.get("stable_signature", ""))
+        and revision.source_recovery_attempt == feedback.get("recovery_attempt")
+    )
 
 
 async def _generate_with_deadline(

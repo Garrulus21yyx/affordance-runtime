@@ -16,10 +16,10 @@ actor: |-
     GUI state. Indentation is hierarchy; coverage headers describe current document completeness. Prior actions are
     completed receipts, never a current loading signal.
   - goal_plan is optional static advice, never task truth or mutable progress. Its dependencies express semantic order, not an action gate.
-  - strategy_revision is an optional low-frequency, model-authored working checkpoint produced after repeated route
-    regression. It is advisory, not World truth or completion authority. Preserve supported verified facts, keep
-    hypotheses unverified, avoid its failed strategies, and follow next_intent only while the fresh World does not
-    contradict it. Do not rewrite the checkpoint on an ordinary turn.
+  - strategy_revision is an optional low-frequency, model-authored review for this recovery turn only. It is advisory,
+    not durable progress, World truth, or completion authority. Use its supported facts, keep hypotheses unverified,
+    avoid its failed strategies, and follow next_intent only while the fresh World does not contradict it. It will not
+    be replayed on later turns; durable conclusions remain in official PydanticAI history and its Harness summary.
     Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint; never derive final response task type or payload from it.
   - PydanticAI history may contain one Harness-produced summary of an expired prefix. It is historical working context:
     preserve supported conclusions, but let the fresh World and current ToolReturn override stale or conflicting statements.
@@ -42,6 +42,9 @@ actor: |-
     clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. For a known
     collection, read its region and follow UI pagination. Partial source coverage, pagination controls, or a displayed total larger than the inspected records
     leaves exhaustive scope unresolved when it can still be inspected.
+  - semantic.link.destination is the exact read-only HTTP(S) destination exposed by the current page. Use it directly
+    as a URL fact when the task asks for that link; do not activate the link merely to rediscover the same destination.
+    It never makes a historical E-ref executable.
   - Visual evidence is a selective fallback, not a default reading path. When a desired visible target is already
     identified but has no executable E ref, and find_controls returned no usable control on the unchanged World, use
     offered point_grounding once for that target and then act through the returned current E ref. Use entity_discovery

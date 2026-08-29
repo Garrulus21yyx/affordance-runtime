@@ -67,6 +67,74 @@ def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -
     assert "active[F1]=false" in rendered
 
 
+def test_compact_world_preserves_link_destination_without_extending_ref_lifetime() -> None:
+    destination = "https://forum.example/movies/42?view=full#reviews"
+    node = ActorWorldNodeView(
+        "E1",
+        "link",
+        "Movie post",
+        {
+            "semantic.dom.tag": "a",
+            "semantic.link.destination": destination,
+        },
+        source_refs=("S1",),
+    )
+    snapshot = _snapshot((node,))
+    grounding = AgentGroundingIndexView(
+        (AgentGroundingEntityView("E1", "link", "Movie post", verbs=("activate",)),),
+        {"entity:1": "E1"},
+    )
+    observation = fused_world(
+        "S1",
+        (
+            SemanticTarget(
+                "entity:1",
+                "link",
+                "Movie post",
+                {"semantic.link.destination": destination},
+            ),
+        ),
+        surface="dom",
+    )
+    region_index = WorldDeliveryIndex(
+        observation.observation_id,
+        (
+            WorldRegion(
+                key="region:movie",
+                source_id="S1",
+                root_structure_id="movie:1",
+                member_target_ids=("entity:1",),
+                heading="Movie post",
+                role="article",
+                counts={"targets": 1, "facts": 1, "actions": 1},
+                coverage="complete",
+            ),
+        ),
+    )
+    projection = canonical_world_with_regions(
+        _canonical_world(observation),
+        observation,
+        region_index,
+    )
+
+    rendered = render_compact_actor_world(snapshot, grounding, include_images=False)
+    found = inspect_actor_world(
+        snapshot,
+        grounding,
+        region_index=region_index,
+        canonical_world=projection,
+        observation=observation,
+        action="find",
+        query="movies/42",
+    )
+    encoded = json.dumps(to_json_compatible(found), ensure_ascii=False)
+
+    assert destination in rendered.view.text
+    assert destination in encoded
+    assert "semantic.dom.tag" not in rendered.view.text
+    assert '[E1] link "Movie post"' in rendered.view.text
+
+
 def test_compact_world_discloses_partial_node_state() -> None:
     node = ActorWorldNodeView(
         "E1",

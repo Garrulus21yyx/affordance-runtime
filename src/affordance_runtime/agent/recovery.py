@@ -15,7 +15,7 @@ class EpisodeMonitorEvent(StrEnum):
     NO_OBSERVED_CHANGE = "no_observed_change"
     REPEATED_ACTION = "repeated_action"
     OSCILLATION = "oscillation"
-    ROUTE_REGRESSION = "route_regression"
+    ROUTE_REVIEW = "route_review"
     FORMAL_CRITERION_CHANGED = "formal_criterion_changed"
     PROVIDER_FAILURE = "provider_failure"
     ENVIRONMENT_FAILURE = "environment_failure"
@@ -33,7 +33,7 @@ class RecoveryKind(StrEnum):
     EFFECT_STALL = "effect_stall"
     UNCERTAIN_EFFECT = "uncertain_effect"
     STATE_OSCILLATION = "state_oscillation"
-    ROUTE_REGRESSION = "route_regression"
+    STRATEGY_REVIEW = "strategy_review"
     CONTROL_STALL = "control_stall"
     CAPABILITY_GAP = "capability_gap"
 
