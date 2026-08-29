@@ -141,8 +141,20 @@ state, exact attempt identity, Runtime admission, checkpoint schema, ActionPolic
 trace projection, committed control boundaries, and their tests. It adds no memory Store, Manager/Worker, semantic
 Monitor rules, alternative Binder or executor, task-specific labels, retries around unknown effects, or evaluator
 shortcut. A fresh-context owner review found the cross-boundary lifecycle gap, verified its owner-level repair, and
-returned no residual finding after a second narrow review of the optional-Monitor fallback. No live benchmark was
-run; provider-free implementation completion and empirical benchmark closure remain separate.
+returned no residual finding after a second narrow review of the optional-Monitor fallback.
+
+The subsequently authorized Task554
+[`recovery-convergence-run9`](../evidence/live/w2-task-554-deepseek-v4-flash-20260830-recovery-convergence-run9/run.json)
+live-validates the bounded recovery lifecycle but does not complete the task. One local control-stall epoch persisted
+from evidence revision 1 through a diagnostic `find_controls` result to revision 2; both following ActionPolicy calls
+used the deliberate profile. The policy then selected the materially different `Create commit...` control and entered
+the commit message successfully. The next fresh request exposed 75 complete actions but only 32 visible actions: the
+real form submit `Commit` remained in the complete World/form region but was absent from `ActionCandidates`, while the
+active sidebar `Commit` was visible. The policy clicked that sidebar control and then submitted task payload rather
+than the required `FinalAgentResponse` envelope; the codec rejected it as `final_response_invalid` before STOP or
+native evaluation. Thus the run does not falsify the repaired Monitor ownership, but it leaves Task554 empirical
+closure open on separate action-delivery and final-response representation gaps. It authorizes diagnosis, not a
+task-specific branch or an evaluator shortcut.
 
 ### 2026-08-29 tool-contract convergence
 

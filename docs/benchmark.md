@@ -66,10 +66,29 @@ for the same 15-source-file surface at base commit `56682593`. This is a non-gre
 a type-check passing gate or a claim that each individual diagnostic was eliminated.
 
 This evidence establishes implementation completion and the bounded provider-free contracts. It does not establish
-live Task554 completion, benchmark accuracy, latency, or token non-regression. No live provider or benchmark command
-was launched. Empirical closure remains open for one authorized Task554 rerun and one untouched held-out long task;
-the independent fresh-context review first returned one P1 lifecycle finding, then returned no residual finding after
-`86d95a89` and a narrow re-review of `8b7014fd`. This is not an overall project-closure claim.
+live Task554 completion, benchmark accuracy, latency, or token non-regression. The independent fresh-context review
+first returned one P1 lifecycle finding, then returned no residual finding after `86d95a89` and a narrow re-review of
+`8b7014fd`. This is not an overall project-closure claim.
+
+The authorized Task554
+[`recovery-convergence-run9`](../evidence/live/w2-task-554-deepseek-v4-flash-20260830-recovery-convergence-run9/run.json)
+ran the unchanged frozen `webarena-verified-w2-task-554`, seed 7, with DeepSeek v4 Flash at clean commit `e9178ed1`.
+It ended `failed` after 35 policy calls, 17 executions, and 18 observations, with three recovery calls, zero provider
+retries, zero invalid or unknown tool calls, and zero grounding gaps. It sent no STOP and invoked no native evaluator;
+formal acceptance is false.
+
+The live trace separates the repaired recovery contract from two remaining failures. At sequences 81 and 83, one
+control-stall epoch remains active while its evidence revision advances from 1 to 2 across `find_controls`; the
+ActionPolicy calls at sequences 82 and 84 both use enabled deliberate reasoning. It then activates the materially
+different `Create commit...` control and successfully fills the commit message. At sequence 89, however, the fresh
+request reports 75 complete actions and 32 visible actions; the real form-submit `Commit` is readable in the current
+form but absent from `ActionCandidates`, while the active sidebar `Commit` is visible as `E5`. The policy dispatches
+that sidebar control. At sequence 92 it incorrectly places the task's `{"urls": ...}` payload directly in final
+`content` instead of the required upstream `FinalAgentResponse` envelope. Runtime correctly rejects that value as
+`final_response_invalid` before STOP, post-STOP capture, or native evaluation. The original recovery-loss loop did not
+recur, but Task554 empirical closure remains open on an action-delivery omission and a final-response representation
+failure. The rerun itself does not authorize a benchmark-specific repair; one untouched held-out long task also
+remains unrun.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
