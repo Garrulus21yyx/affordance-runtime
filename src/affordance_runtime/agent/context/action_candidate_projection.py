@@ -601,9 +601,22 @@ def build_action_delivery_plan(
         target_context.primary_region_key
         for target_id, target_context in region_index.target_contexts.items()
         if target_context.focused
-        and target_context.container_kind in {FunctionalContainerKind.FORM, FunctionalContainerKind.SEARCH}
+        and target_context.container_kind
+        in {
+            FunctionalContainerKind.DIALOG,
+            FunctionalContainerKind.FORM,
+            FunctionalContainerKind.SEARCH,
+        }
         and target_id in options_by_target
         and options_by_target[target_id].target_role in _FOCUS_CONTAINER_SOURCE_ROLES
+    }
+    active_interaction_target_refs = {
+        option.target_ref
+        for option in complete_actions
+        for target_context in (region_index.target_contexts.get(option.target_id),)
+        if option.subject_kind == InteractionSubjectKind.ENTITY.value
+        and target_context is not None
+        and target_context.primary_region_key in focused_containers
     }
 
     def interaction_order(option: AgentActionOptionView) -> tuple[object, ...]:
@@ -675,10 +688,14 @@ def build_action_delivery_plan(
     # profile, not discovered from page text.  Keep that small fixed profile
     # in the same required base capability set so observation packing cannot
     # silently turn a generic browser into a partial browser.
-    for option in sorted(
-        (item for item in complete_actions if item.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value),
-        key=_public_option_view_order,
-    ):
+    browser_profile_options = tuple(
+        sorted(
+            (item for item in complete_actions if item.subject_kind == InteractionSubjectKind.BROWSER_CONTEXT.value),
+            key=_public_option_view_order,
+        )
+    )
+    browser_profile_target_refs = {item.target_ref for item in browser_profile_options}
+    for option in browser_profile_options:
         append(
             option,
             kind=DeliveryObligationKind.BASE_ACTIONS,
@@ -743,10 +760,11 @@ def build_action_delivery_plan(
         )
     groups[DeliveryObligationKind.ROUTE_ISSUES].extend(issue_fragments)
 
+    active_interaction = bool(active_interaction_target_refs)
     priorities = {
         DeliveryObligationKind.EXPLICIT_QUERY: 1 if discovery is not None else 6,
-        DeliveryObligationKind.BASE_ACTIONS: 2,
-        DeliveryObligationKind.INTERACTION: 3,
+        DeliveryObligationKind.INTERACTION: 2 if discovery is not None else 1 if active_interaction else 3,
+        DeliveryObligationKind.BASE_ACTIONS: 3 if discovery is not None and active_interaction else 2,
         DeliveryObligationKind.DESTINATION_ROUTES: 4,
         DeliveryObligationKind.ROUTE_ISSUES: 5,
     }
@@ -789,6 +807,19 @@ def build_action_delivery_plan(
     obligations = []
     for inventory in inventory_specs:
         kind = DeliveryObligationKind(inventory.kind)
+        required_record_count = 0
+        if kind is DeliveryObligationKind.BASE_ACTIONS:
+            required_record_count = (
+                _required_target_prefix_count(inventory.records, browser_profile_target_refs)
+                if active_interaction
+                else len(inventory.records)
+            )
+        elif kind is DeliveryObligationKind.INTERACTION:
+            required_record_count = (
+                _required_target_prefix_count(inventory.records, active_interaction_target_refs)
+                if active_interaction
+                else _next_target_atomic_prefix_count(inventory.records, 0)
+            )
         obligations.append(
             DeliveryObligation(
                 kind,
@@ -801,13 +832,7 @@ def build_action_delivery_plan(
                 else "complete",
                 "empty" if not inventory.records else "complete",
                 ("current_world", kind.value),
-                (
-                    len(inventory.records)
-                    if kind is DeliveryObligationKind.BASE_ACTIONS
-                    else _next_target_atomic_prefix_count(inventory.records, 0)
-                    if kind is DeliveryObligationKind.INTERACTION
-                    else 0
-                ),
+                required_record_count,
             )
         )
     ordered = tuple(sorted(obligations, key=lambda item: (item.priority, item.kind.value)))
@@ -987,6 +1012,29 @@ def _group_routes_by_target(
             grouped[target_ref] = []
         grouped[target_ref].append(item)
     return tuple(item for target_ref in target_order for item in grouped[target_ref])
+
+
+def _required_target_prefix_count(
+    records: tuple[DeliveryAtomicRecord, ...],
+    required_target_refs: set[str],
+) -> int:
+    """Close one structural target group without admitting unrelated predecessors."""
+
+    if not required_target_refs:
+        return 0
+    route_refs = tuple(
+        item.candidate.target_ref
+        for item in records
+        if isinstance(item, ActionRouteFragment)
+    )
+    missing = required_target_refs.difference(route_refs)
+    if missing:
+        raise ValueError("required delivery targets are absent from their obligation")
+    last_required = max(index for index, target_ref in enumerate(route_refs) if target_ref in required_target_refs)
+    required_prefix = route_refs[: last_required + 1]
+    if set(required_prefix) != required_target_refs:
+        raise ValueError("required delivery targets must form one structural prefix")
+    return last_required + 1
 
 
 def _route_targets_are_contiguous(records: tuple[DeliveryAtomicRecord, ...]) -> bool:

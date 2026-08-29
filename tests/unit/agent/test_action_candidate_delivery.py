@@ -874,6 +874,191 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
     assert isinstance(resolved_submit.decision, SelectAction)
 
 
+@pytest.mark.parametrize("shared_label", ("Apply changes", "保存更改"))
+def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_background(
+    shared_label: str,
+) -> None:
+    def build_context(observation_id: str):
+        background_links = tuple(
+            SemanticTarget(f"target:background-{index:02d}", "link", f"Background {index:02d}")
+            for index in range(40)
+        )
+        background_action = SemanticTarget("target:background-action", "button", shared_label)
+        editor = SemanticTarget(
+            "target:active-editor",
+            "textbox",
+            "Change description",
+            {"focused": True, "value": "ready"},
+        )
+        submit = SemanticTarget(
+            "target:active-submit",
+            "button",
+            shared_label,
+            {"semantic.dom.attribute.type": "submit"},
+        )
+        link_nodes = tuple(f"background-{index:02d}" for index in range(len(background_links)))
+        structure = (
+            ObservationStructureNode(
+                "root",
+                "document",
+                "Generated workspace",
+                child_structure_ids=("sidebar", *link_nodes, "active-form"),
+            ),
+            ObservationStructureNode(
+                "sidebar",
+                "navigation",
+                "Background controls",
+                parent_structure_id="root",
+                child_structure_ids=("background-action",),
+            ),
+            ObservationStructureNode(
+                "background-action",
+                "button",
+                shared_label,
+                parent_structure_id="sidebar",
+                semantic_target_id=background_action.target_id,
+            ),
+            *(
+                ObservationStructureNode(
+                    f"background-{index:02d}",
+                    "link",
+                    target.label,
+                    parent_structure_id="root",
+                    semantic_target_id=target.target_id,
+                )
+                for index, target in enumerate(background_links)
+            ),
+            ObservationStructureNode(
+                "active-form",
+                "form",
+                "Current change",
+                parent_structure_id="root",
+                child_structure_ids=("active-editor", "active-submit"),
+            ),
+            ObservationStructureNode(
+                "active-editor",
+                "textbox",
+                editor.label,
+                {"focused": True, "value": "ready"},
+                parent_structure_id="active-form",
+                semantic_target_id=editor.target_id,
+            ),
+            ObservationStructureNode(
+                "active-submit",
+                "button",
+                submit.label,
+                {"semantic.dom.attribute.type": "submit"},
+                parent_structure_id="active-form",
+                semantic_target_id=submit.target_id,
+            ),
+        )
+        source = SurfaceObservation(
+            observation_id,
+            "browser",
+            f"revision:{observation_id}",
+            ObservationSourceProfile.dom(),
+            (*background_links, background_action, editor, submit),
+            bindings=(
+                *(_binding(observation_id, target.target_id) for target in background_links),
+                _binding(observation_id, background_action.target_id),
+                _text_binding(observation_id, editor.target_id),
+                _binding(observation_id, submit.target_id),
+            ),
+            structure=structure,
+            structure_total_count=len(structure),
+        )
+        fused = WorldFusion().fuse((source,))
+        assert fused.observation is not None
+        world = fused.observation
+        task = TaskGoal(
+            "generated-focused-form",
+            f"Finish the current change using {shared_label}",
+            allowed_effects=("external_ui_interaction", "query_changed"),
+            risk_profile=RiskProfile.LOW,
+        )
+        actions = ActionSpaceBuilder().build(task, world)
+        evaluation = TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "ongoing",
+        )
+        return ContextBuilder().build(task, world, actions, evaluation), editor, submit, background_action
+
+    contexts = tuple(build_context(observation_id) for observation_id in ("obs:focused-form:1", "obs:focused-form:2"))
+    assert contexts[0][0].context_id != contexts[1][0].context_id
+
+    for context, editor, submit, background_action in contexts:
+        plan = context.action_delivery_plan
+        assert plan is not None
+        interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+        base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
+        assert interaction is not None and base is not None
+        editor_ref = context.grounding.target_refs[editor.target_id]
+        submit_ref = context.grounding.target_refs[submit.target_id]
+        background_ref = context.grounding.target_refs[background_action.target_id]
+        active_refs = {editor_ref, submit_ref}
+        required_interaction = interaction.records[: interaction.required_record_count]
+
+        assert plan.foreground_scope == interaction.scope == "interaction"
+        assert {
+            record.candidate.target_ref
+            for record in required_interaction
+            if isinstance(record, ActionRouteFragment)
+        } == active_refs
+        assert base.required_record_count == 0
+        assert any(
+            isinstance(record, ActionRouteFragment) and record.candidate.target_ref == background_ref
+            for record in base.records
+        )
+
+        request = ModelDecisionRequest(f"request:{context.context_id}", context)
+        wide = CanonicalProviderEnvelopeBinder()
+        required_counts = {item.kind.value: 0 for item in plan.obligations}
+        required_counts[DeliveryObligationKind.INTERACTION.value] = interaction.required_record_count
+        required_delivery = build_model_turn_delivery(
+            context,
+            include_images=False,
+            admitted_records=required_counts,
+        )
+        required_catalog = compile_grounded_action_catalog(context, required_delivery)
+        required_envelope = wide.bind(
+            request,
+            required_delivery,
+            required_catalog,
+            identity=_IDENTITY,
+            call_profile=_PROFILE,
+            output_token_reserve=(
+                _PROFILE.max_output_tokens
+                + wide.request_budget.protocol_reserve_tokens
+                + wide.request_budget.safety_margin_tokens
+            ),
+        )
+        required_tokens = estimate_canonical_envelope(required_envelope).estimated_input_tokens
+        packed = _pack(
+            request,
+            binder=CanonicalProviderEnvelopeBinder(
+                request_budget=replace(ModelRequestBudget(), soft_target_tokens=required_tokens)
+            ),
+        )
+        admitted = dict(packed.admitted_record_counts)
+        ranks = {item.target_ref: item.rank for item in packed.delivery.action_candidates.candidates}
+
+        assert admitted[DeliveryObligationKind.INTERACTION.value] >= interaction.required_record_count
+        assert active_refs <= set(packed.delivery.manifest.executable_refs)
+        assert ranks[editor_ref] < ranks[submit_ref]
+        if background_ref in packed.delivery.manifest.executable_refs:
+            assert ranks[submit_ref] < ranks[background_ref]
+        assert "private_bid" not in packed.delivery.view.text
+        resolved_submit = resolve_grounded_tool_call(
+            packed.catalog,
+            ToolCall("activate", {"target": submit_ref}, f"call:{context.context_id}:submit"),
+            expected_context_id=context.context_id,
+            expected_delivery_id=packed.delivery.delivery_id,
+        )
+        assert isinstance(resolved_submit.decision, SelectAction)
+
+
 def test_every_delivery_prefix_projects_one_subject_per_target_with_exact_manifest_verbs() -> None:
     _task, _world, _actions, _evaluation, context = _context()
     plan = context.action_delivery_plan
