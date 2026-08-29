@@ -19,6 +19,7 @@ from affordance_runtime.actions.reconciliation import (
     EffectReconciliationStatus,
 )
 from affordance_runtime.actions.space_contracts import ActionRisk
+from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
     AgentTurnView,
@@ -30,6 +31,7 @@ from affordance_runtime.agent.interactions import (
     legacy_interaction_request,
     restore_interaction_request_public_value,
 )
+from affordance_runtime.agent.recovery import RecoveryKind, RecoverySignal
 from affordance_runtime.agent.run_control import (
     RunControlBoundary,
     RunControlKind,
@@ -68,11 +70,12 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v4"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v5"
 _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
     {
         "affordance-runtime.checkpoint.v2",
         "affordance-runtime.checkpoint.v3",
+        "affordance-runtime.checkpoint.v4",
         RUNTIME_CHECKPOINT_SCHEMA_VERSION,
     }
 )
@@ -858,6 +861,7 @@ def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, obje
         },
         "currentness_probe_count": state.currentness_probe_count,
         "workspace": to_json_compatible(state.workspace),
+        "recovery_signal": _recovery_signal_payload(state.recovery_signal),
         "pause_boundary": to_json_compatible(boundary),
         "current_observation_id": state.current_world.observation_id,
         "latest_effect": _committed_effect_payload(state.latest_effect),
@@ -881,6 +885,51 @@ def _goal_resolution_payload(resolution: object | None) -> object:
     if kind is None:
         raise RuntimeCheckpointError("checkpoint_goal_resolution_invalid")
     return {"kind": kind, "value": to_json_compatible(resolution)}
+
+
+def _recovery_signal_payload(signal: RecoverySignal | None) -> dict[str, object] | None:
+    if signal is None:
+        return None
+    return {
+        "kind": signal.kind.value,
+        "epoch_id": signal.epoch_id,
+        "stable_signature": signal.stable_signature,
+        "evidence_revision": signal.evidence_revision,
+        "observed_evidence": to_json_compatible(signal.observed_evidence),
+        "attempted_modes": list(signal.attempted_modes),
+        "prohibited_attempt_signatures": [
+            to_json_compatible(item) for item in signal.prohibited_attempt_signatures
+        ],
+        "human_instruction": signal.human_instruction,
+        "recovery_attempt": signal.recovery_attempt,
+    }
+
+
+def _restore_recovery_signal(payload: object) -> RecoverySignal | None:
+    if payload is None:
+        return None
+    value = _mapping(payload)
+    prohibited = tuple(
+        PublicAttemptSignature(
+            str(item["operation"]),
+            str(item["page_semantic_digest"]),
+            str(item["target_semantic_digest"]),
+            str(item["destination_semantic_digest"]),
+            str(item["parameter_digest"]),
+        )
+        for item in _mapping_sequence(value.get("prohibited_attempt_signatures", []))
+    )
+    return RecoverySignal(
+        RecoveryKind(str(value["kind"])),
+        str(value["stable_signature"]),
+        dict(_mapping(value.get("observed_evidence", {}))),
+        attempted_modes=tuple(_string_sequence(value.get("attempted_modes", []))),
+        prohibited_attempt_signatures=prohibited,
+        human_instruction=str(value.get("human_instruction", "")),
+        recovery_attempt=_integer(value.get("recovery_attempt", 1)),
+        epoch_id=str(value["epoch_id"]),
+        evidence_revision=_integer(value.get("evidence_revision", 1)),
+    )
 
 
 def _committed_effect_payload(effect: CommittedEffect | None) -> dict[str, object] | None:
@@ -1077,6 +1126,7 @@ def _restore_run_facts(
         reconciliation = _restore_effect_reconciliation(
             run_payload.get("effect_reconciliation")
         )
+        recovery_signal = _restore_recovery_signal(run_payload.get("recovery_signal"))
         return RunCheckpointFacts(
             status_before_pause=status,
             remaining_steps=_integer(run_payload["remaining_steps"]),
@@ -1098,6 +1148,7 @@ def _restore_run_facts(
             currentness_probe_count=_integer(run_payload["currentness_probe_count"]),
             workspace=workspace,
             pause_boundary=boundary,
+            recovery_signal=recovery_signal,
             latest_effect=latest_effect,
             effect_reconciliation=reconciliation,
             last_decision=last_decision,

@@ -35,6 +35,7 @@ from affordance_runtime.agent.recovery import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
     RecoveryKind,
+    RecoveryLifecycleTransition,
 )
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.evaluation import (
@@ -582,7 +583,8 @@ def test_recovery_allows_one_turn_to_use_a_nonempty_discovered_control() -> None
     assert handoff.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert handoff.recovery_signal is not None
     assert handoff.recovery_signal.recovery_attempt == 1
-    assert "Use a nonempty returned current control" in handoff.recovery_signal.human_instruction
+    assert "find_controls" in handoff.recovery_signal.attempted_modes
+    assert handoff.recovery_signal.epoch_id == first_recovery.recovery_signal.epoch_id
     assert monitor.recovery_count == 1
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
@@ -606,7 +608,59 @@ def test_new_information_is_the_local_tool_event_that_clears_recovery() -> None:
     assert transition.information_delta is not None
     assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert continued.recovery_signal is None
     assert monitor.recovery_count == 0
+
+
+def test_new_read_information_does_not_close_an_unresolved_gui_effect_recovery() -> None:
+    first_world = _world("observation:gui-effect-stall-before")
+    second_world = _world("observation:gui-effect-stall-after-1")
+    third_world = _world("observation:gui-effect-stall-after-2")
+    changed = _world(
+        "observation:gui-effect-recovered",
+        route="/map/results",
+        result_text="33 km",
+    )
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(first_world, second_world)),
+    )
+    recovery = _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(second_world, third_world)),
+    )
+    informative_step = _search_with_items(third_world)
+    delivery = ObservationDeliveryStore().reduce(informative_step, step_index=3)
+    carried = monitor.evaluate(
+        informative_step,
+        current_findings_digest(third_world),
+        delivery.information_delta,
+    )
+    resolved = _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(third_world, changed)),
+    )
+
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_lifecycle is RecoveryLifecycleTransition.STARTED
+    assert delivery.information_delta is not None
+    assert delivery.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert carried.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert carried.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert carried.recovery_signal is not None
+    assert carried.recovery_signal.epoch_id == recovery.recovery_signal.epoch_id
+    assert carried.recovery_signal.evidence_revision == recovery.recovery_signal.evidence_revision + 1
+    assert (
+        carried.recovery_signal.prohibited_attempt_signatures
+        == recovery.recovery_signal.prohibited_attempt_signatures
+    )
+    assert resolved.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert resolved.recovery_signal is None
 
 
 def test_same_attempt_after_recovery_is_control_stalled() -> None:
@@ -676,7 +730,8 @@ def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
 
     assert transition.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert EpisodeMonitorEvent.STATE_CHANGED in transition.events
-    assert monitor.observation_only_streak == 1
+    assert transition.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert monitor.active_recovery is not None
     assert monitor.recovery_count == 1
 
 
@@ -968,9 +1023,11 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
         monitor,
         _dispatched_step(second_failed, returned_twice, target_id="return_to_results"),
     )
-    _evaluate(
+    resolved = _evaluate(
         monitor,
-        _dispatched_step(returned_twice, third_result, target_id="third_candidate"),
+        _with_projected_outcome(
+            _dispatched_step(returned_twice, third_result, target_id="third_candidate")
+        ),
     )
     third_return = _evaluate(
         monitor,
@@ -984,6 +1041,8 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
     assert second_recovery.recovery_signal.recovery_attempt == 2
     assert second_recovery.recovery_signal.observed_evidence["closed_route_count"] == 2
     assert EpisodeMonitorEvent.ROUTE_REVIEW in second_recovery.events
+    assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert resolved.recovery_signal is None
     assert third_return.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert third_return.recovery_signal is None
     assert EpisodeMonitorEvent.ROUTE_REVIEW not in third_return.events
@@ -1061,7 +1120,7 @@ def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery(
     recovery = _evaluate(monitor, _local_step(world, query="first"))
     second_recovery = _evaluate(monitor, _local_step(world, query="second"))
 
-    continued = _evaluate(monitor, _dispatched_step(world, changed))
+    continued = _evaluate(monitor, _with_projected_outcome(_dispatched_step(world, changed)))
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
@@ -1069,6 +1128,7 @@ def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery(
     assert second_recovery.recovery_signal.recovery_attempt == 1
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
+    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert continued.recovery_signal is None
     assert monitor.recovery_count == 0
     assert monitor.latest_attempt_signature is not None
@@ -1105,5 +1165,7 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "recent_gui_attempts",
         "recent_gui_results",
         "active_gui_cycle_digest",
+        "active_recovery",
+        "recovery_epoch_counter",
         "closed_route_count",
     } == set(vars(monitor)) - {"profile"}

@@ -76,6 +76,8 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         "recent_gui_attempts",
         "recent_gui_results",
         "active_gui_cycle_digest",
+        "active_recovery",
+        "recovery_epoch_counter",
         "closed_route_count",
     }
     for removed in (

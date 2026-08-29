@@ -350,6 +350,7 @@ class RunCheckpointFacts:
     currentness_probe_count: int
     workspace: AgentWorkspace
     pause_boundary: RunControlOutcome
+    recovery_signal: RecoverySignal | None = None
     latest_effect: CommittedEffect | None = None
     effect_reconciliation: EffectReconciliation | None = None
     last_decision: AgentDecision | InteractionRequest | None = None
@@ -378,6 +379,11 @@ class RunCheckpointFacts:
             raise ValueError("checkpoint facts contain invalid counters")
         if not isinstance(self.workspace, AgentWorkspace):
             raise TypeError("checkpoint facts require one typed workspace")
+        if self.recovery_signal is not None:
+            from affordance_runtime.agent.recovery import RecoverySignal
+
+            if not isinstance(self.recovery_signal, RecoverySignal):
+                raise TypeError("checkpoint recovery signal must be typed")
         _validate_effect_state(
             self.execution_count,
             self.task_revision,

@@ -337,6 +337,7 @@ class CoreAgentLoop:
             task_revision=facts.task_revision,
             goal_resolution=facts.goal_resolution,
             goal_plan_version_counter=facts.goal_plan_version_counter,
+            recovery_signal=facts.recovery_signal,
             committed_sent_unknown_count=facts.committed_sent_unknown_count,
             decision_counts=dict(facts.decision_counts),
             currentness_probe_count=facts.currentness_probe_count,
@@ -346,6 +347,9 @@ class CoreAgentLoop:
         )
         state.install_delivery_index(region_index)
         state.install_canonical_world(projection)
+        restore_episode = getattr(self.episode_monitor, "restore_episode", None)
+        if callable(restore_episode):
+            restore_episode(current, evaluation, facts.recovery_signal)
         state.commit_durable_pause(checkpoint_id)
         return state
 
@@ -440,6 +444,9 @@ class CoreAgentLoop:
         )
         candidate.install_delivery_index(region_index)
         candidate.install_canonical_world(projection)
+        start_episode = getattr(self.episode_monitor, "start_episode", None)
+        if callable(start_episode):
+            start_episode(current, evaluation)
         self.trace_sink.goal_compiler_completed(
             goal_compiler_trace_diagnostic(
                 self.goal_compiler,
@@ -995,19 +1002,25 @@ class CoreAgentLoop:
         delivery_transition: DeliveryTransition,
     ) -> StepResult:
         monitor = self.episode_monitor
+        if monitor is None:
+            return result
+        if result.status_after in {
+            RunStatus.DONE,
+            RunStatus.BLOCKED,
+            RunStatus.CANCELLED,
+            RunStatus.FAILED,
+        }:
+            end_episode = getattr(monitor, "end_episode", None)
+            if callable(end_episode):
+                end_episode()
+            return replace(result, recovery_signal=None)
+        if result.task_evaluation is None:
+            return replace(result, recovery_signal=state.recovery_signal)
         if (
-            monitor is None
-            or result.task_evaluation is None
-            or result.status_after
-            in {
-                RunStatus.DONE,
-                RunStatus.WAITING_USER,
-                RunStatus.WAITING_CONFIRMATION,
-                RunStatus.CANCELLED,
-            }
+            result.status_after in {RunStatus.WAITING_USER, RunStatus.WAITING_CONFIRMATION}
             or result.control_boundary is not None
         ):
-            return result
+            return replace(result, recovery_signal=state.recovery_signal)
         evaluate = getattr(monitor, "evaluate", None)
         if not callable(evaluate):
             return result
@@ -1030,7 +1043,10 @@ class CoreAgentLoop:
                 recovery_signal=signal,
             )
         if str(recommendation) != "block":
-            return result
+            return replace(
+                result,
+                recovery_signal=getattr(transition, "recovery_signal", None),
+            )
         return replace(
             result,
             status_after=RunStatus.BLOCKED,
@@ -2495,9 +2511,14 @@ def _recovery_feedback(signal) -> dict[str, object]:
         return {}
     return {
         "kind": signal.kind.value,
+        "epoch_id": signal.epoch_id,
+        "evidence_revision": signal.evidence_revision,
         "stable_signature": signal.stable_signature,
         "observed_evidence": signal.observed_evidence,
         "attempted_modes": signal.attempted_modes,
+        "prohibited_attempt_signatures": tuple(
+            to_json_compatible(item) for item in signal.prohibited_attempt_signatures
+        ),
         "prohibited_attempt_signature": (
             to_json_compatible(signal.prohibited_attempt_signature)
             if signal.prohibited_attempt_signature is not None

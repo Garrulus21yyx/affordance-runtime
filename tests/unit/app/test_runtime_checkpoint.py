@@ -12,7 +12,9 @@ import pytest
 from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.actions.reconciliation import EffectReconciliationStatus
 from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.agent.policy import AgentDecisionPorts
+from affordance_runtime.agent.recovery import RecoveryKind, RecoverySignal
 from affordance_runtime.app.checkpoint import (
     RuntimeCheckpoint,
     RuntimeCheckpointCommandOutcome,
@@ -20,6 +22,8 @@ from affordance_runtime.app.checkpoint import (
     RuntimeCheckpointResumeOutcome,
     RuntimeCheckpointRevisionOutcome,
     SQLiteRuntimeCheckpointStore,
+    _recovery_signal_payload,
+    _restore_recovery_signal,
 )
 from affordance_runtime.app.public_session import (
     PublicSessionCapability,
@@ -86,6 +90,30 @@ def _revision_command(
         text,
         context,
     )
+
+
+def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() -> None:
+    prohibited = PublicAttemptSignature(
+        "activate",
+        "a" * 64,
+        "b" * 64,
+        "",
+        "c" * 64,
+    )
+    signal = RecoverySignal(
+        RecoveryKind.EFFECT_STALL,
+        "effect_stall:sha256:" + "d" * 64,
+        {"dispatch": "sent", "observed_change": "unchanged"},
+        attempted_modes=("activate", "read_region"),
+        prohibited_attempt_signatures=(prohibited,),
+        recovery_attempt=2,
+        epoch_id="recovery:7:" + "e" * 32,
+        evidence_revision=3,
+    )
+
+    restored = _restore_recovery_signal(_recovery_signal_payload(signal))
+
+    assert restored == signal
 
 
 def test_revision_command_digest_remains_compatible_across_snapshot_v2() -> None:

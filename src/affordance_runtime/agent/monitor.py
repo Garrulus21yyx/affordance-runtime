@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature, public_attempt_signature
 from affordance_runtime.agent.context.contracts import sanitize_history_value
@@ -30,6 +30,7 @@ from affordance_runtime.agent.recovery import (
     EpisodeMonitorRecommendation,
     EpisodeMonitorTransition,
     RecoveryKind,
+    RecoveryLifecycleTransition,
     RecoverySignal,
 )
 from affordance_runtime.agent.run_state import StepResult
@@ -66,6 +67,8 @@ class EpisodeMonitor:
     recent_gui_attempts: tuple[PublicAttemptSignature, ...] = ()
     recent_gui_results: tuple[tuple[str, str], ...] = ()
     active_gui_cycle_digest: str = ""
+    active_recovery: RecoverySignal | None = None
+    recovery_epoch_counter: int = 0
 
     def start_episode(self, world, task_evaluation) -> None:
         del task_evaluation
@@ -80,6 +83,145 @@ class EpisodeMonitor:
         self.recent_gui_attempts = ()
         self.recent_gui_results = ()
         self.active_gui_cycle_digest = ""
+        self.active_recovery = None
+        self.recovery_epoch_counter = 0
+
+    def end_episode(self) -> None:
+        """Close Runtime recovery state at one terminal run boundary."""
+
+        self.active_recovery = None
+
+    def restore_episode(
+        self,
+        world: WorldObservation,
+        task_evaluation: object,
+        recovery_signal: RecoverySignal | None,
+    ) -> None:
+        """Rebase one durable recovery epoch onto a fresh reconnect World."""
+
+        self.start_episode(world, task_evaluation)
+        if recovery_signal is None:
+            return
+        self.active_recovery = recovery_signal
+        self.recovery_count = recovery_signal.recovery_attempt
+        self.latest_attempt_signature = recovery_signal.prohibited_attempt_signature
+        self.same_attempt_streak = int(self.latest_attempt_signature is not None)
+        parts = recovery_signal.epoch_id.split(":", 2)
+        if len(parts) == 3 and parts[1].isdigit():
+            self.recovery_epoch_counter = int(parts[1])
+
+    def _open_or_continue_recovery(
+        self,
+        candidate: RecoverySignal,
+    ) -> tuple[RecoverySignal, RecoveryLifecycleTransition]:
+        """Install one bounded signal while preserving the current recovery owner."""
+
+        active = self.active_recovery
+        if active is None:
+            self.recovery_epoch_counter += 1
+            digest = candidate.stable_signature.rsplit(":", 1)[-1][:32]
+            evidence = dict(candidate.observed_evidence)
+            evidence.setdefault("origin_dispatch", evidence.get("dispatch", DispatchStatus.NOT_SENT.value))
+            signal = replace(
+                candidate,
+                observed_evidence=evidence,
+                epoch_id=f"recovery:{self.recovery_epoch_counter}:{digest}",
+                evidence_revision=1,
+            )
+            self.active_recovery = signal
+            return signal, RecoveryLifecycleTransition.STARTED
+
+        evidence = dict(active.observed_evidence)
+        evidence.update(candidate.observed_evidence)
+        evidence["latest_recovery_kind"] = candidate.kind.value
+        attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, *candidate.attempted_modes)))
+        prohibited = tuple(
+            dict.fromkeys(
+                (*active.prohibited_attempt_signatures, *candidate.prohibited_attempt_signatures)
+            )
+        )[-_MAX_RECENT_GUI_ATTEMPTS:]
+        signal = replace(
+            active,
+            kind=candidate.kind,
+            observed_evidence=evidence,
+            attempted_modes=attempted_modes,
+            prohibited_attempt_signatures=prohibited,
+            human_instruction=candidate.human_instruction or active.human_instruction,
+            recovery_attempt=candidate.recovery_attempt,
+            evidence_revision=active.evidence_revision + 1,
+        )
+        self.active_recovery = signal
+        return signal, RecoveryLifecycleTransition.CONTINUED
+
+    def _recovery_transition(
+        self,
+        events: Sequence[EpisodeMonitorEvent],
+        recommendation: EpisodeMonitorRecommendation,
+        reason: str,
+        candidate: RecoverySignal,
+    ) -> EpisodeMonitorTransition:
+        signal, lifecycle = self._open_or_continue_recovery(candidate)
+        return EpisodeMonitorTransition(
+            tuple(dict.fromkeys(events)),
+            recommendation,
+            reason,
+            signal,
+            lifecycle,
+        )
+
+    def _carry_recovery(
+        self,
+        result: StepResult,
+        events: Sequence[EpisodeMonitorEvent],
+        information_delta: InformationDelta | None,
+        *,
+        recommendation: EpisodeMonitorRecommendation = EpisodeMonitorRecommendation.RECOVER,
+        reason: str = "",
+    ) -> EpisodeMonitorTransition:
+        """Keep an unresolved recovery active while a diagnostic action adds evidence."""
+
+        active = self.active_recovery
+        if active is None:
+            raise RuntimeError("cannot carry an inactive recovery")
+        evidence = dict(active.observed_evidence)
+        evidence.update(
+            {
+                "latest_attempt": _bounded_public_attempt(result),
+                "latest_dispatch": _dispatch_status(result),
+                "world_digest": self.world_digest,
+                "current_findings_digest": self.current_findings_digest,
+            }
+        )
+        if information_delta is not None:
+            evidence["latest_information_delta"] = information_delta.kind.value
+        attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, _attempted_mode(result))))
+        signal = replace(
+            active,
+            observed_evidence=evidence,
+            attempted_modes=attempted_modes,
+            evidence_revision=active.evidence_revision + 1,
+        )
+        self.active_recovery = signal
+        return EpisodeMonitorTransition(
+            tuple(dict.fromkeys(events)),
+            recommendation,
+            reason or active.kind.value,
+            signal,
+            RecoveryLifecycleTransition.CONTINUED,
+        )
+
+    def _close_recovery(
+        self,
+        events: Sequence[EpisodeMonitorEvent],
+    ) -> EpisodeMonitorTransition:
+        self.active_recovery = None
+        return EpisodeMonitorTransition(
+            tuple(dict.fromkeys(events)),
+            EpisodeMonitorRecommendation.CONTINUE,
+            "recovery_closed",
+            None,
+            RecoveryLifecycleTransition.CLOSED,
+        )
 
     def evaluate(
         self,
@@ -120,6 +262,8 @@ class EpisodeMonitor:
 
         # Native evaluation remains the only task-completion/impossibility authority.
         if result.task_evaluation is None:
+            if self.active_recovery is not None:
+                return self._carry_recovery(result, events, information_delta)
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
         if result.task_evaluation.status not in {
             TaskEvaluationStatus.INCOMPLETE,
@@ -132,6 +276,8 @@ class EpisodeMonitor:
             self.recent_gui_attempts = ()
             self.recent_gui_results = ()
             self.active_gui_cycle_digest = ""
+            if self.active_recovery is not None:
+                return self._close_recovery(events)
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         if self.recovery_count and result.feedback == "recovery_repeat_rejected":
@@ -147,14 +293,14 @@ class EpisodeMonitor:
                 recovery_attempt=self.recovery_count,
             )
             if self.recovery_count > self.profile.max_recovery_retries + 1:
-                return EpisodeMonitorTransition(
-                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                return self._recovery_transition(
+                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                     EpisodeMonitorRecommendation.BLOCK,
                     "control_stalled",
                     signal,
                 )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.CONTROL_STALL.value,
                 signal,
@@ -173,14 +319,14 @@ class EpisodeMonitor:
                 recovery_attempt=self.recovery_count,
             )
             if self.recovery_count > self.profile.max_recovery_retries + 1:
-                return EpisodeMonitorTransition(
-                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                return self._recovery_transition(
+                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                     EpisodeMonitorRecommendation.BLOCK,
                     "control_stalled",
                     signal,
                 )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.CONTROL_STALL.value,
                 signal,
@@ -194,6 +340,43 @@ class EpisodeMonitor:
             result.after_world,
         )
         cycle_digest, cycle_period = self._record_gui_attempt(gui_signature)
+
+        if self.active_recovery is not None and gui_dispatched and _gui_has_operational_result(result):
+            self.observation_only_streak = 0
+            self.recovery_count = 0
+            self.latest_attempt_signature = gui_signature
+            self.same_attempt_streak = 1
+            self.active_gui_cycle_digest = ""
+            return self._close_recovery(events)
+
+        if self.active_recovery is not None and not gui_dispatched:
+            if (
+                information_delta is not None
+                and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+                and _recovery_origin_is_local(self.active_recovery)
+            ):
+                self.observation_only_streak = 0
+                self.recovery_count = 0
+                self.latest_attempt_signature = None
+                self.same_attempt_streak = 0
+                self.active_gui_cycle_digest = ""
+                return self._close_recovery(events)
+            signature = _same_world_attempt_signature(result)
+            repeats_latest = signature == self.latest_attempt_signature
+            self.no_progress_count += 1
+            self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
+            self.latest_attempt_signature = signature
+            self.recovery_count = 1
+            if repeats_latest:
+                return self._carry_recovery(
+                    result,
+                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
+                    information_delta,
+                    recommendation=EpisodeMonitorRecommendation.BLOCK,
+                    reason="control_stalled",
+                )
+            return self._carry_recovery(result, events, information_delta)
+
         if route_origin is not None:
             self.observation_only_streak = 0
             self.active_gui_cycle_digest = ""
@@ -205,6 +388,8 @@ class EpisodeMonitor:
                 self.recovery_count = 0
                 self.same_attempt_streak = 1
                 self.latest_attempt_signature = gui_signature
+                if self.active_recovery is not None:
+                    return self._carry_recovery(result, events, information_delta)
                 return EpisodeMonitorTransition(
                     tuple(dict.fromkeys(events)),
                     EpisodeMonitorRecommendation.CONTINUE,
@@ -218,8 +403,8 @@ class EpisodeMonitor:
                 outbound_attempt=route_origin,
                 route_length=route_length,
             )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.ROUTE_REVIEW))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.ROUTE_REVIEW),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.STRATEGY_REVIEW.value,
                 signal,
@@ -237,8 +422,8 @@ class EpisodeMonitor:
                 gui_signature=gui_signature,
                 result_world_digest=next_world_digest,
             )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.OSCILLATION))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.OSCILLATION),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.STATE_OSCILLATION.value,
                 signal,
@@ -257,14 +442,16 @@ class EpisodeMonitor:
                 cycle_period=cycle_period,
                 recovery_attempt=2 if repeated_cycle else 1,
             )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.OSCILLATION))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.OSCILLATION),
                 EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
 
         if durable_progress:
+            if self.active_recovery is not None:
+                return self._carry_recovery(result, events, information_delta)
             self.observation_only_streak = 0
             self.recovery_count = 0
             self.latest_attempt_signature = None
@@ -289,6 +476,8 @@ class EpisodeMonitor:
             self.recovery_count = 0
             self.latest_attempt_signature = gui_signature
             self.same_attempt_streak = 1
+            if self.active_recovery is not None:
+                return self._carry_recovery(result, events, information_delta)
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         exact_replay = bool(
@@ -307,8 +496,8 @@ class EpisodeMonitor:
         if self.recovery_count:
             if repeats_latest:
                 signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
-                return EpisodeMonitorTransition(
-                    tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+                return self._recovery_transition(
+                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                     EpisodeMonitorRecommendation.BLOCK,
                     "control_stalled",
                     signal,
@@ -323,8 +512,8 @@ class EpisodeMonitor:
                 self,
                 recovery_attempt=self.recovery_count,
             )
-            return EpisodeMonitorTransition(
-                tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                 EpisodeMonitorRecommendation.RECOVER,
                 RecoveryKind.CONTROL_STALL.value,
                 signal,
@@ -347,8 +536,8 @@ class EpisodeMonitor:
         self.recovery_count = 1
         self.observation_only_streak = 0
         signal = _control_stall_signal(result, self, recovery_attempt=1)
-        return EpisodeMonitorTransition(
-            tuple(dict.fromkeys((*events, EpisodeMonitorEvent.REPEATED_ACTION))),
+        return self._recovery_transition(
+            (*events, EpisodeMonitorEvent.REPEATED_ACTION),
             EpisodeMonitorRecommendation.RECOVER,
             RecoveryKind.CONTROL_STALL.value,
             signal,
@@ -410,6 +599,12 @@ def _dispatch_status(result: StepResult) -> str:
     return DispatchStatus.NOT_SENT.value
 
 
+def _recovery_origin_is_local(signal: RecoverySignal) -> bool:
+    """Only same-call local information can resolve a local observation stall."""
+
+    return signal.observed_evidence.get("origin_dispatch") == DispatchStatus.NOT_SENT.value
+
+
 def _control_stall_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
@@ -439,7 +634,9 @@ def _control_stall_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signature=prohibited_attempt_signature,
+        prohibited_attempt_signatures=(
+            (prohibited_attempt_signature,) if prohibited_attempt_signature is not None else ()
+        ),
         human_instruction=_control_stall_instruction(result),
         recovery_attempt=recovery_attempt,
     )
@@ -470,7 +667,7 @@ def _gui_cycle_recovery_signal(
         # happened to close it is both phase-dependent and usually useless on
         # the resulting fresh World.  The ActionPolicy receives the bounded
         # cycle finding and owns the semantic strategy change.
-        prohibited_attempt_signature=None,
+        prohibited_attempt_signatures=(),
         human_instruction=(
             "Recent effectful GUI attempts repeated a short cycle across fresh Worlds. Preserve completed results "
             "already present in tool history and choose an offered action outside this cycle toward an unresolved "
@@ -501,7 +698,7 @@ def _repeated_gui_result_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signature=gui_signature,
+        prohibited_attempt_signatures=(gui_signature,),
         human_instruction=(
             "The same semantic GUI action has reached this public result before. Preserve current evidence and "
             "choose a materially different offered control or observation route; do not replay this action. If "
@@ -557,7 +754,7 @@ def _closed_route_review_signal(
             "current_findings_digest": monitor.current_findings_digest,
         },
         attempted_modes=attempted_modes,
-        prohibited_attempt_signature=outbound_attempt,
+        prohibited_attempt_signatures=(outbound_attempt,),
         human_instruction=(
             "The latest effectful GUI excursion returned to the semantic page where an earlier outbound attempt "
             "began. Preserve facts acquired during the excursion and reassess them against the unresolved task "
