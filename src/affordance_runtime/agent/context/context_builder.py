@@ -52,6 +52,10 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import ObservationCapabilities
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.finalization import (
+    PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT,
+    FinalResponseToolContract,
+)
 
 
 @dataclass(frozen=True)
@@ -158,6 +162,7 @@ class ContextBuilder:
         last_step: StepResult | None = None,
         observation_projection: ObservationContextProjection | None = None,
         final_response_guidance: str = "",
+        final_response_contract: FinalResponseToolContract = PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT,
     ) -> AgentContext:
         if task_evaluation.observation_id != observation.observation_id:
             raise ValueError("context task evaluation belongs to a previous observation")
@@ -248,6 +253,7 @@ class ContextBuilder:
             _final_response_tool_catalog_digest(
                 current_projection.tool_catalog_digest,
                 final_response_guidance,
+                final_response_contract,
             ),
         )
         actions = close_action_candidates(actions, grounding.index, context_id=identity.context_id)
@@ -301,6 +307,7 @@ class ContextBuilder:
             action_delivery_plan,
             last_step,
             final_response_guidance,
+            final_response_contract,
         )
 
     def page(
@@ -468,13 +475,17 @@ def _tool_catalog_digest(
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _final_response_tool_catalog_digest(base_digest: str, guidance: str) -> str:
+def _final_response_tool_catalog_digest(
+    base_digest: str,
+    guidance: str,
+    contract: FinalResponseToolContract,
+) -> str:
     """Extend the current tool identity only when its final-response contract changes."""
 
     normalized = " ".join(guidance.split())
-    if not normalized:
+    if not normalized and contract == PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT:
         return base_digest
-    return hashlib.sha256(f"{base_digest}\0{normalized}".encode()).hexdigest()
+    return hashlib.sha256(f"{base_digest}\0{normalized}\0{contract.contract_id}".encode()).hexdigest()
 
 
 def _pinned_targets(
@@ -514,6 +525,7 @@ def _fit_context(
     action_delivery_plan,
     last_step: StepResult | None,
     final_response_guidance: str,
+    final_response_contract: FinalResponseToolContract,
 ) -> AgentContext:
     world = observation_projection.model_world
     grounding = observation_projection.grounding
@@ -548,6 +560,7 @@ def _fit_context(
         action_delivery_plan,
         last_step,
         final_response_guidance,
+        final_response_contract,
     )
 
 

@@ -11,6 +11,7 @@ from typing import Any, ClassVar, TypeAlias
 from affordance_runtime.actions.paging import PUBLIC_ACTION_LABEL_MAX_CHARS
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
 from affordance_runtime.immutable import freeze_json
+from affordance_runtime.world.finalization import MAX_FINAL_RESPONSE_CHARS
 from affordance_runtime.world.observation_needs import ObservationPurpose
 
 _MAX_REASON = 500
@@ -26,7 +27,6 @@ _AGENT_EVIDENCE_PURPOSES = frozenset(
         ObservationPurpose.VISUAL_CHANGE,
     }
 )
-MAX_FINAL_RESPONSE_CHARS = 8_000
 _MAX_COLLECTION = 32
 _TOOL_CALL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
 

@@ -1437,8 +1437,13 @@ def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_pr
 
 def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() -> None:
     pytest.importorskip("webarena_verified")
-    guidance = WebArenaVerifiedFinalResponseCodec().model_guidance
-    context = replace(_context(), final_response_guidance=guidance)
+    codec = WebArenaVerifiedFinalResponseCodec()
+    guidance = codec.model_guidance
+    context = replace(
+        _context(),
+        final_response_guidance=guidance,
+        final_response_contract=codec.model_tool_contract,
+    )
 
     catalog = _compile_catalog(context)
 
@@ -1446,6 +1451,47 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
     assert guidance in spec.description
     assert "MUTATE: Use when creating, updating, or deleting data or state" in spec.description
     assert "NAVIGATE: Use when navigating or browsing to show a specific page or location" in spec.description
+    assert set(spec.input_schema["properties"]) == {"response"}
+    response_schema = spec.input_schema["properties"]["response"]
+    assert response_schema["properties"]["task_type"]["enum"] == ["RETRIEVE", "MUTATE", "NAVIGATE"]
+    assert response_schema["required"] == ["task_type", "status"]
+
+    response = {
+        "task_type": "MUTATE",
+        "status": "SUCCESS",
+        "retrieved_data": None,
+        "error_details": None,
+    }
+    resolution = _resolve_catalog_call(
+        catalog,
+        ToolCall("submit_final_response", {"response": response}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(resolution.decision, FinalResponse)
+    assert json.loads(resolution.decision.content) == response
+
+    with pytest.raises(GroundedToolResolutionError) as exc_info:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("submit_final_response", {"content": json.dumps(response)}),
+            expected_context_id=context.context_id,
+        )
+    assert exc_info.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+    structured_catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        _delivery(context),
+        interaction_tool_profile=InteractionToolExposureProfile.STRUCTURED,
+    )
+    structured_spec = next(
+        item for item in structured_catalog.specs if item.name == "submit_final_response"
+    )
+    assert set(structured_spec.input_schema["properties"]) == {
+        "response",
+        "artifact",
+        "public_intent",
+    }
 
 
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:

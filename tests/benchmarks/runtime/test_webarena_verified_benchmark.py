@@ -226,11 +226,13 @@ def test_webarena_intake_separates_semantic_goal_from_upstream_response_envelope
             action_space,
             evaluation,
             final_response_guidance=environment.final_response_codec.model_guidance,
+            final_response_contract=environment.final_response_codec.model_tool_contract,
         )
         assert context.task.instruction == semantic_goal
         assert context.task.constraints.items == ()
         assert "Final response format" not in context.task.instruction
         assert context.final_response_guidance == environment.final_response_codec.model_guidance
+        assert context.final_response_contract == environment.final_response_codec.model_tool_contract
         assert context.context_id != context_without_output_contract.context_id
     finally:
         asyncio.run(environment.close())

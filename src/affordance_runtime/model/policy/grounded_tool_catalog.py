@@ -51,6 +51,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
 )
 from affordance_runtime.model.policy.perception import InteractionToolExposureProfile, ObservationToolExposureProfile
 from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
+from affordance_runtime.world.finalization import (
+    PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT,
+    FinalResponseToolContract,
+)
 from affordance_runtime.world.observation_needs import ObservationPurpose
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -308,6 +312,7 @@ class _ControlBinding:
 class _FinalResponseBinding:
     interaction_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY
     evidence_bindings: Mapping[str, str] | None = None
+    contract: FinalResponseToolContract = PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         del tool_call_id
@@ -316,7 +321,7 @@ class _FinalResponseBinding:
             artifact = _resolve_artifact_draft(arguments["artifact"], self.evidence_bindings or {})
         return FinalResponse(
             context_id,
-            str(arguments["content"]),
+            self.contract.encode(arguments[self.contract.argument_name]),
             (),
             artifact,
             str(arguments.get("public_intent", "")).strip(),
@@ -655,13 +660,9 @@ def compile_grounded_tool_catalog(
     }
     evidence_bindings.update({item.evidence_ref: item.evidence_ref for item in delivery.media})
     media_refs = frozenset(item.evidence_ref for item in delivery.media)
+    final_contract = context.final_response_contract
     final_properties: dict[str, object] = {
-        "content": {
-            "type": "string",
-            "description": "complete final answer, JSON when the task contract requires JSON",
-            "minLength": 1,
-            "maxLength": 8000,
-        },
+        final_contract.argument_name: final_contract.payload_schema,
     }
     if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED:
         final_properties.update(
@@ -675,9 +676,9 @@ def compile_grounded_tool_catalog(
             ToolSpec(
                 GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
                 _final_response_description(context.final_response_guidance),
-                _object_schema(final_properties, ("content",)),
+                _object_schema(final_properties, (final_contract.argument_name,)),
             ),
-            _FinalResponseBinding(interaction_tool_profile, evidence_bindings),
+            _FinalResponseBinding(interaction_tool_profile, evidence_bindings, final_contract),
         )
     )
 

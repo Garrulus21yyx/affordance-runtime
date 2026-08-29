@@ -17,7 +17,11 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.goals.plan import AgentGoalPlanView
 from affordance_runtime.immutable import freeze_json
-from affordance_runtime.world.finalization import FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS
+from affordance_runtime.world.finalization import (
+    FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS,
+    PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT,
+    FinalResponseToolContract,
+)
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
@@ -242,6 +246,12 @@ class AgentContext:
         compare=False,
         metadata={"serialize": False},
     )
+    final_response_contract: FinalResponseToolContract = field(
+        default=PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not self.context_id.startswith("context:"):
@@ -251,6 +261,8 @@ class AgentContext:
         guidance = " ".join(self.final_response_guidance.split())
         if len(guidance) > FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS:
             raise ValueError("AgentContext final response guidance exceeds its bound")
+        if not isinstance(self.final_response_contract, FinalResponseToolContract):
+            raise TypeError("AgentContext final response contract must be typed")
         object.__setattr__(self, "final_response_guidance", guidance)
         object.__setattr__(self, "image_inputs", tuple(self.image_inputs))
         if len(self.image_inputs) > 2 or any(

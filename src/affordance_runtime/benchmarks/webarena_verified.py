@@ -98,7 +98,11 @@ from affordance_runtime.task import (
 )
 from affordance_runtime.world.acquisition import AcquisitionStatus
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref
-from affordance_runtime.world.finalization import FinalResponseCodec
+from affordance_runtime.world.finalization import (
+    FinalResponseCodec,
+    FinalResponsePayloadEncoding,
+    FinalResponseToolContract,
+)
 from affordance_runtime.world.orchestrator import UnifiedWorldEnvironment
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -546,7 +550,65 @@ class WebArenaVerifiedFinalResponseCodec:
 
     @property
     def model_guidance(self) -> str:
-        schema = self._upstream_response_schema()
+        objective_description, _objective_values, status_values = self._upstream_response_enums()
+        objective_rules = "; ".join(
+            line.strip()
+            for line in objective_description.splitlines()
+            if line.strip().startswith(("RETRIEVE:", "MUTATE:", "NAVIGATE:"))
+        )
+        if not all(f"{name}:" in objective_rules for name in ("RETRIEVE", "MUTATE", "NAVIGATE")):
+            raise ValueError("WebArena task-type definitions are incomplete")
+        return (
+            f"JSON FinalAgentResponse. task_type is overall work: {objective_rules}. "
+            "Derive it from task, never goal_plan or allowed effects. "
+            f"status={'|'.join(status_values)}. NAVIGATE/MUTATE: retrieved_data=null. "
+            "SUCCESS: error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
+        )
+
+    @property
+    def model_tool_contract(self) -> FinalResponseToolContract:
+        _description, objective_values, status_values = self._upstream_response_enums()
+        return FinalResponseToolContract(
+            FinalResponsePayloadEncoding.JSON,
+            {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": objective_values},
+                    "status": {"type": "string", "enum": status_values},
+                    "retrieved_data": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {"type": "integer"},
+                                        {"type": "number"},
+                                        {"type": "boolean"},
+                                        {"type": "object", "additionalProperties": True},
+                                        {"type": "null"},
+                                    ]
+                                },
+                                "maxItems": 512,
+                            },
+                            {"type": "null"},
+                        ]
+                    },
+                    "error_details": {
+                        "anyOf": [
+                            {"type": "string", "maxLength": 8_000},
+                            {"type": "null"},
+                        ]
+                    },
+                },
+                "required": ["task_type", "status"],
+                "additionalProperties": False,
+            },
+        )
+
+    @staticmethod
+    def _upstream_response_enums() -> tuple[str, list[str], list[str]]:
+        schema = WebArenaVerifiedFinalResponseCodec._upstream_response_schema()
         definitions = schema.get("$defs")
         if not isinstance(definitions, Mapping):
             raise ValueError("WebArena final-response schema is missing definitions")
@@ -555,24 +617,16 @@ class WebArenaVerifiedFinalResponseCodec:
         if not isinstance(objective, Mapping) or not isinstance(status, Mapping):
             raise ValueError("WebArena final-response schema is missing response enums")
         objective_description = objective.get("description")
+        objective_values = objective.get("enum")
         status_values = status.get("enum")
-        if not isinstance(objective_description, str) or not isinstance(status_values, list):
+        if (
+            not isinstance(objective_description, str)
+            or not isinstance(objective_values, list)
+            or not isinstance(status_values, list)
+            or any(not isinstance(value, str) or not value for value in (*objective_values, *status_values))
+        ):
             raise ValueError("WebArena final-response enum contract is malformed")
-        objective_rules = "; ".join(
-            line.strip()
-            for line in objective_description.splitlines()
-            if line.strip().startswith(("RETRIEVE:", "MUTATE:", "NAVIGATE:"))
-        )
-        if not all(f"{name}:" in objective_rules for name in ("RETRIEVE", "MUTATE", "NAVIGATE")):
-            raise ValueError("WebArena task-type definitions are incomplete")
-        if any(not isinstance(value, str) or not value for value in status_values):
-            raise ValueError("WebArena status definitions are malformed")
-        return (
-            f"JSON FinalAgentResponse. task_type is overall work: {objective_rules}. "
-            "Derive it from task, never goal_plan or allowed effects. "
-            f"status={'|'.join(status_values)}. NAVIGATE/MUTATE: retrieved_data=null. "
-            "SUCCESS: error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
-        )
+        return objective_description, objective_values, status_values
 
     def semantic_instruction(self, goal_instruction: str) -> str:
         """Remove only the pinned upstream response envelope from its intent."""
