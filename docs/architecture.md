@@ -103,6 +103,17 @@ v5 checkpoint preserves the epoch but drops its old whole-page hard signature be
 with the v6 action-scoped signature. Unsupported or legacy constraints therefore fail open without inventing a
 dispatch prohibition.
 
+Every committed `StepResult` that can encounter an active epoch crosses one gateway: `_commit_step` applies the
+delivery transition, asks `EpisodeMonitor` for the recovery transition, then commits both to `RunState`. A consumed
+policy step, execution receipt, `ActionOutcome`, or typed zero-dispatch rejection advances the Monitor exactly once.
+A pause-persistence refresh, user-control refresh, declined confirmation, or pre-dispatch confirmation refresh carries
+the current epoch without treating currentness acquisition as operational recovery. An approved confirmation with a
+real dispatch advances normally. Task revision starts a new episode; restored/native terminal evaluation and
+non-`StepResult` cancellation clear both the Monitor state and its `RunState` projection. If a checkpoint carrying a
+recovery epoch is restored into the supported optional-Monitor core composition without a Monitor instance, the
+projection is preserved fail-closed until revision or terminal settlement; that fallback neither interprets nor
+advances the lifecycle.
+
 While the recovery epoch is active, every ActionPolicy call uses the existing deliberate profile. A diagnostic read
 does not consume a one-shot reasoning token or downgrade the following call. `StrategyRevision`, its provider schema,
 prompt field, trace branch, context field, and scheduling state have been removed. Monitor still cannot name a
@@ -127,9 +138,11 @@ ActionPolicy remains the only semantic actor.
 
 The migration is bounded to the proven causal surface: ToolReturn projection, Workspace delivery, Monitor recovery
 state, exact attempt identity, Runtime admission, checkpoint schema, ActionPolicy reasoning profile, provider prompt,
-trace projection, and their tests. It adds no memory Store, Manager/Worker, semantic Monitor rules, alternative Binder
-or executor, task-specific labels, retries around unknown effects, or evaluator shortcut. No live benchmark was run;
-provider-free implementation completion and empirical benchmark closure remain separate.
+trace projection, committed control boundaries, and their tests. It adds no memory Store, Manager/Worker, semantic
+Monitor rules, alternative Binder or executor, task-specific labels, retries around unknown effects, or evaluator
+shortcut. A fresh-context owner review found the cross-boundary lifecycle gap, verified its owner-level repair, and
+returned no residual finding after a second narrow review of the optional-Monitor fallback. No live benchmark was
+run; provider-free implementation completion and empirical benchmark closure remain separate.
 
 ### 2026-08-29 tool-contract convergence
 

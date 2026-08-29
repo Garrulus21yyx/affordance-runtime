@@ -1,6 +1,6 @@
 # Tool contract and recovery convergence
 
-Status: fresh_review_pending
+Status: completed_provider_free; live_benchmark_open
 
 ## Goal
 
@@ -39,7 +39,7 @@ execution.
    preserving one ActionPolicy deliberate recovery; run provider transcript/call-count gates; commit.
 5. [completed] Migrate exceptional consumers, traces, prompts, checkpoint restore, architecture tests, and documentation;
    run focused suites, full pytest, Ruff/type gates and negative source scans; commit.
-6. [in_progress] Perform a fresh-context implementation review, fix any owner/invariant gaps, record held-out evidence and
+6. [completed] Perform a fresh-context implementation review, fix any owner/invariant gaps, record held-out evidence and
    leave live benchmark explicitly pending user authorization; final commit if needed.
 
 ## Files changed by step
@@ -62,7 +62,15 @@ execution.
   changed-surface Ruff format, compileall, and negative source scans. Changed-file mypy is explicitly non-green but
   improves from the base commit's 89 errors in six files to 83 errors in three files; it is recorded as baseline
   evidence, not a passing gate.
-- Step 6: pending.
+- Step 6: the fresh-context owner review found one P1 lifecycle gap: pause/user-control refresh, confirmation,
+  revision, restored terminal, and non-`StepResult` cancellation did not all cross the Monitor transition owner.
+  `86d95a89` made `_commit_step` the sole committed `StepResult` gateway, classified passive carry versus operational
+  advance, and synchronized revision/terminal control boundaries. Seven direct production-path witnesses pass. A
+  final fail-closed audit found that a restored recovery could be silently cleared when the optional Monitor instance
+  was absent; `8b7014fd` preserves the checkpoint projection without interpreting or advancing it and clears it at a
+  terminal boundary. Eight combined lifecycle witnesses pass. The same fresh reviewer re-reviewed both commits and
+  returned no residual finding. Final full provider-free verification reports
+  `2109 passed, 19 skipped, 1 deselected, 1 warning`; live benchmark evidence remains open by authorization.
 
 ## Commits
 
@@ -70,3 +78,6 @@ execution.
 - `e2d27d33 Persist monitor-owned recovery epochs`
 - `4cce34a4 Enforce proven failed attempts at runtime`
 - `24bebb0a Unify recovery reasoning in action policy`
+- `f2287c9a Document and verify recovery convergence`
+- `86d95a89 Centralize recovery lifecycle at commit boundaries`
+- `8b7014fd Preserve restored recovery without monitor`

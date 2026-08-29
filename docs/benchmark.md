@@ -13,7 +13,7 @@ against the repeated action but caused the actual ActionPolicy call to run ordin
 therefore demonstrates reflection capability and a Runtime feedback/ownership break, not a total absence of model
 reflection.
 
-Four independently committed owner repairs implement the bounded causal surface:
+Four primary owner repairs and two fresh-review lifecycle commits implement the bounded causal surface:
 
 - `e479d3d0 Close GUI outcome feedback to action policy`: same-call GUI ToolReturn now separates dispatch receipts
   from `ActionOutcome`, and the existing latest-four ref-free Workspace trajectory enters the ActionPolicy request;
@@ -24,7 +24,13 @@ Four independently committed owner repairs implement the bounded causal surface:
   returns typed same-ID `not_sent` feedback before Binder/Executor;
 - `24bebb0a Unify recovery reasoning in action policy`: the separate StrategyRevision provider/schema/context/prompt/
   trace path and consumed-event downgrade state are removed; every ActionPolicy call in an active recovery epoch uses
-  the existing deliberate profile.
+  the existing deliberate profile;
+- `86d95a89 Centralize recovery lifecycle at commit boundaries`: `_commit_step` is the sole committed `StepResult`
+  Monitor gateway; passive refresh carries the epoch, operational facts advance it once, and task revision plus every
+  terminal control boundary synchronize the Monitor and `RunState` projection;
+- `8b7014fd Preserve restored recovery without monitor`: an optional-Monitor core restored from a recovery-bearing
+  checkpoint preserves that typed projection without interpreting or advancing it, while terminal settlement still
+  clears it explicitly.
 
 The positive provider-free gates cover the following invariants:
 
@@ -42,24 +48,28 @@ The positive provider-free gates cover the following invariants:
 - a proven exact replay produces `ToolRejectedResult(kind=proven_failed_attempt_rejected, dispatch=not_sent)` under
   the provider call's original ID and performs zero additional environment executions;
 - progressive keyboard actions continue dispatching when each fresh World advances;
+- pause-persistence and user-control refresh, approved confirmation dispatch, task revision, restored terminal,
+  before-policy cancellation, and waiting-control cancellation obey one recovery transition algebra;
+- an optional-Monitor restore cannot silently erase the persisted recovery projection;
 - production contains no `StrategyRevision`, `revise_strategy`, `strategy_revision`, or
   `consumed_recovery_events` path.
 
 Repository-level verification used the required fixed BrowserGym Python with `PYTHONPATH=src:tests` and reports
-`2101 passed, 19 skipped, 1 deselected, 1 warning` in 113.74 seconds. The one deselection is
+`2109 passed, 19 skipped, 1 deselected, 1 warning` in 109.16 seconds. The one deselection is
 `test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action`; running it separately fails before
 product code with `FileNotFoundError` because the repository does not contain
 `evidence/live/w1b-one-task-0-zhipu-glm46-readable-tools-run2/.../trace.jsonl`. Repository Ruff check, Ruff format on
-all 27 changed Python files, compileall, negative production-source scans, and `git diff --check` pass. Checkpoint
+all 28 changed Python files, compileall, negative production-source scans, and `git diff --check` pass. Checkpoint
 round-trip and legacy-v5 migration tests cover the new v6 attempt identity. Changed-file mypy is not a passing
-repository gate: under the same installed toolchain it reports 83 errors in three files, versus 89 errors in six files
-for the same 14-source-file surface at base commit `56682593`. The convergence introduces no new mypy-reported file
-and reduces that pre-existing baseline, but does not claim repository type-check closure.
+repository gate: under the same installed toolchain it reports 229 errors in 22 files, versus 235 errors in 25 files
+for the same 15-source-file surface at base commit `56682593`. This is a non-green aggregate baseline comparison, not
+a type-check passing gate or a claim that each individual diagnostic was eliminated.
 
 This evidence establishes implementation completion and the bounded provider-free contracts. It does not establish
 live Task554 completion, benchmark accuracy, latency, or token non-regression. No live provider or benchmark command
 was launched. Empirical closure remains open for one authorized Task554 rerun and one untouched held-out long task;
-the independent fresh-context review is recorded separately before any closure claim.
+the independent fresh-context review first returned one P1 lifecycle finding, then returned no residual finding after
+`86d95a89` and a narrow re-review of `8b7014fd`. This is not an overall project-closure claim.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
