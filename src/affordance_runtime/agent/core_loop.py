@@ -1007,9 +1007,6 @@ class CoreAgentLoop:
         *,
         advance: bool,
     ) -> StepResult:
-        monitor = self.episode_monitor
-        if monitor is None:
-            return result
         if result.status_after in {
             RunStatus.DONE,
             RunStatus.BLOCKED,
@@ -1018,6 +1015,9 @@ class CoreAgentLoop:
         }:
             self._end_episode()
             return replace(result, recovery_signal=None)
+        monitor = self.episode_monitor
+        if monitor is None:
+            return replace(result, recovery_signal=state.recovery_signal)
         if not advance:
             return replace(result, recovery_signal=state.recovery_signal)
         if result.task_evaluation is None:

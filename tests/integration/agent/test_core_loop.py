@@ -762,6 +762,34 @@ def test_passive_currentness_refresh_preserves_the_monitor_owned_recovery_epoch(
     asyncio.run(scenario())
 
 
+def test_missing_monitor_cannot_silently_clear_a_restored_recovery_epoch() -> None:
+    async def scenario() -> None:
+        runtime = TargetRuntime(
+            AgentDecisionPorts(CorePolicy("first_action")),
+            DispatchPostconditionProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("restored_recovery_without_monitor"),
+            episode_monitor=None,
+        )
+        task = _task()
+        environment = ScriptedEnvironment(
+            initial_observation=_world("monitor-missing-before", False),
+            independent_observations=(_world("monitor-missing-after", False),),
+        )
+        state = await runtime.initialize_task(environment, task)
+        signal = _active_boundary_recovery(epoch="recovery:1:restored-without-monitor")
+        state.recovery_signal = signal
+
+        await runtime.build_loop().refresh_after_pause_persistence_failure(environment, task, state)
+
+        assert state.status is RunStatus.RUNNING
+        assert state.recovery_signal == signal
+        assert state.last_step is not None
+        assert state.last_step.recovery_signal == signal
+
+    asyncio.run(scenario())
+
+
 def test_confirmation_dispatch_cannot_drop_an_active_recovery_epoch() -> None:
     @dataclass
     class ConfirmationRecoveryPolicy:
