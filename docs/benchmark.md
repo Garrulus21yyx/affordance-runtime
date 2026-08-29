@@ -2151,3 +2151,17 @@ into exactly the immediately following ActionPolicy context, and does not alter 
 Task554 run remains required to verify that the review actually redirects the live model before Monitor termination.
 Post-lifecycle-repair gates report `144 passed` for the combined focused action-delivery/Monitor/policy set and
 `2085 passed, 19 skipped, 1 deselected, 1 warning` for the complete fixed-environment suite.
+
+[`memory-convergence-run5`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run5/run.json)
+did not exercise StrategyRevision: it ended at model turn 10, before any recovery signal.  Its final provider response
+contained a syntactically valid `type_text(target=E23, ...)` call, but the fresh World exposed E23 as `New file` and
+the current catalog did not contain `type_text`; PydanticAI classified the unregistered tool as `json_invalid`.
+This is a current-tool protocol witness, not evidence against URL acquisition, action delivery, or the revised
+Monitor schedule.
+
+The provider owner now enables PydanticAI's single bounded tool-validation retry.  A regression scripts an historical
+tool name absent from the current catalog, verifies that the second physical request receives the identical fresh
+tool set plus the SDK retry explanation, accepts one current tool, and proves neither the rejected call nor retry
+prose enters canonical history. The focused PydanticAI integration file reports `109 passed`; the complete
+fixed-environment provider-free suite reports `2086 passed, 19 skipped, 1 deselected, 1 warning`, with only the
+documented absent archived trace deselected. Fresh live acceptance of the StrategyRevision schedule remains pending.

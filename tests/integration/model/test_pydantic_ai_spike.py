@@ -1120,6 +1120,45 @@ def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_
     asyncio.run(scenario())
 
 
+def test_historical_tool_name_uses_one_pydantic_retry_against_the_current_catalog() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ("historical_type_text", {"target": "E23", "text": "stale"}),
+                "first_gui_action",
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("historical-tool-name-retry", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:historical-tool-retry", context))
+
+        assert result.failure is None and result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert scripted.calls == 2
+        assert "historical_type_text" not in scripted.offered_tools[0]
+        assert scripted.offered_tools[1] == scripted.offered_tools[0]
+        assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
+        assert result.attempts[0].output_failure_kind is StructuredOutputFailureKind.JSON_INVALID
+        retry_request = scripted.records[1].messages[-1]
+        assert isinstance(retry_request, ModelRequest)
+        retry_text = json.dumps(retry_request, default=str)
+        assert "Unknown tool name" in retry_text
+        assert "historical_type_text" in retry_text
+        retained = json.dumps(policy.port.message_history, default=str)
+        assert "historical_type_text" not in retained
+        assert "Unknown tool name" not in retained
+
+    asyncio.run(scenario())
+
+
 def test_recovery_replay_becomes_one_same_call_typed_rejection() -> None:
     async def scenario() -> None:
         repeated_call_id = "recording-call:prohibited-read"

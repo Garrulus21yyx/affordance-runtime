@@ -1021,7 +1021,13 @@ class PydanticAIGroundedDecisionPort:
                     name=agent_name,
                     instructions=current_instructions,
                     output_type=[str, DeferredToolRequests],
-                    retries={"tools": 0, "output": output_retry_budget},
+                    # The catalog changes with every fresh World.  PydanticAI
+                    # owns the protocol-level recovery when a model repeats a
+                    # tool name from older history that is not registered for
+                    # this turn.  The bounded retry sees the same current
+                    # World and catalog; Runtime still resolves and executes
+                    # only the finally accepted current tool call.
+                    retries={"tools": 1, "output": output_retry_budget},
                     capabilities=persistence_capabilities,
                 )
                 current_agent.instrument = InstrumentationSettings(
@@ -3297,21 +3303,48 @@ def _accepted_message_history(
     requests: list[object] = []
     rejected_response_count = 0
     retry_prompt_count = 0
-    for message in new_messages[:-1]:
+    current_messages = new_messages[:-1]
+    index = 0
+    while index < len(current_messages):
+        message = current_messages[index]
         if isinstance(message, ModelResponse):
-            if any(isinstance(part, ToolCallPart) for part in message.parts):
-                raise ValueError("PydanticAI output retry cannot discard a tool-call response")
+            # PydanticAI may reject either text-only output or a tool name that
+            # is absent from this fresh catalog.  In both cases the following
+            # all-RetryPrompt request closes that invalid exchange.  Neither
+            # proposal was accepted by the current ToolCatalog, so retaining
+            # it as durable agent history would preserve a stale executable
+            # suggestion rather than a completed ToolCall/ToolReturn pair.
+            if index + 1 >= len(current_messages):
+                raise ValueError("PydanticAI rejected response has no retry prompt")
+            retry_request = current_messages[index + 1]
+            if not isinstance(retry_request, ModelRequest):
+                raise ValueError("PydanticAI rejected response is not followed by a retry request")
+            retry_parts = tuple(part for part in retry_request.parts if isinstance(part, RetryPromptPart))
+            if not retry_parts or len(retry_parts) != len(retry_request.parts):
+                raise ValueError("PydanticAI output retry request mixed canonical context")
+            rejected_calls = {
+                (part.tool_name, part.tool_call_id)
+                for part in message.parts
+                if isinstance(part, ToolCallPart)
+            }
+            retry_calls = {
+                (part.tool_name, part.tool_call_id)
+                for part in retry_parts
+                if part.tool_name is not None or part.tool_call_id is not None
+            }
+            if rejected_calls and rejected_calls != retry_calls:
+                raise ValueError("PydanticAI tool retry does not close the rejected tool calls")
             rejected_response_count += 1
+            retry_prompt_count += 1
+            index += 2
             continue
         if not isinstance(message, ModelRequest):
             raise ValueError("PydanticAI returned an unsupported current-turn message")
         retry_parts = tuple(part for part in message.parts if isinstance(part, RetryPromptPart))
         if retry_parts:
-            if len(retry_parts) != len(message.parts):
-                raise ValueError("PydanticAI output retry request mixed canonical context")
-            retry_prompt_count += 1
-            continue
+            raise ValueError("PydanticAI retry prompt has no rejected response")
         requests.append(message)
+        index += 1
     if rejected_response_count != retry_prompt_count or rejected_response_count > 1:
         raise ValueError("PydanticAI output retry history is incomplete or unbounded")
     requests_tuple = tuple(requests)

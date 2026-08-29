@@ -2435,6 +2435,23 @@ so the feature remains low-frequency and adds no persistent plan, Replanner loop
 The combined focused action-delivery/Monitor/policy set passes `144` tests; the complete fixed-environment suite passes
 `2085 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented absent archived trace deselected.
 
+Task554 run5 terminated before reaching that recovery lifecycle.  After the file-path dialog accepted `Enter`, the
+fresh World showed `urls.json` in the tree but no current editor value-entry route; its current `E23` denoted the
+focused `New file` button.  The model nevertheless repeated the historical operation name `type_text` with `E23`.
+The arguments were valid JSON, but `type_text` was absent from that fresh turn's ToolCatalog.  PydanticAI therefore
+rejected the unregistered tool before Catalog resolution, while the bridge's explicit `retries.tools=0` converted a
+recoverable current-catalog protocol error directly into terminal `schema_error`.
+
+Unknown-tool recovery now belongs to PydanticAI's existing bounded validation lifecycle.  One same-context tool retry
+receives the SDK's current available-tool list; it does not refresh World, remap the historical ref, or execute the
+rejected call.  The bridge drops the rejected response together with its matching SDK `RetryPrompt` and retains only
+the finally accepted call in canonical history.  The current ToolCatalog still resolves that call and Binder still
+requires its fresh World identity, so a URL or historical `E-ref` never becomes an executable handle.  Parameter or
+grounding failures after a registered call remain owned by the existing Catalog/representation-repair boundary.
+No Monitor rule, memory, resolver, or alternate execution path was added.
+The focused PydanticAI integration file passes `109` tests; the complete fixed-environment provider-free suite passes
+`2086 passed, 19 skipped, 1 deselected, 1 warning`. The deselection remains the documented absent archived trace.
+
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
 per-step planner was added.
