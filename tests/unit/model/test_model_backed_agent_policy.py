@@ -15,6 +15,7 @@ from affordance_runtime.agent.strategy_revision import (
     StrategyDisposition,
     StrategyFact,
     StrategyRevision,
+    strategy_revision_due,
 )
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
@@ -35,6 +36,14 @@ async def _context():
     evaluation = await SharedTaskEvaluator().evaluate(task, observation)
     space = ActionSpaceBuilder().build(task, observation)
     return ContextBuilder().build(task, observation, space, evaluation)
+
+
+def test_strategy_revision_schedule_uses_each_monitor_lifecycles_last_recoverable_point() -> None:
+    assert strategy_revision_due("strategy_review", 2)
+    assert not strategy_revision_due("strategy_review", 1)
+    assert strategy_revision_due("state_oscillation", 1)
+    assert not strategy_revision_due("state_oscillation", 2)
+    assert not strategy_revision_due("control_stall", 1)
 
 
 @dataclass
@@ -347,6 +356,57 @@ def test_accepted_strategy_revision_is_consumed_once_and_never_replayed() -> Non
         assert port.action_contexts[0].strategy_revision.next_intent == "Acquire the remaining item"
         assert port.action_contexts[1].strategy_revision is None
         assert not hasattr(policy, "active_strategy_revision")
+
+    asyncio.run(scenario())
+
+
+def test_first_recoverable_state_oscillation_gets_one_revision_before_terminal_attempt() -> None:
+    @dataclass
+    class RecoveryPort:
+        action_context: object | None = None
+        revision_calls: int = 0
+
+        async def revise_strategy(self, request):
+            self.revision_calls += 1
+            return ModelInvocationResult(
+                output=StrategyRevision(
+                    request.agent_context.goal_plan.task_revision,
+                    "oscillation:recoverable",
+                    1,
+                    StrategyDisposition.CONTINUE,
+                    (),
+                    (),
+                    ("Commit remains incomplete",),
+                    "Use a different current commit control",
+                    ("Repeating the unchanged active control",),
+                )
+            )
+
+        async def generate(self, request):
+            self.action_context = request.agent_context
+            return _decision_result(Abort(request.context_id, "fixture", "policy"))
+
+    async def scenario() -> None:
+        base = await _context()
+        port = RecoveryPort()
+        policy = ModelBackedAgentPolicy(port)
+
+        await policy.decide(
+            replace(
+                base,
+                control_feedback={
+                    "kind": "state_oscillation",
+                    "stable_signature": "oscillation:recoverable",
+                    "recovery_attempt": 1,
+                },
+            )
+        )
+
+        assert port.revision_calls == 1
+        assert port.action_context is not None
+        assert port.action_context.strategy_revision is not None
+        assert port.action_context.strategy_revision.source_recovery_attempt == 1
+        assert port.action_context.control_feedback["strategy_revision_status"] == "accepted"
 
     asyncio.run(scenario())
 

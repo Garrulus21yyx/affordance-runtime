@@ -26,6 +26,15 @@ class StrategyDisposition(StrEnum):
     NO_SUPPORTED_ROUTE = "no_supported_route"
 
 
+def strategy_revision_due(kind: str, attempt: object) -> bool:
+    """Admit review at the last recoverable point owned by each Monitor lifecycle."""
+
+    return type(attempt) is int and (
+        (kind == "strategy_review" and attempt == 2)
+        or (kind == "state_oscillation" and attempt == 1)
+    )
+
+
 @dataclass(frozen=True)
 class StrategyFact:
     claim: str
@@ -144,4 +153,5 @@ __all__ = [
     "StrategyFact",
     "StrategyRevision",
     "WorkingHypothesis",
+    "strategy_revision_due",
 ]

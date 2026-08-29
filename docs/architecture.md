@@ -2419,6 +2419,22 @@ the same-named active sidebar `Commit` mode button. The policy repeatedly activa
 correctly blocked the unchanged oscillation. The non-repeated interaction-region rule above closes both witnesses as
 one action-delivery contract rather than adding editor- or GitLab-specific branches.
 
+Task554 run4 then live-verified the whole information/acquisition side: the collapsed sort control remained
+discoverable, the policy selected `Newest`, read the five correct current URLs in order, and entered them through the
+editor. It also surfaced the actual `Create commit...` alternative through `find_controls`, but ordinary deliberate
+ActionPolicy still selected the already-failed same-named active `Commit` control. The Monitor correctly emitted
+`state_oscillation` attempt 1 while one recovery turn remained, then blocked on attempt 2. The StrategyRevision
+scheduler had been waiting for attempt 2, so its review was structurally unreachable: the trace necessarily records
+no StrategyRevision before termination.
+
+The review admission predicate now lives with `StrategyRevision` and is shared by `ModelBackedAgentPolicy` and the
+PydanticAI bridge. Route review retains its established second-closure trigger; state oscillation reviews at attempt 1,
+the last recoverable point in that Monitor lifecycle. The review remains call-local and advisory, and the immediately
+following ordinary ActionPolicy still owns the one actual ToolCall. Control-stall events do not each launch a review,
+so the feature remains low-frequency and adds no persistent plan, Replanner loop, or second action authority.
+The combined focused action-delivery/Monitor/policy set passes `144` tests; the complete fixed-environment suite passes
+`2085 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented absent archived trace deselected.
+
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
 per-step planner was added.

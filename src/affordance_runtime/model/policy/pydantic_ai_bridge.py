@@ -55,6 +55,7 @@ from affordance_runtime.agent.strategy_revision import (
     StrategyFact,
     StrategyRevision,
     WorkingHypothesis,
+    strategy_revision_due,
 )
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
@@ -183,7 +184,7 @@ _HISTORY_COMPACTION_INSTRUCTIONS = (
 )
 _STRATEGY_REVISION_INSTRUCTIONS = f"""
 You are the low-frequency StrategyReviser inside one general GUI agent. A mechanical monitor has
-reported a second closed route/cycle. Produce one concise review for the immediately following
+reported a bounded route/cycle recovery point. Produce one concise review for the immediately following
 ActionPolicy call; do not choose or call a GUI tool. This review is not durable progress and will
 not be replayed on later turns.
 
@@ -692,10 +693,8 @@ class PydanticAIGroundedDecisionPort:
         attempt = feedback.get("recovery_attempt", 0)
         kind = str(feedback.get("kind", ""))
         if (
-            kind not in {"strategy_review", "state_oscillation"}
-            or not signature
-            or type(attempt) is not int
-            or attempt != 2
+            not signature
+            or not strategy_revision_due(kind, attempt)
         ):
             return ModelInvocationResult(
                 failure=ModelFailure(

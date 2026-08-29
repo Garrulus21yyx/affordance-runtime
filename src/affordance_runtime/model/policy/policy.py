@@ -16,7 +16,7 @@ from affordance_runtime.agent.decision_capability import (
     normalize_decision_capabilities,
 )
 from affordance_runtime.agent.policy import AgentPolicyOutcome, PolicyFailure
-from affordance_runtime.agent.strategy_revision import StrategyRevision
+from affordance_runtime.agent.strategy_revision import StrategyRevision, strategy_revision_due
 from affordance_runtime.model.policy.contracts import (
     ModelDecisionRequest,
     ModelInvocationResult,
@@ -276,12 +276,7 @@ def _strategy_revision_due(
     kind = str(feedback.get("kind", ""))
     signature = str(feedback.get("stable_signature", ""))
     attempt = feedback.get("recovery_attempt", 0)
-    return bool(
-        kind in {"strategy_review", "state_oscillation"}
-        and signature
-        and type(attempt) is int
-        and attempt == 2
-    )
+    return bool(signature and strategy_revision_due(kind, attempt))
 
 
 def _strategy_revision_matches_context(

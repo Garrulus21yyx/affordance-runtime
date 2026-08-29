@@ -2134,3 +2134,20 @@ region regression places a value editor and sibling submit after 40 links and pr
 the same Catalog without changing existing visible-route order or exposing private bindings. The same regression
 places a collapsed `Sort by: Hot` disclosure outside the first 32 routes and proves it remains executable without a
 `Hot → Newest` matcher rule. A fresh run is still required for live closure.
+
+[`memory-convergence-run4`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run4/run.json)
+crossed the sort, exact-URL, and editor contracts: the model opened `Sort by: Hot`, selected `Newest`, read URLs
+`128825..128821` in order, and typed the correct JSON. It still blocked after 31 turns at the commit stage. A current
+`find_controls("commit changes message dialog")` result exposed both the already-failed active `Commit` control and
+the materially different `Create commit...` control, but subsequent ordinary recovery calls repeatedly selected the
+former. Monitor emitted `state_oscillation` with `recovery_attempt=1` while recovery remained and
+`recovery_attempt=2` only on the terminal blocked step. The StrategyRevision scheduler required attempt 2, making its
+review unreachable; every run4 model-turn record therefore has `strategy_revision=null`.
+
+The lifecycle repair centralizes the review predicate: `strategy_review/2` remains the route-level trigger and
+`state_oscillation/1` is the last recoverable oscillation trigger. Policy and PydanticAI bridge consume that same
+predicate. A focused test proves a first recoverable oscillation produces one aligned StrategyRevision, injects it
+into exactly the immediately following ActionPolicy context, and does not alter ToolCall execution authority. A fresh
+Task554 run remains required to verify that the review actually redirects the live model before Monitor termination.
+Post-lifecycle-repair gates report `144 passed` for the combined focused action-delivery/Monitor/policy set and
+`2085 passed, 19 skipped, 1 deselected, 1 warning` for the complete fixed-environment suite.
