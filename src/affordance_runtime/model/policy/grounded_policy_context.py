@@ -13,6 +13,7 @@ from affordance_runtime.agent.context.model_turn_delivery import (
     build_model_turn_delivery,
 )
 from affordance_runtime.agent.context.projection import project_public_value
+from affordance_runtime.agent.workspace import render_recent_trajectory
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.perception import (
@@ -82,6 +83,10 @@ class GroundedPolicyContextBinder:
             "goal_plan": _goal_plan(context),
         }
         current_turn: dict[str, object] = {"observation": observation}
+        recent_trajectory = render_recent_trajectory(context.workspace)
+        if recent_trajectory:
+            public["recent_trajectory"] = recent_trajectory
+            current_turn["recent_trajectory"] = recent_trajectory
         if context.control_feedback:
             control_feedback = project_public_value(context.control_feedback)
             public["control_feedback"] = control_feedback

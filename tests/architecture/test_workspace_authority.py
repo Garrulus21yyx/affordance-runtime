@@ -31,6 +31,7 @@ def test_workspace_is_runtime_diagnostics_while_pydantic_history_is_model_visibl
     bridge = (_SRC / "model" / "policy" / "pydantic_ai_bridge.py").read_text()
     assert "self.workspace_reducer.reduce(" in core
     assert "render_agent_workspace(" not in binder
+    assert "render_recent_trajectory(" in binder
     assert "message_history: tuple[object, ...]" in bridge
     assert "_compact_pydantic_history(" in bridge
     assert "SummarizingCompaction" in bridge

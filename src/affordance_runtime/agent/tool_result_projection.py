@@ -95,45 +95,45 @@ def project_committed_tool_return(step: StepResult) -> Mapping[str, object] | No
     if isinstance(decision, SelectAction):
         batch = step.execution_receipts
         terminal_failure = batch.terminal_failure if batch is not None else None
-        receipt_failure = bool(
-            batch is not None
-            and any(
-                not item.result.transport_success or item.result.error is not None
-                for item in batch.receipts
-            )
-        )
-        common["failed"] = failure is not None or terminal_failure is not None or receipt_failure
-        common.update(
-            {
-                "kind": "execution_receipt",
-                "completion": batch.completion.value if batch is not None else "not_dispatched",
-                "receipts": (
-                    tuple(
-                        {
-                            "dispatch_status": item.result.dispatch_status.value,
-                            "transport_success": item.result.transport_success,
-                            "error": item.result.error.value if item.result.error is not None else None,
-                        }
-                        for item in batch.receipts
-                    )
-                    if batch is not None
-                    else ()
-                ),
-            }
-        )
+        dispatch: dict[str, object] = {
+            "completion": batch.completion.value if batch is not None else "not_dispatched",
+            "receipts": (
+                tuple(
+                    {
+                        "dispatch_status": item.result.dispatch_status.value,
+                        "transport_success": item.result.transport_success,
+                        "error": item.result.error.value if item.result.error is not None else None,
+                    }
+                    for item in batch.receipts
+                )
+                if batch is not None
+                else ()
+            ),
+        }
+        if batch is not None and batch.cancellation_phase is not None:
+            dispatch["cancellation_phase"] = batch.cancellation_phase.value
         if terminal_failure is not None:
             currentness = {
                 key.removeprefix("currentness_"): terminal_failure.adapter_evidence[key]
                 for key in ("currentness_status", "currentness_reason")
                 if key in terminal_failure.adapter_evidence
             }
-            common["terminal_failure"] = {
+            dispatch["terminal_failure"] = {
                 "dispatch_status": terminal_failure.dispatch_status.value,
                 "transport_success": terminal_failure.transport_success,
                 "error": terminal_failure.error.value if terminal_failure.error is not None else None,
                 **({"currentness": currentness} if currentness else {}),
             }
-        return freeze_json(common)
+        result: dict[str, object] = {
+            "run_status": step.status_after.value,
+            "runtime_failed": failure is not None,
+            "kind": "gui_action_result",
+            "dispatch": dispatch,
+            "effect": _public_gui_effect(step),
+        }
+        if failure is not None:
+            result["runtime_failure"] = failure
+        return freeze_json(result)
     if isinstance(decision, RequestObservation):
         outcome = step.observation_outcome
         if outcome is None:
@@ -220,6 +220,56 @@ def _public_string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, tuple | list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def _public_gui_effect(step: StepResult) -> Mapping[str, object]:
+    outcome = step.action_outcome
+    if outcome is None:
+        return {
+            "availability": "unavailable",
+            "reason": _gui_effect_unavailable_reason(step),
+        }
+    projection = step.after_public_world
+    refs = ()
+    if projection is not None:
+        refs = tuple(
+            dict.fromkeys(
+                public
+                for evidence in outcome.evidence_refs
+                for public in (
+                    projection.private_fact_id_refs.get(
+                        evidence,
+                        projection.fact_refs.get(evidence, ""),
+                    ),
+                )
+                if public
+            )
+        )
+    return {
+        "availability": "available",
+        "observed_change": outcome.observed_change.value,
+        "local_postcondition": outcome.local_postcondition.value,
+        "evidence_method": outcome.evidence_method.value,
+        "reason": outcome.reason[:500],
+        "evidence_refs": refs,
+    }
+
+
+def _gui_effect_unavailable_reason(step: StepResult) -> str:
+    batch = step.execution_receipts
+    if batch is None:
+        return "not_dispatched"
+    if batch.cancellation_phase is not None:
+        return f"{batch.cancellation_phase.value}_cancelled"
+    if any(item.result.dispatch_status.value == "sent_unknown" for item in batch.receipts):
+        return "sent_unknown"
+    if batch.terminal_failure is not None:
+        return "execution_terminal_failure"
+    if step.runtime_failure is not None:
+        return f"{step.runtime_failure.stage.value}_runtime_failure"
+    if batch.receipts:
+        return "not_evaluated"
+    return "not_dispatched"
 
 
 def _public_observed_item(step: StepResult, item) -> Mapping[str, object]:

@@ -970,6 +970,57 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
     asyncio.run(scenario())
 
 
+def test_next_provider_request_closes_gui_call_with_effect_and_recent_trajectory() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                "first_gui_action",
+                ("abort", {"reason": "effect observed", "category": "user_request"}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("effect-before", False),
+            post_observations=(shared_world("effect-after", False),),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("working_outcome_delivery_test"),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.execution_count == 1
+        assert scripted.calls == 2
+        recorded = normalize_recorded_provider_input(scripted.records[1])
+        parts = tuple(part for message in recorded["messages"] for part in message["parts"])
+        tool_call = next(part for part in parts if part["part_kind"] == "tool-call")
+        tool_return = next(part for part in parts if part["part_kind"] == "tool-return")
+        assert tool_return["tool_call_id"] == tool_call["tool_call_id"]
+        assert tool_return["content"]["kind"] == "gui_action_result"
+        assert tool_return["content"]["dispatch"]["receipts"][0]["dispatch_status"] == "sent"
+        assert tool_return["content"]["effect"] == {
+            "availability": "available",
+            "observed_change": "unchanged",
+            "local_postcondition": "unknown",
+            "evidence_method": "structural",
+            "reason": "state did not change",
+            "evidence_refs": ["F1"],
+        }
+        current_prompt = next(
+            part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt"
+        )
+        current = json.loads(current_prompt["content"][0]["content"])
+        assert set(current) == {"observation", "recent_trajectory"}
+        assert current["recent_trajectory"][-1]["result"]["transition"]["observed_change"] == "unchanged"
+        assert "target_ref" not in json.dumps(current["recent_trajectory"])
+
+    asyncio.run(scenario())
+
+
 def test_pydantic_ai_step_persistence_records_each_action_policy_run() -> None:
     async def scenario() -> None:
         step_persistence = pytest.importorskip("pydantic_ai_harness.step_persistence")
@@ -2157,7 +2208,11 @@ def test_control_boundary_closes_pending_pydantic_history_before_another_model_t
         returned = tuple(part for part in closed_request.parts if isinstance(part, ToolReturnPart))
         assert len(returned) == 1
         assert returned[0].tool_call_id == first.output.decision.tool_call_id
-        assert returned[0].content["completion"] == "not_dispatched"
+        assert returned[0].content["dispatch"]["completion"] == "not_dispatched"
+        assert returned[0].content["effect"] == {
+            "availability": "unavailable",
+            "reason": "not_dispatched",
+        }
 
         next_context = builder.build(
             task,
@@ -2177,7 +2232,7 @@ def test_control_boundary_closes_pending_pydantic_history_before_another_model_t
             part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "tool-return"
         )
         assert len(paired) == 1
-        assert paired[0]["content"]["completion"] == "not_dispatched"
+        assert paired[0]["content"]["dispatch"]["completion"] == "not_dispatched"
         assert policy.port.message_history == ()
 
     asyncio.run(scenario())

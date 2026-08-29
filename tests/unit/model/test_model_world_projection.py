@@ -10,6 +10,7 @@ from affordance_runtime.agent.context.budgets import BoundedSection, ContextProj
 from affordance_runtime.agent.context.compact_world_renderer import render_compact_actor_world
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.agent.workspace import AgentWorkspace
@@ -19,6 +20,7 @@ from affordance_runtime.evaluation import (
     TaskEvaluation,
     TaskEvaluationStatus,
 )
+from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import TaskGoal
@@ -821,6 +823,37 @@ def test_context_delivers_only_the_workspace_latest_four_detailed_steps() -> Non
         f"step:{index}" for index in range(6, 10)
     )
     assert context.current_step_index == 10
+
+
+def test_policy_current_turn_projects_only_the_bounded_ref_free_recent_trajectory() -> None:
+    observation = fused_world("world:policy-history", surface="dom")
+    task = TaskGoal("policy-history", "Inspect recent steps")
+    steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(4))
+    workspace = AgentWorkspace(steps)
+    context = ContextBuilder().build(
+        task,
+        observation,
+        ActionSpace(observation.observation_id, ()),
+        _evaluation(task, observation.observation_id),
+        workspace,
+        current_step_index=len(steps),
+    )
+    delivery = build_model_turn_delivery(context, include_images=False)
+
+    sections = GroundedPolicyContextBinder._public_context_sections(  # noqa: SLF001 - projection owner gate
+        context,
+        False,
+        delivery,
+    )
+
+    trajectory = sections["current_turn"]["recent_trajectory"]
+    assert tuple(item["result"]["reason"] for item in trajectory) == tuple(
+        f"step:{index}" for index in range(4)
+    )
+    assert sections["public"]["recent_trajectory"] == trajectory
+    assert "semantic_events" not in sections["current_turn"]
+    assert "activity_summaries" not in sections["current_turn"]
+    assert "workspace" not in sections["current_turn"]
 
 
 def _walk_actor(root):

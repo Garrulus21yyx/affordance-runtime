@@ -258,9 +258,17 @@ def render_agent_workspace(workspace: AgentWorkspace, *, total_step_count: int) 
             }
             for item in workspace.activities
         ),
-        "recent_trajectory": tuple(_render_turn(item) for item in workspace.recent_steps),
+        "recent_trajectory": render_recent_trajectory(workspace),
         "retained_count": max(total_step_count, len(workspace.recent_steps)),
     }
+
+
+def render_recent_trajectory(workspace: AgentWorkspace) -> tuple[dict[str, object], ...]:
+    """Project only the bounded ref-free working trajectory for ActionPolicy."""
+
+    if not isinstance(workspace, AgentWorkspace):
+        raise TypeError("recent trajectory renderer requires typed workspace state")
+    return tuple(_render_turn(item) for item in workspace.recent_steps)
 
 
 def _append_event(events: list[SemanticEvent], event: SemanticEvent) -> None:

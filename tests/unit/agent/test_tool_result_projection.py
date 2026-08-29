@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from affordance_runtime.actions import ActionSpaceBuilder
+from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -20,12 +20,20 @@ from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
     project_committed_tool_return,
 )
-from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
+from affordance_runtime.evaluation import (
+    ActionOutcome,
+    EvidenceMethod,
+    LocalPostconditionStatus,
+    ObservedChange,
+    TaskEvaluation,
+    TaskEvaluationStatus,
+)
 from affordance_runtime.execution import (
     ActionError,
     ActionResult,
     DispatchStatus,
     ExecutionCompletion,
+    ExecutionReceipt,
     ExecutionReceiptBatch,
 )
 from affordance_runtime.world.observation_needs import ObservationPurpose
@@ -260,16 +268,90 @@ def test_non_dispatched_terminal_failure_is_not_hidden_from_same_call_tool_retur
     projected = project_committed_tool_return(step)
 
     assert projected == {
-        "status": "running",
-        "failed": True,
-        "kind": "execution_receipt",
-        "completion": "partial",
-        "receipts": [],
-        "terminal_failure": {
-            "dispatch_status": "not_sent",
-            "transport_success": False,
-            "error": "stale_binding",
-            "currentness": {"status": "stale", "reason": "task_done"},
+        "run_status": "running",
+        "runtime_failed": False,
+        "kind": "gui_action_result",
+        "dispatch": {
+            "completion": "partial",
+            "receipts": [],
+            "terminal_failure": {
+                "dispatch_status": "not_sent",
+                "transport_success": False,
+                "error": "stale_binding",
+                "currentness": {"status": "stale", "reason": "task_done"},
+            },
+        },
+        "effect": {
+            "availability": "unavailable",
+            "reason": "execution_terminal_failure",
         },
     }
     assert "private_backend_detail" not in repr(projected)
+
+
+def test_dispatched_gui_result_projects_transport_and_committed_effect_orthogonally() -> None:
+    before = _world("tool-result-effect-before", False)
+    after = _world("tool-result-effect-after", False)
+    task = _task()
+    option = ActionSpaceBuilder().build(task, before).options[0]
+    selection = ActionSpaceBuilder().admit(option, {})
+    request = ActionBinder().bind(
+        selection,
+        before,
+        "context:fixture",
+        tool_call_id="call:effect",
+    )
+    result = ActionResult(
+        request.request_id,
+        DispatchStatus.SENT,
+        "browsergym",
+        True,
+    )
+    step = StepResult(
+        SelectAction("context:fixture", option.action_id, tool_call_id="call:effect"),
+        before,
+        after,
+        _evaluation(after.observation_id),
+        execution_receipts=ExecutionReceiptBatch(
+            (ExecutionReceipt(request, result, before.observation_id, after.observation_id),),
+            ExecutionCompletion.COMPLETE,
+        ),
+        action_outcome=ActionOutcome(
+            request.request_id,
+            before.observation_id,
+            after.observation_id,
+            ObservedChange.UNCHANGED,
+            LocalPostconditionStatus.NOT_APPLICABLE,
+            EvidenceMethod.STRUCTURAL,
+            "stable World did not satisfy the requested effect",
+            (after.facts[0].fact_id,),
+        ),
+        feedback="action_unchanged_change_strategy",
+    )
+
+    projected = project_committed_tool_return(step)
+
+    assert projected == {
+        "run_status": "running",
+        "runtime_failed": False,
+        "kind": "gui_action_result",
+        "dispatch": {
+            "completion": "complete",
+            "receipts": [
+                {
+                    "dispatch_status": "sent",
+                    "transport_success": True,
+                    "error": None,
+                }
+            ],
+        },
+        "effect": {
+            "availability": "available",
+            "observed_change": "unchanged",
+            "local_postcondition": "not_applicable",
+            "evidence_method": "structural",
+            "reason": "stable World did not satisfy the requested effect",
+            "evidence_refs": [],
+        },
+    }
+    assert "failed" not in projected
