@@ -2107,9 +2107,12 @@ terminated with `control_stalled`. This distinguishes action discoverability fro
 executor failure.
 
 The post-run action-delivery repair adds a structural interaction obligation for current registered value-entry
-contracts (`text | option_value | native_value`) missing from the ordinary page/task-ranked route union. Existing
-visible routes retain their order and are not duplicated. Missing content dialog/form/region controls precede missing global
-search/navigation controls, with current viewport state and canonical source order as deterministic ordering facts.
+contracts (`text | option_value | native_value`) missing from the ordinary page/task-ranked route union and for their
+missing siblings in the same non-repeated functional region. Existing visible routes retain their order and are not
+duplicated. Repeated table/list rows are not promoted by an incidental filter control. Missing content
+dialog/form/region controls precede missing global search/navigation controls, with current viewport state and
+canonical source order as deterministic ordering facts. Missing controls with explicit `expanded | checked |
+selected | pressed` state are also retained as structural disclosure/selection anchors.
 The ordinary 32-route ActionPager page remains intact, and all routes still compile from the same current
 ActionSpace through the same Catalog/Binder. A generated large-page regression places 40 links before a content
 editor and a global search field, proves the editor is outside the base page, then proves its fresh E-ref and
@@ -2119,3 +2122,15 @@ live gate for this newly exposed owner invariant.
 Post-repair provider-free gates report `93 passed` for the focused delivery/packing/grounding set and
 `2083 passed, 19 skipped, 1 deselected, 1 warning` for the complete fixed-environment suite. The sole deselection is
 the already-documented absent archived dashboard trace; Ruff and `git diff --check` pass.
+
+[`memory-convergence-run3`](../evidence/live/w2-task-554-deepseek-v4-flash-20260829-memory-convergence-run3/run.json)
+crossed the editor half of this repair. At step 13 the model-visible fresh editor accepted the full JSON through the
+ordinary `type_text → Catalog → Binder → BrowserGym` route. The run then failed at commit after 32 turns with
+`control_stalled`: the fresh commit-message region contained both the message textbox and the real submit `Commit`
+button, but the visible candidate set exposed only the same-named active sidebar `Commit` mode button. One attempted
+`activate(E5)` was correctly rejected because that candidate exposed only `press_key`; subsequent actions repeatedly
+activated the sidebar entity while the real submit entity remained absent. The expanded non-repeated interaction
+region regression places a value editor and sibling submit after 40 links and proves that both current routes enter
+the same Catalog without changing existing visible-route order or exposing private bindings. The same regression
+places a collapsed `Sort by: Hot` disclosure outside the first 32 routes and proves it remains executable without a
+`Hot → Newest` matcher rule. A fresh run is still required for live closure.

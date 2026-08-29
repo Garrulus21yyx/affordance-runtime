@@ -694,13 +694,25 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
         "Editor content",
         {"visible": True, "value": ""},
     )
+    submit = SemanticTarget(
+        "target:submit",
+        "button",
+        "Submit",
+        {"visible": True},
+    )
+    sort_control = SemanticTarget(
+        "target:sort",
+        "button",
+        "Sort by: Hot",
+        {"expanded": False, "visible": True},
+    )
     link_nodes = tuple(f"link-{index:02d}" for index in range(len(links)))
     structure = (
         ObservationStructureNode(
             "root",
             "document",
             "Workspace",
-            child_structure_ids=(*link_nodes, "site-search", "content-form"),
+            child_structure_ids=(*link_nodes, "sort-list", "site-search", "content-form"),
         ),
         *(
             ObservationStructureNode(
@@ -712,6 +724,28 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
                 semantic_target_id=target.target_id,
             )
             for index, target in enumerate(links)
+        ),
+        ObservationStructureNode(
+            "sort-list",
+            "list",
+            "Sort controls",
+            parent_structure_id="root",
+            child_structure_ids=("sort-item",),
+        ),
+        ObservationStructureNode(
+            "sort-item",
+            "listitem",
+            "",
+            parent_structure_id="sort-list",
+            child_structure_ids=("sort-button",),
+        ),
+        ObservationStructureNode(
+            "sort-button",
+            "button",
+            sort_control.label,
+            {"expanded": False, "visible": True},
+            parent_structure_id="sort-item",
+            semantic_target_id=sort_control.target_id,
         ),
         ObservationStructureNode(
             "site-search",
@@ -730,10 +764,10 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
         ),
         ObservationStructureNode(
             "content-form",
-            "form",
+            "list",
             "Current editor",
             parent_structure_id="root",
-            child_structure_ids=("editor-input",),
+            child_structure_ids=("editor-input", "editor-submit"),
         ),
         ObservationStructureNode(
             "editor-input",
@@ -743,17 +777,27 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
             parent_structure_id="content-form",
             semantic_target_id=editor.target_id,
         ),
+        ObservationStructureNode(
+            "editor-submit",
+            "button",
+            submit.label,
+            {"visible": True},
+            parent_structure_id="content-form",
+            semantic_target_id=submit.target_id,
+        ),
     )
     source = SurfaceObservation(
         observation_id,
         "browser",
         f"revision:{observation_id}",
         ObservationSourceProfile.dom(),
-        (*links, global_search, editor),
+        (*links, sort_control, global_search, editor, submit),
         bindings=(
             *(_binding(observation_id, target.target_id) for target in links),
+            _binding(observation_id, sort_control.target_id),
             _text_binding(observation_id, global_search.target_id),
             _text_binding(observation_id, editor.target_id),
+            _binding(observation_id, submit.target_id),
         ),
         structure=structure,
         structure_total_count=len(structure),
@@ -778,14 +822,17 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
     plan = context.action_delivery_plan
     assert plan is not None
     editor_ref = context.grounding.target_refs[editor.target_id]
+    submit_ref = context.grounding.target_refs[submit.target_id]
+    sort_ref = context.grounding.target_refs[sort_control.target_id]
     base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
     interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
     assert base is not None and interaction is not None
-    assert editor_ref not in {
+    base_refs = {
         record.candidate.target_ref
         for record in base.records
         if isinstance(record, ActionRouteFragment)
     }
+    assert {editor_ref, submit_ref, sort_ref}.isdisjoint(base_refs)
     interaction_routes = tuple(
         record
         for record in interaction.records
@@ -793,12 +840,22 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
     )
     assert interaction_routes[0].candidate.target_ref == editor_ref
     assert interaction_routes[0].inclusion_reason == "value_control"
+    assert any(
+        route.candidate.target_ref == submit_ref and route.inclusion_reason == "value_container"
+        for route in interaction_routes
+    )
+    assert any(
+        route.candidate.target_ref == sort_ref and route.inclusion_reason == "state_control"
+        for route in interaction_routes
+    )
     assert interaction.required_record_count == 1
 
     packed = _pack(ModelDecisionRequest("request:large-page-current-editor", context))
     counts = dict(packed.admitted_record_counts)
     assert counts[DeliveryObligationKind.INTERACTION.value] >= 1
     assert editor_ref in packed.delivery.manifest.executable_refs
+    assert submit_ref in packed.delivery.manifest.executable_refs
+    assert sort_ref in packed.delivery.manifest.executable_refs
     assert "private_bid" not in packed.delivery.view.text
     resolved = resolve_grounded_tool_call(
         packed.catalog,
@@ -808,6 +865,13 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
     )
     assert isinstance(resolved.decision, SelectAction)
     assert resolved.decision.action_id == interaction_routes[0].candidate.action_id
+    resolved_submit = resolve_grounded_tool_call(
+        packed.catalog,
+        ToolCall("activate", {"target": submit_ref}, "call:current-submit"),
+        expected_context_id=context.context_id,
+        expected_delivery_id=packed.delivery.delivery_id,
+    )
+    assert isinstance(resolved_submit.decision, SelectAction)
 
 
 def test_every_delivery_prefix_projects_one_subject_per_target_with_exact_manifest_verbs() -> None:

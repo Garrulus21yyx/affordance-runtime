@@ -2392,19 +2392,32 @@ interaction obligation admitted only focused controls. Because focus remained on
 absent from the model-visible catalog and the policy repeatedly activated the already-open file link until the
 existing Monitor blocked it.
 
-The action-delivery owner now treats current entity actions whose registered parameter contract is `text`,
-`option_value`, or `native_value` and which are absent from the ordinary page/task-ranked route union as direct
-interaction anchors alongside focused controls. Routes already present keep their existing order and are not duplicated. This
-is derived from the existing typed capability registry and functional World hierarchy, not from task words, site
-identity, DOM classes, or selectors. Fresh visible missing controls rank before unknown/offscreen controls; content
-dialog/form/region controls rank before global search/navigation controls; source order remains the deterministic
-tiebreaker. The first complete target bundle remains hard-admitted and optional breadth remains subject to the existing canonical request budget.
+The action-delivery owner treats current entity actions whose registered parameter contract is `text`, `option_value`,
+or `native_value` and which are absent from the ordinary page/task-ranked route union as direct interaction anchors
+alongside focused controls. It also retains the missing sibling routes in the same non-repeated functional region.
+This keeps a form-like interaction cluster intact even when the source exposes it as a generic/list region, while a
+filter inside a repeated table/list cannot promote every repeated row action. Routes already present keep their
+existing order and are not duplicated. Missing controls with explicit current `expanded`, `checked`, `selected`, or
+`pressed` state are also structural interaction anchors, so a collapsed disclosure such as a sort menu remains
+discoverable without teaching lexical search what option should be chosen. The grouping derives from the existing
+typed capability registry and functional World hierarchy, not from task words, site identity, DOM classes, or
+selectors. Fresh visible missing
+controls rank before unknown/offscreen controls; content dialog/form/region controls rank before global
+search/navigation controls; source order remains the deterministic tiebreaker. The first complete target bundle
+remains hard-admitted and optional breadth remains subject to the existing canonical request budget.
 The complete ActionSpace, disposable E-ref allocation, Catalog, Binder, Executor, and `find_controls` authority are
 unchanged, so this adds no alternate resolver and no durable handle.
 
 The focused action-delivery/packing/grounding set passes `93` tests. The complete fixed-environment provider-free
 suite passes `2083 passed, 19 skipped, 1 deselected, 1 warning`; the deselection remains the documented absent archived
 dashboard trace. Ruff and `git diff --check` pass. Live Task554 acceptance remains separate.
+
+Task554 run3 live-verified the missing editor route: the policy entered `movie_space/urls.json` through the fresh
+editor `type_text` action. It then exposed the sibling half of the same invariant. The commit-message region contained
+the message textbox, branch radio, and the real submit `Commit` button, while the model-visible prefix contained only
+the same-named active sidebar `Commit` mode button. The policy repeatedly activated the sidebar control and Monitor
+correctly blocked the unchanged oscillation. The non-repeated interaction-region rule above closes both witnesses as
+one action-delivery contract rather than adding editor- or GitLab-specific branches.
 
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or

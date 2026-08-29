@@ -52,6 +52,8 @@ _DIRECT_VALUE_CONTRACTS = frozenset(
     }
 )
 
+_STATEFUL_INTERACTION_STATES = frozenset({"checked", "expanded", "pressed", "selected"})
+
 _INTERACTION_CONTAINER_ORDER = {
     FunctionalContainerKind.DIALOG: 0,
     FunctionalContainerKind.FORM: 1,
@@ -566,6 +568,35 @@ def build_action_delivery_plan(
         (ranked.target_ref, ranked.operation)
         for ranked in automatic.candidates
     }
+
+    def is_direct_value_option(option: AgentActionOptionView) -> bool:
+        capability = INTERACTION_CAPABILITY_REGISTRY.require(option.operation)
+        return (
+            option.subject_kind == InteractionSubjectKind.ENTITY.value
+            and capability.parameter_contract in _DIRECT_VALUE_CONTRACTS
+        )
+
+    def is_stateful_interaction_option(option: AgentActionOptionView) -> bool:
+        return (
+            option.subject_kind == InteractionSubjectKind.ENTITY.value
+            and any(
+                str(key).casefold().rsplit(".", 1)[-1] in _STATEFUL_INTERACTION_STATES
+                for key in option.target_state
+            )
+        )
+
+    non_repeated_region_keys = {
+        region.key
+        for region in region_index.regions
+        if not region.repeated_item_roots
+    }
+    value_control_regions = {
+        target_context.primary_region_key
+        for option in complete_actions
+        if is_direct_value_option(option)
+        for target_context in (region_index.target_contexts.get(option.target_id),)
+        if target_context is not None and target_context.primary_region_key in non_repeated_region_keys
+    }
     focused_containers = {
         target_context.primary_region_key
         for target_id, target_context in region_index.target_contexts.items()
@@ -593,6 +624,7 @@ def build_action_delivery_plan(
                 target_context.container_kind if target_context is not None else FunctionalContainerKind.GENERIC,
                 len(_INTERACTION_CONTAINER_ORDER),
             ),
+            0 if is_direct_value_option(option) else 1 if is_stateful_interaction_option(option) else 2,
             *_public_option_view_order(option),
         )
 
@@ -602,13 +634,21 @@ def build_action_delivery_plan(
         same_focus_container = bool(
             target_context is not None and target_context.primary_region_key in focused_containers
         )
-        capability = INTERACTION_CAPABILITY_REGISTRY.require(option.operation)
         direct_value_control = (
-            option.subject_kind == InteractionSubjectKind.ENTITY.value
-            and capability.parameter_contract in _DIRECT_VALUE_CONTRACTS
+            is_direct_value_option(option)
             and (option.target_ref, option.operation) not in already_present_routes
         )
-        if direct or same_focus_container or direct_value_control:
+        same_value_container = (
+            option.subject_kind == InteractionSubjectKind.ENTITY.value
+            and target_context is not None
+            and target_context.primary_region_key in value_control_regions
+            and (option.target_ref, option.operation) not in already_present_routes
+        )
+        stateful_control = (
+            is_stateful_interaction_option(option)
+            and (option.target_ref, option.operation) not in already_present_routes
+        )
+        if direct or same_focus_container or direct_value_control or stateful_control or same_value_container:
             append(
                 option,
                 kind=DeliveryObligationKind.INTERACTION,
@@ -618,6 +658,10 @@ def build_action_delivery_plan(
                     else "focus_container"
                     if same_focus_container
                     else "value_control"
+                    if direct_value_control
+                    else "state_control"
+                    if stateful_control
+                    else "value_container"
                 ),
             )
 
