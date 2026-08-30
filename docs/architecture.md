@@ -156,6 +156,42 @@ native evaluation. Thus the run does not falsify the repaired Monitor ownership,
 closure open on separate action-delivery and final-response representation gaps. It authorizes diagnosis, not a
 task-specific branch or an evaluator shortcut.
 
+The post-run owner repairs are implemented in `87efa081`, `6c7fb0a8`, `ff9e5662`, `02ff15e4`, and `e93880c3`.
+`ActionDeliveryPlan` now derives one active
+interaction region only when a current editable focus belongs to a non-repeated `form | dialog | search`. Every
+current entity action in that region forms one required target-atomic prefix and is presented before background
+ActionPager breadth. While that prefix is active, the base obligation hard-retains only declared browser-context
+capabilities and fills its remaining task-ranked/source-order page opportunistically under the existing request
+budget; without such a region, the existing complete base-page requirement is unchanged. Thus a fresh post-edit
+World regenerates the textbox and its executable siblings together, and a same-labelled navigation/sidebar control
+cannot displace the local submit. An explicit `find_controls` result and this active prefix are simultaneous minima:
+`TurnPacker` consumes the plan's declared `required_record_count` values as one atomic admission attempt instead of
+letting query mode replace structural focus. Regions with repeated item roots are excluded before promotion, so a
+focused control inside a repeated list/table cannot turn every row into an unbounded hard minimum. This is
+structural World delivery, not task-text ranking: the complete ActionSpace,
+`find_controls`, disposable E-ref lifetime, Registry, Catalog compiler, Binder, and Executor remain unchanged.
+
+The final representation repair keeps `FinalResponseCodec` as the sole environment-specific owner. A codec may now
+expose a typed `FinalResponseToolContract` in addition to bounded guidance. Plain environments retain
+`content: string`; WebArena-Verified derives its enum domains from the pinned upstream Pydantic schema and exposes a
+structured `response` object containing `task_type | status | retrieved_data | error_details`. Context identity binds
+that contract, ToolCatalog projects it, and the catalog binding deterministically serializes the admitted object for
+the codec's existing `normalize -> STOP -> native evaluator` path. CoreLoop does not parse WebArena fields, and an
+opaque `content` payload is rejected at tool validation rather than after the policy has terminated the task. The
+codec boundary validates the complete finite schema at construction, including bounded arrays and bounded dynamic
+object keys/values, and conservatively proves that every schema-valid compact encoding fits the `FinalResponse`
+decision bound. Consequently Catalog acceptance and Binding encoding implement the same algebra; malformed `$ref`,
+unbounded arrays, open objects, and over-limit schemas fail before Context identity or Catalog compilation. Plain
+text remains limited to 8,000 nonblank characters through a schema-visible pattern; structured compact encoding has
+a conservative 128-KiB decision bound. No live
+Task554 rerun has yet verified these two post-run repairs, so empirical closure remains open.
+
+The final fixed-environment gate reports `2117 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
+and `git diff --check` pass. One deselection is the documented absent archived dashboard trace. The other three are
+wall-clock deadline assertions that fail with the same approximately 0.23–0.27 second measurements on the untouched
+pre-repair `6aae7598` baseline, so they remain an environment/baseline limitation rather than authorizing a Runner or
+threshold change. This verifies provider-free implementation consistency, not Task554 live success.
+
 ### 2026-08-29 tool-contract convergence
 
 Stable interaction semantics now have one owner: `InteractionCapabilityRegistry`. Each registered action owns its
@@ -2219,15 +2255,13 @@ that exact pinned suffix at the BrowserGym `external goal -> public instruction`
 suffix remains a valid plain semantic goal, while a recognized but changed suffix fails closed. Consequently
 `TaskGoal`, GoalCompiler, GoalPlan, and the model-facing task projection contain only the semantic instruction.
 
-The same existing codec remains the sole final representation authority. Its bounded model guidance is derived from
-the pinned upstream Pydantic schema and projected
-directly into the existing `submit_final_response` ToolSpec, participates in Context/ToolCatalog identity, and is
-never projected as a task objective, public input, progress item, finalizing turn, or Supervisor request. The tool
-contract tells ActionPolicy to derive `task_type` and requested payload from TaskGoal rather than GoalPlan; Runtime
-still applies the codec once before the existing STOP/native-evaluation path. Focused verification passes 440 tests
-with 11 skips; the full suite passes 1,809 tests with 19 skips except for the pre-existing documentation-governance
-failure caused by the unmaintained `docs/interaction-shell.md`. No World, history, cursor, ToolReturn, Monitor,
-Workspace, evaluator, or additional model role changed.
+The same existing codec remains the sole final representation authority. Its bounded model guidance and typed model
+payload contract are derived from the pinned upstream Pydantic schema and projected directly into the existing
+`submit_final_response` ToolSpec, participate in Context/ToolCatalog identity, and are never projected as a task
+objective, public input, progress item, finalizing turn, or Supervisor request. The tool contract tells ActionPolicy
+to derive `task_type` and requested payload from TaskGoal rather than GoalPlan and structurally admits that envelope;
+Runtime still applies the codec once before the existing STOP/native-evaluation path. No World, history, cursor,
+ToolReturn, Monitor, Workspace, evaluator, or additional model role changed.
 
 The first formal post-repair attempt, Task740
 [`run5`](../evidence/live/w2-task-740-deepseek-v4-flash-20260827-run5/traces/webarena-verified-w2-task-740/trace.jsonl),
@@ -2583,18 +2617,22 @@ absent from the model-visible catalog and the policy repeatedly activated the al
 existing Monitor blocked it.
 
 The action-delivery owner treats current entity actions whose registered parameter contract is `text`, `option_value`,
-or `native_value` and which are absent from the ordinary page/task-ranked route union as direct interaction anchors
-alongside focused controls. It also retains the missing sibling routes in the same non-repeated functional region.
-This keeps a form-like interaction cluster intact even when the source exposes it as a generic/list region, while a
-filter inside a repeated table/list cannot promote every repeated row action. Routes already present keep their
-existing order and are not duplicated. Missing controls with explicit current `expanded`, `checked`, `selected`, or
-`pressed` state are also structural interaction anchors, so a collapsed disclosure such as a sort menu remains
-discoverable without teaching lexical search what option should be chosen. The grouping derives from the existing
-typed capability registry and functional World hierarchy, not from task words, site identity, DOM classes, or
-selectors. Fresh visible missing
-controls rank before unknown/offscreen controls; content dialog/form/region controls rank before global
-search/navigation controls; source order remains the deterministic tiebreaker. The first complete target bundle
-remains hard-admitted and optional breadth remains subject to the existing canonical request budget.
+or `native_value` and which are absent from the ordinary page/task-ranked route union as direct interaction anchors.
+Missing sibling routes in the same non-repeated functional region remain available as optional interaction breadth;
+a filter inside a repeated table/list cannot promote every repeated row action. Missing controls with explicit
+current `expanded`, `checked`, `selected`, or `pressed` state are also structural interaction anchors, so a collapsed
+disclosure such as a sort menu remains discoverable without teaching lexical search what option should be chosen.
+
+When a current editable focus identifies a non-repeated `form | dialog | search`, that whole region is instead the
+active interaction bundle: all of its current entity routes form the required prefix and precede background base
+actions. Only the browser-context prefix of the base group is simultaneously mandatory; ordinary task-ranked and
+source-order breadth fills remaining capacity. When `find_controls` returns an explicit query group, that complete
+query group is another simultaneous minimum; `TurnPacker` atomically attempts every owner-declared minimum rather
+than choosing one group by mode. Without an active interaction region, the previous complete base page
+plus first interaction-target requirement remains unchanged. The grouping derives from the existing typed capability
+registry and functional World hierarchy, not from task words, site identity, control labels, DOM classes, or
+selectors. Fresh visible missing controls rank before unknown/offscreen controls; source order remains the
+deterministic tiebreaker outside the active structural prefix.
 The complete ActionSpace, disposable E-ref allocation, Catalog, Binder, Executor, and `find_controls` authority are
 unchanged, so this adds no alternate resolver and no durable handle.
 

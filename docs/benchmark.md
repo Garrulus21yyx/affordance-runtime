@@ -90,6 +90,36 @@ recur, but Task554 empirical closure remains open on an action-delivery omission
 failure. The rerun itself does not authorize a benchmark-specific repair; one untouched held-out long task also
 remains unrun.
 
+The two run9 gaps are now provider-free repaired, but not live-closed. `87efa081` plus the fresh-review follow-up
+`ff9e5662`/`02ff15e4` make a focused non-repeated
+`form | dialog | search` one required interaction bundle and ranks it before background ActionPager actions. Generated
+fresh-World cases place 40 background links and an identically labelled background button before the focused form,
+vary the shared label across English and Chinese, tighten the soft request target, and prove that both the editor and
+its submit route reach the same current DeliveryManifest/Catalog while the background control cannot rank ahead.
+The test also proves a second observation rebuilds the same structural capability without retaining an old binding,
+an explicit query cannot replace the active bundle, and seven repeated row roots do not become a seven-row hard
+minimum.
+
+`6c7fb0a8` adds a codec-owned `FinalResponseToolContract`. The unchanged plain-text environment still exposes
+`content`; WebArena-Verified now exposes `response.task_type | status | retrieved_data | error_details` with enum
+domains derived from the installed upstream schema. Compatibility and structured-interaction Catalog profiles both
+compile that nested contract, valid `MUTATE/SUCCESS` resolves to canonical JSON for the existing codec, and the old
+opaque `content` shape fails as typed invalid arguments before STOP. Fresh review additionally required codec-owned
+finite-schema validation and a proof that every Catalog-valid payload fits the downstream encoded response bound;
+`ff9e5662` supplies both, including bounded dynamic result-object keys and values. `e93880c3` makes plain
+compatibility expose
+its nonblank invariant in the Catalog schema, so whitespace-only content cannot pass Catalog and fail later in the
+Binding. Structured encoding is conservatively capped at 128 KiB while plain content remains capped at 8,000
+characters. The repaired focused action/schema/
+Catalog/WebArena set reports `167 passed`, and the plan/packer property set reports `85 passed`. A live Task554 rerun
+remains required.
+
+The final fixed-environment suite reports `2117 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
+and `git diff --check` pass. The deselections are the known unavailable archived dashboard-trace witness plus three
+wall-clock deadline tests that reproduce unchanged on the pre-repair `6aae7598` baseline at approximately 0.23–0.27
+seconds. They are recorded as baseline/environment limitations, not product exemptions and not grounds to change the
+Runner thresholds. No live WebArena-Verified case was run as part of this provider-free gate.
+
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
 The tool-contract repair is implementation-complete on `codex/tool-contract-convergence`; no live benchmark was
@@ -2215,17 +2245,18 @@ terminated with `control_stalled`. This distinguishes action discoverability fro
 executor failure.
 
 The post-run action-delivery repair adds a structural interaction obligation for current registered value-entry
-contracts (`text | option_value | native_value`) missing from the ordinary page/task-ranked route union and for their
-missing siblings in the same non-repeated functional region. Existing visible routes retain their order and are not
-duplicated. Repeated table/list rows are not promoted by an incidental filter control. Missing content
-dialog/form/region controls precede missing global search/navigation controls, with current viewport state and
-canonical source order as deterministic ordering facts. Missing controls with explicit `expanded | checked |
-selected | pressed` state are also retained as structural disclosure/selection anchors.
-The ordinary 32-route ActionPager page remains intact, and all routes still compile from the same current
-ActionSpace through the same Catalog/Binder. A generated large-page regression places 40 links before a content
-editor and a global search field, proves the editor is outside the base page, then proves its fresh E-ref and
-`type_text` route are hard-admitted without exposing the private BrowserGym binding. A fresh Task554 run remains the
-live gate for this newly exposed owner invariant.
+contracts (`text | option_value | native_value`) missing from the ordinary page/task-ranked route union and retains
+their non-repeated-region siblings as bounded interaction breadth. Repeated table/list rows are not promoted by an
+incidental filter control. Missing content dialog/form/region controls precede missing global search/navigation
+controls, with current viewport state and canonical source order as deterministic ordering facts. Missing controls
+with explicit `expanded | checked | selected | pressed` state are also retained as structural anchors.
+
+The later run9 repair strengthens the focused case: every entity route in the focused non-repeated
+`form | dialog | search` is one mandatory foreground prefix, while the ordinary ActionPager page becomes optional
+breadth after the browser-context prefix. Without that active region, the complete base-page requirement remains.
+All routes still compile from the same current ActionSpace through the same Catalog/Binder. Generated large-page and
+fresh-World regressions prove both a missing editor route and a focused editor-plus-submit bundle without exposing a
+private BrowserGym binding or adding a label/site special case. A fresh Task554 run remains the live gate.
 
 Post-repair provider-free gates report `93 passed` for the focused delivery/packing/grounding set and
 `2083 passed, 19 skipped, 1 deselected, 1 warning` for the complete fixed-environment suite. The sole deselection is
