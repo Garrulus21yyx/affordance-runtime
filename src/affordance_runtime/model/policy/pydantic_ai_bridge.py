@@ -3703,16 +3703,8 @@ def _action_policy_physical_settings(
         # but trades further reasoning for one complete action envelope.
         settings["thinking"] = False
         settings["tool_choice"] = "required"
-    elif settings.get("thinking") is True:
-        # DeepSeek's thinking wire does not admit required tool choice. The
-        # output validator still enforces exactly one accepted current call.
-        settings["tool_choice"] = "auto"
     else:
-        # A non-thinking ActionPolicy has no separate prose outcome: its
-        # normative output is exactly one current ToolCall. Enforce that on
-        # the physical wire instead of inviting a second, non-authoritative
-        # text conclusion before argument encoding.
-        settings["tool_choice"] = "required"
+        settings["tool_choice"] = "auto"
     return settings
 
 
