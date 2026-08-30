@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from affordance_runtime.actions.schema_validation import invalid_value_paths, validate_value_issue
+from affordance_runtime.actions.schema_validation import (
+    invalid_value_paths,
+    validate_parameter_schema_contract,
+    validate_value_issue,
+)
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.contracts import (
     HISTORY_ARGUMENT_PATHS_METADATA_KEY,
@@ -3754,10 +3758,48 @@ def _pydantic_model_boundary_codec(
 
 
 def _required_parameter_projection(schema: Mapping[str, object]) -> dict[str, object]:
-    """Project one object tool schema to its required, still-valid sublanguage."""
+    """Project one Catalog schema to its required, still-valid sublanguage."""
+
+    projected = _required_schema_node(schema, root=True)
+    validate_parameter_schema_contract(projected)
+    return projected
+
+
+def _required_schema_node(
+    schema: Mapping[str, object],
+    *,
+    root: bool = False,
+) -> dict[str, object]:
+    """Retain required values across the complete supported Catalog algebra."""
+
+    union_key = "oneOf" if "oneOf" in schema else "anyOf" if "anyOf" in schema else ""
+    if union_key:
+        variants = schema.get(union_key)
+        if not isinstance(variants, list | tuple) or not variants:
+            raise ValueError("ActionPolicy tool schema has an invalid union shape")
+        projected_union: dict[str, object] = {
+            union_key: [
+                _required_schema_node(variant, root=root)
+                for variant in variants
+                if isinstance(variant, Mapping)
+            ]
+        }
+        if len(projected_union[union_key]) != len(variants):
+            raise ValueError("ActionPolicy tool schema has an invalid union branch")
+        if root:
+            projected_union["type"] = "object"
+        if isinstance(schema.get("description"), str):
+            projected_union["description"] = schema["description"]
+        return projected_union
 
     if schema.get("type") != "object":
-        raise ValueError("ActionPolicy tool schema must be an object")
+        projected = dict(schema)
+        if schema.get("type") == "array":
+            items = schema.get("items")
+            if not isinstance(items, Mapping):
+                raise ValueError("ActionPolicy array tool schema requires typed items")
+            projected["items"] = _required_schema_node(items)
+        return to_json_compatible(projected)
     properties = schema.get("properties")
     required = schema.get("required", ())
     if not isinstance(properties, Mapping) or not isinstance(required, list | tuple):
@@ -3766,10 +3808,17 @@ def _required_parameter_projection(schema: Mapping[str, object]) -> dict[str, ob
     if len(required_names) != len(set(required_names)) or any(name not in properties for name in required_names):
         raise ValueError("ActionPolicy tool schema has invalid required properties")
     projected = dict(schema)
-    projected["properties"] = {name: to_json_compatible(properties[name]) for name in required_names}
+    projected["properties"] = {
+        name: _required_schema_node(properties[name])
+        for name in required_names
+        if isinstance(properties[name], Mapping)
+    }
+    if len(projected["properties"]) != len(required_names):
+        raise ValueError("ActionPolicy tool schema has an invalid required property schema")
     projected["required"] = list(required_names)
     projected["additionalProperties"] = False
-    return projected
+    projected.pop("propertyNames", None)
+    return to_json_compatible(projected)
 
 
 def _pydantic_operation_recovery_prompt(

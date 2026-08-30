@@ -36,7 +36,10 @@ import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 import affordance_runtime.model.policy.request_admission as request_admission_module
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
 from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
-from affordance_runtime.actions.schema_validation import validate_value
+from affordance_runtime.actions.schema_validation import (
+    validate_parameter_schema_contract,
+    validate_value,
+)
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
@@ -5373,6 +5376,60 @@ def test_required_parameter_projection_is_a_valid_sublanguage_of_the_catalog_sch
             {**minimal, "optional_explanation": "not part of recovery"},
             projected,
         )
+
+
+def test_required_parameter_projection_preserves_discriminated_catalog_union() -> None:
+    schema = {
+        "type": "object",
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "purpose": {"type": "string", "enum": ["entity_discovery"]},
+                    "entity_query": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 32},
+                    "public_intent": {"type": "string", "maxLength": 240},
+                },
+                "required": ["purpose", "entity_query", "max_results"],
+            },
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "purpose": {"type": "string", "enum": ["visual_property"]},
+                    "subject_refs": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["E1", "E2"]},
+                        "minItems": 1,
+                        "maxItems": 2,
+                    },
+                    "predicate": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "public_intent": {"type": "string", "maxLength": 240},
+                },
+                "required": ["purpose", "subject_refs", "predicate"],
+            },
+        ],
+    }
+
+    projected = pydantic_bridge._required_parameter_projection(schema)
+    discovery = {
+        "purpose": "entity_discovery",
+        "entity_query": "visible rating marks",
+        "max_results": 5,
+    }
+    visual_property = {
+        "purpose": "visual_property",
+        "subject_refs": ["E1", "E2"],
+        "predicate": "filled",
+    }
+
+    validate_parameter_schema_contract(projected)
+    for value in (discovery, visual_property):
+        validate_value(value, projected)
+        validate_value(value, schema)
+    for branch in projected["oneOf"]:
+        assert "public_intent" not in branch["properties"]
 
 
 @pytest.mark.parametrize(
