@@ -32,17 +32,14 @@ from affordance_runtime.agent.observability import RunTraceRecorder
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.workspace import (
     ActivityFamily,
-    ActivitySummary,
     AgentWorkspace,
     DefaultWorkspaceReducer,
     SemanticEventKind,
     render_agent_workspace,
-    render_current_activities,
     render_recent_trajectory,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
-from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 from tests.support.agent.core_loop_support import shared_world
 
 
@@ -529,33 +526,6 @@ def test_local_delivery_records_stay_in_store_and_workspace_keeps_only_lineage()
     assert workspace.activities[-1].last_outcome == "new_information"
     assert replay_view.semantic_summary["information_delta"] == "exact_replay"
     assert "result" not in replay_view.semantic_summary
-
-
-def test_current_activity_projection_is_bounded_ref_free_and_fresh_world_only() -> None:
-    world = shared_world("observation:current-activity", False)
-    current_digest = public_world_semantic_digest(world)
-    workspace = AgentWorkspace(
-        activities=(
-            ActivitySummary(ActivityFamily.SEARCH_PAGE_CONTENT, "stale-digest", 7, 0, "exact_replay E9"),
-            ActivitySummary(ActivityFamily.READ_REGION, current_digest, 3, 0, "no_new_information"),
-        ),
-    )
-
-    rendered = render_current_activities(
-        workspace,
-        current_world_digest=current_digest,
-    )
-
-    assert rendered == (
-        {
-            "family": "read_region",
-            "attempt_count": 3,
-            "last_new_information_count": 0,
-            "last_outcome": "no_new_information",
-        },
-    )
-    assert current_digest not in json.dumps(rendered)
-    assert "E9" not in json.dumps(rendered)
 
 
 def test_typed_failure_is_retained_as_a_bounded_semantic_event() -> None:

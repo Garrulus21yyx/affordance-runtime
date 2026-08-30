@@ -223,7 +223,7 @@ complete fixed-environment suite reports `2123 passed, 19 skipped, 1 deselected,
 repository-missing archived dashboard trace deselected. Task554 empirical closure remains open until a separately
 authorized fresh live run crosses both the prefix repair and the structured final-response path.
 
-### 2026-08-30 ten-case working-evidence convergence
+### 2026-08-30 ten-case working-evidence implementation — live efficiency open
 
 The frozen diagnostic sample at clean commit 74d52113 is recorded in
 [wave1-run2](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave1-run2/run.json) and
@@ -278,24 +278,22 @@ convergence is implemented by 63e16452, 2c1fbb38, 470659fb, 44275bd1, 30fcc814, 
 5. Recent Workspace steps retain semantic targets, business fields, outcomes, and prior discovery operations but omit
    closed selectors/routes and observation/interaction correlation IDs at their producer. Arbitrary semantic state
    keys are opaque data even when named `target_ref`, `cursor`, or `verbs`; only producer-declared paths confer
-   operational meaning. The existing bounded AgentWorkspace.activities is
-   projected as current_activity only when its public World
-   digest equals the fresh World. It reports route family, attempt count, last information increment, and last
-   outcome. It contains no result body, task progress, ref, or semantic recommendation. ActionPolicy alone uses those
-   mechanical facts to leave an exhausted read/search/find route.
-6. Prompt v53 makes that same lifecycle explicit: consume a just-returned ref before another local tool; use
+   operational meaning. `AgentWorkspace.activities` remains bounded internal diagnostics; it is not projected as a
+   second model-visible progress stream. ActionPolicy receives the existing recent trajectory, native ToolCall/
+   ToolReturn history, Harness summary, fresh World, and active Monitor facts.
+6. Prompt v54 makes that same lifecycle explicit: consume a just-returned ref before another local tool; use
    visual_property on current subjects, entity_discovery when the needed visible entity/property lacks a delivered
-   structural ref, and point_grounding only to make an identified control actionable. It also requires source-backed
-   verification for task-defining relations/comparisons and forbids reflexive retyping solely to force an exact
-   accessibility echo.
+   structural ref, and point_grounding only to make an identified control actionable. Its collection guidance is
+   task-neutral: classify complete records once, preserve the supported set, inspect only while coverage is open and
+   a materially new route exists, then submit or typed-abort instead of self-verifying.
 
-The closed inference path is:
+The single inference path is:
 
     fresh Unified World + current ToolCatalog
     + immediate same-call ToolReturn/DeliveryManifest
     + operational-handle-free recent trajectory
-    + fresh-World ActivitySummary projection
     + semantic completed SDK history without closed handles or old World media
+    + Harness stable summary
     + active mechanical recovery facts
     -> one ActionPolicy
     -> one current ToolCall
@@ -303,7 +301,9 @@ The closed inference path is:
     -> receipt + fresh World + ActionOutcome
     -> same-call ToolReturn
 
-This change does not add semantic sorting to ActionCandidates, a page/widget recognizer, a site/date/selector rule,
+The earlier `current_activity` projection was removed because it duplicated recent trajectory/Monitor facts, reset at
+every World digest, and had no live evidence of improving cross-page convergence. This change does not add semantic
+sorting to ActionCandidates, a page/widget recognizer, a site/date/selector rule,
 always-on vision, Runtime answer rewriting, a second planner, or a second memory. Structural acquisition remains the
 cheap default; a configured visual provider is a typed open-world fallback when the current structural World lacks a
 task-relevant visible property. Route and completion judgment remain with the single ActionPolicy, while native

@@ -13,7 +13,7 @@ from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
-from affordance_runtime.agent.workspace import ActivityFamily, ActivitySummary, AgentWorkspace
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import (
     CriterionEvaluation,
     CriterionEvaluationStatus,
@@ -34,7 +34,6 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
 )
-from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 from tests.support.action_contracts import verification_kwargs
 from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
@@ -832,22 +831,11 @@ def test_context_delivers_only_the_workspace_latest_eight_detailed_steps() -> No
     assert context.current_step_index == 10
 
 
-def test_policy_current_turn_projects_bounded_ref_free_trajectory_and_current_activity() -> None:
+def test_policy_current_turn_projects_only_bounded_ref_free_trajectory() -> None:
     observation = fused_world("world:policy-history", surface="dom")
     task = TaskGoal("policy-history", "Inspect recent steps")
     steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(4))
-    workspace = AgentWorkspace(
-        steps,
-        activities=(
-            ActivitySummary(
-                ActivityFamily.READ_REGION,
-                public_world_semantic_digest(observation),
-                3,
-                0,
-                "no_new_information",
-            ),
-        ),
-    )
+    workspace = AgentWorkspace(steps)
     context = ContextBuilder().build(
         task,
         observation,
@@ -867,15 +855,8 @@ def test_policy_current_turn_projects_bounded_ref_free_trajectory_and_current_ac
     trajectory = sections["current_turn"]["recent_trajectory"]
     assert tuple(item["result"]["reason"] for item in trajectory) == tuple(f"step:{index}" for index in range(4))
     assert sections["public"]["recent_trajectory"] == trajectory
-    assert sections["current_turn"]["current_activity"] == (
-        {
-            "family": "read_region",
-            "attempt_count": 3,
-            "last_new_information_count": 0,
-            "last_outcome": "no_new_information",
-        },
-    )
-    assert sections["public"]["current_activity"] == sections["current_turn"]["current_activity"]
+    assert "current_activity" not in sections["current_turn"]
+    assert "current_activity" not in sections["public"]
     assert "semantic_events" not in sections["current_turn"]
     assert "activity_summaries" not in sections["current_turn"]
     assert "workspace" not in sections["current_turn"]

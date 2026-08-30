@@ -1163,15 +1163,7 @@ def test_next_provider_request_closes_gui_call_with_effect_and_recent_trajectory
         }
         current_prompt = next(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
         current = json.loads(current_prompt["content"][0]["content"])
-        assert set(current) == {"observation", "recent_trajectory", "current_activity"}
-        assert current["current_activity"] == [
-            {
-                "family": "no_effect",
-                "attempt_count": 1,
-                "last_new_information_count": 0,
-                "last_outcome": "state did not change",
-            }
-        ]
+        assert set(current) == {"observation", "recent_trajectory"}
         assert current["recent_trajectory"][-1]["result"]["transition"]["observed_change"] == "unchanged"
         assert "target_ref" not in json.dumps(current["recent_trajectory"])
 
@@ -3844,19 +3836,16 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "point_grounding once for that target" in MODEL_POLICY_INSTRUCTIONS
     assert "immediately following ActionPolicy delivery" in MODEL_POLICY_INSTRUCTIONS
     assert "history retains its semantic values but no operational refs" in MODEL_POLICY_INSTRUCTIONS
-    assert "current_activity is a bounded fresh-World aggregate" in MODEL_POLICY_INSTRUCTIONS
+    assert "current_activity" not in MODEL_POLICY_INSTRUCTIONS
     assert "visual_property immediately on current delivered subjects" in MODEL_POLICY_INSTRUCTIONS
     assert "verify the task-defining identity from" in MODEL_POLICY_INSTRUCTIONS
     assert "do not replay the same semantic action" in MODEL_POLICY_INSTRUCTIONS
     assert "visible unauthenticated state plus missing expected content" in MODEL_POLICY_INSTRUCTIONS
-    assert "bounded record-by-record inclusion audit" in MODEL_POLICY_INSTRUCTIONS
-    assert "including clear\n  paraphrases" in MODEL_POLICY_INSTRUCTIONS
-    assert "reconcile the output count with that" in MODEL_POLICY_INSTRUCTIONS
-    assert "each required fresh UI pagination state at most once" in MODEL_POLICY_INSTRUCTIONS
-    assert "duplicate\n  identities are deduplicated evidence" in MODEL_POLICY_INSTRUCTIONS
-    assert "not proof that the fresh page failed to load" in MODEL_POLICY_INSTRUCTIONS
-    assert "audit never expands the task-defined scope" in MODEL_POLICY_INSTRUCTIONS
-    assert "revisit a fresh pagination state" in MODEL_POLICY_INSTRUCTIONS
+    assert "classify every complete in-scope record once" in MODEL_POLICY_INSTRUCTIONS
+    assert "the full supported result set" in MODEL_POLICY_INSTRUCTIONS
+    assert "whether coverage is open" in MODEL_POLICY_INSTRUCTIONS
+    assert "whether the proposed route is" in MODEL_POLICY_INSTRUCTIONS
+    assert "use typed abort instead of self-verifying" in MODEL_POLICY_INSTRUCTIONS
     assert "local_postcondition=unknown is not a proven failure" in MODEL_POLICY_INSTRUCTIONS
     assert "do not retype merely to force an exact accessibility-value echo" in MODEL_POLICY_INSTRUCTIONS
     assert not {

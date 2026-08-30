@@ -13,7 +13,7 @@ from affordance_runtime.agent.context.model_turn_delivery import (
     build_model_turn_delivery,
 )
 from affordance_runtime.agent.context.projection import project_public_value
-from affordance_runtime.agent.workspace import render_current_activities, render_recent_trajectory
+from affordance_runtime.agent.workspace import render_recent_trajectory
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.perception import (
@@ -24,7 +24,6 @@ from affordance_runtime.model.policy.prompt import (
     MODEL_POLICY_INSTRUCTIONS,
     MODEL_POLICY_PROMPT_VERSION,
 )
-from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 
 @dataclass(frozen=True)
@@ -95,15 +94,6 @@ class GroundedPolicyContextBinder:
         if recent_trajectory:
             public["recent_trajectory"] = recent_trajectory
             current_turn["recent_trajectory"] = recent_trajectory
-        if context.current_observation is None:
-            raise TypeError("grounded policy context requires the fresh current observation")
-        current_activities = render_current_activities(
-            context.workspace,
-            current_world_digest=public_world_semantic_digest(context.current_observation),
-        )
-        if current_activities:
-            public["current_activity"] = current_activities
-            current_turn["current_activity"] = current_activities
         if context.control_feedback:
             control_feedback = project_public_value(context.control_feedback)
             public["control_feedback"] = control_feedback

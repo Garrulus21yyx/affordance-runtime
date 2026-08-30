@@ -32,7 +32,7 @@ def test_workspace_owns_bounded_diagnostics_and_only_explicit_working_views_are_
     assert "self.workspace_reducer.reduce(" in core
     assert "render_agent_workspace(" not in binder
     assert "render_recent_trajectory(" in binder
-    assert "render_current_activities(" in binder
+    assert "render_current_activities(" not in binder
     assert "message_history: tuple[object, ...]" in bridge
     assert "_compact_pydantic_history(" in bridge
     assert "SummarizingCompaction" in bridge

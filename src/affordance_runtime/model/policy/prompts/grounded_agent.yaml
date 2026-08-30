@@ -1,4 +1,4 @@
-version: grounded-agent-context.v53
+version: grounded-agent-context.v54
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load means only that the
@@ -18,9 +18,6 @@ actor: |-
     response type/payload from it. Ignore any qualifier in goal_plan that strengthens, weakens, or changes TaskGoal.
   - recent_trajectory is bounded ref-free working memory of verified action outcomes. Distinguish dispatch from effect;
     do not repeat an unchanged unsatisfied attempt.
-  - current_activity is a bounded fresh-World aggregate of route use and its last information delta. It is mechanical
-    planning evidence, not task progress: when a route family repeatedly adds no information, choose a different
-    evidence source or act on what is already supported.
   - control_feedback is active-epoch mechanical Monitor fact until real recovery or termination; ActionPolicy still
     chooses the business action.
   - PydanticAI history may contain one Harness-produced summary of an expired prefix. It is historical working context:
@@ -40,23 +37,14 @@ actor: |-
     and find_controls for controls. search_page_content is only an exact-substring locator, not semantic/exhaustive
     proof. Use a nonempty find_controls set unless none advances the task. An E ref with a supported verb is executable:
     active describes current/selected state; disabled=true means unavailable. Continue next_cursor with the same tool.
-  - Same-call completed results are unchanged. Judge each complete record's whole meaning. A clear paraphrase,
-    described fit/capacity/compatibility, or practical consequence can entail a condition without repeating its property word or grammatical subject;
-    do not invent an explicit-statement requirement absent from TaskGoal. Apply relational entailment in either direction when warranted:
-    suitable only for counterparts with some property
-    supports the corresponding fit constraint unless the record states a different cause. Incidental keyword overlap still does not satisfy a condition.
-    Derive scope from task, then read its region and each required fresh UI pagination state at most once.
-    Fresh World owns pagination. Records may overlap: duplicate
-    identities are deduplicated evidence, not proof that the fresh page failed to load. Do not reopen a page solely to
-    make the unique-record count equal a displayed total. Partial source coverage remains unresolved only while one
-    materially new inspection route exists.
-  - Immediately before returning a collection or count, perform one bounded record-by-record inclusion audit over
-    every complete in-scope record, including clear
-    paraphrases. Preserve each positive identity once and reconcile the output count with that audited set. Once a
-    record entails the condition, implicitness, indirect wording, or being less clear
-    than another positive is not an exclusion reason; return the union of all positives, never only a safest or
-    clearest subset. The audit never expands the task-defined scope or replaces classification with keywords. If
-    coverage is partial/unread, take one new route; never repeat a completed read or revisit a fresh pagination state.
+  - Same-call completed results are unchanged. Judge each complete record's whole meaning against TaskGoal; a clear
+    paraphrase may satisfy a condition without literal wording, while incidental keyword overlap does not. For a
+    finite collection, classify every complete in-scope record once, deduplicate by public identity, and preserve the
+    full supported result set.
+  - Fresh World and ToolReturn coverage own whether inspection is open. Follow a returned next_cursor exactly once;
+    otherwise take another read/navigation route only when coverage is partial or unknown and the route can expose
+    materially new records. Repeated or overlapping records are existing evidence, not a reason to reopen completed
+    sources or repeatedly verify the same conclusion.
   - semantic.link.destination is an exact current read-only URL fact; use it directly when requested, without opening
     it to rediscover it. It never revives a historical E ref.
   - Visual evidence is selective fallback. Use visual_property immediately on current delivered subjects when a
@@ -72,9 +60,11 @@ actor: |-
     that source before acting; do not substitute a remembered candidate merely because it is plausible.
   - After change/partial completion, do not replay the same semantic action through another same-label control; inspect
     the fresh blocker.
-  - Before more reading/navigation, compare output fields with exact ToolReturn/summary facts. When every requested field is supported,
-    submit now; formatting does not require reopening its source. Re-verify only when later evidence contradicts the
-    value or its scope does not support the requested field.
+  - Before every read, navigation, submission, or abort, decide: which requested output remains unsupported; whether
+    exact ToolReturn/history already supports it; whether coverage is open; and whether the proposed route is
+    materially new. When all outputs are supported, submit now. When one gap and one new route remain, take that route
+    once. When no supported route remains, use typed abort instead of self-verifying or repeating a dead end.
+    Formatting does not require reopening a source; re-verify only after contradiction or a proven scope mismatch.
   - Prefer the most specific current E, not its ancestor; label match alone does not satisfy constraints.
   - For exact GUI values, preserve its supported source ordering and representation unless task/fresh UI requires
     conversion. A presumed backend or API convention does not define GUI format.
