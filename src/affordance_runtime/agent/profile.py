@@ -15,6 +15,8 @@ class AgentLoopProfile:
         )
         if any(type(value) is not int or value < 1 for value in values):
             raise ValueError("agent loop profile values must be positive exact integers")
+        if self.max_recovery_retries != 1:
+            raise ValueError("agent loop profile supports exactly one recovery retry")
 
 
 DEFAULT_AGENT_LOOP_PROFILE = AgentLoopProfile(8, 1)

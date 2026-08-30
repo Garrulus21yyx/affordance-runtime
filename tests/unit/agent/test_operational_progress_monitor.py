@@ -377,6 +377,25 @@ def test_first_typed_tool_rejection_opens_deliberate_recovery_immediately() -> N
     assert monitor.recovery_count == 1
 
 
+def test_supported_recovery_budget_reaches_a_typed_block_within_the_signal_algebra() -> None:
+    world = _world("observation:typed-tool-rejection-bound")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    transitions = tuple(_evaluate(monitor, _tool_rejected_step(world)) for _ in range(3))
+
+    assert tuple(item.recommendation for item in transitions) == (
+        EpisodeMonitorRecommendation.RECOVER,
+        EpisodeMonitorRecommendation.RECOVER,
+        EpisodeMonitorRecommendation.BLOCK,
+    )
+    assert tuple(item.recovery_signal.recovery_attempt for item in transitions if item.recovery_signal is not None) == (
+        1,
+        2,
+        3,
+    )
+
+
 def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
     world = _world("observation:control-discovery-repeat")
     monitor = EpisodeMonitor()

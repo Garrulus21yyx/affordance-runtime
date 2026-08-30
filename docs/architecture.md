@@ -367,6 +367,9 @@ expected answer, record name, date grammar, selector, fixed action ID, or benchm
 
 The complete recovery prompt is capped at 3,072 encoded bytes, fitting the existing 1,024-token admission safety
 margin under the canonical three-bytes-per-token estimator even for Unicode and escaped control text.
+`AgentLoopProfile` now admits exactly the one recovery retry implemented by the public recovery lifecycle; larger
+positive values fail at profile construction instead of exceeding `RecoverySignal`'s bounded attempt algebra inside
+an episode.
 
 The post-`a27d2ca6` fixed-environment repository gate reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The sole
 deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the

@@ -280,6 +280,11 @@ fixed ordering, or benchmark keyword. Task0 is not dynamic date-tool injection b
 date-format contract to inject. Task21 adds neither a semantic judge nor Runtime predicate evaluation; ActionPolicy
 remains the only semantic owner.
 
+Fresh review also closed the profile/signal bound: the public `AgentLoopProfile` now accepts exactly the one recovery
+retry supported by the lifecycle, and rejects every larger positive budget at construction. The supported profile
+therefore reaches typed `RECOVER(1) -> RECOVER(2) -> BLOCK(3)` without constructing an out-of-domain
+`RecoverySignal`.
+
 The post-`a27d2ca6` fixed-environment suite reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
 `FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and

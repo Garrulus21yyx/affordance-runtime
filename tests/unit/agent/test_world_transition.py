@@ -177,6 +177,14 @@ def test_public_identity_churn_is_not_a_semantic_world_change(values: dict[str, 
     assert not delta.semantic_changed
 
 
+@given(st.integers(min_value=2))
+def test_agent_loop_profile_rejects_recovery_budgets_outside_the_supported_algebra(
+    max_recovery_retries: int,
+) -> None:
+    with pytest.raises(ValueError, match="exactly one recovery retry"):
+        AgentLoopProfile(8, max_recovery_retries)
+
+
 def test_fresh_world_transition_reuses_supplied_region_indexes(monkeypatch) -> None:
     before = _world("source:indexed-before", {"target": 1})
     after = _world("source:indexed-after", {"target": 2})
