@@ -295,9 +295,10 @@ reviewer-name rule, fuzzy Runtime record merger, larger progress store, or secon
 Semantic accuracy and reasoning-token efficiency remain open for held-out comparison or a stronger ActionPolicy
 profile; they are not inferred fixed from the provider-free gate.
 
-### 2026-08-30 perception-result and representation repair — no live rescore
+### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
-The follow-up diagnosis separates four generic contract gaps from model-owned route semantics:
+The follow-up diagnosis separates three generic contract gaps, one falsified Surface hypothesis, and model-owned route
+semantics:
 
 - Task418's typed `target_not_visible` / other unknown perception outcomes were exact ToolReturns but absent from the
   existing novelty reducer. They now produce `NO_USABLE_INFORMATION`; one result remains useful negative route
@@ -305,9 +306,10 @@ The follow-up diagnosis separates four generic contract gaps from model-owned ro
   ActionPolicy's deliberate mode. The exact proven-failed request is then rejected before another provider
   activation. An observed public subject, fact, or executable route is positive novelty only when it was absent from
   the before-World and earlier deliveries. No result body or query prose is stored in Monitor.
-- Task214's structural star glyphs had computed foreground differences, but BrowserGym captured only backgrounds and
-  the model projection removed all appearance state. The generic Surface path now exposes only non-inherited
-  foreground and painted-background family/tone. It does not count stars or interpret ratings. A visual result is
+- Task214 motivated an experiment that exposed computed foreground/background family and tone. Live evidence showed
+  that this did not provide numeric ratings and instead projected CSS state across ordinary table headings, inputs,
+  and buttons. Commits `e8ca25e6` and `a4151056` are therefore removed by `224067a7`; structural DOM/AX remains the
+  default, and explicitly configured targeted perception remains only an optional fallback. A visual result is
   mechanically informative only when its exact public after-World subject, fact, or executable route resolves; task
   relevance and a mistakenly chosen current subject remain ActionPolicy judgments.
 - Task343's accepted textbox value could not prove its positive local effect because unrelated truncation made the
@@ -318,20 +320,33 @@ The follow-up diagnosis separates four generic contract gaps from model-owned ro
   `oneOf`; the required-only continuation handled only a flat object and raised internally. Required projection now
   recursively preserves object/array/`oneOf`/`anyOf`, revalidates the result, and completes the same selected tool.
 
-The convergence decision is deliberately narrow. Existing prompt v54 and `ActionPolicyReasoningPolicy` already own
-the material-new-route / evidence-sufficient / route-exhausted audit through one bounded closed-collection lease and
-active-recovery deliberate calls. No new prompt examples, `current_activity`, retrieval ledger, semantic Monitor,
-rating/overlay parser, Runtime answer rule, or second LLM role was added. The exact context remains fresh World +
-latest ToolReturn + native history/Harness summary + ref-free recent outcomes + active Monitor facts.
+The convergence decision is deliberately narrow. Existing prompt v54 and `ActionPolicyReasoningPolicy` own the
+material-new-route / evidence-sufficient / route-exhausted audit through one bounded closed-collection lease and
+active-recovery deliberate calls. The pre-rollback live runs show that this instruction is not yet reliably obeyed:
+Monitor detected repeated no-progress while ActionPolicy continued semantically exhausted route variants. No new
+prompt examples, `current_activity`, retrieval ledger, semantic Monitor, rating/overlay parser, Runtime answer rule,
+or second LLM role was added. The exact context remains fresh World + latest ToolReturn + native history/Harness
+summary + ref-free recent outcomes + active Monitor facts; route-exhaustion quality remains open.
 
-At code/test SHA `d03faab1`, the affected owner/consumer gate reports `316 passed, 3 skipped`. The fixed-interpreter
-full repository gate, with pytest temporary files on `/dev/shm`, reports
-`2232 passed, 19 skipped, 1 deselected, 1 warning` in 114.86 seconds; the sole deselection is the previously documented
-missing archived dashboard trace, before product code. A preliminary host-`/tmp` run had three wall-clock-only
-benchmark-runner failures because normal durable trace I/O itself exceeded those tests' 150 ms threshold; the same
-three tests pass on the isolated temporary filesystem. Full Ruff without cache and `git diff --check` pass. No live
-provider or benchmark case was run for this repair, so the frozen diagnostic-ten result remains 6/10 and
-Task214/343/418/425 remain empirical acceptance gates rather than silently reclassified successes.
+At rollback code/test SHA `224067a7`, the affected owner/consumer gate reports `314 passed, 3 skipped`. The
+fixed-interpreter full repository gate, with pytest temporary files on `/dev/shm`, reports
+`2230 passed, 19 skipped, 1 deselected, 1 warning` in 121.00 seconds; the sole deselection is the previously documented
+missing archived dashboard trace, before product code. Full Ruff without cache and `git diff --check` pass.
+
+The visual-profile runs made under pre-rollback SHA `d47a1ab2` are diagnostic falsification, not a replacement score:
+
+- [Task214](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/perception-convergence-d47a1ab2-task-214/run.json)
+  timed out at 44 policy calls / 11 executions / 20 recovery calls.
+- [Task343](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/perception-convergence-d47a1ab2-task-343/run.json)
+  timed out at 36 / 11 / 20, a regression from its earlier text-first success.
+- [Task418](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/perception-convergence-d47a1ab2-task-418/run.json)
+  reached official success at 25 / 9, improved from 40 policy calls but still repeated the same busy action.
+- [Task425](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/perception-convergence-d47a1ab2-task-425/run.json)
+  was externally interrupted at 37 / 26 and is not a completed benchmark result.
+
+Because the run globally enabled a visual profile, it changed the offered tool surface and cannot be compared as the
+default text-first profile. The frozen diagnostic-ten result remains 6/10; Task214/343 route convergence and broader
+efficiency remain open rather than being silently reclassified.
 
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 

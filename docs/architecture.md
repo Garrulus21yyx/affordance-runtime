@@ -344,7 +344,7 @@ repository-missing archived dashboard trace; it fails before product code. Full 
 `git diff --check` pass. This verifies the provider-free owner algebra and request-profile wiring, not live policy
 quality, Task0/Task21 completion, or aggregate efficiency.
 
-### 2026-08-30 perception-result and representation convergence — provider-free verified, live-open
+### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
 The post-diagnostic repair keeps the same single inference/control chain. It adds no perception ledger, progress
 status, reviewer, StrategyRevision call, or second planner. `RequestObservation` already had one exact typed
@@ -367,15 +367,13 @@ that would require Runtime to understand the task predicate. The latest ToolRetu
 and deliberate ActionPolicy remain responsible for that route correction. The repair therefore closes false
 mechanical progress without claiming that `status=observed` proves task relevance.
 
-BrowserGym's generic physical capture previously classified only background color, while model projection removed
-all `appearance.*` state. The Surface owner now projects bounded computed foreground/background color family and tone
-for CSS/SVG appearance. Inherited foregrounds and transparent backgrounds are suppressed, so ordinary page text adds
-no state; only a changed foreground or painted background reaches Unified World. The model boundary admits exactly
-`foreground|background × color_family|tone` and continues to omit the ambiguous legacy `appearance.color_family`.
-A direct Chromium probe distinguishes orange `yellow/mid`, light gray `gray/light`, and dark gray `gray/dark`. There
-is no rating counter, star rule, selector, site branch, or visual-provider call. No overlay extraction branch was
-added: the Task343 witness showed no actual menu/listbox/overlay after its text entry, so an overlay-specific repair
-would be unsupported symptom logic.
+The attempted generic foreground/background family-and-tone projection in `e8ca25e6` and `a4151056` was falsified by
+live use and removed in `224067a7`. It did not expose a numeric rating or a missing overlay; instead it added CSS state
+to ordinary table headings, inputs, and buttons, increasing World/context noise. BrowserGym therefore returns to the
+pre-experiment structural DOM/AX projection and continues to omit `appearance.*` from the model boundary. A visual
+provider remains an explicitly configured, targeted fallback; it is not enabled merely because a task mentions a
+rating, menu, map, or other potentially visual concept. The Task343 witness still contains no actual revealed
+menu/listbox/overlay, so no overlay-specific production branch was added.
 
 ActionEffect now also conserves one exact positive fact on a large partial page. When the current target's structural
 `value` is present, current, conflict-free, and itself untruncated, equality with the requested text/option proves
@@ -392,16 +390,23 @@ sublanguage of the original. A PydanticAI integration witness truncates a dynami
 No additional ActionPolicy prompt was added. Prompt v54 already asks the sole ActionPolicy to test the unsupported
 output, existing exact support, open coverage, and materially new route before read/navigation/submission/abort. The
 existing bounded evidence-review lease covers a closed collection read, and an active Monitor epoch keeps the same
-ActionPolicy deliberate. The repair supplies truthful inputs to those mechanisms instead of duplicating them.
+ActionPolicy deliberate. The live runs below show that this ownership is clear but its current convergence quality is
+not sufficient: Monitor repeatedly detected no progress while ActionPolicy continued switching among semantically
+exhausted read/search/perception routes. The semantic route-exhaustion problem remains open rather than being inferred
+closed from the provider-free handoff tests.
 
-At code/test SHA `d03faab1`, the cross-owner focused gate reports `316 passed, 3 skipped` in 9.81 seconds. The fixed
-BrowserGym-interpreter repository gate, with pytest temporary files on `/dev/shm`, reports
-`2232 passed, 19 skipped, 1 deselected, 1 warning` in 114.86 seconds; the sole deselection is the documented
-repository-missing archived dashboard trace. A preliminary run on the host `/tmp` reported three old benchmark-runner
-wall-clock failures because even its normal durable trace path exceeded those tests' 150 ms bound; the same three
-tests pass on the isolated temporary filesystem. Full Ruff without cache and `git diff --check` pass. These are
-provider-free contract results. Task214/343/418/425 and the diagnostic-ten efficiency distribution remain live-open
-until a separately authorized rerun; no success or efficiency claim is inferred from these gates.
+At rollback code/test SHA `224067a7`, the cross-owner focused gate reports `314 passed, 3 skipped` in 11.05 seconds.
+The fixed BrowserGym-interpreter repository gate, with pytest temporary files on `/dev/shm`, reports
+`2230 passed, 19 skipped, 1 deselected, 1 warning` in 121.00 seconds; the sole deselection is the documented
+repository-missing archived dashboard trace. Full Ruff without cache and `git diff --check` pass.
+
+The user-authorized visual-profile runs at pre-rollback SHA `d47a1ab2` falsify a broader convergence claim rather than
+supporting one. Task214 timed out after 44 policy calls / 11 executions / 20 recovery calls; Task343 timed out after
+36 / 11 / 20 even though its earlier text-first witness passed; Task418 reached official success in 25 / 9 but still
+repeated the busy action; Task425 was externally interrupted after 37 / 26 and is not a completed result. Globally
+enabling the visual profile changed the offered tool surface and is not a valid text-first rescore. These results keep
+semantic route exhaustion and the diagnostic-ten efficiency distribution live-open; they do not change the frozen
+6/10 aggregate.
 
 ### 2026-08-30 held-out response/protocol/semantic convergence
 
