@@ -142,6 +142,9 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "described fit/capacity/compatibility" in system
     assert "without repeating its property word or grammatical subject" in system
     assert "explicit-statement requirement absent from TaskGoal" in system
+    assert "Apply relational entailment in either direction" in system
+    assert "suitable only for counterparts with some property" in system
+    assert "unless the record states a different cause" in system
     assert "Incidental keyword overlap still does not" in system
     assert "Partial source coverage" in system
     assert "make the unique-record count equal a displayed total" in system
@@ -151,6 +154,9 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "preserve its supported source ordering and representation" in system
     assert "A presumed backend or API convention does not define" in system
     assert "earliest dependency-ready" not in system
-    assert all(name not in system for name in ("Catso", "Dibbins", "Anglebert", "Michelle Davis"))
+    assert all(
+        term not in system
+        for term in ("Catso", "Dibbins", "Anglebert", "Michelle Davis", "ear cup", "reviewer")
+    )
     assert "visibly satisfied" not in system
     assert "exactly one" in system

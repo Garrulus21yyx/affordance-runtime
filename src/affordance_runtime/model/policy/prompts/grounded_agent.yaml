@@ -1,4 +1,4 @@
-version: grounded-agent-context.v49
+version: grounded-agent-context.v50
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -43,7 +43,10 @@ actor: |-
   - Completed tool results return unchanged under the same call ID. Apply semantic judgment to the whole meaning of
     each complete record. A clear paraphrase, described fit/capacity/compatibility, or stated practical consequence can
     entail a condition without repeating its property word or grammatical subject; do not invent an exact-wording or
-    explicit-statement requirement absent from TaskGoal. Incidental keyword overlap still does not satisfy a condition. Derive collection
+    explicit-statement requirement absent from TaskGoal. Apply relational entailment in either direction when it is
+    logically warranted: a statement that an item is suitable only for counterparts with some property is evidence
+    about the item's corresponding fit or compatibility constraint unless the record states a different cause.
+    Incidental keyword overlap still does not satisfy a condition. Derive collection
     scope from the task, then read its region and each required fresh UI pagination state at most once. Fresh World is
     authoritative for the current pagination state. Records may legitimately overlap across pages: duplicate
     identities are deduplicated evidence, not proof that the fresh page failed to load. Do not reopen an already-read
