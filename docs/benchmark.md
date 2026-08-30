@@ -240,6 +240,12 @@ repository-missing archived dashboard trace, which fails before product code. Ru
 check pass. No live case was run for this working-evidence contract, so the ten-case empirical result remains 6/10
 and open rather than being silently re-scored from unit evidence.
 
+The current post-repair gate supersedes that test count for the present tree. Clean code/test/docs SHA `cf566c02`
+reports `2215 passed, 19 skipped, 1 deselected, 1 warning` in 118.15 seconds under the fixed BrowserGym interpreter;
+full Ruff with cache disabled and `git diff --check` pass. The same repository-missing archived dashboard trace is
+the sole deselection. No live case is inferred from this provider-free result; Task0/Task21 efficiency and the
+diagnostic-ten aggregate remain open until a fresh run.
+
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are

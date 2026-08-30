@@ -332,6 +332,12 @@ re-scored or declared closed without a separately authorized live rerun. The fin
 is recorded in the matching benchmark section below; the sole deselection is the repository-missing archived
 dashboard trace. Ruff and diff checks pass.
 
+The clean post-repair code/test/docs SHA `cf566c02` passes the fixed BrowserGym-interpreter repository gate:
+`2215 passed, 19 skipped, 1 deselected, 1 warning` in 118.15 seconds. The sole deselection remains the documented
+repository-missing archived dashboard trace; it fails before product code. Full Ruff with cache disabled and
+`git diff --check` pass. This verifies the provider-free owner algebra and request-profile wiring, not live policy
+quality, Task0/Task21 completion, or aggregate efficiency.
+
 ### 2026-08-30 held-out response/protocol/semantic convergence
 
 The sequential W1b Task0/7/21 failures do not share one candidate-ranking defect. They expose three different owner
