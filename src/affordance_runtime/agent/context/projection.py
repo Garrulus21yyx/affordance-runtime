@@ -42,6 +42,23 @@ _PRIVATE_ROUTE_MARKERS = (
 _MAX_ITEMS = 12
 _MAX_DEPTH = 3
 _MAX_STRING = 240
+_DROPPED_MODEL_STATE_PREFIXES = ("appearance.",)
+_DROPPED_MODEL_STATE_FIELDS = {
+    "grid_coordinate_confidence",
+    "grid_membership",
+    "semantic.name_status",
+}
+_PUBLIC_MODEL_DOM_STATE_FIELDS = frozenset(
+    {
+        "semantic.dom.attribute.type",
+        "semantic.dom.attribute.role",
+        "semantic.dom.attribute.title",
+        "semantic.dom.attribute.alt",
+        "semantic.dom.attribute.placeholder",
+        "semantic.dom.attribute.aria-label",
+        "semantic.dom.attribute.aria-description",
+    }
+)
 
 
 def project_task(task: TaskGoal) -> AgentTaskView:
@@ -159,6 +176,30 @@ def project_public_value(value: Any, depth: int = 0) -> Any:
     if isinstance(value, Sequence) and not isinstance(value, bytes | bytearray):
         return [project_public_value(item, depth + 1) for item in list(value)[:_MAX_ITEMS]]
     return str(value)[:_MAX_STRING]
+
+
+def project_model_state(
+    state: Mapping[str, object],
+    *,
+    interactive: bool,
+) -> dict[str, object]:
+    """Apply the one public state allowlist at every model-facing boundary."""
+
+    result: dict[str, object] = {}
+    for key, value in state.items():
+        if key.startswith("semantic.dom.") and key not in _PUBLIC_MODEL_DOM_STATE_FIELDS:
+            continue
+        if key in _DROPPED_MODEL_STATE_FIELDS:
+            continue
+        if any(key.startswith(prefix) for prefix in _DROPPED_MODEL_STATE_PREFIXES):
+            continue
+        if key == "viewport.visible" and value is True:
+            continue
+        if key in {"active", "checked", "selected", "pressed", "expanded", "disabled"}:
+            if value is False and not interactive:
+                continue
+        result[key] = value
+    return result
 
 
 def project_parameter_schema_for_model(schema: Mapping[str, object]) -> dict[str, object]:

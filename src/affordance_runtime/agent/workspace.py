@@ -13,7 +13,7 @@ from affordance_runtime.agent.context.contracts import (
     AgentTurnView,
     sanitize_history_value,
 )
-from affordance_runtime.agent.context.projection import project_public_value
+from affordance_runtime.agent.context.projection import project_model_state, project_public_value
 from affordance_runtime.agent.context.world_transition import PublicWorldDelta
 from affordance_runtime.immutable import to_json_compatible
 
@@ -381,7 +381,12 @@ def _render_transition(transition: Mapping[str, object]) -> dict[str, object]:
         "before_state",
         "after_state",
     )
-    return {key: public[key] for key in keys if key in public}
+    result = {key: public[key] for key in keys if key in public}
+    for key in ("before_state", "after_state"):
+        state = result.get(key)
+        if isinstance(state, Mapping):
+            result[key] = project_model_state(state, interactive=True)
+    return result
 
 
 def _workspace_bytes(workspace: AgentWorkspace) -> int:

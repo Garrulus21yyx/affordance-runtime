@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 from affordance_runtime.agent.context.actor_world_snapshot import (
     ActorWorldNodeView,
@@ -112,7 +112,7 @@ def _historical_target(result: StepResult, target_id: str) -> AgentHistoricalTar
     if not path:
         return None
     node = path[-1]
-    label = node.label.strip() or " ".join(_class_tokens(node.state.get("semantic.dom.attribute.class_tokens")))
+    label = node.label.strip()
     return AgentHistoricalTargetView(
         _bounded(node.role, 80),
         _bounded(label),
@@ -196,14 +196,6 @@ def _semantic_neighborhood(path: tuple[ActorWorldNodeView, ...]) -> tuple[str, .
         if len(values) > before_count:
             break
     return tuple(values[:4])
-
-
-def _class_tokens(value: object) -> tuple[str, ...]:
-    if isinstance(value, str):
-        return (value.strip(),) if value.strip() else ()
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
-        return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
-    return ()
 
 
 def _historical_value(value: object) -> object:

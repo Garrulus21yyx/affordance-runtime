@@ -21,6 +21,7 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 )
 from affordance_runtime.agent.context.canonical_world_projection import CanonicalPublicWorldProjection
 from affordance_runtime.agent.context.context import AgentGroundingIndexView
+from affordance_runtime.agent.context.projection import project_model_state
 from affordance_runtime.agent.context.world_region_index import (
     DELIVERY_LIMITS_V2,
     DeliveryLimits,
@@ -34,23 +35,6 @@ from affordance_runtime.world.contracts import WorldObservation
 from affordance_runtime.world.page_cursor import decode_cursor, encode_cursor
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
-_DROPPED_STATE_PREFIXES = ("appearance.",)
-_DROPPED_STATE_FIELDS = {
-    "grid_coordinate_confidence",
-    "grid_membership",
-    "semantic.name_status",
-}
-_PUBLIC_DOM_STATE_FIELDS = frozenset(
-    {
-        "semantic.dom.attribute.type",
-        "semantic.dom.attribute.role",
-        "semantic.dom.attribute.title",
-        "semantic.dom.attribute.alt",
-        "semantic.dom.attribute.placeholder",
-        "semantic.dom.attribute.aria-label",
-        "semantic.dom.attribute.aria-description",
-    }
-)
 _SEARCHABLE_DOM_STATE_FIELDS = frozenset(
     {
         "semantic.dom.attribute.title",
@@ -630,7 +614,7 @@ def _render_current_action_subjects(delivered: ActorWorldSnapshot) -> list[str]:
     lines = ["CurrentActionSubjects"]
     for subject in subjects:
         line = f"  {subject.role.casefold()} label={_value(subject.label)}"
-        state = _model_state(subject.state, interactive=True)
+        state = project_model_state(subject.state, interactive=True)
         if state:
             line += f" state={_value(state)}"
         if subject.state_truncated:
@@ -868,7 +852,7 @@ def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> lis
         # E is reserved for a current executable ActionOption. A malformed or
         # synthetic Actor node cannot make a read-only E ref model-visible.
         public_ref = ""
-    state = _model_state(node.state, interactive=bool(current_verbs))
+    state = project_model_state(node.state, interactive=bool(current_verbs))
     skip = role == "InlineTextBox" or (role == "StaticText" and not label)
     if role == "StaticText" and label and parent_label and label in parent_label:
         skip = True
@@ -1025,7 +1009,7 @@ def _render_search_matches(matches, observation, grounding, manifest) -> list[st
         ):
             target = by_ref[ref]
             line = f"  [{ref}] {target.role} {_value(target.label)}"
-            state = _model_state(target.state, interactive=False)
+            state = project_model_state(target.state, interactive=False)
             if state:
                 line += " " + " ".join(f"{_short_field(k)}={_value(v)}" for k, v in state.items())
             line += " read_only=true"
@@ -1154,7 +1138,7 @@ def _render_action_candidates(
             f"path={_value(candidate.functional_path)} region=[{candidate.region_ref}] "
             f"verbs={_value(verbs[candidate.target_ref])}"
         )
-        state = _model_state(candidate.public_state, interactive=True)
+        state = project_model_state(candidate.public_state, interactive=True)
         if state:
             descriptor += f" state={_value(state)}"
         actor_node = _actor_node_for_ref(delivered, candidate.target_ref)
@@ -1801,7 +1785,7 @@ def _repeated_item_records(
 
 
 def _compact_repeated_target(target, grounding, verbs_by_ref) -> Mapping[str, object] | None:
-    state = _model_state(target.state, interactive=False)
+    state = project_model_state(target.state, interactive=False)
     if not target.label and not state:
         return None
     item: dict[str, object] = {"role": target.role}
@@ -1906,7 +1890,7 @@ def _readable_state_search_values(state: Mapping[str, object]) -> list[str]:
 def _readable_state_projection(state: Mapping[str, object]) -> Mapping[str, object]:
     return {
         key: value
-        for key, value in _model_state(state, interactive=False).items()
+        for key, value in project_model_state(state, interactive=False).items()
         if _searchable_public_fact(key)
     }
 
@@ -1914,11 +1898,7 @@ def _readable_state_projection(state: Mapping[str, object]) -> Mapping[str, obje
 def _searchable_public_fact(predicate: str) -> bool:
     if predicate.startswith("semantic.dom."):
         return predicate in _SEARCHABLE_DOM_STATE_FIELDS
-    return (
-        predicate != _SOURCE_TEXT_TRUNCATION_FIELD
-        and predicate not in _DROPPED_STATE_FIELDS
-        and not any(predicate.startswith(prefix) for prefix in _DROPPED_STATE_PREFIXES)
-    )
+    return predicate != _SOURCE_TEXT_TRUNCATION_FIELD
 
 
 def _target_item(region_ref, target, grounding, verbs_by_ref) -> Mapping[str, object]:
@@ -1927,7 +1907,7 @@ def _target_item(region_ref, target, grounding, verbs_by_ref) -> Mapping[str, ob
         "role": target.role,
         "label": target.label,
     }
-    state = _model_state(target.state, interactive=False)
+    state = project_model_state(target.state, interactive=False)
     if state:
         item["state"] = state
     _attach_current_grounding(
@@ -2199,24 +2179,6 @@ def _world_read_cursor_fingerprint(
 
 def _index_coverage(index) -> str:
     return "partial" if any(item.coverage != "complete" for item in index.regions) else "complete"
-
-
-def _model_state(state: Mapping[str, object], *, interactive: bool) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in state.items():
-        if key.startswith("semantic.dom.") and key not in _PUBLIC_DOM_STATE_FIELDS:
-            continue
-        if key in _DROPPED_STATE_FIELDS:
-            continue
-        if any(key.startswith(prefix) for prefix in _DROPPED_STATE_PREFIXES):
-            continue
-        if key == "viewport.visible" and value is True:
-            continue
-        if key in {"active", "checked", "selected", "pressed", "expanded", "disabled"}:
-            if value is False and not interactive:
-                continue
-        result[key] = value
-    return result
 
 
 def _short_field(value: str) -> str:

@@ -8,11 +8,12 @@ from types import SimpleNamespace
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.contracts import AgentTurnView
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
 )
-from affordance_runtime.agent.context.step_projection import project_step_result
+from affordance_runtime.agent.context.step_projection import _historical_target, project_step_result
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     ReadRegionResult,
@@ -27,6 +28,7 @@ from affordance_runtime.agent.workspace import (
     DefaultWorkspaceReducer,
     SemanticEventKind,
     render_agent_workspace,
+    render_recent_trajectory,
 )
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.immutable import to_json_compatible
@@ -189,6 +191,69 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
 
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
     assert "expired-ref" not in encoded
+
+
+def test_recent_trajectory_uses_the_same_model_state_allowlist_as_fresh_world() -> None:
+    transition = {
+        "role": "textbox",
+        "label": "",
+        "observed_change": "changed",
+        "before_state": {
+            "active": False,
+            "semantic.dom.attribute.type": "text",
+            "semantic.dom.attribute.title": "Product filter",
+            "semantic.dom.attribute.id": "implementation-filter-id",
+            "semantic.dom.attribute.name": "implementation_filter_name",
+            "semantic.dom.attribute.class_tokens": ("private-class",),
+            "semantic.dom.tag": "input",
+            "semantic.name_status": "unknown",
+            "appearance.color_family": "gray",
+        },
+        "after_state": {
+            "active": True,
+            "semantic.dom.attribute.type": "text",
+            "semantic.dom.attribute.title": "Product filter",
+            "semantic.dom.attribute.id": "implementation-filter-id",
+        },
+    }
+    rendered = render_recent_trajectory(
+        AgentWorkspace((AgentTurnView("select_action", "type_text", transition=transition),))
+    )
+    encoded = json.dumps(to_json_compatible(rendered))
+
+    assert rendered[0]["result"]["transition"]["before_state"] == {
+        "active": False,
+        "semantic.dom.attribute.type": "text",
+        "semantic.dom.attribute.title": "Product filter",
+    }
+    assert rendered[0]["result"]["transition"]["after_state"] == {
+        "active": True,
+        "semantic.dom.attribute.type": "text",
+        "semantic.dom.attribute.title": "Product filter",
+    }
+    assert "implementation-filter-id" not in encoded
+    assert "implementation_filter_name" not in encoded
+    assert "private-class" not in encoded
+
+
+def test_recent_trajectory_never_uses_dom_class_as_a_target_label() -> None:
+    target = ActorWorldNodeView(
+        "E1",
+        "textbox",
+        "",
+        {"semantic.dom.attribute.class_tokens": ("implementation-filter",)},
+    )
+    result = SimpleNamespace(
+        policy_observation=SimpleNamespace(documents=(SimpleNamespace(roots=(target,)),)),
+        policy_target_refs={"target:filter": "E1"},
+    )
+
+    projected = _historical_target(result, "target:filter")
+
+    assert projected is not None
+    assert projected.role == "textbox"
+    assert projected.label == ""
+    assert "implementation-filter" not in json.dumps(to_json_compatible(projected))
 
 
 def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body() -> None:
