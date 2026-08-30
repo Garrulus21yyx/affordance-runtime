@@ -118,7 +118,7 @@ def test_fill_empty_or_different_to_desired_is_changed_and_satisfied() -> None:
         assert "obs:after" in evaluation.evidence_refs[0]
 
 
-def test_fill_already_desired_or_unchanged_wrong_splits_effect_and_postcondition() -> None:
+def test_fill_exact_echo_is_satisfied_but_unequal_text_echo_remains_unknown() -> None:
     desired_before = _world("obs:before", "type_text", "desired")
     desired_after = _world("obs:after", "type_text", "desired")
     assert _evaluate(
@@ -134,7 +134,7 @@ def test_fill_already_desired_or_unchanged_wrong_splits_effect_and_postcondition
         wrong_before, wrong_after, "type_text", "desired",
     )
     assert wrong.observed_change is ObservedChange.UNCHANGED
-    assert wrong.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+    assert wrong.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
 
 def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
@@ -176,6 +176,12 @@ def test_select_transition_and_already_selected_are_symmetric() -> None:
     assert already.observed_change is ObservedChange.UNCHANGED
     assert already.local_postcondition is LocalPostconditionStatus.SATISFIED
 
+    wrong_before = _world("obs:before", "select_option", "A")
+    wrong_after = _world("obs:after", "select_option", "A")
+    wrong = _evaluate(wrong_before, wrong_after, "select_option", "B")
+    assert wrong.observed_change is ObservedChange.UNCHANGED
+    assert wrong.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+
 
 def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it() -> None:
     before = _world("obs:before", "type_text", "old")
@@ -185,7 +191,7 @@ def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it()
         adapter_evidence={"value": "desired", "receipt": "private"},
     )
     assert evaluation.observed_change is ObservedChange.CHANGED
-    assert evaluation.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
     assert evaluation.evidence_refs
     assert "private" not in repr(evaluation)
 

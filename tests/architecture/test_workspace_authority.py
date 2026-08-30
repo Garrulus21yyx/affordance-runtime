@@ -10,7 +10,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _SRC = _ROOT / "src" / "affordance_runtime"
 
 
-def test_workspace_is_runtime_diagnostics_while_pydantic_history_is_model_visible() -> None:
+def test_workspace_owns_bounded_diagnostics_and_only_explicit_working_views_are_model_visible() -> None:
     run_fields = {item.name for item in fields(RunState)}
     python_source = "\n".join(path.read_text() for path in _SRC.rglob("*.py"))
 
@@ -32,6 +32,7 @@ def test_workspace_is_runtime_diagnostics_while_pydantic_history_is_model_visibl
     assert "self.workspace_reducer.reduce(" in core
     assert "render_agent_workspace(" not in binder
     assert "render_recent_trajectory(" in binder
+    assert "render_current_activities(" in binder
     assert "message_history: tuple[object, ...]" in bridge
     assert "_compact_pydantic_history(" in bridge
     assert "SummarizingCompaction" in bridge

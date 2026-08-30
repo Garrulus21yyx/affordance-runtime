@@ -64,6 +64,13 @@ class ProductionActionOutcomeProjector:
         before_value = _single_value(before, request.intent.target_id)
         if after_value == requested:
             postcondition = LocalPostconditionStatus.SATISFIED
+        elif definition.parameter_contract is ParameterContractKind.TEXT:
+            # A text control may expose a normalized value or only the active
+            # input window of a composite editor.  Fresh inequality is still
+            # useful observed state, but it cannot prove that the surrounding
+            # application rejected the text effect.  Closed option domains do
+            # not have that ambiguity and retain a hard UNSATISFIED result.
+            postcondition = LocalPostconditionStatus.UNKNOWN
         else:
             postcondition = LocalPostconditionStatus.UNSATISFIED
         effect = (

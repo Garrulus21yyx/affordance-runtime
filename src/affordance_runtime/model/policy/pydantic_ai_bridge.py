@@ -1084,7 +1084,6 @@ class PydanticAIGroundedDecisionPort:
             projected_history = _project_expired_history(
                 history_messages,
                 max_estimated_tokens=recent_exact_tokens,
-                current_world_observation_id=request.agent_context.current_observation.observation_id,
             )
             if projected_history != history_messages:
                 history_messages = projected_history
@@ -2765,27 +2764,24 @@ def _project_expired_history(
     messages: tuple[object, ...],
     *,
     max_estimated_tokens: int,
-    current_world_observation_id: str = "",
 ) -> tuple[object, ...]:
-    """Project bounded semantic history plus an exact current-world suffix.
+    """Project bounded semantic history plus one exact unresolved frontier.
 
     Historical World prompts are temporal observations and are removed because
     TurnPacker supplies exactly one fresh World.  Closed exchanges retain their
-    ToolCall/ToolReturn identity and semantic values, but observation-local refs
-    are removed once the exchange's World is not the current World.  Same-world
-    reads and the unresolved response remain exact.  A completed response may
-    also drop private ``ThinkingPart`` only when the same response already
-    carries a public conclusion.  Harness remains the only semantic compactor.
+    ToolCall/ToolReturn identity and semantic values, but their observation-local
+    refs are removed after the exchange closes.  Only the unresolved response
+    remains exact so every visible operational ref belongs to the next delivery
+    that can authorize it.  A completed response may also drop private
+    ThinkingPart only when the same response already carries a public conclusion.
+    Harness remains the only semantic compactor.
     """
 
     folded = _fold_expired_world_prompts(
         messages,
         max_estimated_tokens=max_estimated_tokens,
     )
-    projected = _deground_expired_tool_exchanges(
-        folded,
-        current_world_observation_id=current_world_observation_id,
-    )
+    projected = _deground_completed_tool_exchanges(folded)
     projected = _strip_completed_private_reasoning(projected)
     return _deduplicate_expired_model_prose(
         projected,
@@ -2793,14 +2789,12 @@ def _project_expired_history(
     )
 
 
-def _deground_expired_tool_exchanges(
+def _deground_completed_tool_exchanges(
     messages: tuple[object, ...],
-    *,
-    current_world_observation_id: str,
 ) -> tuple[object, ...]:
-    """Remove stale operational handles without changing call/result pairing."""
+    """Remove closed operational handles without changing call/result pairing."""
 
-    if not messages or not current_world_observation_id:
+    if not messages:
         return messages
     from pydantic_ai.messages import (
         ModelRequest,
@@ -2811,35 +2805,35 @@ def _deground_expired_tool_exchanges(
         ToolReturnPart,
     )
 
-    expired_call_ids: set[str] = set()
-    expired_return_ids: set[str] = set()
-    for _response, returns in _completed_tool_exchanges(messages):
+    closed_call_ids: set[str] = set()
+    closed_return_ids: set[str] = set()
+    for response, returns in _completed_tool_exchanges(messages):
+        closed_call_ids.update(
+            part.tool_call_id
+            for part in response.parts
+            if isinstance(part, ToolCallPart)
+        )
         for part in returns:
-            if not isinstance(part, ToolReturnPart) or not isinstance(part.metadata, Mapping):
+            if not isinstance(part, ToolReturnPart):
                 continue
-            before_world = str(part.metadata.get("before_world", ""))
-            after_world = str(part.metadata.get("after_world", ""))
-            if before_world and before_world != current_world_observation_id:
-                expired_call_ids.add(part.tool_call_id)
-            if after_world and after_world != current_world_observation_id:
-                expired_return_ids.add(part.tool_call_id)
-    if not expired_call_ids and not expired_return_ids:
+            closed_return_ids.add(part.tool_call_id)
+    if not closed_call_ids and not closed_return_ids:
         return _deground_compaction_summaries(messages)
 
     projected: list[object] = []
     for message in messages:
         if isinstance(message, ModelResponse):
-            response_expired = any(
-                isinstance(part, ToolCallPart) and part.tool_call_id in expired_call_ids for part in message.parts
+            response_closed = any(
+                isinstance(part, ToolCallPart) and part.tool_call_id in closed_call_ids for part in message.parts
             )
-            if not response_expired:
+            if not response_closed:
                 projected.append(message)
                 continue
             parts: list[object] = []
             for part in message.parts:
-                if isinstance(part, ToolCallPart) and part.tool_call_id in expired_call_ids:
+                if isinstance(part, ToolCallPart) and part.tool_call_id in closed_call_ids:
                     parts.append(replace(part, args=sanitize_history_value(part.args)))
-                elif response_expired and isinstance(part, (TextPart, ThinkingPart)):
+                elif response_closed and isinstance(part, (TextPart, ThinkingPart)):
                     content = str(sanitize_history_value(part.content))
                     if content:
                         parts.append(replace(part, content=content))
@@ -2849,13 +2843,13 @@ def _deground_expired_tool_exchanges(
             continue
         if isinstance(message, ModelRequest):
             if not any(
-                isinstance(part, ToolReturnPart) and part.tool_call_id in expired_return_ids for part in message.parts
+                isinstance(part, ToolReturnPart) and part.tool_call_id in closed_return_ids for part in message.parts
             ):
                 projected.append(message)
                 continue
             parts = tuple(
                 replace(part, content=sanitize_history_value(part.content))
-                if isinstance(part, ToolReturnPart) and part.tool_call_id in expired_return_ids
+                if isinstance(part, ToolReturnPart) and part.tool_call_id in closed_return_ids
                 else part
                 for part in message.parts
             )

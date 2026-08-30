@@ -16,6 +16,7 @@ from affordance_runtime.surfaces.browsergym.semantics import (
     MAX_LINK_DESTINATION_TEXT,
     MAX_SEMANTIC_TEXT,
     PRIVATE_CONTROL_PROPERTIES_KEY,
+    VALUE_TRUNCATED_STATE_KEY,
     BrowserGymSemanticError,
     BrowserGymSemanticErrorCode,
     analyze_browsergym_semantics,
@@ -244,6 +245,19 @@ def test_executable_ax_label_bound_is_explicit() -> None:
     assert control is not None
     assert control.accessible_name == label[:MAX_SEMANTIC_TEXT]
     assert dict(control.public_state)[ACCESSIBLE_NAME_TRUNCATED_STATE_KEY] is True
+
+
+def test_executable_ax_value_bound_is_explicit() -> None:
+    value = "editor value " * 80
+    control = canonical_control_for_bid(
+        raw_observation(ax_node("control", "textbox", "Editor", value=value)),
+        "control",
+    )
+
+    assert control is not None
+    state = dict(control.public_state)
+    assert state["value"] == value[:MAX_SEMANTIC_TEXT]
+    assert state[VALUE_TRUNCATED_STATE_KEY] is True
 
 
 @given(st.permutations(("class", "title", "type")))

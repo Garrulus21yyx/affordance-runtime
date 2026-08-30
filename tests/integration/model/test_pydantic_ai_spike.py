@@ -37,6 +37,7 @@ from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, A
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteFragment,
     DeliveryObligationKind,
@@ -1029,7 +1030,15 @@ def test_next_provider_request_closes_gui_call_with_effect_and_recent_trajectory
         }
         current_prompt = next(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
         current = json.loads(current_prompt["content"][0]["content"])
-        assert set(current) == {"observation", "recent_trajectory"}
+        assert set(current) == {"observation", "recent_trajectory", "current_activity"}
+        assert current["current_activity"] == [
+            {
+                "family": "no_effect",
+                "attempt_count": 1,
+                "last_new_information_count": 0,
+                "last_outcome": "state did not change",
+            }
+        ]
         assert current["recent_trajectory"][-1]["result"]["transition"]["observed_change"] == "unchanged"
         assert "target_ref" not in json.dumps(current["recent_trajectory"])
 
@@ -2793,7 +2802,7 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             "recording-call:2",
             "recording-call:2",
         )
-        assert history_parts[1]["content"] == first.output.decision.result
+        assert history_parts[1]["content"] == sanitize_history_value(first.output.decision.result)
         assert history_parts[3]["content"] == second.output.decision.result
         user_prompts = tuple(
             part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "user-prompt"
@@ -3004,8 +3013,16 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
         if isinstance(part, ThinkingPart)
     )
 
-    assert projected_calls == original_calls
-    assert projected_returns == original_returns
+    assert tuple((part.tool_name, part.tool_call_id) for part in projected_calls) == tuple(
+        (part.tool_name, part.tool_call_id) for part in original_calls
+    )
+    assert tuple(part.args for part in projected_calls[:-1]) == tuple(
+        sanitize_history_value(part.args) for part in original_calls[:-1]
+    )
+    assert projected_calls[-1] == original_calls[-1]
+    assert tuple(part.content for part in projected_returns) == tuple(
+        sanitize_history_value(part.content) for part in original_returns
+    )
     assert stable_conclusion in projected_text
     assert projected_text.count(repeated_narration) == 1
     assert projected_thinking.count(repeated_reasoning) == 1
@@ -3073,8 +3090,16 @@ def test_history_projection_expires_only_closed_private_reasoning_with_public_co
         if isinstance(part, ThinkingPart)
     )
 
-    assert projected_calls == original_calls
-    assert projected_returns == original_returns
+    assert tuple((part.tool_name, part.tool_call_id) for part in projected_calls) == tuple(
+        (part.tool_name, part.tool_call_id) for part in original_calls
+    )
+    assert tuple(part.args for part in projected_calls[:-1]) == tuple(
+        sanitize_history_value(part.args) for part in original_calls[:-1]
+    )
+    assert projected_calls[-1] == original_calls[-1]
+    assert tuple(part.content for part in projected_returns) == tuple(
+        sanitize_history_value(part.content) for part in original_returns
+    )
     assert projected_text == tuple(f"conclusion {index}: continue toward Acadia" for index in range(turns))
     assert projected_thinking == (f"step {turns - 1}: inspect the fresh World",)
     assert projected[-1] == original[-1]
@@ -3172,7 +3197,6 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
     projected = pydantic_bridge._project_expired_history(
         original,
         max_estimated_tokens=100_000,
-        current_world_observation_id="observation:not-found",
     )
 
     calls = {
@@ -3224,7 +3248,7 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
     canonical_envelope_module._project_pydantic_history(projected)
 
 
-def test_history_projection_keeps_same_world_read_grounding_exact() -> None:
+def test_history_projection_degrounds_closed_same_world_read_and_keeps_pending_call_exact() -> None:
     tool_return = ToolReturnPart(
         "search_page_content",
         {"items": ({"label": "More results", "target_ref": "E6", "verbs": ("activate",)},)},
@@ -3248,10 +3272,20 @@ def test_history_projection_keeps_same_world_read_grounding_exact() -> None:
     projected = pydantic_bridge._project_expired_history(
         original,
         max_estimated_tokens=100_000,
-        current_world_observation_id="observation:search",
     )
 
-    assert projected == original
+    projected_search = next(
+        part
+        for message in projected
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == "call:search"
+    )
+    assert projected_search.content == {"items": ({"label": "More results"},)}
+    completed_response = projected[0]
+    assert isinstance(completed_response, ModelResponse)
+    assert isinstance(completed_response.parts[0], TextPart)
+    assert completed_response.parts[0].content == "Use More results."
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
         "activate",
         {"target": "E6"},
@@ -3301,7 +3335,6 @@ def test_history_projection_conserves_pairs_and_semantics_while_degrounding_expi
     projected = pydantic_bridge._project_expired_history(
         original,
         max_estimated_tokens=100_000,
-        current_world_observation_id="observation:current",
     )
 
     calls = tuple(
@@ -3406,8 +3439,13 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
     assert "When every requested field is supported" in MODEL_POLICY_INSTRUCTIONS
     assert "does not require reopening its" in MODEL_POLICY_INSTRUCTIONS
-    assert "find_controls returned no usable control" in MODEL_POLICY_INSTRUCTIONS
+    assert "returned no usable control on unchanged World" in MODEL_POLICY_INSTRUCTIONS
     assert "point_grounding once for that target" in MODEL_POLICY_INSTRUCTIONS
+    assert "immediately following ActionPolicy delivery" in MODEL_POLICY_INSTRUCTIONS
+    assert "history retains its semantic values but no operational refs" in MODEL_POLICY_INSTRUCTIONS
+    assert "current_activity is a bounded fresh-World aggregate" in MODEL_POLICY_INSTRUCTIONS
+    assert "visual_property immediately on current delivered subjects" in MODEL_POLICY_INSTRUCTIONS
+    assert "verify the task-defining identity from" in MODEL_POLICY_INSTRUCTIONS
     assert "do not replay the same semantic action" in MODEL_POLICY_INSTRUCTIONS
     assert "visible unauthenticated state plus missing expected content" in MODEL_POLICY_INSTRUCTIONS
     assert "bounded record-by-record inclusion audit" in MODEL_POLICY_INSTRUCTIONS
@@ -3418,8 +3456,8 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "not proof that the fresh page failed to load" in MODEL_POLICY_INSTRUCTIONS
     assert "audit never expands the task-defined scope" in MODEL_POLICY_INSTRUCTIONS
     assert "revisit a fresh pagination state" in MODEL_POLICY_INSTRUCTIONS
-    assert "normalize or reinterpret values only after blur or form submission" in MODEL_POLICY_INSTRUCTIONS
-    assert "fresh controls no longer encode the intended constraints" in MODEL_POLICY_INSTRUCTIONS
+    assert "local_postcondition=unknown is not a proven failure" in MODEL_POLICY_INSTRUCTIONS
+    assert "do not retype merely to force an exact accessibility-value echo" in MODEL_POLICY_INSTRUCTIONS
     assert not {
         "Catso",
         "Dibbins",
@@ -3915,7 +3953,6 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
     projected = pydantic_bridge._project_expired_history(
         tuple(messages),
         max_estimated_tokens=6_000,
-        current_world_observation_id="current-world",
     )
     projected_summary = projected[0]
     assert isinstance(projected_summary, ModelRequest)

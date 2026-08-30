@@ -23,6 +23,7 @@ PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
 MAX_LINK_DESTINATION_TEXT = 2048
 ACCESSIBLE_NAME_TRUNCATED_STATE_KEY = "semantic.accessible_name.truncated"
+VALUE_TRUNCATED_STATE_KEY = "semantic.value.truncated"
 MAX_DOM_ATTRIBUTE_TOKENS = 32
 MIN_DOM_CLICKABLE_AREA = 20.0
 SemanticScalar: TypeAlias = str | bool | int | float | None
@@ -978,7 +979,10 @@ def _role_state(
         if name == "selected_options":
             continue
         if name == "value":
-            value: SemanticScalar = _typed_string(node.get("value"))[:MAX_SEMANTIC_TEXT]
+            raw_value = _typed_string(node.get("value"))
+            value: SemanticScalar = raw_value[:MAX_SEMANTIC_TEXT]
+            if len(raw_value) > MAX_SEMANTIC_TEXT:
+                result.append((VALUE_TRUNCATED_STATE_KEY, True))
         elif name in properties:
             value = _semantic_scalar(properties[name])
         else:

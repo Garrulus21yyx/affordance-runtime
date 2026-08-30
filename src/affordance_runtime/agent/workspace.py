@@ -263,6 +263,29 @@ def render_recent_trajectory(workspace: AgentWorkspace) -> tuple[dict[str, objec
     return tuple(_render_turn(item) for item in workspace.recent_steps)
 
 
+def render_current_activities(
+    workspace: AgentWorkspace,
+    *,
+    current_world_digest: str,
+) -> tuple[dict[str, object], ...]:
+    """Project bounded mechanical route-use facts for only the fresh World."""
+
+    if not isinstance(workspace, AgentWorkspace):
+        raise TypeError("current activity renderer requires typed workspace state")
+    if not isinstance(current_world_digest, str) or not current_world_digest.strip():
+        raise ValueError("current activity renderer requires the fresh public World digest")
+    return tuple(
+        {
+            "family": item.family.value,
+            "attempt_count": item.attempt_count,
+            "last_new_information_count": item.new_finding_count,
+            "last_outcome": sanitize_history_value(item.last_outcome),
+        }
+        for item in sorted(workspace.activities, key=lambda activity: activity.family.value)
+        if item.world_digest == current_world_digest
+    )
+
+
 def _append_event(events: list[SemanticEvent], event: SemanticEvent) -> None:
     if (
         events

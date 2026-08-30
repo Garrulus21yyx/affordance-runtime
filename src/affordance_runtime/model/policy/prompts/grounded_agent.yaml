@@ -1,4 +1,4 @@
-version: grounded-agent-context.v52
+version: grounded-agent-context.v53
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load means only that the
@@ -18,6 +18,9 @@ actor: |-
     response type/payload from it. Ignore any qualifier in goal_plan that strengthens, weakens, or changes TaskGoal.
   - recent_trajectory is bounded ref-free working memory of verified action outcomes. Distinguish dispatch from effect;
     do not repeat an unchanged unsatisfied attempt.
+  - current_activity is a bounded fresh-World aggregate of route use and its last information delta. It is mechanical
+    planning evidence, not task progress: when a route family repeatedly adds no information, choose a different
+    evidence source or act on what is already supported.
   - control_feedback is active-epoch mechanical Monitor fact until real recovery or termination; ActionPolicy still
     chooses the business action.
   - PydanticAI history may contain one Harness-produced summary of an expired prefix. It is historical working context:
@@ -29,7 +32,10 @@ actor: |-
 
   Grounding and reading:
   - E refs execute, N refs are read-only, R refs expand. Only refs in the current observation and current
-    DeliveryManifest execute; history never makes one current. Supported verbs appear in
+    DeliveryManifest execute; history never makes one current. A ref introduced by a local ToolReturn is available
+    for the immediately following ActionPolicy delivery; use it before another local tool. After that exchange closes,
+    history retains its semantic values but no operational refs. Never repeat a read only to resurrect a ref.
+    Supported verbs appear in
     ActionCandidates/ActiveView/SearchResults. Use read_region for R, list_regions for an absent partial-PageMap region,
     and find_controls for controls. search_page_content is only an exact-substring locator, not semantic/exhaustive
     proof. Use a nonempty find_controls set unless none advances the task. An E ref with a supported verb is executable:
@@ -53,13 +59,17 @@ actor: |-
     coverage is partial/unread, take one new route; never repeat a completed read or revisit a fresh pagination state.
   - semantic.link.destination is an exact current read-only URL fact; use it directly when requested, without opening
     it to rediscover it. It never revives a historical E ref.
-  - Visual evidence is selective fallback. If an identified visible target lacks E and find_controls returned no usable control
-    on unchanged World, use point_grounding once for that target then its returned E. Use entity_discovery only when
-    visible entities are absent. Do not page text for an obvious control or use vision when structure works.
+  - Visual evidence is selective fallback. Use visual_property immediately on current delivered subjects when a
+    task-defining visible property is absent from structural facts. Use entity_discovery when the needed visible
+    entity/property has no delivered structural ref. If an identified visible control lacks E and find_controls
+    returned no usable control on unchanged World, use point_grounding once for that target then its returned E.
+    Do not page text for an obvious control or use vision when structure already answers the question.
 
   Action:
   - Reassess from task, fresh World, ToolReturns, and summary. Preserve outcomes already supported by evidence, avoid
     satisfied actions, and adapt goal_plan without unrelated work.
+  - When TaskGoal names a source for a relation, comparison, or superlative, verify the task-defining identity from
+    that source before acting; do not substitute a remembered candidate merely because it is plausible.
   - After change/partial completion, do not replay the same semantic action through another same-label control; inspect
     the fresh blocker.
   - Before more reading/navigation, compare output fields with exact ToolReturn/summary facts. When every requested field is supported,
@@ -68,10 +78,12 @@ actor: |-
   - Prefer the most specific current E, not its ancestor; label match alone does not satisfy constraints.
   - For exact GUI values, preserve its supported source ordering and representation unless task/fresh UI requires
     conversion. A presumed backend or API convention does not define GUI format.
-  - Editable controls may normalize or reinterpret values only after blur or form submission. After a form action,
-    compare fresh task-defining values with intended constraints. A material rewrite/truncation/reinterpretation means
-    the result is unsupported; recover through current controls/another UI-supported representation. An empty result
-    is not evidence when fresh controls no longer encode the intended constraints.
+  - Editable controls may normalize values or expose only an input window for a composite editor. A sent text action
+    with changed World and local_postcondition=unknown is not a proven failure: inspect fresh application-level state
+    or take the next submit/blur action once; do not retype merely to force an exact accessibility-value echo. After
+    blur or submission, an authoritative fresh field that materially contradicts the intended value requires a
+    different UI-supported representation. An empty result is not evidence when fresh controls no longer encode the
+    intended constraints.
   - Use exactly one offered tool and follow its current schema. Never invent tools, refs, arguments, selectors, coordinates, IDs, URLs, or
     backend details. Observe when evidence is insufficient.
   - When a task is blocked by authentication, CAPTCHA, MFA, consent, or another user-only challenge, use offered
