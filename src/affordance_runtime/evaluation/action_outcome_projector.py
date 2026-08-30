@@ -23,6 +23,7 @@ from affordance_runtime.world import CoverageState
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 from affordance_runtime.world.public_semantic_digest import public_subject_semantics_changed
 from affordance_runtime.world.source_profile import assurance_satisfies
+from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
 
 
 class ProductionActionOutcomeProjector:
@@ -60,11 +61,11 @@ class ProductionActionOutcomeProjector:
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:
             return _evaluation(request, before, after, public_world_delta=public_world_delta)
-        after_value, evidence_ref = current
+        after_value, evidence_ref, value_complete = current
         before_value = _single_value(before, request.intent.target_id)
-        if after_value == requested:
+        if value_complete and after_value == requested:
             postcondition = LocalPostconditionStatus.SATISFIED
-        elif definition.parameter_contract is ParameterContractKind.TEXT:
+        elif not value_complete or definition.parameter_contract is ParameterContractKind.TEXT:
             # A text control may expose a normalized value or only the active
             # input window of a composite editor.  Fresh inequality is still
             # useful observed state, but it cannot prove that the surrounding
@@ -106,7 +107,7 @@ def _single_value(observation, target_id: str):
     return values[0] if len(values) == 1 else _MISSING
 
 
-def _current_value_evidence(observation, target_id: str) -> tuple[object, str] | None:
+def _current_value_evidence(observation, target_id: str) -> tuple[object, str, bool] | None:
     if target_id not in {item.target_id for item in observation.targets}:
         return None
     if any(item.subject_id == target_id and item.predicate == "value" for item in observation.conflicts):
@@ -135,7 +136,16 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str] |
         or not assurance_satisfies(record.source_assurance, "structural")
     ):
         return None
-    return record.value, record.evidence_ref
+    value_complete = not any(
+        item.subject_id == target_id
+        and item.predicate == VALUE_TRUNCATED_STATE_KEY
+        and item.value is True
+        for item in observation.facts
+    ) and not any(
+        item.subject_id == target_id and item.predicate == VALUE_TRUNCATED_STATE_KEY
+        for item in observation.conflicts
+    )
+    return record.value, record.evidence_ref, value_complete
 
 
 def _evaluation(

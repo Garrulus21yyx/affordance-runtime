@@ -76,6 +76,7 @@ from affordance_runtime.world.source_profile import (
     VerificationStrength,
     assurance_satisfies,
 )
+from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
 from affordance_runtime.world.vision_escalation import (
     VisionEvidenceNeed,
     derive_visual_evidence_needs,
@@ -139,6 +140,7 @@ __all__ = [
     "StateFact",
     "SurfaceObservation",
     "VerificationStrength",
+    "VALUE_TRUNCATED_STATE_KEY",
     "VisionEvidenceNeed",
     "WorldFusion",
     "WorldFusionResult",

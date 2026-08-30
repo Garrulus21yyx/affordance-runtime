@@ -18,12 +18,12 @@ from affordance_runtime.surfaces.browsergym.interaction_profile import (
     diagnostic_browsergym_roles,
     is_inventory_target_browsergym_role,
 )
+from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
 MAX_LINK_DESTINATION_TEXT = 2048
 ACCESSIBLE_NAME_TRUNCATED_STATE_KEY = "semantic.accessible_name.truncated"
-VALUE_TRUNCATED_STATE_KEY = "semantic.value.truncated"
 MAX_DOM_ATTRIBUTE_TOKENS = 32
 MIN_DOM_CLICKABLE_AREA = 20.0
 SemanticScalar: TypeAlias = str | bool | int | float | None

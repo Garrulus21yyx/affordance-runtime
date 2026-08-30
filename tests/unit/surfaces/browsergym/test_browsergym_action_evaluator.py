@@ -2,6 +2,8 @@ import asyncio
 from dataclasses import replace
 
 import numpy as np
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from affordance_runtime.actions.capabilities import VerificationFamily
 from affordance_runtime.agent.evaluation_control import validated_action_outcome
@@ -16,6 +18,7 @@ from affordance_runtime.execution import ActionResult, DispatchStatus, Execution
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
+from affordance_runtime.surfaces.browsergym.semantics import MAX_SEMANTIC_TEXT
 from affordance_runtime.surfaces.browsergym.transition import BrowserGymStabilityStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
@@ -24,6 +27,7 @@ from affordance_runtime.world import (
     ObservationSourceProfile,
     StateFact,
     WorldFusion,
+    VALUE_TRUNCATED_STATE_KEY,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,
@@ -194,6 +198,38 @@ def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it()
     assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
     assert evaluation.evidence_refs
     assert "private" not in repr(evaluation)
+
+
+@given(
+    requested=st.text(min_size=1, max_size=40),
+    observed=st.text(max_size=40),
+)
+@settings(max_examples=24)
+def test_unequal_text_echo_never_becomes_a_hard_local_failure(
+    requested: str,
+    observed: str,
+) -> None:
+    assume(requested != observed)
+    before = _world("obs:before", "type_text", observed)
+    after = _world("obs:after", "type_text", observed)
+
+    evaluation = _evaluate(before, after, "type_text", requested)
+
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
+
+
+def test_truncated_value_prefix_cannot_prove_exact_text_satisfaction() -> None:
+    raw_value = "x" * (MAX_SEMANTIC_TEXT + 1)
+    requested = raw_value[:MAX_SEMANTIC_TEXT]
+    before = _world("obs:before", "type_text", "old")
+    after = _world("obs:after", "type_text", raw_value)
+    target = next(item for item in after.targets if item.role == "textbox")
+
+    assert target.state["value"] == requested
+    assert target.state[VALUE_TRUNCATED_STATE_KEY] is True
+    evaluation = _evaluate(before, after, "type_text", requested)
+    assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
 
 def test_activate_remains_unknown_without_terminal_evidence() -> None:
