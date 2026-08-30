@@ -317,14 +317,18 @@ class _FinalResponseBinding:
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         del tool_call_id
         artifact = None
-        if self.interaction_profile is InteractionToolExposureProfile.STRUCTURED and "artifact" in arguments:
+        expose_presentation = (
+            self.interaction_profile is InteractionToolExposureProfile.STRUCTURED
+            and self.contract.supports_presentation_sidecars
+        )
+        if expose_presentation and "artifact" in arguments:
             artifact = _resolve_artifact_draft(arguments["artifact"], self.evidence_bindings or {})
         return FinalResponse(
             context_id,
             self.contract.encode(arguments[self.contract.argument_name]),
             (),
             artifact,
-            str(arguments.get("public_intent", "")).strip(),
+            str(arguments.get("public_intent", "")).strip() if expose_presentation else "",
         )
 
 
@@ -664,7 +668,10 @@ def compile_grounded_tool_catalog(
     final_properties: dict[str, object] = {
         final_contract.argument_name: final_contract.payload_schema,
     }
-    if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED:
+    if (
+        interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
+        and final_contract.supports_presentation_sidecars
+    ):
         final_properties.update(
             {
                 "artifact": _artifact_draft_schema(tuple(sorted(evidence_bindings))),

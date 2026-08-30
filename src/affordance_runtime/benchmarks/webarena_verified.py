@@ -639,6 +639,7 @@ class WebArenaVerifiedFinalResponseCodec:
                     ),
                 ],
             },
+            supports_presentation_sidecars=False,
         )
 
     @staticmethod

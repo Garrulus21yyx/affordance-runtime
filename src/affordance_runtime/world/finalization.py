@@ -30,7 +30,7 @@ class FinalResponsePayloadEncoding(StrEnum):
 
 @dataclass(frozen=True)
 class FinalResponseToolContract:
-    """Codec-owned model payload shape and its deterministic wire encoding."""
+    """Codec-owned payload, presentation capability, and deterministic wire encoding."""
 
     encoding: FinalResponsePayloadEncoding = FinalResponsePayloadEncoding.TEXT
     payload_schema: Mapping[str, object] = field(
@@ -42,10 +42,13 @@ class FinalResponseToolContract:
         }
     )
     contract_id: str = ""
+    supports_presentation_sidecars: bool = True
 
     def __post_init__(self) -> None:
         encoding = FinalResponsePayloadEncoding(self.encoding)
         schema = freeze_json(self.payload_schema)
+        if type(self.supports_presentation_sidecars) is not bool:
+            raise TypeError("final response presentation-sidecar capability must be boolean")
         expected_type = "string" if encoding is FinalResponsePayloadEncoding.TEXT else "object"
         if not isinstance(schema, Mapping) or not _declares_payload_type(schema, expected_type):
             raise ValueError("final response payload schema does not match its encoding")
@@ -71,6 +74,7 @@ class FinalResponseToolContract:
                 "argument_name": self.argument_name,
                 "max_encoded_chars": MAX_FINAL_RESPONSE_CHARS,
                 "payload_schema": schema,
+                "supports_presentation_sidecars": self.supports_presentation_sidecars,
             }
         )
         if self.contract_id and self.contract_id != expected_id:

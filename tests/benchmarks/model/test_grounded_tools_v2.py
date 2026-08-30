@@ -1508,11 +1508,75 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
     structured_spec = next(
         item for item in structured_catalog.specs if item.name == "submit_final_response"
     )
-    assert set(structured_spec.input_schema["properties"]) == {
+    assert set(structured_spec.input_schema["properties"]) == {"response"}
+    assert codec.model_tool_contract.supports_presentation_sidecars is False
+
+
+def test_final_response_presentation_sidecars_follow_codec_capability_not_payload_encoding() -> None:
+    payload_schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string", "maxLength": 32}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    capable = FinalResponseToolContract(FinalResponsePayloadEncoding.JSON, payload_schema)
+    direct_only = FinalResponseToolContract(
+        FinalResponsePayloadEncoding.JSON,
+        payload_schema,
+        supports_presentation_sidecars=False,
+    )
+
+    def final_spec(contract: FinalResponseToolContract):
+        context = replace(_context(), final_response_contract=contract)
+        catalog = compile_grounded_tool_catalog(
+            context,
+            GroundedToolPhase.ACTION_SELECTION,
+            _delivery(context),
+            interaction_tool_profile=InteractionToolExposureProfile.STRUCTURED,
+        )
+        return context, catalog, next(
+            item for item in catalog.specs if item.name == "submit_final_response"
+        )
+
+    capable_context, capable_catalog, capable_spec = final_spec(capable)
+    direct_context, direct_catalog, direct_spec = final_spec(direct_only)
+
+    assert set(capable_spec.input_schema["properties"]) == {
         "response",
         "artifact",
         "public_intent",
     }
+    assert set(direct_spec.input_schema["properties"]) == {"response"}
+    assert capable.contract_id != direct_only.contract_id
+    capable_result = _resolve_catalog_call(
+        capable_catalog,
+        ToolCall(
+            "submit_final_response",
+            {
+                "response": {"value": "complete"},
+                "artifact": {"title": "Presentation"},
+                "public_intent": "Present the result.",
+            },
+        ),
+        expected_context_id=capable_context.context_id,
+    )
+    assert isinstance(capable_result.decision, FinalResponse)
+    assert capable_result.decision.artifact is not None
+    assert capable_result.decision.public_intent == "Present the result."
+
+    with pytest.raises(GroundedToolResolutionError) as rejected:
+        _resolve_catalog_call(
+            direct_catalog,
+            ToolCall(
+                "submit_final_response",
+                {
+                    "response": {"value": "complete"},
+                    "artifact": {"title": "Not supported"},
+                },
+            ),
+            expected_context_id=direct_context.context_id,
+        )
+    assert rejected.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 @pytest.mark.parametrize(
