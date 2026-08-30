@@ -606,6 +606,22 @@ class ActionDiscoveryResult:
             "suggested_next": self.suggested_next,
         }
 
+    def to_history_value(self) -> dict[str, object]:
+        """Project completed discovery semantics without stale routes or refs."""
+
+        return {
+            "kind": "empty" if not self.matches else "page",
+            "matches": _history_discovery_rows(self.matches),
+            "searched_domain": "executable_controls",
+            "source_scope": "current_action_space",
+            "source_coverage": self.source_coverage,
+            "result_scope": "query" if self.query else "base_inventory",
+            "result_coverage": self.result_coverage,
+            "query": self.query,
+            "unmatched_terms": self.unmatched_terms,
+            "suggested_next": self.suggested_next,
+        }
+
 
 def _public_discovery_rows(matches: tuple[ActionDiscoveryMatch, ...]) -> tuple[Mapping[str, object], ...]:
     grouped: dict[tuple[str, str, str], dict[str, object]] = {}
@@ -630,6 +646,31 @@ def _public_discovery_rows(matches: tuple[ActionDiscoveryMatch, ...]) -> tuple[M
             "match_kinds": tuple(dict.fromkeys(row["match_kinds"])),
         }
         for row in grouped.values()
+    )
+
+
+def _history_discovery_rows(matches: tuple[ActionDiscoveryMatch, ...]) -> tuple[Mapping[str, object], ...]:
+    rows: dict[tuple[str, str], dict[str, object]] = {}
+    for item in matches:
+        key = (item.label, item.role)
+        row = rows.setdefault(
+            key,
+            {
+                "label": item.label,
+                "role": item.role,
+                "operations": [],
+                "match_kinds": [],
+            },
+        )
+        row["operations"].append(item.operation)
+        row["match_kinds"].extend(item.match_kinds)
+    return tuple(
+        {
+            **row,
+            "operations": tuple(dict.fromkeys(row["operations"])),
+            "match_kinds": tuple(dict.fromkeys(row["match_kinds"])),
+        }
+        for row in rows.values()
     )
 
 

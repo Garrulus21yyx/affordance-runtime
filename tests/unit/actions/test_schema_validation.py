@@ -3,6 +3,7 @@ import math
 import pytest
 
 from affordance_runtime.actions.schema_validation import (
+    invalid_value_paths,
     validate_parameter_schema_contract,
     validate_value,
     validate_value_issue,
@@ -205,3 +206,103 @@ def test_public_value_issue_matches_string_schema_validation(value, schema) -> N
 
     assert issue is not None
     assert issue.public_field_paths == ("parameters",)
+
+
+def test_invalid_value_paths_remove_only_unsupported_provided_object_values() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string", "minLength": 1, "maxLength": 80},
+            "profile": {
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["brief", "full"]},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "required": ["question"],
+        "additionalProperties": False,
+    }
+
+    assert invalid_value_paths(
+        {
+            "question": "Which value?",
+            "profile": {"mode": "unsupported", "request_id": "req:old"},
+            "region_ref": "R8",
+        },
+        schema,
+    ) == (
+        ("profile", "mode"),
+        ("profile", "request_id"),
+        ("region_ref",),
+    )
+
+
+def test_invalid_value_paths_preserve_present_semantics_when_only_required_value_is_missing() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string", "maxLength": 80},
+            "answer": {"type": "string", "maxLength": 80},
+        },
+        "required": ["question", "answer"],
+        "additionalProperties": False,
+    }
+
+    assert invalid_value_paths({"question": "Which value?"}, schema) == ()
+
+
+@pytest.mark.parametrize(
+    ("value", "schema", "expected"),
+    (
+        (
+            {"values": ["valid", "invalid"]},
+            {
+                "type": "object",
+                "properties": {
+                    "values": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["valid"]},
+                        "maxItems": 2,
+                    }
+                },
+                "additionalProperties": False,
+            },
+            (("values",),),
+        ),
+        (
+            {"kind": "unknown", "value": "keep"},
+            {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string", "const": "first"},
+                            "value": {"type": "string", "maxLength": 20},
+                        },
+                        "required": ["kind", "value"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string", "const": "second"},
+                            "value": {"type": "string", "maxLength": 20},
+                        },
+                        "required": ["kind", "value"],
+                        "additionalProperties": False,
+                    },
+                ],
+            },
+            ((),),
+        ),
+    ),
+)
+def test_invalid_value_paths_fail_closed_when_selective_container_repair_is_ambiguous(
+    value,
+    schema,
+    expected,
+) -> None:
+    assert invalid_value_paths(value, schema) == expected

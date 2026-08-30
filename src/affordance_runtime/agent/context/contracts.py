@@ -18,59 +18,17 @@ _LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
 HISTORY_ARGUMENT_PATHS_METADATA_KEY = "affordance_runtime.history.argument_paths.v1"
 HISTORY_RETURN_PATHS_METADATA_KEY = "affordance_runtime.history.return_paths.v1"
 HISTORY_CANONICAL_METADATA_KEY = "affordance_runtime.history.canonical.v1"
-_PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
-_PRIVATE_HISTORY_SEQUENCE_KEYS = frozenset(
-    {
-        "candidate_ids",
-        "destination_ids",
-        "subject_ids",
-        "target_ids",
-    }
-)
-_OPERATIONAL_HISTORY_KEYS = frozenset(
-    {
-        "cursor",
-        "executable_grounding",
-        "follow_up",
-        "next_cursor",
-        "verbs",
-    }
-)
-_REF_KEYED_HISTORY_KEYS = frozenset({"counts"})
-_PUBLIC_REF_HISTORY_KEYS = frozenset(
-    {
-        "candidate_refs",
-        "destination_ref",
-        "destination_refs",
-        "evidence_ref",
-        "evidence_refs",
-        "fact_ref",
-        "fact_refs",
-        "node_ref",
-        "node_refs",
-        "region_ref",
-        "region_refs",
-        "source_ref",
-        "source_refs",
-        "subject_ref",
-        "subject_refs",
-        "target_ref",
-        "target_refs",
-    }
-)
-
-
 def sanitize_history_value(value: object) -> object:
-    """Remove typed identity fields while preserving arbitrary semantic values.
+    """Preserve producer-owned semantics while removing legacy tombstones.
 
-    A string such as ``E6`` or ``R2`` is not identity merely because it matches
-    the disposable public-ref grammar.  Ref authority comes from an explicit
-    protocol field.  Free-form prose is handled separately by
-    :func:`sanitize_history_prose` when its producer can supply the exact refs
-    issued for that exchange.
+    This function is deliberately not an authority detector.  A mapping key
+    such as ``target_ref`` can be legitimate business data, just as ``E6`` can
+    be a product code.  Operational values expire only through producer-owned
+    paths passed to :func:`sanitize_history_arguments` or through a dedicated
+    semantic projection at the producer boundary.
     """
 
-    return _sanitize_history_value(value, strip_selectors=False)
+    return _sanitize_legacy_value(value)
 
 
 def sanitize_history_arguments(
@@ -119,39 +77,6 @@ def sanitize_history_prose(value: str) -> str:
     """Preserve semantic prose; free text never carries ref authority."""
 
     return _LEGACY_EXPIRED_REF.sub("", value).strip()
-
-
-def _sanitize_history_value(value: object, *, strip_selectors: bool) -> object:
-    if isinstance(value, str):
-        return _LEGACY_EXPIRED_REF.sub("", value)
-    if isinstance(value, Mapping):
-        sanitized: dict[str, object] = {}
-        for key, item in value.items():
-            raw_key = str(key)
-            if (
-                raw_key in _PRIVATE_HISTORY_KEYS
-                or raw_key in _PRIVATE_HISTORY_SEQUENCE_KEYS
-                or raw_key in _OPERATIONAL_HISTORY_KEYS
-                or _is_ref_field(raw_key)
-            ):
-                continue
-            clean_key = _LEGACY_EXPIRED_REF.sub("", raw_key)
-            if not clean_key:
-                continue
-            if raw_key in _REF_KEYED_HISTORY_KEYS and isinstance(item, Mapping):
-                projected = {
-                    str(item_key): _sanitize_history_value(item_value, strip_selectors=strip_selectors)
-                    for item_key, item_value in item.items()
-                    if not PublicRefCodec.accepts(str(item_key))
-                }
-                if projected:
-                    sanitized[clean_key] = projected
-                continue
-            sanitized[clean_key] = _sanitize_history_value(item, strip_selectors=strip_selectors)
-        return sanitized
-    if isinstance(value, tuple | list):
-        return tuple(_sanitize_history_value(item, strip_selectors=strip_selectors) for item in value)
-    return value
 
 
 _DROP_HISTORY_VALUE = object()
@@ -215,10 +140,6 @@ def _sanitize_legacy_value(value: object) -> object:
     if isinstance(value, tuple | list):
         return tuple(_sanitize_legacy_value(item) for item in value)
     return value
-
-
-def _is_ref_field(key: str) -> bool:
-    return key in _PUBLIC_REF_HISTORY_KEYS
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from affordance_runtime.actions.schema_validation import validate_value_issue
+from affordance_runtime.actions.schema_validation import invalid_value_paths, validate_value_issue
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.contracts import (
     HISTORY_ARGUMENT_PATHS_METADATA_KEY,
@@ -2474,6 +2474,19 @@ def _grounded_rejection_exchange(
     call = calls[0]
     proposed_calls = tuple(output.calls)
     discarded_call_count = max(0, len(proposed_calls) - 1)
+    specs = tuple(catalog.specs)
+    spec = _tool_spec(call.name, specs)
+    argument_paths = spec.ephemeral_argument_paths
+    if error.code is GroundedToolResolutionCode.INVALID_ARGUMENTS:
+        argument_paths = tuple(
+            dict.fromkeys(
+                (*argument_paths, *invalid_value_paths(call.arguments, spec.input_schema))
+            )
+        )
+    paths_by_call = tuple(
+        (call_id, argument_paths if call_id == call.call_id else paths)
+        for call_id, paths in _argument_paths_by_call(proposed_calls, specs)
+    )
     return AcceptedToolExchange(
         call,
         grounded_tool_rejection_decision(
@@ -2482,7 +2495,7 @@ def _grounded_rejection_exchange(
             context.context_id,
             context,
             catalog.manifest,
-            _tool_spec(call.name, tuple(catalog.specs)).ephemeral_argument_paths,
+            argument_paths,
         ),
         _accepted_model_response(
             source_response,
@@ -2491,7 +2504,7 @@ def _grounded_rejection_exchange(
             discarded_call_count=discarded_call_count,
         ),
         discarded_call_count,
-        _argument_paths_by_call(proposed_calls, tuple(catalog.specs)),
+        paths_by_call,
     )
 
 
@@ -2513,7 +2526,13 @@ def _accepted_model_response(
     proposed_calls: tuple[object, ...] = (),
     discarded_call_count: int = 0,
 ):
-    """Keep the exact accepted response, including provider reasoning metadata."""
+    """Keep provider reasoning with the one owner-normalized accepted call.
+
+    The provider transcript retains the exact wire response.  Official SDK
+    working history instead records the canonical call actually admitted by
+    the Catalog boundary, so representation wrappers and pruned invalid
+    optional operands cannot survive as a second version of the attempt.
+    """
 
     from pydantic_ai.messages import ModelResponse, ToolCallPart
 
@@ -2537,7 +2556,7 @@ def _accepted_model_response(
                     to_json_compatible(accepted_call.arguments),
                     accepted_call.call_id,
                 ),
-                *calls[1:],
+                *(replace(part, args={}) for part in calls[1:]),
             ]
         )
     source_calls = tuple(part for part in source_response.parts if isinstance(part, ToolCallPart))
@@ -2545,7 +2564,30 @@ def _accepted_model_response(
     proposed_identities = tuple((part.tool_name, part.args_as_dict(), part.tool_call_id) for part in calls)
     if source_identities != proposed_identities:
         raise ValueError("source response and deferred calls disagree")
-    return source_response
+    metadata = dict(source_response.metadata or {})
+    # These keys are Runtime-owned settlement facts.  Provider metadata can be
+    # preserved, but it cannot pre-claim that an unprojected response is
+    # canonical or choose which arguments expire.
+    metadata.pop(HISTORY_ARGUMENT_PATHS_METADATA_KEY, None)
+    metadata.pop(HISTORY_CANONICAL_METADATA_KEY, None)
+    return replace(
+        source_response,
+        parts=tuple(
+            (
+                replace(
+                    part,
+                    tool_name=accepted_call.name,
+                    args=to_json_compatible(accepted_call.arguments),
+                )
+                if part.tool_call_id == accepted_call.call_id
+                else replace(part, args={})
+            )
+            if isinstance(part, ToolCallPart)
+            else part
+            for part in source_response.parts
+        ),
+        metadata=metadata or None,
+    )
 
 
 def _tool_spec(name: str, specs: tuple[ToolSpec, ...]) -> ToolSpec:
@@ -2563,15 +2605,16 @@ def _argument_paths_by_call(
 
     by_name = {spec.name: spec for spec in specs}
     projected: list[tuple[str, tuple[tuple[str, ...], ...]]] = []
-    for call in calls:
+    for index, call in enumerate(calls):
         call_id = str(getattr(call, "tool_call_id", ""))
         name = str(getattr(call, "tool_name", ""))
         if not call_id:
             raise ValueError("provider proposal has no response-local identity")
         spec = by_name.get(name)
-        # Unknown discarded proposals have no legal semantic contract, so the
-        # whole argument object expires when their exchange closes.
-        paths = spec.ephemeral_argument_paths if spec is not None else ((),)
+        # Only the first proposal is the canonical admitted decision.  Every
+        # later proposal is explicitly unexecuted and therefore has no settled
+        # semantic authority, even when its operation name is known.
+        paths = spec.ephemeral_argument_paths if index == 0 and spec is not None else ((),)
         projected.append((call_id, paths))
     return tuple(projected)
 

@@ -390,25 +390,27 @@ def _historical_target(value: AgentHistoricalTargetView) -> dict[str, object]:
 
 
 def _render_transition(transition: Mapping[str, object]) -> dict[str, object]:
-    public = sanitize_history_value(transition)
-    if not isinstance(public, Mapping):
-        return {}
-    keys = (
+    scalar_keys = (
         "role",
         "label",
+        "semantic_change",
         "observed_change",
         "evidence_method",
         "local_postcondition",
         "target_changed",
         "structural_world_changed",
-        "before_state",
-        "after_state",
     )
-    result = {key: public[key] for key in keys if key in public}
+    result = {
+        key: sanitize_history_value(transition[key])
+        for key in scalar_keys
+        if key in transition
+    }
     for key in ("before_state", "after_state"):
-        state = result.get(key)
+        state = transition.get(key)
         if isinstance(state, Mapping):
-            result[key] = project_model_state(state, interactive=True)
+            result[key] = sanitize_history_value(
+                project_model_state(state, interactive=True)
+            )
     return result
 
 

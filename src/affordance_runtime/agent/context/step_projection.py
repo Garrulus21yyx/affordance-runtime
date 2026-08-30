@@ -90,7 +90,7 @@ def project_step_result(
         summary["information_delta"] = information_delta.kind.value
         summary["new_information_count"] = information_delta.new_information_count
     if isinstance(decision, RequestActionPage) and result.action_page_result is not None and information_delta is None:
-        summary["result"] = result.action_page_result.to_public_value()
+        summary["result"] = result.action_page_result.to_history_value()
     summary["feedback_code"] = sanitize_history_prose(result.feedback)
     return AgentTurnView(
         decision.kind.value,

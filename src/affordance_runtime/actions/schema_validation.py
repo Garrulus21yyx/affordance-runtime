@@ -383,6 +383,103 @@ def validate_value_issue(
     )
 
 
+def invalid_value_paths(
+    value: Any,
+    schema: Mapping[str, Any],
+) -> tuple[tuple[str, ...], ...]:
+    """Locate provided values that have no meaning in one valid schema.
+
+    The result is an at-rest history contract, not a repair instruction.  It
+    preserves every schema-owned semantic sibling and marks only unsupported
+    provided values.  Containers whose legal subset is ambiguous (arrays,
+    unions, or overfull objects) expire as a whole.  A missing required field
+    has no provided value to remove, so valid present siblings remain useful
+    evidence for why the rejected attempt was made.
+    """
+
+    validate_parameter_schema_contract(schema)
+    if _value_violation(value, schema, "parameters") is None:
+        return ()
+    return _minimal_paths(_invalid_value_paths(value, schema, ()))
+
+
+def _invalid_value_paths(
+    value: Any,
+    schema: Mapping[str, Any],
+    path: tuple[str, ...],
+) -> tuple[tuple[str, ...], ...]:
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    if variants is not None:
+        return (path,)
+
+    expected_type = schema.get("type")
+    actual_type = _json_type(value)
+    if expected_type != actual_type and not (expected_type == "number" and actual_type == "integer"):
+        return (path,)
+
+    if expected_type == "array":
+        # History paths intentionally have no positional array edits.  Keeping
+        # a selectively shortened array could invent a different semantic call.
+        return (path,)
+
+    if expected_type == "object":
+        assert isinstance(value, Mapping)
+        if "maxProperties" in schema and len(value) > int(schema["maxProperties"]):
+            return (path,)
+        properties = schema.get("properties") or {}
+        if not isinstance(properties, Mapping):  # validated schemas cannot reach this
+            return (path,)
+        additional = schema.get("additionalProperties", False)
+        property_names = schema.get("propertyNames")
+        paths: list[tuple[str, ...]] = []
+        for raw_key, item in value.items():
+            key = str(raw_key)
+            if not key:
+                return (path,)
+            child_path = (*path, key)
+            if _private_name(key):
+                paths.append(child_path)
+                continue
+            if isinstance(property_names, Mapping) and _value_violation(
+                key,
+                property_names,
+                "parameters.property_name",
+            ) is not None:
+                paths.append(child_path)
+                continue
+            child_schema = properties.get(raw_key)
+            if isinstance(child_schema, Mapping):
+                if _value_violation(item, child_schema, "parameters") is not None:
+                    paths.extend(_invalid_value_paths(item, child_schema, child_path))
+                continue
+            if additional is False:
+                paths.append(child_path)
+                continue
+            if isinstance(additional, Mapping) and _value_violation(
+                item,
+                additional,
+                "parameters",
+            ) is not None:
+                paths.extend(_invalid_value_paths(item, additional, child_path))
+        return tuple(paths)
+
+    return (path,)
+
+
+def _minimal_paths(paths: Sequence[tuple[str, ...]]) -> tuple[tuple[str, ...], ...]:
+    unique = set(paths)
+    return tuple(
+        sorted(
+            path
+            for path in unique
+            if not any(
+                parent != path and path[: len(parent)] == parent
+                for parent in unique
+            )
+        )
+    )
+
+
 def _value_violation(
     value: Any,
     schema: Mapping[str, Any],

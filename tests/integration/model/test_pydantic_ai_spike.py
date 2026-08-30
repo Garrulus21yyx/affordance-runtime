@@ -52,6 +52,7 @@ from affordance_runtime.agent.context.contracts import (
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.decisions import (
     FinalResponse,
     ReadRegionResult,
@@ -2457,7 +2458,7 @@ def test_first_call_serialization_preserves_the_current_pending_tool_return_pair
 
 @given(call_count=st.integers(min_value=1, max_value=8))
 @settings(max_examples=8, deadline=None)
-def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_turn(
+def test_accepted_exchange_conserves_every_proposal_identity_across_the_next_provider_turn(
     call_count: int,
 ) -> None:
     async def scenario() -> None:
@@ -2536,7 +2537,7 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         )
         physical = json.dumps(recorded, sort_keys=True)
         if call_count > 1:
-            assert all(f"discarded-{index}" in physical for index in range(1, call_count))
+            assert all(f"discarded-{index}" not in physical for index in range(1, call_count))
             assert all(f"recording-call:1:discarded:{index}" in physical for index in range(1, call_count))
             assert all("Not executed" in item["content"] for item in paired_results[1:])
         assert scripted.calls == 2
@@ -2611,7 +2612,7 @@ def test_control_boundary_closes_pending_pydantic_history_before_another_model_t
     asyncio.run(scenario())
 
 
-def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
+def test_exact_model_reasoning_and_call_identities_survive_into_the_next_turn() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-history", False)
@@ -2704,13 +2705,14 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
             {
                 "part_kind": "tool-call",
                 "tool_name": "search_page_content",
-                "arguments": {"query": "unneeded recheck"},
+                "arguments": {},
                 "tool_call_id": discarded_id,
             },
         )
         physical = json.dumps(recorded, sort_keys=True)
         assert "private deliberation" in physical
         assert discarded_id in physical
+        assert "unneeded recheck" not in physical
         assert "Not executed" in physical
         assert "Do not emit a separate memory" in str(scripted.records[0].instructions)
         assert "In the same response, briefly state" not in str(scripted.records[0].instructions)
@@ -3537,6 +3539,78 @@ def test_schema_owned_paths_remove_request_evidence_subject_without_touching_pro
     returned = next(part for part in request.parts if isinstance(part, ToolReturnPart))
     assert returned.metadata is None
     assert pydantic_bridge._canonicalize_completed_history(projected) == projected
+
+
+@pytest.mark.parametrize(
+    ("raw_arguments", "canonical_arguments"),
+    (
+        (
+            {"parameters": {"target": "E1", "text": "keep"}},
+            {"target": "E1", "text": "keep"},
+        ),
+        (
+            {"question": "Which?", "requested_fields": "not-an-array"},
+            {"question": "Which?"},
+        ),
+    ),
+)
+def test_official_history_records_the_owner_normalized_accepted_call(
+    raw_arguments,
+    canonical_arguments,
+) -> None:
+    source = ModelResponse(
+        parts=[
+            ThinkingPart("Keep provider reasoning."),
+            ToolCallPart("fixture", raw_arguments, "call:accepted"),
+        ]
+    )
+    proposed = tuple(part for part in source.parts if isinstance(part, ToolCallPart))
+
+    accepted = pydantic_bridge._accepted_model_response(
+        source,
+        ToolCall("fixture", canonical_arguments, "call:accepted"),
+        proposed_calls=proposed,
+    )
+
+    assert accepted.parts[0] == source.parts[0]
+    assert accepted.parts[1].args == canonical_arguments
+    assert source.parts[1].args == raw_arguments
+
+
+def test_settled_history_expires_every_unexecuted_proposal_argument_object() -> None:
+    spec = ToolSpec(
+        "activate",
+        "fixture",
+        {
+            "type": "object",
+            "properties": {"target": {"type": "string", "maxLength": 20}},
+            "required": ["target"],
+            "additionalProperties": False,
+        },
+        ephemeral_argument_paths=(("target",),),
+    )
+    accepted = ToolCallPart("activate", {"target": "E1"}, "call:accepted")
+    discarded = ToolCallPart("activate", {"target": "E2"}, "call:discarded")
+    paths = dict(pydantic_bridge._argument_paths_by_call((accepted, discarded), (spec,)))
+    history = (
+        _history_response((accepted, discarded), paths),
+        ModelRequest(
+            parts=[
+                _history_return("activate", {"status": "stable"}, "call:accepted"),
+                ToolReturnPart(
+                    "activate",
+                    canonical_envelope_module.UNEXECUTED_TOOL_CALL_MESSAGE,
+                    "call:discarded",
+                ),
+            ]
+        ),
+    )
+
+    projected = pydantic_bridge._canonicalize_completed_history(history)
+    response = projected[0]
+
+    assert isinstance(response, ModelResponse)
+    assert tuple(part.args for part in response.parts if isinstance(part, ToolCallPart)) == ({}, {})
 
 
 def test_history_projection_locates_completion_by_exchange_not_reused_call_id() -> None:
@@ -6194,7 +6268,11 @@ def test_provider_repair_dropping_legal_optional_operand_becomes_same_call_rejec
                     {
                         "question": "Which value?",
                         "requested_fields": ["account"],
-                        "unexpected": "x",
+                        "unexpected": {
+                            "target_ref": "E9",
+                            "request_id": "req:old",
+                        },
+                        "region_ref": "R8",
                     },
                 ),
                 ("ask_user", {"question": "Which value?"}),
@@ -6222,7 +6300,11 @@ def test_provider_repair_dropping_legal_optional_operand_becomes_same_call_rejec
             "arguments": {
                 "question": "Which value?",
                 "requested_fields": ["account"],
-                "unexpected": "x",
+                "unexpected": {
+                    "target_ref": "E9",
+                    "request_id": "req:old",
+                },
+                "region_ref": "R8",
             },
         }
         assert rejected.result["kind"] == GroundedToolResolutionCode.INVALID_ARGUMENTS.value
@@ -6232,6 +6314,38 @@ def test_provider_repair_dropping_legal_optional_operand_becomes_same_call_rejec
             "ordinary",
             "representation_repair",
         ]
+
+        step = StepResult(
+            rejected,
+            world,
+            world,
+            await SharedTaskEvaluator().evaluate(task, world),
+            feedback="local_tool_result",
+        )
+        projected = project_step_result(step)
+        assert projected.semantic_summary["operation"] == "ask_user"
+        assert projected.semantic_summary["arguments"] == {
+            "question": "Which value?",
+            "requested_fields": ["account"],
+        }
+
+        policy.port.close_deferred_call(step)
+        closed_calls = tuple(
+            part
+            for message in policy.port.message_history
+            if isinstance(message, ModelResponse)
+            for part in message.parts
+            if isinstance(part, ToolCallPart)
+        )
+        assert tuple(part.args for part in closed_calls) == (
+            {
+                "question": "Which value?",
+                "requested_fields": ("account",),
+            },
+        )
+        assert pydantic_bridge._canonicalize_completed_history(
+            policy.port.message_history
+        ) == policy.port.message_history
 
     asyncio.run(scenario())
 
@@ -6513,7 +6627,7 @@ def test_invalid_first_deferred_call_never_falls_through_to_a_later_call(monkeyp
     assert normalized_calls == [ToolCall("read_region", {"region_ref": "invalid"}, "call:1")]
 
 
-def test_accepted_response_preserves_exact_reasoning_prose_and_calls(monkeypatch) -> None:
+def test_accepted_response_preserves_reasoning_and_records_canonical_call(monkeypatch) -> None:
     normalized = ToolCall("activate_selector", {"grounding_ref": "E5"}, "call:1")
     resolved_decision = SearchPageContentResult(
         "context:test",
@@ -6541,13 +6655,13 @@ def test_accepted_response_preserves_exact_reasoning_prose_and_calls(monkeypatch
             ThinkingPart("hidden chain " * 1_000),
             TextPart(narration),
             ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1"),
-            ToolCallPart("discarded", {}, "call:discarded"),
+            ToolCallPart("discarded", {"target": "E99"}, "call:discarded"),
         ]
     )
     output = DeferredToolRequests(
         calls=[
             ToolCallPart("activate_constant", {"grounding_ref": "E5"}, "call:1"),
-            ToolCallPart("discarded", {}, "call:discarded"),
+            ToolCallPart("discarded", {"target": "E99"}, "call:discarded"),
         ]
     )
 
@@ -6564,7 +6678,7 @@ def test_accepted_response_preserves_exact_reasoning_prose_and_calls(monkeypatch
     assert exchange is not None
     assert error is None
     assert parsed == ()
-    assert exchange.response is source
+    assert exchange.response is not source
     assert [type(part) for part in exchange.response.parts] == [
         ThinkingPart,
         TextPart,
@@ -6572,7 +6686,60 @@ def test_accepted_response_preserves_exact_reasoning_prose_and_calls(monkeypatch
         ToolCallPart,
     ]
     assert narration in repr(exchange.response)
+    assert exchange.response.parts[:2] == tuple(source.parts[:2])
     assert exchange.response.parts[2].tool_call_id == normalized.call_id
+    assert exchange.response.parts[2].tool_name == normalized.name
+    assert exchange.response.parts[2].args == normalized.arguments
+    assert exchange.response.parts[3].tool_name == source.parts[3].tool_name
+    assert exchange.response.parts[3].tool_call_id == source.parts[3].tool_call_id
+    assert exchange.response.parts[3].args == {}
+    assert source.parts[3].args == {"target": "E99"}
+
+
+def test_provider_metadata_cannot_preclaim_runtime_history_canonicalization() -> None:
+    call = ToolCall("activate", {"target": "E1", "note": "keep"}, "call:x")
+    source = ModelResponse(
+        parts=[ToolCallPart(call.name, dict(call.arguments), call.call_id)],
+        metadata={
+            HISTORY_ARGUMENT_PATHS_METADATA_KEY: {call.call_id: (("target",),)},
+            pydantic_bridge.HISTORY_CANONICAL_METADATA_KEY: True,
+            "provider_marker": "keep",
+        },
+    )
+    accepted_response = pydantic_bridge._accepted_model_response(
+        source,
+        call,
+        proposed_calls=tuple(part for part in source.parts if isinstance(part, ToolCallPart)),
+    )
+    decision = SearchPageContentResult(
+        "context:test",
+        call.name,
+        call.arguments,
+        {"kind": "Matches", "items": []},
+        call.call_id,
+    )
+    exchange = pydantic_bridge.AcceptedToolExchange(
+        call,
+        decision,
+        accepted_response,
+        argument_paths_by_call=((call.call_id, (("target",),)),),
+    )
+    history = (
+        pydantic_bridge._history_response(exchange),
+        ModelRequest(parts=[_history_return(call.name, {"status": "stable"}, call.call_id)]),
+    )
+
+    projected = pydantic_bridge._canonicalize_completed_history(history)
+    response = projected[0]
+
+    assert isinstance(response, ModelResponse)
+    assert response.metadata == {
+        "provider_marker": "keep",
+        pydantic_bridge.HISTORY_CANONICAL_METADATA_KEY: True,
+    }
+    assert tuple(part.args for part in response.parts if isinstance(part, ToolCallPart)) == (
+        {"note": "keep"},
+    )
 
 
 def test_zhipu_pydantic_ai_factory_is_selected_by_wire_capability() -> None:

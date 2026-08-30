@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from hypothesis import given
 from hypothesis import strategies as st
 
+from affordance_runtime.actions.paging import ActionDiscoveryMatch, ActionDiscoveryResult
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
@@ -14,6 +15,7 @@ from affordance_runtime.agent.context.contracts import (
     history_operational_refs,
     sanitize_history_arguments,
     sanitize_history_prose,
+    sanitize_history_value,
 )
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
@@ -22,6 +24,7 @@ from affordance_runtime.agent.context.step_projection import _historical_target,
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.decisions import (
     ReadRegionResult,
+    RequestActionPage,
     SearchPageContentResult,
     ToolRejectedResult,
 )
@@ -59,6 +62,7 @@ def test_workspace_reducer_is_total_for_one_thousand_ordinary_reads() -> None:
             "read_region",
             {"region_ref": "R1", "query": f"query-{index}"},
             {"items": ()},
+            ephemeral_argument_paths=(("region_ref",),),
         )
         step = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
         workspace = reducer.reduce(workspace, step, project_step_result(step), index + 1)
@@ -227,6 +231,23 @@ def test_history_contract_distinguishes_typed_refs_from_ref_shaped_business_valu
     assert "R2" in prose
 
 
+@given(
+    key=st.sampled_from(("target_ref", "subject_ref", "region_ref", "cursor", "verbs")),
+    value=st.text(min_size=1, max_size=24),
+)
+def test_semantic_history_values_are_not_reclassified_by_field_spelling(
+    key: str,
+    value: str,
+) -> None:
+    semantic = {"state": {key: value}, "ordinary": "keep"}
+
+    assert sanitize_history_value(semantic) == semantic
+    assert sanitize_history_arguments(
+        semantic,
+        ephemeral_paths=(("state", key),),
+    ) == {"state": {}, "ordinary": "keep"}
+
+
 def test_recent_trajectory_preserves_ref_shaped_labels_and_business_arguments() -> None:
     turn = AgentTurnView(
         "select_action",
@@ -253,6 +274,7 @@ def test_recent_trajectory_uses_the_same_model_state_allowlist_as_fresh_world() 
     transition = {
         "role": "textbox",
         "label": "",
+        "semantic_change": "changed",
         "observed_change": "changed",
         "before_state": {
             "active": False,
@@ -287,9 +309,85 @@ def test_recent_trajectory_uses_the_same_model_state_allowlist_as_fresh_world() 
         "semantic.dom.attribute.type": "text",
         "semantic.dom.attribute.title": "Product filter",
     }
+    assert rendered[0]["result"]["transition"]["semantic_change"] == "changed"
     assert "implementation-filter-id" not in encoded
     assert "implementation_filter_name" not in encoded
     assert "private-class" not in encoded
+
+
+@given(
+    key=st.sampled_from(("target_ref", "subject_ref", "region_ref", "cursor", "verbs")),
+    value=st.text(min_size=1, max_size=24),
+)
+def test_recent_trajectory_preserves_owner_declared_semantic_state_keys(
+    key: str,
+    value: str,
+) -> None:
+    transition = {
+        "role": "row",
+        "before_state": {key: value, "ordinary": "before"},
+        "after_state": {key: value, "ordinary": "after"},
+    }
+
+    rendered = render_recent_trajectory(
+        AgentWorkspace((AgentTurnView("select_action", "activate", transition=transition),))
+    )
+    projected = rendered[0]["result"]["transition"]
+
+    assert projected["before_state"][key] == value
+    assert projected["after_state"][key] == value
+
+
+def test_action_discovery_history_preserves_semantics_without_stale_routes() -> None:
+    world = shared_world("observation:discovery-history", False)
+    result = ActionDiscoveryResult(
+        (
+            ActionDiscoveryMatch(
+                "E91",
+                "E6",
+                "textbox",
+                "type_text",
+                destination_refs=("E92",),
+                match_kinds=("lexical",),
+            ),
+            ActionDiscoveryMatch(
+                "E93",
+                "E6",
+                "textbox",
+                "press_key",
+                match_kinds=("role",),
+            ),
+        ),
+        "r2",
+        "complete",
+        "complete",
+    )
+    step = StepResult(
+        RequestActionPage("context:test", "r2"),
+        world,
+        world,
+        _evaluation(world.observation_id),
+        feedback="action_page_ready",
+        action_page_result=result,
+    )
+
+    projected = project_step_result(step)
+    history_result = projected.semantic_summary["result"]
+
+    assert history_result["query"] == "r2"
+    assert history_result["matches"] == (
+        {
+            "label": "E6",
+            "role": "textbox",
+            "operations": ["type_text", "press_key"],
+            "match_kinds": ["lexical", "role"],
+        },
+    )
+    assert "E91" not in repr(projected)
+    assert "E92" not in repr(projected)
+    assert "E93" not in repr(projected)
+    assert "target_ref" not in repr(projected)
+    assert "verbs" not in repr(projected)
 
 
 def test_recent_trajectory_never_uses_dom_class_as_a_target_label() -> None:
@@ -331,6 +429,7 @@ def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body(
                 "context": ("Account", "Results"),
             },
         },
+        ephemeral_argument_paths=(("region_ref",), ("cursor",)),
     )
     projected = project_step_result(
         StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
