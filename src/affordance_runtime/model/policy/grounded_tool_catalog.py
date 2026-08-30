@@ -13,6 +13,7 @@ from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView, ActorWorldSnapshot
 from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
+    inspect_outcome_ephemeral_paths,
     inspect_outcome_public,
 )
 from affordance_runtime.agent.context.context import AgentContext
@@ -335,15 +336,14 @@ class _FinalResponseBinding:
 @dataclass(frozen=True)
 class _CountChildrenBinding:
     counts: Mapping[str, int]
+    ephemeral_argument_paths: tuple[tuple[str, ...], ...] = ()
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
         raw_refs = arguments["containers"]
         if not isinstance(raw_refs, list | tuple):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         container_refs = tuple(str(item) for item in raw_refs)
-        if len(set(container_refs)) != len(container_refs) or any(
-            item not in self.counts for item in container_refs
-        ):
+        if len(set(container_refs)) != len(container_refs) or any(item not in self.counts for item in container_refs):
             raise GroundedToolResolutionError(GroundedToolResolutionCode.INVALID_ARGUMENTS)
         counts = {item: self.counts[item] for item in container_refs}
         return ReadRegionResult(
@@ -352,6 +352,8 @@ class _CountChildrenBinding:
             {"containers": container_refs},
             {"counts": counts, "total": sum(counts.values())},
             tool_call_id,
+            ephemeral_argument_paths=self.ephemeral_argument_paths,
+            ephemeral_result_paths=(("counts",),),
         )
 
 
@@ -360,6 +362,7 @@ class _WorldReadBinding:
     context: AgentContext
     kind: str
     admitted_region_refs: frozenset[str] = frozenset()
+    ephemeral_argument_paths: tuple[tuple[str, ...], ...] = ()
 
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision | GroundedActionResolution:
         observation, region_index = _current_world_read_authority(self.context)
@@ -406,6 +409,7 @@ class _WorldReadBinding:
         else:
             public_arguments = {"cursor": page_cursor} if page_cursor else {}
         public_result = dict(inspect_outcome_public(result))
+        ephemeral_result_paths = inspect_outcome_ephemeral_paths(result, public_result)
         result_type = (
             SearchPageContentResult
             if tool_name == GroundedLocalToolName.SEARCH_PAGE_CONTENT.value
@@ -418,6 +422,8 @@ class _WorldReadBinding:
                 public_arguments,
                 public_result,
                 tool_call_id,
+                ephemeral_argument_paths=self.ephemeral_argument_paths,
+                ephemeral_result_paths=ephemeral_result_paths,
             ),
         )
 
@@ -492,6 +498,31 @@ def compile_grounded_tool_catalog(
                     dynamic_subjects or {},
                 )
             )
+            ephemeral_evidence_paths = (
+                (("subject",),)
+                if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
+                else (
+                    *(
+                        (("subject_refs",),)
+                        if any(
+                            purpose
+                            in {
+                                ObservationPurpose.VISUAL_PROPERTY.value,
+                                ObservationPurpose.TEXT_IN_IMAGE.value,
+                                ObservationPurpose.SPATIAL_RELATIONSHIP.value,
+                                ObservationPurpose.VISUAL_CHANGE.value,
+                            }
+                            for purpose in ordered_purposes
+                        )
+                        else ()
+                    ),
+                    *(
+                        (("candidate_refs",),)
+                        if ObservationPurpose.TARGET_DISAMBIGUATION.value in ordered_purposes
+                        else ()
+                    ),
+                )
+            )
             registered.append(
                 RegisteredGroundedTool(
                     ToolSpec(
@@ -504,6 +535,7 @@ def compile_grounded_tool_catalog(
                             "usable control for a target that is visibly present. This never performs a GUI action."
                         ),
                         schema,
+                        ephemeral_argument_paths=ephemeral_evidence_paths,
                     ),
                     _EvidenceBinding(
                         ordered_purposes,
@@ -535,109 +567,130 @@ def compile_grounded_tool_catalog(
     # erase its current deterministic count capability from this Catalog.
     child_counts = _countable_child_groups(context.actor_world)
     if child_counts:
+        count_spec = ToolSpec(
+            GroundedLocalToolName.COUNT_CHILDREN.value,
+            "Required for counting repeated visible items: select every relevant current complete group; "
+            "Runtime returns each exact direct-child count and their total.",
+            _object_schema(
+                {
+                    "containers": {
+                        "type": "array",
+                        "description": "all relevant repeated-group references from the current observation",
+                        "items": {
+                            "type": "string",
+                            "enum": sorted(child_counts),
+                        },
+                        "minItems": 1,
+                        "maxItems": len(child_counts),
+                    }
+                },
+                ("containers",),
+            ),
+            ephemeral_argument_paths=(("containers",),),
+        )
         registered.append(
             RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.COUNT_CHILDREN.value,
-                    "Required for counting repeated visible items: select every relevant current complete group; "
-                    "Runtime returns each exact direct-child count and their total.",
-                    _object_schema(
-                        {
-                            "containers": {
-                                "type": "array",
-                                "description": "all relevant repeated-group references from the current observation",
-                                "items": {
-                                    "type": "string",
-                                    "enum": sorted(child_counts),
-                                },
-                                "minItems": 1,
-                                "maxItems": len(child_counts),
-                            }
-                        },
-                        ("containers",),
-                    ),
-                ),
-                _CountChildrenBinding(child_counts),
+                count_spec,
+                _CountChildrenBinding(child_counts, count_spec.ephemeral_argument_paths),
             )
         )
 
     if delivery.manifest.region_refs:
+        read_spec = ToolSpec(
+            GroundedLocalToolName.READ_REGION.value,
+            "Open one known current PageMap region for readable content; no browser action.",
+            _object_schema(
+                {
+                    "region_ref": {
+                        "type": "string",
+                        "description": "current PageMap R-ref returned by the World view or a read/search tool",
+                        "pattern": PublicRefCodec.pattern(PublicRefKind.REGION),
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "description": (
+                            "optional opaque next_cursor from the immediately preceding result of this "
+                            "same tool, World, and region"
+                        ),
+                        "minLength": 1,
+                        "maxLength": 512,
+                    },
+                },
+                ("region_ref",),
+            ),
+            ephemeral_argument_paths=(("region_ref",), ("cursor",)),
+        )
         registered.append(
             RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.READ_REGION.value,
-                    "Open one known current PageMap region for readable content; no browser action.",
-                    _object_schema(
-                        {
-                            "region_ref": {
-                                "type": "string",
-                                "description": "current PageMap R-ref returned by the World view or a read/search tool",
-                                "pattern": PublicRefCodec.pattern(PublicRefKind.REGION),
-                            },
-                            "cursor": {
-                                "type": "string",
-                                "description": (
-                                    "optional opaque next_cursor from the immediately preceding result of this "
-                                    "same tool, World, and region"
-                                ),
-                                "minLength": 1,
-                                "maxLength": 512,
-                            },
-                        },
-                        ("region_ref",),
-                    ),
+                read_spec,
+                _WorldReadBinding(
+                    context,
+                    "region",
+                    frozenset(delivery.manifest.region_refs),
+                    read_spec.ephemeral_argument_paths,
                 ),
-                _WorldReadBinding(context, "region", frozenset(delivery.manifest.region_refs)),
             )
         )
+    search_spec = ToolSpec(
+        GroundedLocalToolName.SEARCH_PAGE_CONTENT.value,
+        "Locate an exact text substring in current readable records; returns bounded exact-match pages, not "
+        "semantic retrieval or proof that a collection was fully reviewed; no browser action.",
+        _object_schema(
+            {
+                "query": {
+                    "type": "string",
+                    "description": "exact text substring to locate in current readable records",
+                    "minLength": 1,
+                    "maxLength": 120,
+                },
+                "cursor": {
+                    "type": "string",
+                    "description": (
+                        "optional opaque next_cursor from the immediately preceding result of this "
+                        "same tool, World, and exact query"
+                    ),
+                    "minLength": 1,
+                    "maxLength": 512,
+                },
+            },
+            ("query",),
+        ),
+        ephemeral_argument_paths=(("cursor",),),
+    )
+    list_spec = ToolSpec(
+        GroundedLocalToolName.LIST_REGIONS.value,
+        "List current PageMap region records; no browser action.",
+        _object_schema(
+            {
+                "cursor": {
+                    "type": "string",
+                    "description": (
+                        "optional opaque next_cursor from the immediately preceding result of this same tool and World"
+                    ),
+                    "minLength": 1,
+                    "maxLength": 512,
+                }
+            }
+        ),
+        ephemeral_argument_paths=(("cursor",),),
+    )
     registered.extend(
         (
             RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.SEARCH_PAGE_CONTENT.value,
-                    "Locate an exact text substring in current readable records; returns bounded exact-match pages, not semantic retrieval or proof that a collection was fully reviewed; no browser action.",
-                    _object_schema(
-                        {
-                            "query": {
-                                "type": "string",
-                                "description": "exact text substring to locate in current readable records",
-                                "minLength": 1,
-                                "maxLength": 120,
-                            },
-                            "cursor": {
-                                "type": "string",
-                                "description": (
-                                    "optional opaque next_cursor from the immediately preceding result of this "
-                                    "same tool, World, and exact query"
-                                ),
-                                "minLength": 1,
-                                "maxLength": 512,
-                            },
-                        },
-                        ("query",),
-                    ),
+                search_spec,
+                _WorldReadBinding(
+                    context,
+                    "find",
+                    ephemeral_argument_paths=search_spec.ephemeral_argument_paths,
                 ),
-                _WorldReadBinding(context, "find"),
             ),
             RegisteredGroundedTool(
-                ToolSpec(
-                    GroundedLocalToolName.LIST_REGIONS.value,
-                    "List current PageMap region records; no browser action.",
-                    _object_schema(
-                        {
-                            "cursor": {
-                                "type": "string",
-                                "description": (
-                                    "optional opaque next_cursor from the immediately preceding result of this "
-                                    "same tool and World"
-                                ),
-                                "minLength": 1,
-                                "maxLength": 512,
-                            }
-                        }
-                    ),
+                list_spec,
+                _WorldReadBinding(
+                    context,
+                    "view_all",
+                    ephemeral_argument_paths=list_spec.ephemeral_argument_paths,
                 ),
-                _WorldReadBinding(context, "view_all"),
             ),
             RegisteredGroundedTool(
                 ToolSpec(
@@ -678,12 +731,22 @@ def compile_grounded_tool_catalog(
                 "public_intent": _public_intent_schema(),
             }
         )
+    final_ephemeral_paths = (
+        (("artifact", "evidence_refs"), ("artifact", "items", "*", "evidence_refs"))
+        if (
+            interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
+            and final_contract.supports_presentation_sidecars
+            and evidence_bindings
+        )
+        else ()
+    )
     registered.append(
         RegisteredGroundedTool(
             ToolSpec(
                 GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value,
                 _final_response_description(context.final_response_guidance),
                 _object_schema(final_properties, (final_contract.argument_name,)),
+                ephemeral_argument_paths=final_ephemeral_paths,
             ),
             _FinalResponseBinding(interaction_tool_profile, evidence_bindings, final_contract),
         )
@@ -718,6 +781,14 @@ def compile_grounded_tool_catalog(
         if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
         else {}
     )
+    ask_ephemeral_paths = (
+        (
+            *(((("option_drafts", "*", "evidence_refs"),)) if evidence_bindings else ()),
+            *(((("option_drafts", "*", "media_ref"),)) if media_refs else ()),
+        )
+        if interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED
+        else ()
+    )
     registered.extend(
         (
             RegisteredGroundedTool(
@@ -726,6 +797,7 @@ def compile_grounded_tool_catalog(
                     "Ask the user for missing input or a decision among grounded current options; never performs "
                     "a GUI action.",
                     ask_schema,
+                    ephemeral_argument_paths=ask_ephemeral_paths,
                 ),
                 _ControlBinding(
                     GroundedLocalToolName.ASK_USER,
@@ -1421,6 +1493,7 @@ _PIXEL_TEXT_CONTAINER_ROLES = frozenset(
     }
 )
 
+
 def _dynamic_ref_domain(
     purpose: str,
     context: AgentContext,
@@ -1431,8 +1504,7 @@ def _dynamic_ref_domain(
         return {
             ref: subject
             for ref, subject in refs.items()
-            if entities.get(ref) is not None
-            and entities[ref].role.strip().casefold() in _PIXEL_TEXT_CONTAINER_ROLES
+            if entities.get(ref) is not None and entities[ref].role.strip().casefold() in _PIXEL_TEXT_CONTAINER_ROLES
         }
     return refs
 

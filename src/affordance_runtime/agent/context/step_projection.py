@@ -11,7 +11,6 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
     AgentTurnView,
-    history_operational_refs,
     sanitize_history_arguments,
     sanitize_history_prose,
     sanitize_history_value,
@@ -46,7 +45,6 @@ def project_step_result(
     """Pair one chosen action with its observed outcome and task status."""
 
     decision = result.decision
-    expired_refs = _step_operational_refs(result)
     if not isinstance(
         decision,
         (
@@ -72,25 +70,17 @@ def project_step_result(
         action = result.action_outcome
         return AgentTurnView(
             decision.kind.value,
-            sanitize_history_prose(intent.semantic_action, expired_refs=expired_refs),
+            sanitize_history_prose(intent.semantic_action),
             _historical_target(result, intent.target_id),
             _historical_target(result, intent.destination_id),
             _historical_value(project_public_value(intent.parameters)),
-            sanitize_history_prose(intent.expected_outcome, expired_refs=expired_refs),
+            sanitize_history_prose(intent.expected_outcome),
             str(sanitize_history_value(str(receipt.result.dispatch_status))),
             str(sanitize_history_value(str(action.local_postcondition))) if action is not None else "",
             _transition(result, action),
             _task_evaluation_status(result),
-            sanitize_history_prose(
-                action.reason if action is not None else result.feedback,
-                expired_refs=expired_refs,
-            ),
-            {
-                "feedback_code": sanitize_history_prose(
-                    result.feedback,
-                    expired_refs=expired_refs,
-                )
-            },
+            sanitize_history_prose(action.reason if action is not None else result.feedback),
+            {"feedback_code": sanitize_history_prose(result.feedback)},
         )
     target_id = ""
     if isinstance(decision, RequestObservation):
@@ -99,47 +89,17 @@ def project_step_result(
     if information_delta is not None:
         summary["information_delta"] = information_delta.kind.value
         summary["new_information_count"] = information_delta.new_information_count
-    if (
-        isinstance(decision, RequestActionPage)
-        and result.action_page_result is not None
-        and information_delta is None
-    ):
+    if isinstance(decision, RequestActionPage) and result.action_page_result is not None and information_delta is None:
         summary["result"] = result.action_page_result.to_public_value()
-    summary["feedback_code"] = sanitize_history_prose(
-        result.feedback,
-        expired_refs=expired_refs,
-    )
+    summary["feedback_code"] = sanitize_history_prose(result.feedback)
     return AgentTurnView(
         decision.kind.value,
         _control_tool_name(decision),
         _historical_target(result, target_id),
         task_evaluation_status=_task_evaluation_status(result),
-        reason=sanitize_history_prose(result.feedback, expired_refs=expired_refs),
+        reason=sanitize_history_prose(result.feedback),
         semantic_summary=_historical_value(summary),
     )
-
-
-def _step_operational_refs(result: StepResult) -> frozenset[str]:
-    """Collect only refs authoritatively issued to this committed step."""
-
-    refs = set(result.policy_target_refs.values())
-    for projection in (result.before_public_world, result.after_public_world):
-        if projection is not None:
-            refs.update(projection.public_refs)
-    delivery = result.model_delivery
-    if delivery is not None:
-        refs.update(delivery.manifest.executable_refs)
-        refs.update(delivery.manifest.readonly_refs)
-        refs.update(delivery.manifest.fact_refs)
-        refs.update(delivery.manifest.region_refs)
-    decision = result.decision
-    arguments = getattr(decision, "arguments", None)
-    if isinstance(arguments, Mapping):
-        refs.update(history_operational_refs(arguments, include_selectors=True))
-    decision_result = getattr(decision, "result", None)
-    if isinstance(decision_result, Mapping):
-        refs.update(history_operational_refs(decision_result))
-    return frozenset(refs)
 
 
 def _historical_target(result: StepResult, target_id: str) -> AgentHistoricalTargetView | None:
@@ -276,7 +236,10 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
             "committed": False,
         }
     if isinstance(decision, LocalToolResult):
-        arguments = sanitize_history_arguments(project_public_value(decision.arguments))
+        arguments = sanitize_history_arguments(
+            project_public_value(decision.arguments),
+            ephemeral_paths=decision.ephemeral_argument_paths,
+        )
         summary = dict(arguments) if isinstance(arguments, Mapping) else {}
         for name in (
             "scope",

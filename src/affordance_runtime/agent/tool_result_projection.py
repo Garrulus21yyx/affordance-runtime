@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, assert_never
 
+from affordance_runtime.agent.context.contracts import HISTORY_RETURN_PATHS_METADATA_KEY
 from affordance_runtime.agent.decisions import (
     Abort,
     FinalResponse,
@@ -313,6 +314,9 @@ def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:
         return freeze_json({})
     decision = step.decision
     assert not isinstance(decision, PolicyFailure | FinalResponse)
+    return_value = project_committed_tool_return(step)
+    assert return_value is not None
+    ephemeral_paths = _committed_tool_return_ephemeral_paths(step, return_value)
     return freeze_json(
         {
             "tool_call_id": call_id,
@@ -320,5 +324,41 @@ def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:
             "before_world": step.before_world.observation_id,
             "after_world": step.after_world.observation_id,
             "runtime_failure": (to_json_compatible(step.runtime_failure) if step.runtime_failure is not None else None),
+            HISTORY_RETURN_PATHS_METADATA_KEY: tuple(tuple(path) for path in ephemeral_paths),
         }
     )
+
+
+def _committed_tool_return_ephemeral_paths(
+    step: StepResult,
+    value: Mapping[str, object],
+) -> tuple[tuple[str, ...], ...]:
+    """Return the typed at-rest projection owned by this ToolReturn producer."""
+
+    decision = step.decision
+    if isinstance(decision, LocalToolResult):
+        return decision.ephemeral_result_paths
+    if isinstance(decision, SelectAction):
+        return (("effect", "evidence_refs"),)
+    if isinstance(decision, RequestObservation):
+        return (
+            ("query_id",),
+            ("evidence_refs",),
+            ("executable_grounding",),
+            ("observed_items", "*", "evidence_refs"),
+            ("observed_items", "*", "target_ref"),
+            ("observed_items", "*", "target_refs"),
+            ("observed_items", "*", "verbs"),
+        )
+    if isinstance(decision, RequestActionPage):
+        return (
+            ("matches", "*", "target_ref"),
+            ("matches", "*", "destination_refs"),
+            ("matches", "*", "verbs"),
+        )
+    if isinstance(decision, InteractionRequest):
+        return (("request_id",), ("field_ids",), ("option_ids",))
+    if isinstance(decision, InteractionRequestDraft | Wait | Abort):
+        return ()
+    assert value
+    assert_never(decision)

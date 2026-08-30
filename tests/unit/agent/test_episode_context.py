@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections import Counter
 from types import SimpleNamespace
 
@@ -192,13 +191,17 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
         {"containers": ("E1",), "evidence_ref": "F2"},
         {"counts": {"E1": 2}, "evidence_ref": "F2", "total": 2},
         "provider-call:refs",
+        ephemeral_argument_paths=(("containers",), ("evidence_ref",)),
+        ephemeral_result_paths=(("counts",), ("evidence_ref",)),
     )
     result = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="used E1 and F2")
     projected = project_step_result(result)
     rendered = render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1)
     encoded = json.dumps(to_json_compatible(rendered))
 
-    assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
+    assert projected.semantic_summary["feedback_code"] == "used E1 and F2"
+    assert "containers" not in projected.semantic_summary
+    assert "evidence_ref" not in projected.semantic_summary
     assert "expired-ref" not in encoded
 
 
@@ -211,17 +214,15 @@ def test_history_contract_distinguishes_typed_refs_from_ref_shaped_business_valu
         "label": "F3",
     }
 
-    assert history_operational_refs(value, include_selectors=True) == frozenset({"E1", "R4"})
-    assert sanitize_history_arguments(value) == {
+    paths = (("target",), ("region_ref",))
+    assert history_operational_refs(value, ephemeral_paths=paths) == frozenset({"E1", "R4"})
+    assert sanitize_history_arguments(value, ephemeral_paths=paths) == {
         "text": "E6",
         "query": "R2",
         "label": "F3",
     }
-    prose = sanitize_history_prose(
-        "Used E1 to enter business code E6; next query R2.",
-        expired_refs={"E1"},
-    )
-    assert "E1" not in prose
+    prose = sanitize_history_prose("Used E1 to enter business code E6; next query R2.")
+    assert "E1" in prose
     assert "E6" in prose
     assert "R2" in prose
 
@@ -334,9 +335,7 @@ def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body(
     projected = project_step_result(
         StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
     )
-    encoded = json.dumps(
-        to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1))
-    )
+    encoded = json.dumps(to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1)))
 
     assert to_json_compatible(projected.semantic_summary["scope"]) == {
         "role": "main",
@@ -364,13 +363,12 @@ def test_rejected_action_workspace_keeps_receipt_not_result_body_or_ref_identity
             "dispatch": "not_sent",
             "world_changed": False,
         },
+        ephemeral_argument_paths=(("arguments", "target"),),
     )
     projected = project_step_result(
         StepResult(decision, world, world, _evaluation(world.observation_id), feedback="tool_rejected")
     )
-    encoded = json.dumps(
-        to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1))
-    )
+    encoded = json.dumps(to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1)))
 
     assert "result" not in projected.semantic_summary
     assert projected.semantic_summary["operation"] == "activate"

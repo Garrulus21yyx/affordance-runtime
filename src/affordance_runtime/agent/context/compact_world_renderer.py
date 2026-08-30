@@ -74,12 +74,8 @@ class DeliveredActionRoute:
     operation: str
     source_ref: str
     destination_ref: str = ""
-    private_action_id: str = field(
-        default="", repr=False, compare=False, metadata={"serialize": False}
-    )
-    private_option: object | None = field(
-        default=None, repr=False, compare=False, metadata={"serialize": False}
-    )
+    private_action_id: str = field(default="", repr=False, compare=False, metadata={"serialize": False})
+    private_option: object | None = field(default=None, repr=False, compare=False, metadata={"serialize": False})
 
     def __post_init__(self) -> None:
         if (
@@ -128,19 +124,32 @@ class DeliveryManifest:
     def exact_refs(self) -> frozenset[str]:
         return frozenset((*self.executable_refs, *self.readonly_refs, *self.fact_refs))
 
+
 @dataclass(frozen=True)
 class WorldDeliveryView:
     text: str
     projection: str
     coverage: Mapping[str, object] = field(default_factory=dict)
     failure: str = ""
+    rendered_refs: tuple[str, ...] = field(
+        default=(),
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if self.projection not in {"full", "page_map"}:
             raise ValueError("delivery projection is invalid")
         if self.failure not in {"", "delivery_partition_failed", "context_capacity"}:
             raise ValueError("delivery failure is invalid")
+        rendered_refs = tuple(self.rendered_refs)
+        if len(rendered_refs) != len(set(rendered_refs)) or any(
+            not PublicRefCodec.accepts(item) for item in rendered_refs
+        ):
+            raise ValueError("delivery rendered refs are invalid")
         object.__setattr__(self, "coverage", freeze_json(dict(self.coverage)))
+        object.__setattr__(self, "rendered_refs", rendered_refs)
 
     def __str__(self) -> str:
         return self.text
@@ -164,6 +173,16 @@ class RenderedWorldDelivery:
 
     view: WorldDeliveryView
     manifest: DeliveryManifest
+
+    def __post_init__(self) -> None:
+        manifest_refs = {
+            *self.manifest.executable_refs,
+            *self.manifest.readonly_refs,
+            *self.manifest.fact_refs,
+            *self.manifest.region_refs,
+        }
+        if set(self.view.rendered_refs) != manifest_refs:
+            raise ValueError("rendered World text and Manifest refs must share one typed projection")
 
     @property
     def text(self) -> str:
@@ -289,9 +308,7 @@ class _ManifestBuilder:
         private_action_id: str,
         private_option: object,
     ) -> None:
-        route = DeliveredActionRoute(
-            operation, source_ref, destination_ref, private_action_id, private_option
-        )
+        route = DeliveredActionRoute(operation, source_ref, destination_ref, private_action_id, private_option)
         if not any(
             (item.operation, item.source_ref, item.destination_ref)
             == (route.operation, route.source_ref, route.destination_ref)
@@ -435,13 +452,22 @@ def _render_full(
                 f"rank={item.rank}"
             )
     lines.extend(_render_action_route_issues(action_route_issues, manifest))
+    rendered_manifest = manifest.build()
     return RenderedWorldDelivery(
         WorldDeliveryView(
             "\n".join(lines),
             "full",
             {"public_content": "exact", "regions": "not_available"},
+            rendered_refs=tuple(
+                (
+                    *rendered_manifest.executable_refs,
+                    *rendered_manifest.readonly_refs,
+                    *rendered_manifest.fact_refs,
+                    *rendered_manifest.region_refs,
+                )
+            ),
         ),
-        manifest.build(),
+        rendered_manifest,
     )
 
 
@@ -558,8 +584,13 @@ def _render_page_map(
         region = regions_by_key[region_key]
         candidate_manifest = manifest.clone()
         region_lines = _render_world_region(
-            region, canonical_world.region_refs[region_key], delivered, grounding, verbs,
-            candidate_manifest, observation=observation
+            region,
+            canonical_world.region_refs[region_key],
+            delivered,
+            grounding,
+            verbs,
+            candidate_manifest,
+            observation=observation,
         )
         if not region_lines:
             continue
@@ -593,9 +624,22 @@ def _render_page_map(
         "expanded_regions": rendered_region_count,
         "folded_regions": max(0, len(index.regions) - rendered_region_count),
     }
+    rendered_manifest = manifest.build()
     return RenderedWorldDelivery(
-        WorldDeliveryView(text, "page_map", coverage),
-        manifest.build(),
+        WorldDeliveryView(
+            text,
+            "page_map",
+            coverage,
+            rendered_refs=tuple(
+                (
+                    *rendered_manifest.executable_refs,
+                    *rendered_manifest.readonly_refs,
+                    *rendered_manifest.fact_refs,
+                    *rendered_manifest.region_refs,
+                )
+            ),
+        ),
+        rendered_manifest,
     )
 
 
@@ -725,8 +769,7 @@ def inspect_actor_world(
             )
         if action == "view_all":
             items = tuple(
-                _region_item(region, canonical_world.region_refs[region.key])
-                for region in region_index.regions
+                _region_item(region, canonical_world.region_refs[region.key]) for region in region_index.regions
             )
             cursor_fingerprint = _world_read_cursor_fingerprint(
                 observation.observation_id,
@@ -770,29 +813,74 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
             )
         return _with_world_read_metadata(result)
     if isinstance(outcome, Matches):
-        return _with_world_read_metadata({
-            "kind": kind,
-            "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
-            "coverage": outcome.coverage,
-            "has_more": bool(outcome.next_cursor),
-            "next_cursor": outcome.next_cursor or None,
-        })
+        return _with_world_read_metadata(
+            {
+                "kind": kind,
+                "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
+                "coverage": outcome.coverage,
+                "has_more": bool(outcome.next_cursor),
+                "next_cursor": outcome.next_cursor or None,
+            }
+        )
     if isinstance(outcome, Empty):
-        return _with_world_read_metadata({
-            "kind": kind,
-            "query": outcome.query,
-            "coverage": outcome.coverage,
-            "safe_relaxations": outcome.safe_relaxations,
-        })
+        return _with_world_read_metadata(
+            {
+                "kind": kind,
+                "query": outcome.query,
+                "coverage": outcome.coverage,
+                "safe_relaxations": outcome.safe_relaxations,
+            }
+        )
     if isinstance(outcome, InvalidRegion):
         return _with_world_read_metadata({"kind": kind, "region_ref": outcome.region_ref})
     if isinstance(outcome, InvalidCursor):
         return _with_world_read_metadata({"kind": kind})
     if isinstance(outcome, StaleContext):
         return _with_world_read_metadata({"kind": kind, "expected": outcome.expected, "actual": outcome.actual})
-    return _with_world_read_metadata(
-        {"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit}
+    return _with_world_read_metadata({"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit})
+
+
+def inspect_outcome_ephemeral_paths(
+    outcome: InspectWorldOutcome,
+    value: Mapping[str, object],
+) -> tuple[tuple[str, ...], ...]:
+    """Describe observation-local fields in this producer's public result.
+
+    History projection consumes these paths after the paired ToolReturn closes.
+    Semantic values are never classified by their spelling; only fields owned
+    by this result producer can expire.
+    """
+
+    paths: set[tuple[str, ...]] = set()
+    ephemeral_names = frozenset(
+        {
+            "executable_grounding",
+            "follow_up",
+            "next_cursor",
+            "verbs",
+        }
     )
+
+    def visit(item: object, path: tuple[str, ...]) -> None:
+        if isinstance(item, Mapping):
+            for raw_key, child in item.items():
+                key = str(raw_key)
+                child_path = (*path, key)
+                if key in ephemeral_names or key.endswith("_ref") or key.endswith("_refs"):
+                    paths.add(child_path)
+                    continue
+                if key == "structural_context" and isinstance(child, str) and PublicRefCodec.accepts(child):
+                    paths.add(child_path)
+                    continue
+                visit(child, child_path)
+        elif isinstance(item, tuple | list):
+            for child in item:
+                visit(child, (*path, "*"))
+
+    visit(value, ())
+    if isinstance(outcome, StaleContext):
+        paths.update({("expected",), ("actual",)})
+    return tuple(sorted(paths))
 
 
 def _with_world_read_metadata(result: Mapping[str, object]) -> Mapping[str, object]:
@@ -827,12 +915,7 @@ def _contains_executable_read_route(value: object) -> bool:
 def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:
     projected = dict(item)
     region_ref = str(item.get("region_ref", ""))
-    match_ref = str(
-        item.get("target_ref")
-        or item.get("node_ref")
-        or item.get("evidence_ref")
-        or ""
-    )
+    match_ref = str(item.get("target_ref") or item.get("node_ref") or item.get("evidence_ref") or "")
     if PublicRefCodec.accepts(region_ref, expected=PublicRefKind.REGION):
         if PublicRefCodec.accepts(match_ref) and PublicRefCodec.decode(match_ref).kind is not PublicRefKind.REGION:
             projected["match_ref"] = match_ref
@@ -892,9 +975,7 @@ def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> lis
                 attributes.append("read_only=true")
             for item in node.facts:
                 manifest.fact(item.evidence_ref)
-                attributes.append(
-                    f"fact.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}"
-                )
+                attributes.append(f"fact.{_short_field(item.field)}[{item.evidence_ref}]={_value(item.value)}")
             if attributes:
                 line += " " + " ".join(attributes)
             lines.append(line)
@@ -940,11 +1021,7 @@ def _region_has_current_salience(region: WorldRegion, observation: WorldObservat
 def _region_actor_refs(region, delivered, observation) -> frozenset[str]:
     source_refs = actor_source_refs(observation)
     try:
-        source = next(
-            item
-            for item in observation.sources
-            if item.observation_id == region.source_id
-        )
+        source = next(item for item in observation.sources if item.observation_id == region.source_id)
     except StopIteration:
         return frozenset()
     document = next(
@@ -1182,11 +1259,7 @@ def _register_candidate_routes(
 ) -> None:
     """Keep private selected routes complete behind one public target descriptor."""
 
-    fragments = tuple(
-        item
-        for item in projection.route_fragments
-        if item.candidate.target_ref == candidate.target_ref
-    )
+    fragments = tuple(item for item in projection.route_fragments if item.candidate.target_ref == candidate.target_ref)
     if fragments:
         for fragment in fragments:
             route = fragment.candidate
@@ -1233,16 +1306,9 @@ def _render_action_route_issues(
         return []
     lines = ["ActionRouteIssues"]
     for issue in issues:
-        routed_refs = {
-            ref
-            for route in manifest.routes
-            for ref in (route.source_ref, route.destination_ref)
-            if ref
-        }
+        routed_refs = {ref for route in manifest.routes for ref in (route.source_ref, route.destination_ref) if ref}
         visible_source = issue.source_ref if issue.source_ref in routed_refs else "unavailable"
-        visible_destinations = tuple(
-            item for item in issue.destination_refs if item in routed_refs
-        )
+        visible_destinations = tuple(item for item in issue.destination_refs if item in routed_refs)
         lines.append(
             f"  code={issue.code} operation={issue.operation} source={_value(visible_source)} "
             f"destinations={_value(visible_destinations)} "
@@ -1276,11 +1342,7 @@ def _region_root_actor_node(region, delivered, observation):
 def _region_structure_actor_pairs(region, delivered, observation) -> Mapping[str, ActorWorldNodeView]:
     source_refs = actor_source_refs(observation)
     try:
-        source = next(
-            item
-            for item in observation.sources
-            if item.observation_id == region.source_id
-        )
+        source = next(item for item in observation.sources if item.observation_id == region.source_id)
     except StopIteration:
         return {}
     document = next(
@@ -1443,22 +1505,13 @@ def _bounded_page_map_regions(
     """Project a bounded current directory without shrinking the authoritative index."""
 
     candidate_refs = {
-        item.region_ref
-        for item in (action_candidates.candidates if action_candidates is not None else ())
+        item.region_ref for item in (action_candidates.candidates if action_candidates is not None else ())
     }
-    candidate_keys = {
-        key for key, ref in canonical_world.region_refs.items() if ref in candidate_refs
-    }
-    salient_keys = {
-        region.key
-        for region in index.regions
-        if _region_has_current_salience(region, observation)
-    }
+    candidate_keys = {key for key, ref in canonical_world.region_refs.items() if ref in candidate_refs}
+    salient_keys = {region.key for region in index.regions if _region_has_current_salience(region, observation)}
     landmark_order = {
         role: rank
-        for rank, role in enumerate(
-            ("dialog", "search", "form", "navigation", "main", "table", "grid", "list")
-        )
+        for rank, role in enumerate(("dialog", "search", "form", "navigation", "main", "table", "grid", "list"))
     }
     source_order = {region.key: position for position, region in enumerate(index.regions)}
     ordered = sorted(
@@ -1643,11 +1696,17 @@ def _target_match_record(target, needle, observation, evidence_index):
     if evidence_index is None:
         return None
     if needle in target.label.casefold():
-        return next((
-            item for item in evidence_index.records
-            if item.kind == "fact" and item.subject_id == target.target_id
-            and item.predicate == "public.label" and item.value == target.label
-        ), None)
+        return next(
+            (
+                item
+                for item in evidence_index.records
+                if item.kind == "fact"
+                and item.subject_id == target.target_id
+                and item.predicate == "public.label"
+                and item.value == target.label
+            ),
+            None,
+        )
     for predicate, value in target.state.items():
         if not _searchable_public_fact(predicate) or needle not in str(value).casefold():
             continue
@@ -1745,8 +1804,7 @@ def _repeated_item_records(
             dict.fromkeys(
                 canonical.get(nodes[item_id].semantic_target_id, "")
                 for item_id in _walk_structure_ids(root_id, nodes)
-                if nodes[item_id].semantic_target_id
-                and canonical.get(nodes[item_id].semantic_target_id, "") in targets
+                if nodes[item_id].semantic_target_id and canonical.get(nodes[item_id].semantic_target_id, "") in targets
             )
         )
         repeated_target_ids.update(target_ids)
@@ -1760,16 +1818,14 @@ def _repeated_item_records(
                         grounding,
                         verbs_by_ref,
                     )
-                ) is not None
+                )
+                is not None
             )
         )
         record: dict[str, object] = {
             "kind": (
                 "partial_item"
-                if any(
-                    targets[target_id].state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True
-                    for target_id in target_ids
-                )
+                if any(targets[target_id].state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True for target_id in target_ids)
                 else "complete_item"
             ),
             "region_ref": region_ref,
@@ -2008,11 +2064,7 @@ def _page_region_items(
     while index < len(items) and len(page) < page_size:
         candidate = (*page, items[index])
         candidate_end = index + 1
-        candidate_cursor = (
-            encode_cursor(candidate_end, cursor_fingerprint)
-            if candidate_end < len(items)
-            else ""
-        )
+        candidate_cursor = encode_cursor(candidate_end, cursor_fingerprint) if candidate_end < len(items) else ""
         outcome = Opened(
             candidate,
             candidate_cursor,
@@ -2078,11 +2130,7 @@ def _page_read_items(
     while index < len(items) and len(page) < page_size:
         candidate = (*page, items[index])
         candidate_end = index + 1
-        candidate_cursor = (
-            encode_cursor(candidate_end, cursor_fingerprint)
-            if candidate_end < len(items)
-            else ""
-        )
+        candidate_cursor = encode_cursor(candidate_end, cursor_fingerprint) if candidate_end < len(items) else ""
         outcome = outcome_factory(candidate, candidate_cursor)
         if _inspect_outcome_bytes(outcome) <= hard_limit:
             page.append(items[index])

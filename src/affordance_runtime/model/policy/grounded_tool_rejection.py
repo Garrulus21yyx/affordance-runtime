@@ -19,6 +19,7 @@ def grounded_tool_rejection_decision(
     context_id: str,
     agent_context: AgentContext,
     manifest: DeliveryManifest,
+    ephemeral_argument_paths: tuple[tuple[str, ...], ...] = (),
 ) -> LocalToolResult:
     """Preserve attempted semantics without carrying generation-local refs into history."""
 
@@ -59,6 +60,9 @@ def grounded_tool_rejection_decision(
         },
         call.call_id,
         rejected_attempt_signature=signature,
+        ephemeral_argument_paths=tuple(
+            ("arguments", *path) for path in ephemeral_argument_paths
+        ),
     )
 
 

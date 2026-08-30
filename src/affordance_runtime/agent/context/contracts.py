@@ -15,6 +15,9 @@ from affordance_runtime.task.contracts import RiskProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
+HISTORY_ARGUMENT_PATHS_METADATA_KEY = "affordance_runtime.history.argument_paths.v1"
+HISTORY_RETURN_PATHS_METADATA_KEY = "affordance_runtime.history.return_paths.v1"
+HISTORY_CANONICAL_METADATA_KEY = "affordance_runtime.history.canonical.v1"
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
 _PRIVATE_HISTORY_SEQUENCE_KEYS = frozenset(
     {
@@ -33,7 +36,6 @@ _OPERATIONAL_HISTORY_KEYS = frozenset(
         "verbs",
     }
 )
-_SELECTOR_HISTORY_KEYS = frozenset({"containers", "destination", "source", "target"})
 _REF_KEYED_HISTORY_KEYS = frozenset({"counts"})
 _PUBLIC_REF_HISTORY_KEYS = frozenset(
     {
@@ -71,16 +73,21 @@ def sanitize_history_value(value: object) -> object:
     return _sanitize_history_value(value, strip_selectors=False)
 
 
-def sanitize_history_arguments(value: object) -> object:
-    """Project tool arguments without their disposable selector operands."""
+def sanitize_history_arguments(
+    value: object,
+    *,
+    ephemeral_paths: Iterable[tuple[str, ...]] = (),
+) -> object:
+    """Project one call/result using paths declared by its owning producer."""
 
-    return _sanitize_history_value(value, strip_selectors=True)
+    stripped = _strip_history_paths(value, tuple(tuple(path) for path in ephemeral_paths))
+    return {} if stripped is _DROP_HISTORY_VALUE else _sanitize_legacy_value(stripped)
 
 
 def history_operational_refs(
     value: object,
     *,
-    include_selectors: bool = False,
+    ephemeral_paths: Iterable[tuple[str, ...]] = (),
 ) -> frozenset[str]:
     """Collect refs only from explicit ref-bearing protocol fields.
 
@@ -103,42 +110,15 @@ def history_operational_refs(
             for child in item:
                 add(child)
 
-    def visit(item: object) -> None:
-        if isinstance(item, Mapping):
-            for key, child in item.items():
-                raw_key = str(key)
-                if _is_ref_field(raw_key) or (
-                    include_selectors and raw_key in _SELECTOR_HISTORY_KEYS
-                ):
-                    add(child)
-                elif raw_key in _REF_KEYED_HISTORY_KEYS and isinstance(child, Mapping):
-                    add(child)
-                else:
-                    visit(child)
-        elif isinstance(item, tuple | list):
-            for child in item:
-                visit(child)
-
-    visit(value)
+    for item in _history_path_values(value, tuple(tuple(path) for path in ephemeral_paths)):
+        add(item)
     return frozenset(refs)
 
 
-def sanitize_history_prose(value: str, *, expired_refs: Iterable[str] = ()) -> str:
-    """Remove only producer-proven operational refs from free-form prose."""
+def sanitize_history_prose(value: str) -> str:
+    """Preserve semantic prose; free text never carries ref authority."""
 
-    cleaned = _LEGACY_EXPIRED_REF.sub("", value)
-    refs = tuple(
-        sorted(
-            {item for item in expired_refs if isinstance(item, str) and PublicRefCodec.accepts(item)},
-            key=lambda item: (-len(item), item),
-        )
-    )
-    if refs:
-        pattern = re.compile(rf"\b(?:{'|'.join(re.escape(item) for item in refs)})\b")
-        cleaned, removed = pattern.subn("", cleaned)
-        if removed:
-            cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    return cleaned.strip()
+    return _LEGACY_EXPIRED_REF.sub("", value).strip()
 
 
 def _sanitize_history_value(value: object, *, strip_selectors: bool) -> object:
@@ -153,7 +133,6 @@ def _sanitize_history_value(value: object, *, strip_selectors: bool) -> object:
                 or raw_key in _PRIVATE_HISTORY_SEQUENCE_KEYS
                 or raw_key in _OPERATIONAL_HISTORY_KEYS
                 or _is_ref_field(raw_key)
-                or (strip_selectors and raw_key in _SELECTOR_HISTORY_KEYS)
             ):
                 continue
             clean_key = _LEGACY_EXPIRED_REF.sub("", raw_key)
@@ -172,6 +151,69 @@ def _sanitize_history_value(value: object, *, strip_selectors: bool) -> object:
         return sanitized
     if isinstance(value, tuple | list):
         return tuple(_sanitize_history_value(item, strip_selectors=strip_selectors) for item in value)
+    return value
+
+
+_DROP_HISTORY_VALUE = object()
+
+
+def _strip_history_paths(
+    value: object,
+    paths: tuple[tuple[str, ...], ...],
+) -> object:
+    if () in paths:
+        return _DROP_HISTORY_VALUE
+    if isinstance(value, Mapping):
+        projected: dict[str, object] = {}
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            child_paths = tuple(path[1:] for path in paths if path and path[0] == key)
+            child_value = _strip_history_paths(child, child_paths)
+            if child_value is not _DROP_HISTORY_VALUE:
+                projected[key] = child_value
+        return projected
+    if isinstance(value, tuple | list):
+        child_paths = tuple(path[1:] for path in paths if path and path[0] == "*")
+        projected_items = tuple(
+            child_value
+            for item in value
+            for child_value in (_strip_history_paths(item, child_paths),)
+            if child_value is not _DROP_HISTORY_VALUE
+        )
+        return projected_items
+    return value
+
+
+def _history_path_values(
+    value: object,
+    paths: tuple[tuple[str, ...], ...],
+) -> tuple[object, ...]:
+    found: list[object] = []
+    for path in paths:
+        frontier = (value,)
+        for segment in path:
+            next_frontier: list[object] = []
+            for item in frontier:
+                if segment == "*" and isinstance(item, tuple | list):
+                    next_frontier.extend(item)
+                elif isinstance(item, Mapping) and segment in item:
+                    next_frontier.append(item[segment])
+            frontier = tuple(next_frontier)
+        found.extend(frontier)
+    return tuple(found)
+
+
+def _sanitize_legacy_value(value: object) -> object:
+    if isinstance(value, str):
+        return _LEGACY_EXPIRED_REF.sub("", value)
+    if isinstance(value, Mapping):
+        return {
+            _LEGACY_EXPIRED_REF.sub("", str(key)): _sanitize_legacy_value(item)
+            for key, item in value.items()
+            if _LEGACY_EXPIRED_REF.sub("", str(key))
+        }
+    if isinstance(value, tuple | list):
+        return tuple(_sanitize_legacy_value(item) for item in value)
     return value
 
 

@@ -19,13 +19,13 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from affordance_runtime.actions.schema_validation import validate_value_issue
-from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.context import AgentContext
 from affordance_runtime.agent.context.contracts import (
-    history_operational_refs,
+    HISTORY_ARGUMENT_PATHS_METADATA_KEY,
+    HISTORY_CANONICAL_METADATA_KEY,
+    HISTORY_RETURN_PATHS_METADATA_KEY,
     sanitize_history_arguments,
     sanitize_history_prose,
-    sanitize_history_value,
 )
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
@@ -44,6 +44,7 @@ from affordance_runtime.agent.decisions import (
 )
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
+    project_committed_tool_metadata,
     project_committed_tool_return,
 )
 from affordance_runtime.immutable import to_json_compatible
@@ -98,7 +99,7 @@ from affordance_runtime.model.policy.request_admission import (
     RequestAdmission,
     request_breakdown_diagnostics,
 )
-from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
@@ -109,9 +110,7 @@ _ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
 _ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES = 3_072
 _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES = 2_100
 _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES = 700
-_ACTION_POLICY_MAX_PROTOCOL_RETRIES = (
-    _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
-)
+_ACTION_POLICY_MAX_PROTOCOL_RETRIES = _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
@@ -223,6 +222,9 @@ class AcceptedToolExchange:
     decision: AgentDecision
     response: ModelResponse
     discarded_call_count: int = 0
+    argument_paths_by_call: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = field(
+        default=(), repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart, ToolCallPart
@@ -238,6 +240,9 @@ class AcceptedToolExchange:
             raise TypeError("accepted tool exchange is not typed")
         response_calls = tuple(part for part in self.response.parts if isinstance(part, ToolCallPart))
         response_call_ids = tuple(part.tool_call_id for part in response_calls)
+        argument_paths_by_call = tuple(
+            (str(call_id), tuple(tuple(path) for path in paths)) for call_id, paths in self.argument_paths_by_call
+        )
         if (
             any(not isinstance(part, (ThinkingPart, TextPart, ToolCallPart)) for part in self.response.parts)
             or len(response_calls) != self.discarded_call_count + 1
@@ -245,8 +250,15 @@ class AcceptedToolExchange:
             or any(not call_id for call_id in response_call_ids)
             or response_calls[0].tool_call_id != self.call.call_id
             or (decision_call_id and decision_call_id != self.call.call_id)
+            or tuple(call_id for call_id, _paths in argument_paths_by_call) != response_call_ids
+            or any(
+                len(paths) != len(set(paths))
+                or any(any(not isinstance(segment, str) or not segment for segment in path) for path in paths)
+                for _call_id, paths in argument_paths_by_call
+            )
         ):
             raise ValueError("accepted tool exchange identities disagree")
+        object.__setattr__(self, "argument_paths_by_call", argument_paths_by_call)
 
 
 @dataclass(frozen=True)
@@ -346,11 +358,13 @@ class PydanticAIGroundedDecisionPort:
         return_value = project_committed_tool_return(step)  # type: ignore[arg-type]
         if return_value is None:
             raise ValueError("control boundary step requires one public deferred result")
+        return_metadata = project_committed_tool_metadata(step)  # type: ignore[arg-type]
         returns = tuple(
             ToolReturnPart(
                 part.tool_name,
                 (to_json_compatible(return_value) if index == 0 else UNEXECUTED_TOOL_CALL_MESSAGE),
                 part.tool_call_id,
+                metadata=(to_json_compatible(return_metadata) if index == 0 else None),
             )
             for index, part in enumerate(typed_pending_parts)
         )
@@ -367,7 +381,7 @@ class PydanticAIGroundedDecisionPort:
 
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-        history = _canonicalize_completed_history(self.message_history)
+        history = _canonicalize_settled_history(self.message_history)
         if _pending_tool_parts_from_history(history):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
         if history != self.message_history:
@@ -489,9 +503,7 @@ class PydanticAIGroundedDecisionPort:
         mutable_messages = to_json_compatible(messages)
         if not isinstance(mutable_messages, list):
             raise TypeError("PydanticAI checkpoint history messages are invalid")
-        restored = _canonicalize_completed_history(
-            tuple(ModelMessagesTypeAdapter.validate_python(mutable_messages))
-        )
+        restored = _canonicalize_settled_history(tuple(ModelMessagesTypeAdapter.validate_python(mutable_messages)))
         if _pending_tool_parts_from_history(restored):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
         object.__setattr__(self, "message_history", restored)
@@ -548,7 +560,7 @@ class PydanticAIGroundedDecisionPort:
         encoded = ModelMessagesTypeAdapter.dump_json(snapshot.messages)
         if hashlib.sha256(encoded).hexdigest() != expected_digest:
             raise ValueError("PydanticAI settled checkpoint history digest is invalid")
-        restored = _canonicalize_completed_history(tuple(snapshot.messages))
+        restored = _canonicalize_settled_history(tuple(snapshot.messages))
         if _pending_tool_parts_from_history(restored):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
         object.__setattr__(self, "message_history", restored)
@@ -575,7 +587,7 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("model history contains an unclosed tool call")
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-        canonical_history = _canonicalize_completed_history(self.message_history)
+        canonical_history = _canonicalize_settled_history(self.message_history)
         encoded = ModelMessagesTypeAdapter.dump_json(list(canonical_history))
         ModelMessagesTypeAdapter.validate_json(encoded)
         if canonical_history != self.message_history:
@@ -977,9 +989,7 @@ class PydanticAIGroundedDecisionPort:
                     offered_names=frozenset(item.name for item in current_envelope.function_tools),
                 )
                 reasoning_checkpoint = (
-                    ""
-                    if required_tool_name
-                    else _truncated_reasoning_checkpoint(serialized_truncation)
+                    "" if required_tool_name else _truncated_reasoning_checkpoint(serialized_truncation)
                 )
                 try:
                     result, error, captured, _unused = await run_output_sequence(
@@ -1191,7 +1201,7 @@ class PydanticAIGroundedDecisionPort:
                     resolution_error,
                     initial_calls,
                     request.agent_context,
-                    catalog.manifest,
+                    catalog,
                     source_response=source_response,
                 )
             self._set_tool_resolution(resolution_error, accepted=accepted_exchange is not None)
@@ -1259,7 +1269,7 @@ class PydanticAIGroundedDecisionPort:
                         initial_resolution_error,
                         initial_calls,
                         request.agent_context,
-                        catalog.manifest,
+                        catalog,
                         source_response=source_response,
                         allow_invalid_arguments=True,
                     )
@@ -2418,6 +2428,7 @@ def _resolve_deferred(
                     discarded_call_count=max(0, len(output.calls) - 1),
                 ),
                 max(0, len(output.calls) - 1),
+                _argument_paths_by_call(tuple(output.calls), tuple(getattr(catalog, "specs", ()))),
             ),
             None,
             (),
@@ -2432,7 +2443,7 @@ def _grounded_rejection_exchange(
     error: GroundedToolResolutionError | None,
     calls: tuple[ToolCall, ...],
     context: AgentContext,
-    manifest: DeliveryManifest,
+    catalog: GroundedToolCatalog,
     *,
     source_response,
     allow_invalid_arguments: bool = False,
@@ -2470,7 +2481,8 @@ def _grounded_rejection_exchange(
             call,
             context.context_id,
             context,
-            manifest,
+            catalog.manifest,
+            _tool_spec(call.name, tuple(catalog.specs)).ephemeral_argument_paths,
         ),
         _accepted_model_response(
             source_response,
@@ -2479,6 +2491,7 @@ def _grounded_rejection_exchange(
             discarded_call_count=discarded_call_count,
         ),
         discarded_call_count,
+        _argument_paths_by_call(proposed_calls, tuple(catalog.specs)),
     )
 
 
@@ -2533,6 +2546,34 @@ def _accepted_model_response(
     if source_identities != proposed_identities:
         raise ValueError("source response and deferred calls disagree")
     return source_response
+
+
+def _tool_spec(name: str, specs: tuple[ToolSpec, ...]) -> ToolSpec:
+    try:
+        return next(spec for spec in specs if spec.name == name)
+    except StopIteration as exc:
+        raise ValueError("accepted tool has no Catalog-owned history contract") from exc
+
+
+def _argument_paths_by_call(
+    calls: tuple[object, ...],
+    specs: tuple[ToolSpec, ...],
+) -> tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]:
+    """Bind every response-local proposal to its Catalog-owned path contract."""
+
+    by_name = {spec.name: spec for spec in specs}
+    projected: list[tuple[str, tuple[tuple[str, ...], ...]]] = []
+    for call in calls:
+        call_id = str(getattr(call, "tool_call_id", ""))
+        name = str(getattr(call, "tool_name", ""))
+        if not call_id:
+            raise ValueError("provider proposal has no response-local identity")
+        spec = by_name.get(name)
+        # Unknown discarded proposals have no legal semantic contract, so the
+        # whole argument object expires when their exchange closes.
+        paths = spec.ephemeral_argument_paths if spec is not None else ((),)
+        projected.append((call_id, paths))
+    return tuple(projected)
 
 
 def _closed_history_after_failed_output(
@@ -2827,30 +2868,23 @@ def _deground_completed_tool_exchanges(
     if not completed:
         return _canonicalize_compaction_summaries(messages)
 
-    refs_by_response: dict[int, frozenset[str]] = {}
-    refs_by_return: dict[int, frozenset[str]] = {}
+    argument_paths_by_response: dict[int, Mapping[str, tuple[tuple[str, ...], ...]]] = {}
+    return_paths_by_part: dict[int, tuple[tuple[str, ...], ...]] = {}
     for response, returns in completed:
-        refs: set[str] = set()
-        for part in response.parts:
-            if isinstance(part, ToolCallPart):
-                refs.update(
-                    history_operational_refs(
-                        part.args_as_dict(raise_if_invalid=True),
-                        include_selectors=True,
-                    )
-                )
+        calls = tuple(part for part in response.parts if isinstance(part, ToolCallPart))
+        response_paths = _response_history_argument_paths(response, calls)
+        if response_paths is None:
+            continue
+        argument_paths_by_response[id(response)] = response_paths
         for part in returns:
             if isinstance(part, ToolReturnPart):
-                refs.update(history_operational_refs(part.content))
-        frozen_refs = frozenset(refs)
-        refs_by_response[id(response)] = frozen_refs
-        refs_by_return.update({id(part): frozen_refs for part in returns})
+                return_paths_by_part[id(part)] = _tool_return_history_paths(part)
 
     projected: list[object] = []
     for message in messages:
         if isinstance(message, ModelResponse):
-            expired_refs = refs_by_response.get(id(message))
-            if expired_refs is None:
+            paths_by_call = argument_paths_by_response.get(id(message))
+            if paths_by_call is None:
                 projected.append(message)
                 continue
             parts: list[object] = []
@@ -2861,27 +2895,41 @@ def _deground_completed_tool_exchanges(
                             part,
                             args=sanitize_history_arguments(
                                 part.args_as_dict(raise_if_invalid=True),
+                                ephemeral_paths=paths_by_call[part.tool_call_id],
                             ),
                         )
                     )
                 elif isinstance(part, (TextPart, ThinkingPart)):
-                    content = sanitize_history_prose(
-                        str(part.content),
-                        expired_refs=expired_refs,
-                    )
+                    content = sanitize_history_prose(str(part.content))
                     if content:
                         parts.append(replace(part, content=content))
                 else:
                     parts.append(part)
-            projected.append(replace(message, parts=tuple(parts)))
+            metadata = dict(message.metadata or {})
+            metadata.pop(HISTORY_ARGUMENT_PATHS_METADATA_KEY, None)
+            metadata[HISTORY_CANONICAL_METADATA_KEY] = True
+            projected.append(
+                replace(
+                    message,
+                    parts=tuple(parts),
+                    metadata=(metadata or None),
+                )
+            )
             continue
         if isinstance(message, ModelRequest):
-            if not any(isinstance(part, ToolReturnPart) and id(part) in refs_by_return for part in message.parts):
+            if not any(isinstance(part, ToolReturnPart) and id(part) in return_paths_by_part for part in message.parts):
                 projected.append(message)
                 continue
             parts = tuple(
-                replace(part, content=sanitize_history_value(part.content))
-                if isinstance(part, ToolReturnPart) and id(part) in refs_by_return
+                replace(
+                    part,
+                    content=sanitize_history_arguments(
+                        part.content,
+                        ephemeral_paths=return_paths_by_part[id(part)],
+                    ),
+                    metadata=None,
+                )
+                if isinstance(part, ToolReturnPart) and id(part) in return_paths_by_part
                 else part
                 for part in message.parts
             )
@@ -2891,14 +2939,66 @@ def _deground_completed_tool_exchanges(
     return _canonicalize_compaction_summaries(tuple(projected))
 
 
+def _response_history_argument_paths(
+    response: object,
+    calls: tuple[object, ...],
+) -> Mapping[str, tuple[tuple[str, ...], ...]] | None:
+    metadata = getattr(response, "metadata", None)
+    if isinstance(metadata, Mapping) and metadata.get(HISTORY_CANONICAL_METADATA_KEY) is True:
+        return None
+    raw = metadata.get(HISTORY_ARGUMENT_PATHS_METADATA_KEY) if isinstance(metadata, Mapping) else None
+    call_ids = tuple(str(getattr(call, "tool_call_id", "")) for call in calls)
+    if raw is None:
+        # Legacy/internal histories carry no schema-owned contract. Expire the
+        # whole argument object rather than guessing which values are refs.
+        return {call_id: ((),) for call_id in call_ids}
+    if not isinstance(raw, Mapping) or set(map(str, raw)) != set(call_ids):
+        raise ValueError("completed response history metadata is incomplete")
+    return {call_id: _decode_history_paths(raw[call_id]) for call_id in call_ids}
+
+
+def _tool_return_history_paths(part: object) -> tuple[tuple[str, ...], ...]:
+    metadata = getattr(part, "metadata", None)
+    raw = metadata.get(HISTORY_RETURN_PATHS_METADATA_KEY) if isinstance(metadata, Mapping) else None
+    if raw is not None:
+        return _decode_history_paths(raw)
+    content = getattr(part, "content", None)
+    return () if content == UNEXECUTED_TOOL_CALL_MESSAGE else ((),)
+
+
+def _decode_history_paths(value: object) -> tuple[tuple[str, ...], ...]:
+    if not isinstance(value, tuple | list):
+        raise ValueError("history projection paths must be an array")
+    paths: list[tuple[str, ...]] = []
+    for raw_path in value:
+        if not isinstance(raw_path, tuple | list):
+            raise ValueError("history projection path must be an array")
+        path = tuple(str(segment) for segment in raw_path)
+        if any(not segment for segment in path):
+            raise ValueError("history projection path contains an empty segment")
+        paths.append(path)
+    if len(paths) != len(set(paths)):
+        raise ValueError("history projection paths must be unique")
+    return tuple(paths)
+
+
 def _canonicalize_completed_history(
     messages: tuple[object, ...],
 ) -> tuple[object, ...]:
-    """Keep one official history with every closed exchange ref-free at rest."""
+    """Keep every closed exchange semantic-only within official history."""
 
     projected = _deground_completed_tool_exchanges(messages)
     _project_pydantic_history(projected)
     return projected
+
+
+def _canonicalize_settled_history(
+    messages: tuple[object, ...],
+) -> tuple[object, ...]:
+    """Remove old World text/media at persistence and revision safe points."""
+
+    folded = _fold_expired_world_prompts(messages, max_estimated_tokens=1)
+    return _canonicalize_completed_history(folded)
 
 
 def _canonicalize_compaction_summaries(messages: tuple[object, ...]) -> tuple[object, ...]:
@@ -3192,10 +3292,7 @@ def _accepted_message_history(
             raise ValueError("PydanticAI retry prompt has no rejected response")
         requests.append(message)
         index += 1
-    if (
-        rejected_response_count != retry_prompt_count
-        or rejected_response_count > _ACTION_POLICY_MAX_PROTOCOL_RETRIES
-    ):
+    if rejected_response_count != retry_prompt_count or rejected_response_count > _ACTION_POLICY_MAX_PROTOCOL_RETRIES:
         raise ValueError("PydanticAI output retry history is incomplete or unbounded")
     requests_tuple = _without_pydantic_protocol_recovery(tuple(requests))
     if not any(isinstance(part, UserPromptPart) for message in requests_tuple for part in message.parts):
@@ -3205,7 +3302,7 @@ def _accepted_message_history(
             raise ValueError("history pending call identity was not supplied to the next exchange")
         if any(isinstance(part, ToolReturnPart) for message in requests_tuple for part in message.parts):
             raise ValueError("PydanticAI turn without a pending call cannot contain a deferred result")
-        candidate = (*prior_history, *requests_tuple, accepted.response)
+        candidate = (*prior_history, *requests_tuple, _history_response(accepted))
         return _canonicalize_completed_history(candidate)
 
     pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
@@ -3226,9 +3323,21 @@ def _accepted_message_history(
         (
             *prior_history,
             *requests_tuple,
-            accepted.response,
+            _history_response(accepted),
         )
     )
+
+
+def _history_response(accepted: AcceptedToolExchange):
+    """Attach the Catalog-owned at-rest contract to the exact SDK response."""
+
+    metadata = dict(accepted.response.metadata or {})
+    expected = {call_id: tuple(tuple(path) for path in paths) for call_id, paths in accepted.argument_paths_by_call}
+    existing = metadata.get(HISTORY_ARGUMENT_PATHS_METADATA_KEY)
+    if existing is not None and to_json_compatible(existing) != to_json_compatible(expected):
+        raise ValueError("provider response conflicts with Runtime history metadata")
+    metadata[HISTORY_ARGUMENT_PATHS_METADATA_KEY] = expected
+    return replace(accepted.response, metadata=metadata)
 
 
 def _completed_tool_exchanges(
@@ -3612,10 +3721,7 @@ def _required_parameter_projection(schema: Mapping[str, object]) -> dict[str, ob
     if len(required_names) != len(set(required_names)) or any(name not in properties for name in required_names):
         raise ValueError("ActionPolicy tool schema has invalid required properties")
     projected = dict(schema)
-    projected["properties"] = {
-        name: to_json_compatible(properties[name])
-        for name in required_names
-    }
+    projected["properties"] = {name: to_json_compatible(properties[name]) for name in required_names}
     projected["required"] = list(required_names)
     projected["additionalProperties"] = False
     return projected

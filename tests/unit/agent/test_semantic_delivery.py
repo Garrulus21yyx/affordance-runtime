@@ -23,10 +23,12 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     StaleContext,
     _compact_repeated_content,
     inspect_actor_world,
+    inspect_outcome_ephemeral_paths,
     inspect_outcome_public,
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
+from affordance_runtime.agent.context.contracts import sanitize_history_arguments
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
@@ -91,9 +93,7 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
         {"subject": "current"},
         {
             "kind": "Evidence",
-            "items": (
-                {"identity": {"name": "Reader 界🙂"}, "content": {"text": "complete"}},
-            ),
+            "items": ({"identity": {"name": "Reader 界🙂"}, "content": {"text": "complete"}},),
         },
         "call:future-reader",
     )
@@ -112,6 +112,44 @@ def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() 
     assert receipt.operation == "future_readonly_tool"
     assert receipt.item_digests
     assert not hasattr(receipt, "records")
+
+
+def test_inspect_result_history_contract_preserves_ref_shaped_semantics_only() -> None:
+    outcome = Matches(
+        (
+            {
+                "label": "R5",
+                "region_ref": "R1",
+                "structural_context": "R1",
+                "target_ref": "E1",
+                "verbs": ("activate",),
+            },
+        ),
+        "complete",
+    )
+    public = inspect_outcome_public(outcome)
+    projected = sanitize_history_arguments(
+        public,
+        ephemeral_paths=inspect_outcome_ephemeral_paths(outcome, public),
+    )
+
+    assert projected["items"] == ({"label": "R5"},)
+    assert "next_cursor" not in projected
+    assert "executable_grounding" not in projected
+    assert "R5" in json.dumps(projected)
+    assert all(token not in json.dumps(projected) for token in ("R1", "E1"))
+
+    stale = StaleContext("observation:old", "observation:fresh")
+    stale_public = inspect_outcome_public(stale)
+    assert sanitize_history_arguments(
+        stale_public,
+        ephemeral_paths=inspect_outcome_ephemeral_paths(stale, stale_public),
+    ) == {
+        "kind": "StaleContext",
+        "searched_domain": "readable_content",
+        "read_only": True,
+        "zero_browser_dispatch": True,
+    }
 
 
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:
@@ -218,8 +256,7 @@ def _many_region_world(*, count: int = 16, suffix: str = "current"):
     region_ids = tuple(f"region:{index}" for index in range(count))
     target_ids = tuple(f"content:{index}" for index in range(count))
     targets = tuple(
-        SemanticTarget(target_id, "StaticText", f"Needle {index}")
-        for index, target_id in enumerate(target_ids)
+        SemanticTarget(target_id, "StaticText", f"Needle {index}") for index, target_id in enumerate(target_ids)
     )
     nodes = (
         ObservationStructureNode("root", "generic", "Catalog", child_structure_ids=region_ids),
@@ -312,11 +349,7 @@ def _review_record_world():
             ("author", "StaticText", "Review by Morgan"),
         ),
     }
-    targets = tuple(
-        SemanticTarget(f"{row}:{name}", role, text)
-        for row in rows
-        for name, role, text in fields[row]
-    )
+    targets = tuple(SemanticTarget(f"{row}:{name}", role, text) for row in rows for name, role, text in fields[row])
     nodes = (
         ObservationStructureNode("root", "document", "Product", child_structure_ids=("reviews",)),
         ObservationStructureNode(
@@ -873,9 +906,7 @@ def test_search_matches_visible_text_but_not_dom_tag_class_or_id_values() -> Non
     )
 
     assert isinstance(outcome, Matches)
-    assert {item.get("label") for item in outcome.items} == {
-        "The ear cups are small for me."
-    }
+    assert {item.get("label") for item in outcome.items} == {"The ear cups are small for me."}
     assert all(item.get("label") != "semantic.dom.tag" for item in outcome.items)
     public_result = json.dumps(to_json_compatible(inspect_outcome_public(outcome)))
     assert "semantic.dom.tag" not in public_result
@@ -941,9 +972,7 @@ def test_region_read_byte_pages_generated_preserve_or_explicitly_mark_each_recor
     for actual, expected in zip(delivered, complete.items, strict=True):
         if actual.get("content_truncated") is True:
             assert actual["kind"] == "partial_item"
-            assert len(json.dumps(to_json_compatible(actual))) < len(
-                json.dumps(to_json_compatible(expected))
-            )
+            assert len(json.dumps(to_json_compatible(actual))) < len(json.dumps(to_json_compatible(expected)))
         else:
             assert to_json_compatible(actual) == to_json_compatible(expected)
 
@@ -1058,9 +1087,12 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
     # R refs are current-partition handles, not cross-version identities. The
     # old capture called this table R14; removing preceding orphan rowgroup
     # regions may legitimately renumber it while preserving exact resolution.
-    assert context.region_index.get(
-        context.canonical_world.resolve_region_ref(context.canonical_world.region_refs[table.key])
-    ) is table
+    assert (
+        context.region_index.get(
+            context.canonical_world.resolve_region_ref(context.canonical_world.region_refs[table.key])
+        )
+        is table
+    )
     assert table.scope_path[-2:] == ("Dashboard / Magento Admin", "Bestsellers")
     assert table.counts["filter_controls"] == 0
     assert not any(item.role == "rowgroup" for item in context.region_index.regions)
@@ -1070,9 +1102,7 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
     assert len(tuple(item for item in opened.items if item.get("kind") == "complete_item")) == 5
     assert reports.target_ref in view.manifest.executable_refs
     assert f"[{reports.target_ref}] link" in view.text
-    assert '"activate"' in next(
-        line for line in view.text.splitlines() if f"[{reports.target_ref}]" in line
-    )
+    assert '"activate"' in next(line for line in view.text.splitlines() if f"[{reports.target_ref}]" in line)
 
 
 def test_page_map_manifest_is_atomic_and_folded_descriptors_contain_no_exact_refs() -> None:
@@ -1146,9 +1176,9 @@ def test_search_result_region_ref_is_immediately_accepted_by_read_region() -> No
     target_region = first.region_index.region_for_target("content:15")
     assert target_region is not None
     target_region_ref = first.canonical_world.region_refs[target_region.key]
-    region_schema = next(
-        item for item in first_catalog.specs if item.name == "read_region"
-    ).input_schema["properties"]["region_ref"]
+    region_schema = next(item for item in first_catalog.specs if item.name == "read_region").input_schema["properties"][
+        "region_ref"
+    ]
     assert "enum" not in region_schema
     assert region_schema["pattern"].startswith("^")
 
@@ -1158,8 +1188,7 @@ def test_search_result_region_ref_is_immediately_accepted_by_read_region() -> No
         expected_context_id=first.context_id,
     )
     matching_item = next(
-        item for item in search_resolution.decision.result["items"]
-        if item["region_ref"] == target_region_ref
+        item for item in search_resolution.decision.result["items"] if item["region_ref"] == target_region_ref
     )
     assert matching_item["follow_up"] == {
         "operation": "read_region",
@@ -1326,14 +1355,17 @@ def test_byte_bounded_region_pages_are_direct_results_and_store_keeps_only_diges
         feedback="local_tool_result",
     )
     opened_transition = ObservationDeliveryStore().reduce(opened_step, step_index=1)
-    assert len(
-        json.dumps(
-            to_json_compatible(opened.decision.result),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ) <= 64 * 1024
+    assert (
+        len(
+            json.dumps(
+                to_json_compatible(opened.decision.result),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        )
+        <= 64 * 1024
+    )
     assert not hasattr(opened_transition.next_store, "public_result_inventory")
     assert not hasattr(opened_transition.next_store.local_deliveries[-1], "records")
 

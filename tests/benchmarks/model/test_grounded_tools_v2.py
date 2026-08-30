@@ -620,6 +620,7 @@ def test_request_evidence_schema_matches_observation_property_contract() -> None
     catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
     assert spec.input_schema["type"] == "object"
+    assert spec.ephemeral_argument_paths == (("subject",),)
 
     assert (
         validate_value_issue(
@@ -672,6 +673,7 @@ def test_dynamic_request_evidence_batches_exact_current_manifest_refs() -> None:
     )
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
     assert spec.input_schema["type"] == "object"
+    assert spec.ephemeral_argument_paths == (("subject_refs",),)
     refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
     arguments = {
@@ -1474,11 +1476,11 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
         branch["required"] == ["task_type", "status", "retrieved_data", "error_details"]
         for branch in response_schema["oneOf"]
     )
-    assert {
-        value
-        for branch in response_schema["oneOf"]
-        for value in branch["properties"]["task_type"]["enum"]
-    } == {"RETRIEVE", "MUTATE", "NAVIGATE"}
+    assert {value for branch in response_schema["oneOf"] for value in branch["properties"]["task_type"]["enum"]} == {
+        "RETRIEVE",
+        "MUTATE",
+        "NAVIGATE",
+    }
 
     response = {
         "task_type": "MUTATE",
@@ -1508,9 +1510,7 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
         _delivery(context),
         interaction_tool_profile=InteractionToolExposureProfile.STRUCTURED,
     )
-    structured_spec = next(
-        item for item in structured_catalog.specs if item.name == "submit_final_response"
-    )
+    structured_spec = next(item for item in structured_catalog.specs if item.name == "submit_final_response")
     assert set(structured_spec.input_schema["properties"]) == {"response"}
     assert codec.model_tool_contract.supports_presentation_sidecars is False
 
@@ -1537,9 +1537,7 @@ def test_final_response_presentation_sidecars_follow_codec_capability_not_payloa
             _delivery(context),
             interaction_tool_profile=InteractionToolExposureProfile.STRUCTURED,
         )
-        return context, catalog, next(
-            item for item in catalog.specs if item.name == "submit_final_response"
-        )
+        return context, catalog, next(item for item in catalog.specs if item.name == "submit_final_response")
 
     capable_context, capable_catalog, capable_spec = final_spec(capable)
     direct_context, direct_catalog, direct_spec = final_spec(direct_only)
@@ -1588,17 +1586,13 @@ def test_final_response_presentation_sidecars_follow_codec_capability_not_payloa
         {"type": "object", "$ref": "#/missing"},
         {
             "type": "object",
-            "properties": {
-                "items": {"type": "array", "items": {"type": "string", "maxLength": 8}}
-            },
+            "properties": {"items": {"type": "array", "items": {"type": "string", "maxLength": 8}}},
             "required": ["items"],
             "additionalProperties": False,
         },
         {
             "type": "object",
-            "properties": {
-                "value": {"type": "string", "maxLength": MAX_FINAL_RESPONSE_CHARS}
-            },
+            "properties": {"value": {"type": "string", "maxLength": MAX_FINAL_RESPONSE_CHARS}},
             "required": ["value"],
             "additionalProperties": False,
         },
@@ -1654,10 +1648,7 @@ def test_webarena_final_response_catalog_and_binding_share_one_bounded_payload_a
     valid_boundary = {
         "task_type": "RETRIEVE",
         "status": "SUCCESS",
-        "retrieved_data": [
-            {f"field_{field}": "v" * 128 for field in range(6)}
-            for _record in range(16)
-        ],
+        "retrieved_data": [{f"field_{field}": "v" * 128 for field in range(6)} for _record in range(16)],
         "error_details": None,
     }
     resolved = _resolve_catalog_call(
@@ -1846,6 +1837,8 @@ def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding(
     assert "decision among grounded current options" in structured_ask.description
     assert "never performs a GUI action" in structured_ask.description
     assert "question" in compatibility_ask.input_schema["properties"]
+    assert ("option_drafts", "*", "evidence_refs") in structured_ask.ephemeral_argument_paths
+    assert compatibility_ask.ephemeral_argument_paths == ()
     assert catalog.interaction_tool_profile_id == "structured-interaction.v1"
     outcome = _resolve_catalog_call(
         catalog,
@@ -1895,6 +1888,12 @@ def test_structured_profile_adds_sidecars_without_changing_compatibility_schema(
     }
     assert "public_intent" not in compatible_activate.input_schema["properties"]
     assert "public_intent" in structured_activate.input_schema["properties"]
+    assert compatible_activate.ephemeral_argument_paths == (("target",),)
+    assert structured_activate.ephemeral_argument_paths == (("target",),)
+    assert set(structured_final.ephemeral_argument_paths) == {
+        ("artifact", "evidence_refs"),
+        ("artifact", "items", "*", "evidence_refs"),
+    }
 
 
 def test_structured_profile_omits_empty_evidence_ref_domain_and_runtime_defaults_it() -> None:

@@ -89,9 +89,7 @@ class CompiledGroundedTool:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         match = matches[0]
         parameters = {
-            name: value
-            for name, value in arguments.items()
-            if name not in selector_names and name != "public_intent"
+            name: value for name, value in arguments.items() if name not in selector_names and name != "public_intent"
         }
         try:
             validate_value(parameters, match.parameter_schema, path="command")
@@ -206,7 +204,12 @@ class GroundedToolCompiler:
             raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
         return CompiledGroundedTool(
             operation,
-            ToolSpec(operation, _description(operation, rows, fields), schema),
+            ToolSpec(
+                operation,
+                _description(operation, rows, fields),
+                schema,
+                ephemeral_argument_paths=tuple((field.public_name,) for field in fields),
+            ),
             mode,
             fields,
             resolutions,
@@ -405,9 +408,7 @@ def _description(
     del rows
     definition = INTERACTION_CAPABILITY_REGISTRY.require(operation)
     if not fields:
-        return (
-            f"{definition.description} Current browser/focus state and legal parameters come from the fresh World."
-        )
+        return f"{definition.description} Current browser/focus state and legal parameters come from the fresh World."
     endpoints = " and ".join(field.public_name for field in fields)
     return (
         f"{definition.description} Select current executable {endpoints} from the current World or a same-World "

@@ -349,11 +349,7 @@ class InteractionRequestDraft:
         if any(
             not isinstance(
                 item,
-                TextFieldDraft
-                | IntegerFieldDraft
-                | DecimalFieldDraft
-                | BooleanFieldDraft
-                | DateFieldDraft,
+                TextFieldDraft | IntegerFieldDraft | DecimalFieldDraft | BooleanFieldDraft | DateFieldDraft,
             )
             for item in self.field_drafts
         ):
@@ -366,7 +362,8 @@ class InteractionRequestDraft:
             response_kind is InteractionResponseKind.FREE_TEXT
             and fields == 0
             and options == 0
-            or response_kind in {
+            or response_kind
+            in {
                 InteractionResponseKind.SINGLE_SELECT,
                 InteractionResponseKind.MULTI_SELECT,
             }
@@ -408,11 +405,7 @@ class _AskUserCompatibility(type):
         return InteractionRequestDraft(
             context_id,
             question,
-            (
-                InteractionResponseKind.STRUCTURED_FIELDS
-                if fields
-                else InteractionResponseKind.FREE_TEXT
-            ),
+            (InteractionResponseKind.STRUCTURED_FIELDS if fields else InteractionResponseKind.FREE_TEXT),
             fields,
             tool_call_id=tool_call_id,
         )
@@ -483,6 +476,12 @@ class LocalToolResult:
     result: Mapping[str, object]
     tool_call_id: str = ""
     rejected_attempt_signature: PublicAttemptSignature | None = field(default=None, repr=False, compare=False)
+    ephemeral_argument_paths: tuple[tuple[str, ...], ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
+    ephemeral_result_paths: tuple[tuple[str, ...], ...] = field(
+        default=(), repr=False, compare=False, metadata={"serialize": False}
+    )
 
     def __post_init__(self) -> None:
         _require_context(self.context_id)
@@ -495,10 +494,27 @@ class LocalToolResult:
             raise ValueError("local tool result cannot be empty")
         object.__setattr__(self, "arguments", freeze_json(self.arguments))
         object.__setattr__(self, "result", freeze_json(self.result))
+        argument_paths = _history_paths(self.ephemeral_argument_paths)
+        result_paths = _history_paths(self.ephemeral_result_paths)
+        object.__setattr__(self, "ephemeral_argument_paths", argument_paths)
+        object.__setattr__(self, "ephemeral_result_paths", result_paths)
         if self.rejected_attempt_signature is not None and not isinstance(
             self.rejected_attempt_signature, PublicAttemptSignature
         ):
             raise TypeError("local tool rejected attempt signature must be typed")
+
+
+def _history_paths(value: object) -> tuple[tuple[str, ...], ...]:
+    if not isinstance(value, tuple | list):
+        raise TypeError("local tool history paths must be a sequence")
+    paths = tuple(tuple(path) for path in value)
+    if (
+        len(paths) != len(set(paths))
+        or any(not path for path in paths)
+        or any(not isinstance(segment, str) or not segment for path in paths for segment in path)
+    ):
+        raise ValueError("local tool history paths are invalid")
+    return paths
 
 
 @dataclass(frozen=True)

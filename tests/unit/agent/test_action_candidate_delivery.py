@@ -27,6 +27,8 @@ from affordance_runtime.agent.context.canonical_world_projection import (
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
     DeliveryManifest,
+    RenderedWorldDelivery,
+    WorldDeliveryView,
     inspect_actor_world,
     inspect_outcome_public,
 )
@@ -2191,6 +2193,20 @@ def test_same_world_tool_result_never_promotes_ref_shaped_semantic_text(
     )
 
     assert typed_manifest.region_refs == (business_value,)
+
+
+def test_renderer_manifest_cannot_use_ref_shaped_business_prose_as_authority() -> None:
+    with pytest.raises(ValueError, match="typed projection"):
+        RenderedWorldDelivery(
+            WorldDeliveryView("Product code R5", "full"),
+            DeliveryManifest(region_refs=("R5",)),
+        )
+
+    rendered = RenderedWorldDelivery(
+        WorldDeliveryView("region[R5]", "full", rendered_refs=("R5",)),
+        DeliveryManifest(region_refs=("R5",)),
+    )
+    assert rendered.manifest.region_refs == ("R5",)
 
 
 def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -> None:

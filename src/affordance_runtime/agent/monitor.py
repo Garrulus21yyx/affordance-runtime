@@ -391,11 +391,7 @@ class EpisodeMonitor:
             )
             if exact_replay:
                 already_prohibited = signature in self.active_recovery.prohibited_attempt_signatures
-                self.recovery_count = (
-                    self.recovery_count + 1
-                    if already_prohibited and repeats_latest
-                    else 1
-                )
+                self.recovery_count = self.recovery_count + 1 if already_prohibited and repeats_latest else 1
                 signal = _control_stall_signal(
                     result,
                     self,
@@ -404,9 +400,7 @@ class EpisodeMonitor:
                 )
                 return self._recovery_transition(
                     (*events, EpisodeMonitorEvent.REPEATED_ACTION),
-                    EpisodeMonitorRecommendation.BLOCK
-                    if already_prohibited
-                    else EpisodeMonitorRecommendation.RECOVER,
+                    EpisodeMonitorRecommendation.BLOCK if already_prohibited else EpisodeMonitorRecommendation.RECOVER,
                     "control_stalled" if already_prohibited else RecoveryKind.CONTROL_STALL.value,
                     signal,
                 )
@@ -635,9 +629,7 @@ def _has_exact_local_result_replay(
     if information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY:
         return True
     return bool(
-        repeats_latest
-        and isinstance(result.decision, RequestActionPage)
-        and result.action_page_result is not None
+        repeats_latest and isinstance(result.decision, RequestActionPage) and result.action_page_result is not None
     )
 
 
@@ -1041,7 +1033,10 @@ def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:
     if isinstance(result.decision, LocalToolResult):
         return {
             "operation": result.decision.tool_name[:80],
-            "arguments": _bounded_argument_summary(result.decision.arguments),
+            "arguments": _bounded_argument_summary(
+                result.decision.arguments,
+                ephemeral_paths=result.decision.ephemeral_argument_paths,
+            ),
         }
     if isinstance(result.decision, RequestActionPage):
         return {
@@ -1051,8 +1046,12 @@ def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:
     return {"operation": getattr(getattr(result.decision, "kind", None), "value", "policy_failure")[:80]}
 
 
-def _bounded_argument_summary(arguments: Mapping[str, object]) -> Mapping[str, object]:
-    public_arguments = sanitize_history_arguments(arguments)
+def _bounded_argument_summary(
+    arguments: Mapping[str, object],
+    *,
+    ephemeral_paths: tuple[tuple[str, ...], ...] = (),
+) -> Mapping[str, object]:
+    public_arguments = sanitize_history_arguments(arguments, ephemeral_paths=ephemeral_paths)
     if not isinstance(public_arguments, Mapping):
         return {}
     summary: dict[str, object] = {}

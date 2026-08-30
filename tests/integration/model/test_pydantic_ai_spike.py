@@ -17,6 +17,7 @@ pytest.importorskip("pydantic_ai")
 from pydantic_ai import DeferredToolRequests, ToolDefinition
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
@@ -43,6 +44,8 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     DeliveryObligationKind,
 )
 from affordance_runtime.agent.context.contracts import (
+    HISTORY_ARGUMENT_PATHS_METADATA_KEY,
+    HISTORY_RETURN_PATHS_METADATA_KEY,
     sanitize_history_arguments,
     sanitize_history_value,
 )
@@ -73,6 +76,7 @@ from affordance_runtime.evaluation import (
 )
 from affordance_runtime.execution.contracts import ActionResult, DispatchStatus
 from affordance_runtime.goals import NotRequiredGoalCompiler
+from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.model.policy.contracts import ModelDecisionRequest
 from affordance_runtime.model.policy.factory import model_policy_from_environment
 from affordance_runtime.model.policy.grounded_tool_catalog import (
@@ -124,6 +128,35 @@ from tests.support.model.recording_pydantic_model import (
 )
 
 ScriptedModel = RecordingPydanticModel
+
+
+def _history_response(
+    parts: list[object] | tuple[object, ...],
+    paths_by_call: Mapping[str, tuple[tuple[str, ...], ...]],
+) -> ModelResponse:
+    return ModelResponse(
+        parts=parts,
+        metadata={HISTORY_ARGUMENT_PATHS_METADATA_KEY: dict(paths_by_call)},
+    )
+
+
+def _history_return(
+    tool_name: str,
+    content: object,
+    call_id: str,
+    *,
+    ephemeral_paths: tuple[tuple[str, ...], ...] = (),
+    metadata: Mapping[str, object] | None = None,
+) -> ToolReturnPart:
+    return ToolReturnPart(
+        tool_name,
+        content,
+        call_id,
+        metadata={
+            **dict(metadata or {}),
+            HISTORY_RETURN_PATHS_METADATA_KEY: ephemeral_paths,
+        },
+    )
 
 
 def _serve_openai_chat_responses(
@@ -522,9 +555,7 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
     assert requests[0]["messages"][0] == requests[1]["messages"][0]
     fallback_content = requests[1]["messages"][1]["content"]
     assert isinstance(fallback_content, list)
-    fallback_text = "\n".join(
-        str(item.get("text", "")) for item in fallback_content if isinstance(item, dict)
-    )
+    fallback_text = "\n".join(str(item.get("text", "")) for item in fallback_content if isinstance(item, dict))
     assert requests[0]["messages"][1]["content"] in fallback_text
     assert "action_selection_recovery" in fallback_text
     assert "return exactly one complete offered tool call" in fallback_text
@@ -755,12 +786,13 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
-        ModelResponse(
-            parts=[ToolCallPart("type_text", {"target": "E1", "text": "E6"}, "call:checkpoint")]
+        _history_response(
+            [ToolCallPart("type_text", {"target": "E1", "text": "E6"}, "call:checkpoint")],
+            {"call:checkpoint": (("target",),)},
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart(
+                _history_return(
                     "type_text",
                     {
                         "entered_text": "E6",
@@ -769,6 +801,7 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
                         "status": "paused",
                     },
                     "call:checkpoint",
+                    ephemeral_paths=(("target_ref",), ("region_ref",)),
                 )
             ]
         ),
@@ -781,11 +814,7 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
     assert serialized["format"] == "pydantic-ai.messages.v1"
     assert serialized["active_task_identity"] == ["task:checkpoint", 3]
     assert "strategy_revision" not in serialized
-    assert [message["kind"] for message in serialized["messages"]] == [
-        "request",
-        "response",
-        "request",
-    ]
+    assert [message["kind"] for message in serialized["messages"]] == ["response", "request"]
 
     restored = _policy(ScriptedModel(["first_gui_action"]).build())
     restored.restore_checkpoint_history(
@@ -794,10 +823,10 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
         task_revision=3,
     )
     assert canonical_history != history
-    closed_call = canonical_history[1]
+    closed_call = canonical_history[0]
     assert isinstance(closed_call, ModelResponse)
     assert tuple(part.args for part in closed_call.parts if isinstance(part, ToolCallPart)) == ({"text": "E6"},)
-    closed_return = canonical_history[2]
+    closed_return = canonical_history[1]
     assert isinstance(closed_return, ModelRequest)
     assert tuple(part.content for part in closed_return.parts if isinstance(part, ToolReturnPart)) == (
         {"entered_text": "E6", "status": "paused"},
@@ -805,7 +834,9 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
     assert "E1" not in json.dumps(serialized)
     assert "R2" not in json.dumps(serialized)
     assert "E6" in json.dumps(serialized)
-    assert restored.port.message_history == canonical_history
+    assert ModelMessagesTypeAdapter.dump_json(
+        list(restored.port.message_history)
+    ) == ModelMessagesTypeAdapter.dump_json(list(canonical_history))
     assert restored.port.active_task_identity == ("task:checkpoint", 3)
 
     from affordance_runtime.immutable import freeze_json
@@ -817,8 +848,48 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
         task_id="task:checkpoint",
         task_revision=3,
     )
-    assert restored_from_checkpoint.port.message_history == canonical_history
+    assert ModelMessagesTypeAdapter.dump_json(
+        list(restored_from_checkpoint.port.message_history)
+    ) == ModelMessagesTypeAdapter.dump_json(list(canonical_history))
     assert "strategy_revision" not in restored_from_checkpoint.export_checkpoint_history()
+
+
+def test_settled_checkpoint_removes_old_world_refs_and_media_but_keeps_task_anchor() -> None:
+    policy = _policy(ScriptedModel(["first_gui_action"]).build())
+    current_turn = ModelRequest(
+        parts=[
+            UserPromptPart(
+                [
+                    '{"observation":"[E1] Product code R5 in region R2"}',
+                    BinaryContent(b"old screenshot bytes", media_type="image/png"),
+                ]
+            )
+        ]
+    )
+    history = (
+        current_turn,
+        _history_response(
+            [ToolCallPart("activate", {"target": "E1"}, "call:settled-world")],
+            {"call:settled-world": (("target",),)},
+        ),
+        ModelRequest(parts=[_history_return("activate", {"status": "stable"}, "call:settled-world")]),
+    )
+    normalized = pydantic_bridge._normalize_pydantic_history_for_current_task(
+        history,
+        task_plan={"task": {"instruction": "Use product code R5"}, "goal_plan": {"items": []}},
+    )
+    object.__setattr__(policy.port, "message_history", normalized)
+    object.__setattr__(policy.port, "active_task_identity", ("task:settled-world", 1))
+
+    checkpoint = policy.export_checkpoint_history()
+    encoded = json.dumps(checkpoint, sort_keys=True)
+
+    assert "Use product code R5" in encoded
+    assert "old screenshot bytes" not in encoded
+    assert "E1" not in encoded
+    assert "R2" not in encoded
+    assert encoded.count("R5") == 1
+    assert not any(part.get("part_kind") == "binary" for message in checkpoint["messages"] for part in message["parts"])
 
 
 def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
@@ -833,8 +904,11 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
         object.__setattr__(policy.port, "step_conversation_id", "session:checkpoint")
         history = (
             ModelRequest(parts=[UserPromptPart("current task")]),
-            ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:settled")]),
-            ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:settled")]),
+            _history_response(
+                [ToolCallPart("activate", {"target": "E1"}, "call:settled")],
+                {"call:settled": (("target",),)},
+            ),
+            ModelRequest(parts=[_history_return("activate", {"status": "paused"}, "call:settled")]),
         )
         object.__setattr__(policy.port, "message_history", history)
         object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
@@ -866,7 +940,9 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
             task_id="task:checkpoint",
             task_revision=3,
         )
-        assert restored.port.message_history == canonical_history
+        assert ModelMessagesTypeAdapter.dump_json(
+            list(restored.port.message_history)
+        ) == ModelMessagesTypeAdapter.dump_json(list(canonical_history))
 
         tampered = {**reference, "message_digest": "f" * 64}
         with pytest.raises(ValueError, match="digest"):
@@ -940,8 +1016,11 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
-        ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:revision")]),
-        ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:revision")]),
+        _history_response(
+            [ToolCallPart("activate", {"target": "E1"}, "call:revision")],
+            {"call:revision": (("target",),)},
+        ),
+        ModelRequest(parts=[_history_return("activate", {"status": "paused"}, "call:revision")]),
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
@@ -953,7 +1032,7 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
     )
 
     assert policy.port.message_history != history
-    closed_call = policy.port.message_history[1]
+    closed_call = policy.port.message_history[0]
     assert isinstance(closed_call, ModelResponse)
     assert tuple(part.args for part in closed_call.parts if isinstance(part, ToolCallPart)) == ({},)
     assert policy.export_checkpoint_history()["active_task_identity"] == [
@@ -1180,9 +1259,7 @@ def test_runtime_rejection_closes_exact_local_replay_as_same_call_tool_return() 
             part for part in parts if part["part_kind"] == "tool-call" and part["tool_call_id"] == "recording-call:3"
         )
         rejected_return = next(
-            part
-            for part in parts
-            if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
+            part for part in parts if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
         )
         assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
         assert rejected_return["tool_name"] == rejected_call["tool_name"]
@@ -1510,12 +1587,8 @@ def test_sdk_request_limit_failure_is_local_invalid_response_not_provider_outage
         assert result.failure.attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
         assert result.failure.reason == "action_policy_protocol_retry_budget_exhausted"
         assert [attempt.status for attempt in result.attempts] == ["failed"]
-        assert result.attempts[0].transcript["error.code"] == (
-            "action_policy_protocol_retry_budget_exhausted"
-        )
-        assert result.diagnostics["pre_provider_failure"]["phase"] == (
-            "action_policy_protocol_retry_budget"
-        )
+        assert result.attempts[0].transcript["error.code"] == ("action_policy_protocol_retry_budget_exhausted")
+        assert result.diagnostics["pre_provider_failure"]["phase"] == ("action_policy_protocol_retry_budget")
 
     asyncio.run(scenario())
 
@@ -2841,8 +2914,14 @@ def test_recording_model_can_consume_search_region_in_the_next_turn() -> None:
             "recording-call:2",
             "recording-call:2",
         )
-        assert history_parts[1]["content"] == sanitize_history_value(first.output.decision.result)
-        assert history_parts[3]["content"] == second.output.decision.result
+        assert history_parts[1]["content"] == sanitize_history_arguments(
+            first.output.decision.result,
+            ephemeral_paths=first.output.decision.ephemeral_result_paths,
+        )
+        assert json.dumps(history_parts[3]["content"], sort_keys=True) == json.dumps(
+            to_json_compatible(second.output.decision.result),
+            sort_keys=True,
+        )
         user_prompts = tuple(
             part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "user-prompt"
         )
@@ -2874,19 +2953,20 @@ def _official_history_with_pending_actions(turns: int) -> tuple[object, ...]:
     ]
     for index in range(turns):
         messages.append(
-            ModelResponse(
-                parts=[
+            _history_response(
+                [
                     ThinkingPart(f"step {index}: inspect the fresh World"),
                     TextPart(f"conclusion {index}: continue toward Acadia"),
                     ToolCallPart("activate", {"target": f"E{index}"}, f"call:{index}"),
-                ]
+                ],
+                {f"call:{index}": (("target",),)},
             )
         )
         if index + 1 < turns:
             messages.append(
                 ModelRequest(
                     parts=[
-                        ToolReturnPart(
+                        _history_return(
                             "activate",
                             {"status": "stable", "page": index + 1},
                             f"call:{index}",
@@ -3056,7 +3136,7 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
         (part.tool_name, part.tool_call_id) for part in original_calls
     )
     assert tuple(part.args for part in projected_calls[:-1]) == tuple(
-        sanitize_history_arguments(part.args) for part in original_calls[:-1]
+        sanitize_history_arguments(part.args, ephemeral_paths=(("target",),)) for part in original_calls[:-1]
     )
     assert projected_calls[-1] == original_calls[-1]
     assert tuple(part.content for part in projected_returns) == tuple(
@@ -3133,7 +3213,7 @@ def test_history_projection_expires_only_closed_private_reasoning_with_public_co
         (part.tool_name, part.tool_call_id) for part in original_calls
     )
     assert tuple(part.args for part in projected_calls[:-1]) == tuple(
-        sanitize_history_arguments(part.args) for part in original_calls[:-1]
+        sanitize_history_arguments(part.args, ephemeral_paths=(("target",),)) for part in original_calls[:-1]
     )
     assert projected_calls[-1] == original_calls[-1]
     assert tuple(part.content for part in projected_returns) == tuple(
@@ -3177,19 +3257,20 @@ def test_history_projection_keeps_closed_tool_only_reasoning_until_semantic_comp
 def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> None:
     original = (
         ModelRequest(parts=[UserPromptPart("search results World")]),
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 TextPart("Search found More results at E6."),
                 ToolCallPart(
                     "search_page_content",
                     {"query": "More results"},
                     "call:search",
                 ),
-            ]
+            ],
+            {"call:search": (("cursor",),)},
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart(
+                _history_return(
                     "search_page_content",
                     {
                         "items": (
@@ -3204,6 +3285,12 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
                         "next_cursor": "opaque-old-page",
                     },
                     "call:search",
+                    ephemeral_paths=(
+                        ("items", "*", "target_ref"),
+                        ("items", "*", "verbs"),
+                        ("items", "*", "region_ref"),
+                        ("next_cursor",),
+                    ),
                     metadata={
                         "before_world": "observation:search",
                         "after_world": "observation:search",
@@ -3211,15 +3298,16 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
                 )
             ]
         ),
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 TextPart("Open More results E6."),
                 ToolCallPart("activate", {"target": "E6"}, "call:activate"),
-            ]
+            ],
+            {"call:activate": (("target",),)},
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart(
+                _history_return(
                     "activate",
                     {"status": "stable", "outcome": "Not Found page loaded"},
                     "call:activate",
@@ -3273,7 +3361,7 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
     assert original[3].parts[1].args == {"target": "E6"}
     assert original[2].parts[0].content["items"][0]["target_ref"] == "E6"
     assert all(
-        "E6" not in part.content
+        "E6" in part.content
         for message in projected
         if isinstance(message, ModelResponse)
         for part in message.parts
@@ -3288,21 +3376,23 @@ def test_history_projection_degrounds_only_handles_from_noncurrent_worlds() -> N
 
 
 def test_history_projection_degrounds_closed_same_world_read_and_keeps_pending_call_exact() -> None:
-    tool_return = ToolReturnPart(
+    tool_return = _history_return(
         "search_page_content",
         {"items": ({"label": "More results", "target_ref": "E6", "verbs": ("activate",)},)},
         "call:search",
+        ephemeral_paths=(("items", "*", "target_ref"), ("items", "*", "verbs")),
         metadata={
             "before_world": "observation:search",
             "after_world": "observation:search",
         },
     )
     original = (
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 TextPart("Use E6 More results."),
                 ToolCallPart("search_page_content", {"query": "More results"}, "call:search"),
-            ]
+            ],
+            {"call:search": (("cursor",),)},
         ),
         ModelRequest(parts=[tool_return]),
         ModelResponse(parts=[ToolCallPart("activate", {"target": "E6"}, "call:pending")]),
@@ -3324,7 +3414,7 @@ def test_history_projection_degrounds_closed_same_world_read_and_keeps_pending_c
     completed_response = projected[0]
     assert isinstance(completed_response, ModelResponse)
     assert isinstance(completed_response.parts[0], TextPart)
-    assert completed_response.parts[0].content == "Use More results."
+    assert completed_response.parts[0].content == "Use E6 More results."
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
         "activate",
         {"target": "E6"},
@@ -3346,19 +3436,20 @@ def test_history_projection_preserves_ref_shaped_business_values(
     business_value = f"{business_kind}{business_index}"
     selector_ref = f"E{selector_index}"
     original = (
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 TextPart(f"Enter business code {business_value} into {selector_ref}."),
                 ToolCallPart(
                     "type_text",
                     {"target": selector_ref, "text": business_value},
                     "call:closed",
                 ),
-            ]
+            ],
+            {"call:closed": (("target",),)},
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart(
+                _history_return(
                     "type_text",
                     {
                         "entered_text": business_value,
@@ -3366,17 +3457,19 @@ def test_history_projection_preserves_ref_shaped_business_values(
                         "target_ref": selector_ref,
                     },
                     "call:closed",
+                    ephemeral_paths=(("target_ref",),),
                 )
             ]
         ),
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 ToolCallPart(
                     "search_page_content",
                     {"query": business_value},
                     "call:pending",
                 )
-            ]
+            ],
+            {"call:pending": (("cursor",),)},
         ),
     )
 
@@ -3397,7 +3490,7 @@ def test_history_projection_preserves_ref_shaped_business_values(
     )
     closed_prose = tuple(part.content for part in closed_response.parts if isinstance(part, TextPart))
     assert business_value in closed_prose[0]
-    assert selector_ref not in closed_prose[0]
+    assert selector_ref in closed_prose[0]
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
         "search_page_content",
         {"query": business_value},
@@ -3405,18 +3498,60 @@ def test_history_projection_preserves_ref_shaped_business_values(
     )
 
 
+def test_schema_owned_paths_remove_request_evidence_subject_without_touching_property() -> None:
+    spec = ToolSpec(
+        "request_evidence",
+        "Inspect one current subject.",
+        {
+            "type": "object",
+            "properties": {
+                "purpose": {"type": "string", "enum": ["visual_property"]},
+                "subject": {"type": "string", "enum": ["N1"]},
+                "property": {"type": "string", "maxLength": 32},
+            },
+            "required": ["purpose", "subject", "property"],
+            "additionalProperties": False,
+        },
+        ephemeral_argument_paths=(("subject",),),
+    )
+    call = ToolCallPart(
+        "request_evidence",
+        {"purpose": "visual_property", "subject": "N1", "property": "R5"},
+        "call:evidence",
+    )
+    paths = dict(pydantic_bridge._argument_paths_by_call((call,), (spec,)))
+    assert "ephemeral_argument_paths" not in to_json_compatible(spec)
+    history = (
+        _history_response([call], paths),
+        ModelRequest(parts=[_history_return("request_evidence", {"status": "unknown"}, "call:evidence")]),
+    )
+
+    projected = pydantic_bridge._canonicalize_completed_history(history)
+    response = projected[0]
+    assert isinstance(response, ModelResponse)
+    assert tuple(part.args for part in response.parts if isinstance(part, ToolCallPart)) == (
+        {"purpose": "visual_property", "property": "R5"},
+    )
+    request = projected[1]
+    assert isinstance(request, ModelRequest)
+    returned = next(part for part in request.parts if isinstance(part, ToolReturnPart))
+    assert returned.metadata is None
+    assert pydantic_bridge._canonicalize_completed_history(projected) == projected
+
+
 def test_history_projection_locates_completion_by_exchange_not_reused_call_id() -> None:
     original = (
         ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "same-id")]),
         ModelRequest(parts=[ToolReturnPart("activate", {"status": "stable"}, "same-id")]),
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 ToolCallPart(
                     "type_text",
                     {"target": "E2", "text": "keep me"},
                     "same-id",
                 )
-            ]
+            ],
+            {"same-id": (("target",),)},
         ),
     )
 
@@ -3435,21 +3570,23 @@ def test_history_projection_locates_completion_by_exchange_not_reused_call_id() 
 
 def test_history_projection_structurally_degrounds_closed_json_string_arguments() -> None:
     original = (
-        ModelResponse(
-            parts=[
+        _history_response(
+            [
                 ToolCallPart(
                     "type_text",
                     '{"target":"E1","text":"E6"}',
                     "call:string-args",
                 )
-            ]
+            ],
+            {"call:string-args": (("target",),)},
         ),
         ModelRequest(
             parts=[
-                ToolReturnPart(
+                _history_return(
                     "type_text",
                     {"entered_text": "E6", "target_ref": "E1"},
                     "call:string-args",
+                    ephemeral_paths=(("target_ref",),),
                 )
             ]
         ),
@@ -3477,15 +3614,16 @@ def test_history_projection_conserves_pairs_and_semantics_while_degrounding_expi
         ref = f"E{index + 1}"
         messages.extend(
             (
-                ModelResponse(
-                    parts=[
+                _history_response(
+                    [
                         TextPart(f"Inspect result {index} at {ref}."),
                         ToolCallPart("activate", {"target": ref}, f"call:{index}"),
-                    ]
+                    ],
+                    {f"call:{index}": (("target",),)},
                 ),
                 ModelRequest(
                     parts=[
-                        ToolReturnPart(
+                        _history_return(
                             "activate",
                             {
                                 "label": f"Result {index}",
@@ -3494,6 +3632,7 @@ def test_history_projection_conserves_pairs_and_semantics_while_degrounding_expi
                                 "outcome": "stable",
                             },
                             f"call:{index}",
+                            ephemeral_paths=(("target_ref",), ("verbs",)),
                             metadata={
                                 "before_world": f"observation:{index}",
                                 "after_world": f"observation:{index + 1}",
@@ -4170,9 +4309,7 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
 def test_compaction_summary_preserves_ref_shaped_semantics_and_incremental_prefix() -> None:
     summary = ModelRequest(
         parts=[
-            SystemPromptPart(
-                "Summary of previous conversation:\n\n## Verified facts\n- Product code E23 is required."
-            )
+            SystemPromptPart("Summary of previous conversation:\n\n## Verified facts\n- Product code E23 is required.")
         ]
     )
 
@@ -4920,16 +5057,12 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
             for item in scripted.records[1].messages[0].parts[0].content
             if isinstance(item, str) and "action_selection_recovery" in item
         )
-        projected = json.loads(checkpoint_payload)["action_selection_recovery"][
-            "incomplete_reasoning_checkpoint"
-        ]
+        projected = json.loads(checkpoint_payload)["action_selection_recovery"]["incomplete_reasoning_checkpoint"]
         assert (
             pydantic_bridge._json_string_payload_bytes(projected)
             <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
         )
-        assert len(checkpoint_payload.encode("utf-8")) <= (
-            pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES
-        )
+        assert len(checkpoint_payload.encode("utf-8")) <= (pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES)
         assert "non-authoritative same-call reasoning" in checkpoint_payload
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
@@ -4974,9 +5107,7 @@ def test_reasoning_checkpoint_and_recovery_prompt_obey_the_wire_byte_contract(
         [],
         reasoning_checkpoint=projected,
     )[-1]
-    assert len(recovery_prompt.encode("utf-8")) <= (
-        pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES
-    )
+    assert len(recovery_prompt.encode("utf-8")) <= (pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES)
 
     original_bytes = pydantic_bridge._json_string_payload_bytes(normalized_reasoning)
     if original_bytes <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES:
@@ -5899,10 +6030,7 @@ def test_webarena_contradictory_final_response_becomes_recoverable_same_call_rej
         assert [attempt.phase for attempt in recovered.attempts] == ["deliberate"]
         recorded = normalize_recorded_provider_input(scripted.records[2])
         returns = tuple(
-            part
-            for message in recorded["messages"]
-            for part in message["parts"]
-            if part["part_kind"] == "tool-return"
+            part for message in recorded["messages"] for part in message["parts"] if part["part_kind"] == "tool-return"
         )
         assert len(returns) == 1
         assert returns[0]["tool_call_id"] == rejected.tool_call_id
