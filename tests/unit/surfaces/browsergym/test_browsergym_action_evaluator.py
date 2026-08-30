@@ -22,12 +22,12 @@ from affordance_runtime.surfaces.browsergym.semantics import MAX_SEMANTIC_TEXT
 from affordance_runtime.surfaces.browsergym.transition import BrowserGymStabilityStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
+    VALUE_TRUNCATED_STATE_KEY,
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,
     StateFact,
     WorldFusion,
-    VALUE_TRUNCATED_STATE_KEY,
 )
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     FakeBrowserGym,

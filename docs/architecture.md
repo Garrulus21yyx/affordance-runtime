@@ -50,6 +50,8 @@ TaskGoal
 + fresh World
 + current ToolCatalog
 + latest eight ref-free action -> committed outcome records
++ bounded current-World route-use summaries
++ completed SDK history with semantic values but no closed operational refs
 + Harness summary of stable completed outcomes/facts/failed strategies
 + active Monitor recovery facts and exact hard constraints
 -> one ActionPolicy call
@@ -220,6 +222,78 @@ through `TurnPacker`, DeliveryManifest, and Catalog. The focused delivery/plan/C
 complete fixed-environment suite reports `2123 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented
 repository-missing archived dashboard trace deselected. Task554 empirical closure remains open until a separately
 authorized fresh live run crosses both the prefix repair and the structured final-response path.
+
+### 2026-08-30 ten-case working-evidence convergence
+
+The frozen diagnostic sample at clean commit 74d52113 is recorded in
+[wave1-run2](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave1-run2/run.json) and
+[wave2](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave2/run.json). Six of ten cases reached
+native verified success; four did not. The failures and successful detours do not reduce to one ActionCandidate
+ordering defect:
+
+- Task545 and Task66 ended during fresh post-action capture with the same
+  browsergym semantic-conflicting-bid adapter failure. Commit 1bbd2a0c repairs that shared DOM-clickable/AX alias
+  identity owner; neither case has a post-repair live result yet.
+- Task553 succeeded, but a full JSON edit that the native evaluator ultimately accepted was repeatedly projected as
+  local-postcondition unsatisfied. The accessible target was a composite editor input proxy whose public value
+  exposed only the final 119--171 characters. Runtime had confused exact target echo with application-level text
+  effect and induced clear/retype recovery cycles.
+- Task214 timed out while repeatedly inspecting review pages whose numeric rating was not present in the compact
+  structural view. A visual-profile rerun at f2d4d015 succeeded, while a later rerun at bb53f818 timed out after
+  attempting a visual-property call with refs from an already completed read delivery. This is mixed perception/route
+  variance plus a real history/Catalog ref-visibility mismatch, not evidence that every such page requires vision.
+- Task425 selected a plausible bridge from model memory before verifying the task-defining comparison through the
+  requested source, then exhausted its route and ended on an invalid provider response. Runtime cannot safely choose
+  the entity, comparison, or source interpretation for ActionPolicy.
+- Tasks418, 321, and 343 succeeded with material detours. Their traces show completion uncertainty, repeated
+  inspection, and route switching rather than a missing executor primitive. Tasks435 and 598 are the relatively
+  direct success controls.
+
+The resulting positive contract is implemented by 4ec89550, 3630fac3, and a7cf4d95:
+
+1. Surface adapters must state value loss honestly. semantic.value.truncated=true is now a surface-neutral public
+   predicate. An exact fresh value with no incompleteness marker may prove text satisfaction; a truncated prefix may
+   not.
+2. Text entry separates mechanical effect from semantic acceptance. Exact complete echo proves SATISFIED; unequal
+   text echo remains UNKNOWN, because a normalizing field or composite editor may expose a different accessibility
+   value. A closed option domain still produces UNSATISFIED on a verified mismatch. Dispatch receipt, observed
+   change, local postcondition, and native task result remain four independent facts.
+3. PydanticAI history retains the semantic content and call/result identity of completed exchanges, but strips every
+   closed E/N/F/R handle. Only the single unresolved frontier remains exact. The immediate same-call ToolReturn and
+   its current DeliveryManifest may authorize its returned refs for the next ActionPolicy delivery; a later history
+   record cannot advertise an unusable ref. No ref Store or extended ref lifetime was added.
+4. The existing bounded AgentWorkspace.activities is now projected as current_activity only when its public World
+   digest equals the fresh World. It reports route family, attempt count, last information increment, and last
+   outcome. It contains no result body, task progress, ref, or semantic recommendation. ActionPolicy alone uses those
+   mechanical facts to leave an exhausted read/search/find route.
+5. Prompt v53 makes that same lifecycle explicit: consume a just-returned ref before another local tool; use
+   visual_property on current subjects, entity_discovery when the needed visible entity/property lacks a delivered
+   structural ref, and point_grounding only to make an identified control actionable. It also requires source-backed
+   verification for task-defining relations/comparisons and forbids reflexive retyping solely to force an exact
+   accessibility echo.
+
+The closed inference path is:
+
+    fresh Unified World + current ToolCatalog
+    + immediate same-call ToolReturn/DeliveryManifest
+    + ref-free recent trajectory
+    + fresh-World ActivitySummary projection
+    + semantic-only completed SDK history
+    + active mechanical recovery facts
+    -> one ActionPolicy
+    -> one current ToolCall
+    -> Runtime admission/binding/execution
+    -> receipt + fresh World + ActionOutcome
+    -> same-call ToolReturn
+
+This change does not add semantic sorting to ActionCandidates, a page/widget recognizer, a site/date/selector rule,
+always-on vision, Runtime answer rewriting, a second planner, or a second memory. Structural acquisition remains the
+cheap default; a configured visual provider is a typed open-world fallback when the current structural World lacks a
+task-relevant visible property. Route and completion judgment remain with the single ActionPolicy, while native
+evaluation remains the only terminal authority. Provider-free implementation gates pass; the ten-case cohort is not
+re-scored or declared closed without a separately authorized live rerun. The fixed BrowserGym Python gate reports
+2172 passed, 19 skipped, 1 deselected, and 1 warning; the sole deselection is the repository-missing archived
+dashboard trace. Ruff and diff checks pass.
 
 ### 2026-08-30 held-out response/protocol/semantic convergence
 

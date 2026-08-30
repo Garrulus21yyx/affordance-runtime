@@ -37,11 +37,11 @@ from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, A
 from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
-from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteFragment,
     DeliveryObligationKind,
 )
+from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore

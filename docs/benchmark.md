@@ -157,6 +157,61 @@ single unavailable witness explicitly deselected, the formal gate reports
 this run without threshold changes. A new live Task554 run remains separately authorized work; run10 did not exercise
 the structured final-response call and does not close either Task554 or the broader W2 cohort.
 
+### 2026-08-30 diagnostic-ten failure and efficiency distribution
+
+The user-authorized frozen diagnostic sample ran at clean commit 74d52113, seed 7, with DeepSeek v4 Flash. The first
+launch under wave1 failed all five cases before any model call because runtime admission incorrectly treated the
+default W1/W2 list as the entire supported case set; those artifacts are environment diagnostics and are not included
+below. The repaired, typed admission runs are
+[wave1-run2](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave1-run2/run.json) and
+[wave2](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave2/run.json).
+
+| Task | Formal result | Policy calls / executions | Evidence-backed primary cause |
+|---|---:|---:|---|
+| 418 | verified success | 40 / 8 | The requested status was saved, but ActionPolicy repeatedly re-read and re-verified fresh success evidence before finalizing. |
+| 435 | verified success | 7 / 3 | Direct success control; no recovery call. |
+| 545 | blocked | 14 / 7 | Fresh post-action capture failed with browsergym semantic-conflicting-bid. |
+| 553 | verified success | 77 / 27 | The native-accepted JSON edit was exposed through a composite input proxy and falsely hard-projected as an unsatisfied exact value, causing clear/retype cycles. |
+| 598 | verified success | 13 / 8 | Relatively direct success control; no recovery call. |
+| 321 | verified success | 75 / 16 | Repeated order-page inspection and route changes; no missing executor operation or terminal contract failure. |
+| 214 | case timeout | 54 / 12 | Numeric review ratings were not available in the initial compact structural view; the policy repeatedly read pages instead of completing a structural/visual evidence route. |
+| 66 | blocked | 23 / 11 | The same browsergym semantic-conflicting-bid fresh-capture failure as Task545. |
+| 343 | verified success | 20 / 7 | Autocomplete/filter routing detour before reaching the requested issue list. |
+| 425 | invalid response | 73 / 18 | ActionPolicy assumed a plausible bridge before verifying the task-defining comparison through the requested wiki source, exhausted the wrong route, then ended on provider output failure. |
+
+The sample is therefore 6/10 native success. It also shows why pass rate alone understates the problem: four of the six
+successes used 20--77 policy calls. These are not ten variants of dynamic tool injection or candidate sorting. The
+causal distribution is:
+
+- two shared SurfaceAdapter identity failures (545/66);
+- one false hard ActionOutcome on a composite text surface (553);
+- one unstable perception/ref-lifecycle route (214);
+- one semantic source/entity route failure followed by provider output failure (425); and
+- successful but inefficient completion/route judgment (418/321/343), with 435/598 as lower-cost controls.
+
+Commit 1bbd2a0c fixes the shared AX/DOM alias owner without task labels. Commits 4ec89550 and 3630fac3 close the
+working-evidence chain generically: completed history is semantic-only and ref-free, the single unresolved provider
+frontier remains exact, current-World ActivitySummary facts reach the sole ActionPolicy, adapter truncation is an
+explicit public fact, and an unequal text echo cannot be promoted to a hard application failure. Prompt v53 tells the
+same ActionPolicy to consume immediate ToolReturn refs before another local tool, select structural versus visual
+evidence by the unresolved property, verify task-defining comparisons from the requested source, and avoid retyping
+only to force an accessibility-value echo. Runtime still does not rank business candidates or rewrite answers.
+
+Task214 has two important post-sample witnesses. The visual-profile
+[f2d4d015 rerun](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/revalidation-f2d4d015-task-214/run.json)
+reached native verified success in 53 policy calls and 15 executions. The later
+[bb53f818 rerun](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/revalidation-bb53f818-task-214/run.json)
+timed out after 56 calls; it attempted visual_property with refs from an already completed read delivery and received
+typed zero-dispatch rejection. Together they show that the page is solvable and that vision is selective fallback,
+not that vision is mandatory; they also falsify a reliability claim for the old ref/history contract. The new
+history/ref and activity changes have provider-free gates but no authorized live rescore. Tasks545/66 likewise have
+no post-alias-fix live result. The diagnostic cohort therefore remains empirically open.
+
+The fixed BrowserGym Python provider-free gate reports 2172 passed, 19 skipped, 1 deselected, and 1 warning in
+118.55 seconds. The sole deselection is the documented repository-missing archived dashboard trace, which fails
+before product code. Ruff with cache disabled and the diff check pass. No live case was run for the new
+working-evidence/ref contract.
+
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
