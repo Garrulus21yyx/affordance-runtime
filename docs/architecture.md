@@ -344,6 +344,65 @@ repository-missing archived dashboard trace; it fails before product code. Full 
 `git diff --check` pass. This verifies the provider-free owner algebra and request-profile wiring, not live policy
 quality, Task0/Task21 completion, or aggregate efficiency.
 
+### 2026-08-30 perception-result and representation convergence — provider-free verified, live-open
+
+The post-diagnostic repair keeps the same single inference/control chain. It adds no perception ledger, progress
+status, reviewer, StrategyRevision call, or second planner. `RequestObservation` already had one exact typed
+`ObservationQueryOutcome` and one same-call ToolReturn; the missing conversion was from that outcome into the existing
+`ObservationDeliveryStore → EpisodeMonitor` novelty algebra. The Store now resolves only public subjects, facts,
+and executable routes that actually exist in the committed after-World and retains their bounded ref-free digests.
+`OBSERVED|PARTIAL` is `NEW_INFORMATION` only when such information was not already current or delivered.
+`UNKNOWN|FAILED` is `NO_USABLE_INFORMATION`: the exact reason remains in ToolReturn as negative route evidence,
+never as a task answer.
+The first result is available to the ActionPolicy; a second consecutive no-usable perception on the unchanged World
+opens the existing `control_stall` epoch and therefore the existing deliberate lease. Only a real new public subject,
+fact, or executable route closes a local perception recovery. That epoch carries the proven failed
+observation-attempt signature; if the Policy selects it again, CoreLoop returns `dispatch=not_sent` before activating
+the perception provider.
+
+This does not make Monitor a semantic judge. Current observation lineage already requires returned input locators,
+subject IDs, evidence refs, frame currentness, and Fusion attachment to match the admitted request/result. It cannot
+decide that a current navigation link is the wrong *business* subject when ActionPolicy itself requested that link;
+that would require Runtime to understand the task predicate. The latest ToolReturn, fresh target role/label/state,
+and deliberate ActionPolicy remain responsible for that route correction. The repair therefore closes false
+mechanical progress without claiming that `status=observed` proves task relevance.
+
+BrowserGym's generic physical capture previously classified only background color, while model projection removed
+all `appearance.*` state. The Surface owner now projects bounded computed foreground/background color family and tone
+for CSS/SVG appearance. Inherited foregrounds and transparent backgrounds are suppressed, so ordinary page text adds
+no state; only a changed foreground or painted background reaches Unified World. The model boundary admits exactly
+`foreground|background × color_family|tone` and continues to omit the ambiguous legacy `appearance.color_family`.
+A direct Chromium probe distinguishes orange `yellow/mid`, light gray `gray/light`, and dark gray `gray/dark`. There
+is no rating counter, star rule, selector, site branch, or visual-provider call. No overlay extraction branch was
+added: the Task343 witness showed no actual menu/listbox/overlay after its text entry, so an overlay-specific repair
+would be unsupported symptom logic.
+
+ActionEffect now also conserves one exact positive fact on a large partial page. When the current target's structural
+`value` is present, current, conflict-free, and itself untruncated, equality with the requested text/option proves
+`SATISFIED` even if unrelated page content made the whole source `TRUNCATED`. A mismatch on that incomplete source
+remains `UNKNOWN`; native TaskEvaluator remains the only completion authority. This prevents a successful exact text
+entry from being reported as failure without weakening negative evidence.
+
+Pre-operation length recovery now projects required fields recursively over the complete Catalog schema subset:
+object, array, `oneOf`, and `anyOf`. Every projected schema is revalidated by the same Catalog validator and remains a
+sublanguage of the original. A PydanticAI integration witness truncates a dynamically compiled multi-purpose
+`request_evidence` call, offers only that same operation on the physical continuation, validates its discriminated
+`oneOf`, and resolves the normal `RequestObservation`; no internal error or alternate resolver is involved.
+
+No additional ActionPolicy prompt was added. Prompt v54 already asks the sole ActionPolicy to test the unsupported
+output, existing exact support, open coverage, and materially new route before read/navigation/submission/abort. The
+existing bounded evidence-review lease covers a closed collection read, and an active Monitor epoch keeps the same
+ActionPolicy deliberate. The repair supplies truthful inputs to those mechanisms instead of duplicating them.
+
+At code/test SHA `d03faab1`, the cross-owner focused gate reports `316 passed, 3 skipped` in 9.81 seconds. The fixed
+BrowserGym-interpreter repository gate, with pytest temporary files on `/dev/shm`, reports
+`2232 passed, 19 skipped, 1 deselected, 1 warning` in 114.86 seconds; the sole deselection is the documented
+repository-missing archived dashboard trace. A preliminary run on the host `/tmp` reported three old benchmark-runner
+wall-clock failures because even its normal durable trace path exceeded those tests' 150 ms bound; the same three
+tests pass on the isolated temporary filesystem. Full Ruff without cache and `git diff --check` pass. These are
+provider-free contract results. Task214/343/418/425 and the diagnostic-ten efficiency distribution remain live-open
+until a separately authorized rerun; no success or efficiency claim is inferred from these gates.
+
 ### 2026-08-30 held-out response/protocol/semantic convergence
 
 The sequential W1b Task0/7/21 failures do not share one candidate-ranking defect. They expose three different owner

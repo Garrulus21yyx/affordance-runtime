@@ -295,6 +295,44 @@ reviewer-name rule, fuzzy Runtime record merger, larger progress store, or secon
 Semantic accuracy and reasoning-token efficiency remain open for held-out comparison or a stronger ActionPolicy
 profile; they are not inferred fixed from the provider-free gate.
 
+### 2026-08-30 perception-result and representation repair — no live rescore
+
+The follow-up diagnosis separates four generic contract gaps from model-owned route semantics:
+
+- Task418's typed `target_not_visible` / other unknown perception outcomes were exact ToolReturns but absent from the
+  existing novelty reducer. They now produce `NO_USABLE_INFORMATION`; one result remains useful negative route
+  evidence, while two consecutive no-usable perception attempts open the normal Monitor epoch and the same
+  ActionPolicy's deliberate mode. The exact proven-failed request is then rejected before another provider
+  activation. An observed public subject, fact, or executable route is positive novelty only when it was absent from
+  the before-World and earlier deliveries. No result body or query prose is stored in Monitor.
+- Task214's structural star glyphs had computed foreground differences, but BrowserGym captured only backgrounds and
+  the model projection removed all appearance state. The generic Surface path now exposes only non-inherited
+  foreground and painted-background family/tone. It does not count stars or interpret ratings. A visual result is
+  mechanically informative only when its exact public after-World subject, fact, or executable route resolves; task
+  relevance and a mistakenly chosen current subject remain ActionPolicy judgments.
+- Task343's accepted textbox value could not prove its positive local effect because unrelated truncation made the
+  whole large source incomplete. Exact current, conflict-free, untruncated target equality now proves
+  `SATISFIED`; incomplete-source inequality remains `UNKNOWN`. Its historical route detour is not relabeled as an
+  overlay-adapter defect because the captured witness contained no revealed overlay.
+- Task425's final length-truncated `request_evidence` selected a legal operation whose dynamic schema used top-level
+  `oneOf`; the required-only continuation handled only a flat object and raised internally. Required projection now
+  recursively preserves object/array/`oneOf`/`anyOf`, revalidates the result, and completes the same selected tool.
+
+The convergence decision is deliberately narrow. Existing prompt v54 and `ActionPolicyReasoningPolicy` already own
+the material-new-route / evidence-sufficient / route-exhausted audit through one bounded closed-collection lease and
+active-recovery deliberate calls. No new prompt examples, `current_activity`, retrieval ledger, semantic Monitor,
+rating/overlay parser, Runtime answer rule, or second LLM role was added. The exact context remains fresh World +
+latest ToolReturn + native history/Harness summary + ref-free recent outcomes + active Monitor facts.
+
+At code/test SHA `d03faab1`, the affected owner/consumer gate reports `316 passed, 3 skipped`. The fixed-interpreter
+full repository gate, with pytest temporary files on `/dev/shm`, reports
+`2232 passed, 19 skipped, 1 deselected, 1 warning` in 114.86 seconds; the sole deselection is the previously documented
+missing archived dashboard trace, before product code. A preliminary host-`/tmp` run had three wall-clock-only
+benchmark-runner failures because normal durable trace I/O itself exceeded those tests' 150 ms threshold; the same
+three tests pass on the isolated temporary filesystem. Full Ruff without cache and `git diff --check` pass. No live
+provider or benchmark case was run for this repair, so the frozen diagnostic-ten result remains 6/10 and
+Task214/343/418/425 remain empirical acceptance gates rather than silently reclassified successes.
+
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
