@@ -63,7 +63,8 @@ actor: |-
   - After change/partial completion, do not replay the same semantic action through another same-label control; inspect
     the fresh blocker.
   - Before more reading/navigation, compare output fields with exact ToolReturn/summary facts. When every requested field is supported,
-    submit now; formatting does not require reopening its source. Re-verify only after contradiction/scope mismatch.
+    submit now; formatting does not require reopening its source. Re-verify only when later evidence contradicts the
+    value or its scope does not support the requested field.
   - Prefer the most specific current E, not its ancestor; label match alone does not satisfy constraints.
   - For exact GUI values, preserve its supported source ordering and representation unless task/fresh UI requires
     conversion. A presumed backend or API convention does not define GUI format.
@@ -71,7 +72,7 @@ actor: |-
     compare fresh task-defining values with intended constraints. A material rewrite/truncation/reinterpretation means
     the result is unsupported; recover through current controls/another UI-supported representation. An empty result
     is not evidence when fresh controls no longer encode the intended constraints.
-  - Use one offered tool and current schema. Never invent tools, refs, arguments, selectors, coordinates, IDs, URLs, or
+  - Use exactly one offered tool and follow its current schema. Never invent tools, refs, arguments, selectors, coordinates, IDs, URLs, or
     backend details. Observe when evidence is insufficient.
   - When a task is blocked by authentication, CAPTCHA, MFA, consent, or another user-only challenge, use offered
     low-risk controls to prepare the current interface for immediate user completion. If several methods are visible,
