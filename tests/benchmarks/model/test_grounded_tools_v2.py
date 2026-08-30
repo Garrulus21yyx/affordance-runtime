@@ -108,6 +108,11 @@ from affordance_runtime.task import (
     TaskGoal,
 )
 from affordance_runtime.world import CoverageState, ObservationSourceProfile, SemanticTarget, StateFact
+from affordance_runtime.world.finalization import (
+    MAX_FINAL_RESPONSE_CHARS,
+    FinalResponsePayloadEncoding,
+    FinalResponseToolContract,
+)
 from tests.support.legacy_compact_json_decision_port import (
     CompactJsonDecisionPort,
     GroundedToolCommandPayload,
@@ -1492,6 +1497,69 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
         "artifact",
         "public_intent",
     }
+
+
+@pytest.mark.parametrize(
+    "payload_schema",
+    (
+        {"type": "object", "$ref": "#/missing"},
+        {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "items": {"type": "string", "maxLength": 8}}
+            },
+            "required": ["items"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {
+                "value": {"type": "string", "maxLength": MAX_FINAL_RESPONSE_CHARS}
+            },
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    ),
+)
+def test_final_response_codec_contract_rejects_invalid_or_unbounded_schema_at_its_owner(
+    payload_schema,
+) -> None:
+    with pytest.raises(ValueError):
+        FinalResponseToolContract(FinalResponsePayloadEncoding.JSON, payload_schema)
+
+
+def test_webarena_final_response_catalog_and_binding_share_one_bounded_payload_algebra() -> None:
+    pytest.importorskip("webarena_verified")
+    codec = WebArenaVerifiedFinalResponseCodec()
+    context = replace(_context(), final_response_contract=codec.model_tool_contract)
+    catalog = _compile_catalog(context)
+
+    valid_boundary = {
+        "task_type": "RETRIEVE",
+        "status": "SUCCESS",
+        "retrieved_data": [
+            {f"field_{field}": "v" * 128 for field in range(6)}
+            for _record in range(16)
+        ],
+        "error_details": "e" * 512,
+    }
+    resolved = _resolve_catalog_call(
+        catalog,
+        ToolCall("submit_final_response", {"response": valid_boundary}),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(resolved.decision, FinalResponse)
+    assert len(resolved.decision.content) <= MAX_FINAL_RESPONSE_CHARS
+
+    invalid_oversized_field = dict(valid_boundary)
+    invalid_oversized_field["retrieved_data"] = ["x" * 513]
+    with pytest.raises(GroundedToolResolutionError) as exc_info:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("submit_final_response", {"response": invalid_oversized_field}),
+            expected_context_id=context.context_id,
+        )
+    assert exc_info.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:

@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from affordance_runtime.agent.context.action_candidate_projection import (
-    DeliveryObligationKind,
-)
 from affordance_runtime.agent.context.model_turn_delivery import (
     ModelTurnDelivery,
     build_model_turn_delivery,
@@ -127,34 +124,23 @@ class TurnPacker:
             ),
             None,
         )
-        required = dict(admitted_counts)
-        explicit_query = plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
-        if explicit_query is not None and explicit_query.remaining:
-            required[explicit_query.kind.value] = len(explicit_query.remaining)
-        else:
-            base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
-            if base is not None and base.remaining:
-                # BASE_ACTIONS is the bounded union of the ActionPager-owned
-                # current page and at most five task-ranked suggestions.  It
-                # is one observation capability set, not an optional prefix
-                # of the complete ActionSpace.
-                required[base.kind.value] = max(1, base.required_record_count)
-            interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
-            if interaction is not None and interaction.remaining:
-                required[interaction.kind.value] = max(
-                    1,
-                    interaction.required_record_count,
-                )
-            if not any(required.values()) and foreground is not None and foreground.remaining:
-                required[foreground.kind.value] = foreground.next_atomic_prefix_count(0)
+        # ActionDeliveryPlan owns the simultaneous hard minimum.  In
+        # particular, an explicit discovery result cannot erase an active
+        # form/dialog/search bundle that the same fresh World marks required.
+        required = {
+            item.kind.value: item.required_record_count
+            for item in plan.obligations
+        }
+        if not any(required.values()) and foreground is not None and foreground.remaining:
+            required[foreground.kind.value] = foreground.next_atomic_prefix_count(0)
 
         required_kinds = {kind for kind, count in required.items() if count}
         if required_kinds:
             for kind in required_kinds:
                 attempted_counts[kind] = required[kind]
-            # Explicit discovery and the ordinary bounded current page are
-            # both complete capability sets.  Ordinary turns additionally
-            # retain direct structural focus when it is not already present.
+            # The complete minimum is attempted atomically.  A request that
+            # cannot carry it fails at admission instead of silently dropping
+            # one owner-declared required obligation.
             accepted = self._attempt(
                 request,
                 binder=binder,

@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
+from affordance_runtime.actions.schema_validation import (
+    validate_parameter_schema_contract,
+    validate_value,
+)
 from affordance_runtime.execution.contracts import ActionResult
 from affordance_runtime.immutable import freeze_json, to_json_compatible
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.world.acquisition import ObservationAcquisition
 
 FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS = 700
-MAX_FINAL_RESPONSE_CHARS = 8_000
+MAX_PLAIN_TEXT_FINAL_RESPONSE_CHARS = 8_000
+MAX_FINAL_RESPONSE_CHARS = 128 * 1_024
 
 
 class FinalResponsePayloadEncoding(StrEnum):
@@ -31,7 +36,7 @@ class FinalResponseToolContract:
         default_factory=lambda: {
             "type": "string",
             "minLength": 1,
-            "maxLength": MAX_FINAL_RESPONSE_CHARS,
+            "maxLength": MAX_PLAIN_TEXT_FINAL_RESPONSE_CHARS,
         }
     )
     contract_id: str = ""
@@ -42,16 +47,32 @@ class FinalResponseToolContract:
         expected_type = "string" if encoding is FinalResponsePayloadEncoding.TEXT else "object"
         if not isinstance(schema, Mapping) or schema.get("type") != expected_type:
             raise ValueError("final response payload schema does not match its encoding")
+        object.__setattr__(self, "encoding", encoding)
+        validate_parameter_schema_contract(
+            {
+                "type": "object",
+                "properties": {self.argument_name: schema},
+                "required": [self.argument_name],
+                "additionalProperties": False,
+            }
+        )
+        maximum_chars = (
+            _maximum_text_chars(schema)
+            if encoding is FinalResponsePayloadEncoding.TEXT
+            else _maximum_json_chars(schema)
+        )
+        if maximum_chars > MAX_FINAL_RESPONSE_CHARS:
+            raise ValueError("final response payload schema exceeds its encoded response bound")
         expected_id = schema_digest(
             {
                 "encoding": encoding.value,
                 "argument_name": self.argument_name,
+                "max_encoded_chars": MAX_FINAL_RESPONSE_CHARS,
                 "payload_schema": schema,
             }
         )
         if self.contract_id and self.contract_id != expected_id:
             raise ValueError("final response tool contract identity is invalid")
-        object.__setattr__(self, "encoding", encoding)
         object.__setattr__(self, "payload_schema", schema)
         object.__setattr__(self, "contract_id", expected_id)
 
@@ -60,16 +81,98 @@ class FinalResponseToolContract:
         return "content" if self.encoding is FinalResponsePayloadEncoding.TEXT else "response"
 
     def encode(self, value: object) -> str:
+        validate_value(value, self.payload_schema, path=self.argument_name)
         if self.encoding is FinalResponsePayloadEncoding.TEXT:
-            if not isinstance(value, str):
-                raise TypeError("plain-text final response payload must be text")
-            return value
-        return json.dumps(
-            to_json_compatible(value),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
+            encoded = str(value)
+        else:
+            encoded = json.dumps(
+                to_json_compatible(value),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+        if not encoded.strip() or len(encoded) > MAX_FINAL_RESPONSE_CHARS:
+            raise ValueError("encoded final response is outside its bounded contract")
+        return encoded
+
+
+def _maximum_text_chars(schema: Mapping[str, object]) -> int:
+    maximum = schema.get("maxLength")
+    if type(maximum) is not int:
+        raise ValueError("plain-text final response schema must declare maxLength")
+    return maximum
+
+
+def _maximum_json_chars(schema: Mapping[str, object]) -> int:
+    """Conservatively bound compact JSON emitted for every schema-valid value."""
+
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    if isinstance(variants, Sequence) and not isinstance(variants, str | bytes):
+        return max(_maximum_json_chars(item) for item in variants)
+
+    schema_type = schema.get("type")
+    if "const" in schema:
+        return len(json.dumps(schema["const"], ensure_ascii=False, separators=(",", ":")))
+    enum = schema.get("enum")
+    if isinstance(enum, Sequence) and not isinstance(enum, str | bytes):
+        return max(len(json.dumps(item, ensure_ascii=False, separators=(",", ":"))) for item in enum)
+    if schema_type == "null":
+        return 4
+    if schema_type == "boolean":
+        return 5
+    if schema_type == "string":
+        maximum = schema.get("maxLength")
+        if type(maximum) is not int:
+            raise ValueError("structured final response strings must declare maxLength")
+        # A single JSON string code point can expand to a six-character
+        # control escape. Quotes are included separately.
+        return 2 + (6 * maximum)
+    if schema_type == "integer":
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if type(minimum) is not int or type(maximum) is not int:
+            raise ValueError("structured final response integers must be bounded")
+        return max(len(str(minimum)), len(str(maximum)))
+    if schema_type == "number":
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if not isinstance(minimum, int | float) or not isinstance(maximum, int | float):
+            raise ValueError("structured final response numbers must be bounded")
+        # Python JSON numbers are finite ints/floats at this boundary.  Float
+        # repr is bounded; endpoint digit lengths cover integral values.
+        return max(32, len(str(minimum)), len(str(maximum)))
+    if schema_type == "array":
+        maximum = schema.get("maxItems")
+        items = schema.get("items")
+        if type(maximum) is not int or not isinstance(items, Mapping):
+            raise ValueError("structured final response arrays must be bounded")
+        item_chars = _maximum_json_chars(items)
+        return 2 if maximum == 0 else 2 + (maximum * item_chars) + (maximum - 1)
+    if schema_type == "object":
+        properties = schema.get("properties", {})
+        additional = schema.get("additionalProperties", False)
+        if not isinstance(properties, Mapping):
+            raise ValueError("structured final response object schema is invalid")
+        fixed = [
+            len(json.dumps(name, ensure_ascii=False)) + 1 + _maximum_json_chars(child)
+            for name, child in properties.items()
+        ]
+        if isinstance(additional, Mapping):
+            maximum = schema.get("maxProperties")
+            property_names = schema.get("propertyNames")
+            if type(maximum) is not int or not isinstance(property_names, Mapping):
+                raise ValueError("structured final response dynamic objects must be bounded")
+            dynamic = _maximum_json_chars(property_names) + 1 + _maximum_json_chars(additional)
+            contributions = sorted((*fixed, *((dynamic,) * maximum)), reverse=True)[:maximum]
+        elif additional is False:
+            maximum = schema.get("maxProperties", len(fixed))
+            if type(maximum) is not int:
+                raise ValueError("structured final response object bound is invalid")
+            contributions = sorted(fixed, reverse=True)[:maximum]
+        else:
+            raise ValueError("structured final response object values must be bounded")
+        return 2 if not contributions else 2 + sum(contributions) + len(contributions) - 1
+    raise ValueError("structured final response schema uses an unsupported type")
 
 
 PLAIN_TEXT_FINAL_RESPONSE_TOOL_CONTRACT = FinalResponseToolContract()

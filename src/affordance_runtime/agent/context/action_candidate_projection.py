@@ -601,6 +601,7 @@ def build_action_delivery_plan(
         target_context.primary_region_key
         for target_id, target_context in region_index.target_contexts.items()
         if target_context.focused
+        and target_context.primary_region_key in non_repeated_region_keys
         and target_context.container_kind
         in {
             FunctionalContainerKind.DIALOG,
@@ -808,18 +809,24 @@ def build_action_delivery_plan(
     for inventory in inventory_specs:
         kind = DeliveryObligationKind(inventory.kind)
         required_record_count = 0
-        if kind is DeliveryObligationKind.BASE_ACTIONS:
-            required_record_count = (
-                _required_target_prefix_count(inventory.records, browser_profile_target_refs)
-                if active_interaction
-                else len(inventory.records)
-            )
+        if kind is DeliveryObligationKind.EXPLICIT_QUERY:
+            required_record_count = len(inventory.records)
+        elif kind is DeliveryObligationKind.BASE_ACTIONS:
+            if active_interaction:
+                required_record_count = _required_target_prefix_count(
+                    inventory.records,
+                    browser_profile_target_refs,
+                )
+            elif discovery is None:
+                required_record_count = len(inventory.records)
         elif kind is DeliveryObligationKind.INTERACTION:
-            required_record_count = (
-                _required_target_prefix_count(inventory.records, active_interaction_target_refs)
-                if active_interaction
-                else _next_target_atomic_prefix_count(inventory.records, 0)
-            )
+            if active_interaction:
+                required_record_count = _required_target_prefix_count(
+                    inventory.records,
+                    active_interaction_target_refs,
+                )
+            elif discovery is None:
+                required_record_count = _next_target_atomic_prefix_count(inventory.records, 0)
         obligations.append(
             DeliveryObligation(
                 kind,

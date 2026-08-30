@@ -33,6 +33,7 @@ from affordance_runtime.agent.context.model_turn_delivery import build_model_tur
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
 )
+from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
 from affordance_runtime.agent.context.world_transition import WorldTransitionProjector
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decisions import SearchPageContentResult
@@ -983,12 +984,21 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
             TaskEvaluationStatus.INCOMPLETE,
             "ongoing",
         )
-        return ContextBuilder().build(task, world, actions, evaluation), editor, submit, background_action
+        return (
+            ContextBuilder().build(task, world, actions, evaluation),
+            editor,
+            submit,
+            background_action,
+            task,
+            world,
+            actions,
+            evaluation,
+        )
 
     contexts = tuple(build_context(observation_id) for observation_id in ("obs:focused-form:1", "obs:focused-form:2"))
     assert contexts[0][0].context_id != contexts[1][0].context_id
 
-    for context, editor, submit, background_action in contexts:
+    for context, editor, submit, background_action, task, world, actions, evaluation in contexts:
         plan = context.action_delivery_plan
         assert plan is not None
         interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
@@ -1057,6 +1067,177 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
             expected_delivery_id=packed.delivery.delivery_id,
         )
         assert isinstance(resolved_submit.decision, SelectAction)
+
+        builder = ContextBuilder()
+        page = builder.page(actions, world, query=shared_label)
+        discovery = builder.discovery_result(
+            actions,
+            world,
+            page,
+            canonical_world=context.canonical_world,
+            grounding=context.grounding,
+        )
+        discovered = builder.build(
+            task,
+            world,
+            actions,
+            evaluation,
+            canonical_world=context.canonical_world,
+            action_discovery=discovery,
+        )
+        discovered_plan = discovered.action_delivery_plan
+        assert discovered_plan is not None
+        discovered_interaction = discovered_plan.obligation(DeliveryObligationKind.INTERACTION)
+        discovered_query = discovered_plan.obligation(DeliveryObligationKind.EXPLICIT_QUERY)
+        assert discovered_interaction is not None and discovered_query is not None
+        assert discovered_interaction.required_record_count == interaction.required_record_count
+        assert discovered_query.required_record_count == len(discovered_query.records)
+
+        discovered_required = {
+            item.kind.value: item.required_record_count
+            for item in discovered_plan.obligations
+        }
+        discovered_request = ModelDecisionRequest(
+            f"request:discovery:{discovered.context_id}",
+            discovered,
+        )
+        discovered_delivery = build_model_turn_delivery(
+            discovered,
+            include_images=False,
+            admitted_records=discovered_required,
+        )
+        discovered_catalog = compile_grounded_action_catalog(discovered, discovered_delivery)
+        discovered_envelope = wide.bind(
+            discovered_request,
+            discovered_delivery,
+            discovered_catalog,
+            identity=_IDENTITY,
+            call_profile=_PROFILE,
+            output_token_reserve=(
+                _PROFILE.max_output_tokens
+                + wide.request_budget.protocol_reserve_tokens
+                + wide.request_budget.safety_margin_tokens
+            ),
+        )
+        discovered_tokens = estimate_canonical_envelope(discovered_envelope).estimated_input_tokens
+        discovered_packed = _pack(
+            discovered_request,
+            binder=CanonicalProviderEnvelopeBinder(
+                request_budget=replace(ModelRequestBudget(), soft_target_tokens=discovered_tokens)
+            ),
+        )
+        discovered_counts = dict(discovered_packed.admitted_record_counts)
+        assert discovered_counts[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(
+            discovered_query.records
+        )
+        assert (
+            discovered_counts[DeliveryObligationKind.INTERACTION.value]
+            >= discovered_interaction.required_record_count
+        )
+        assert active_refs <= set(discovered_packed.delivery.manifest.executable_refs)
+
+
+def test_repeated_rows_inside_a_focused_form_do_not_become_an_unbounded_hard_bundle() -> None:
+    observation_id = "obs:focused-repeated-form"
+    editor = SemanticTarget(
+        "target:row-editor",
+        "textbox",
+        "Current row value",
+        {"focused": True, "value": "ready"},
+    )
+    row_actions = tuple(
+        SemanticTarget(f"target:row-action:{index}", "button", f"Apply row {index}")
+        for index in range(7)
+    )
+    row_ids = tuple(f"row:{index}" for index in range(len(row_actions)))
+    structure = (
+        ObservationStructureNode(
+            "root",
+            "document",
+            "Generated repeated editor",
+            child_structure_ids=("active-form",),
+        ),
+        ObservationStructureNode(
+            "active-form",
+            "form",
+            "Current batch",
+            parent_structure_id="root",
+            child_structure_ids=row_ids,
+        ),
+        *(
+            ObservationStructureNode(
+                row_id,
+                "listitem",
+                f"Row {index}",
+                parent_structure_id="active-form",
+                child_structure_ids=(
+                    ("row-editor", f"row-action:{index}")
+                    if index == 0
+                    else (f"row-action:{index}",)
+                ),
+            )
+            for index, row_id in enumerate(row_ids)
+        ),
+        ObservationStructureNode(
+            "row-editor",
+            "textbox",
+            editor.label,
+            {"focused": True, "value": "ready"},
+            parent_structure_id=row_ids[0],
+            semantic_target_id=editor.target_id,
+        ),
+        *(
+            ObservationStructureNode(
+                f"row-action:{index}",
+                "button",
+                target.label,
+                parent_structure_id=row_ids[index],
+                semantic_target_id=target.target_id,
+            )
+            for index, target in enumerate(row_actions)
+        ),
+    )
+    source = SurfaceObservation(
+        observation_id,
+        "browser",
+        f"revision:{observation_id}",
+        ObservationSourceProfile.dom(),
+        (editor, *row_actions),
+        bindings=(
+            _text_binding(observation_id, editor.target_id),
+            *(_binding(observation_id, target.target_id) for target in row_actions),
+        ),
+        structure=structure,
+        structure_total_count=len(structure),
+    )
+    fused = WorldFusion().fuse((source,))
+    assert fused.observation is not None
+    world = fused.observation
+    task = TaskGoal(
+        "focused-repeated-form",
+        "Edit the current row and apply it",
+        allowed_effects=("external_ui_interaction", "query_changed"),
+        risk_profile=RiskProfile.LOW,
+    )
+    actions = ActionSpaceBuilder().build(task, world)
+    region_index = WorldDeliveryIndex.from_observation(world, actions.options)
+    editor_region = region_index.target_contexts[editor.target_id].primary_region_key
+    region = next(item for item in region_index.regions if item.key == editor_region)
+    assert len(region.repeated_item_roots) == len(row_actions)
+
+    context = ContextBuilder().build(
+        task,
+        world,
+        actions,
+        TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "ongoing"),
+        region_index=region_index,
+    )
+    interaction = context.action_delivery_plan.obligation(DeliveryObligationKind.INTERACTION)
+    assert interaction is not None
+    assert interaction.required_record_count == 1
+    assert interaction.required_record_count < len(row_actions)
+    packed = _pack(ModelDecisionRequest("request:focused-repeated-form", context))
+    assert context.grounding.target_refs[editor.target_id] in packed.delivery.manifest.executable_refs
 
 
 def test_every_delivery_prefix_projects_one_subject_per_target_with_exact_manifest_verbs() -> None:

@@ -581,22 +581,56 @@ class WebArenaVerifiedFinalResponseCodec:
                                 "type": "array",
                                 "items": {
                                     "anyOf": [
-                                        {"type": "string"},
-                                        {"type": "integer"},
-                                        {"type": "number"},
+                                        {"type": "string", "maxLength": 512},
+                                        {
+                                            "type": "integer",
+                                            "minimum": -1_000_000_000_000_000,
+                                            "maximum": 1_000_000_000_000_000,
+                                        },
+                                        {
+                                            "type": "number",
+                                            "minimum": -1_000_000_000_000_000,
+                                            "maximum": 1_000_000_000_000_000,
+                                        },
                                         {"type": "boolean"},
-                                        {"type": "object", "additionalProperties": True},
+                                        {
+                                            "type": "object",
+                                            "properties": {},
+                                            "additionalProperties": {
+                                                "anyOf": [
+                                                    {"type": "string", "maxLength": 128},
+                                                    {
+                                                        "type": "integer",
+                                                        "minimum": -1_000_000_000_000_000,
+                                                        "maximum": 1_000_000_000_000_000,
+                                                    },
+                                                    {
+                                                        "type": "number",
+                                                        "minimum": -1_000_000_000_000_000,
+                                                        "maximum": 1_000_000_000_000_000,
+                                                    },
+                                                    {"type": "boolean"},
+                                                    {"type": "null"},
+                                                ]
+                                            },
+                                            "maxProperties": 6,
+                                            "propertyNames": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 32,
+                                            },
+                                        },
                                         {"type": "null"},
                                     ]
                                 },
-                                "maxItems": 512,
+                                "maxItems": 16,
                             },
                             {"type": "null"},
                         ]
                     },
                     "error_details": {
                         "anyOf": [
-                            {"type": "string", "maxLength": 8_000},
+                            {"type": "string", "maxLength": 512},
                             {"type": "null"},
                         ]
                     },

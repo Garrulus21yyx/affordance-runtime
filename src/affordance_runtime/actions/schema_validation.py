@@ -18,7 +18,8 @@ _ADMISSION_PRIVATE_PATH_PARTS = _PRIVATE_PARAMETER_PARTS | frozenset(
 )
 _SCHEMA_TYPES = frozenset({"object", "array", "null", "string", "boolean", "integer", "number"})
 _SCHEMA_KEYS = frozenset({
-    "type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems",
+    "type", "properties", "required", "additionalProperties", "maxProperties", "propertyNames",
+    "items", "minItems", "maxItems",
     "enum", "const", "minimum", "maximum", "minLength", "maxLength", "pattern", "description",
     "oneOf", "anyOf",
 })
@@ -132,6 +133,8 @@ def _validate_object_schema(schema: Mapping[str, Any], path: str, depth: int) ->
     properties = schema.get("properties", {})
     required = schema.get("required", ())
     additional = schema.get("additionalProperties", False)
+    maximum = schema.get("maxProperties")
+    property_names = schema.get("propertyNames")
     if not isinstance(properties, Mapping):
         raise ValueError(f"{path} properties must be an object")
     if len(properties) > _MAX_PROPERTIES:
@@ -142,8 +145,23 @@ def _validate_object_schema(schema: Mapping[str, Any], path: str, depth: int) ->
         raise ValueError(f"{path} required must contain unique strings")
     if not set(required).issubset(properties):
         raise ValueError(f"{path} required must reference declared properties")
-    if not isinstance(additional, bool):
-        raise ValueError(f"{path} additionalProperties must be boolean")
+    if maximum is not None and (type(maximum) is not int or not 0 <= maximum <= _MAX_PROPERTIES):
+        raise ValueError(f"{path} maxProperties must close the bounded object domain")
+    if maximum is not None and len(required) > maximum:
+        raise ValueError(f"{path} maxProperties cannot exclude required properties")
+    if additional is True:
+        raise ValueError(f"{path} additionalProperties must have a bounded value schema")
+    if not isinstance(additional, bool | Mapping):
+        raise ValueError(f"{path} additionalProperties must be false or a bounded schema")
+    if isinstance(additional, Mapping):
+        if maximum is None or not isinstance(property_names, Mapping):
+            raise ValueError(f"{path} dynamic properties require maxProperties and propertyNames")
+        _validate_schema_node(additional, path=f"{path}.additionalProperties", root=False, depth=depth + 1)
+        _validate_schema_node(property_names, path=f"{path}.propertyNames", root=False, depth=depth + 1)
+        if property_names.get("type") != "string" or "maxLength" not in property_names:
+            raise ValueError(f"{path} propertyNames must bound dynamic key length")
+    elif property_names is not None:
+        raise ValueError(f"{path} propertyNames requires dynamic additionalProperties")
     for name, child in properties.items():
         if not isinstance(name, str) or not name or _private_name(name):
             raise ValueError(f"{path} contains a runtime-private parameter name: {name}")
@@ -151,7 +169,10 @@ def _validate_object_schema(schema: Mapping[str, Any], path: str, depth: int) ->
 
 
 def _validate_array_schema(schema: Mapping[str, Any], path: str, depth: int) -> None:
-    if any(key in schema for key in ("properties", "required", "additionalProperties")):
+    if any(
+        key in schema
+        for key in ("properties", "required", "additionalProperties", "maxProperties", "propertyNames")
+    ):
         raise ValueError(f"{path} array schema contains object fields")
     items = schema.get("items")
     minimum = schema.get("minItems", 0)
@@ -166,7 +187,19 @@ def _validate_array_schema(schema: Mapping[str, Any], path: str, depth: int) -> 
 
 
 def _validate_primitive_schema(schema: Mapping[str, Any], path: str) -> None:
-    if any(key in schema for key in ("properties", "required", "additionalProperties", "items", "minItems", "maxItems")):
+    if any(
+        key in schema
+        for key in (
+            "properties",
+            "required",
+            "additionalProperties",
+            "maxProperties",
+            "propertyNames",
+            "items",
+            "minItems",
+            "maxItems",
+        )
+    ):
         raise ValueError(f"{path} scalar schema contains container fields")
     enum = schema.get("enum")
     if enum is not None:
@@ -276,6 +309,8 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
     if expected == "object":
         if not isinstance(value, Mapping):
             raise ValueError(f"{path} must be an object")
+        if "maxProperties" in schema and len(value) > int(schema["maxProperties"]):
+            raise ValueError(f"{path} has too many properties")
         required = tuple(schema.get("required", ()))
         missing = [str(key) for key in required if key not in value]
         if missing:
@@ -284,11 +319,18 @@ def validate_value(value: Any, schema: Mapping[str, Any], *, path: str = "parame
         if not isinstance(properties, Mapping):
             raise ValueError(f"{path} properties schema is invalid")
         unknown = set(value) - set(properties)
-        if unknown and schema.get("additionalProperties", False) is not True:
+        additional = schema.get("additionalProperties", False)
+        if unknown and additional is False:
             raise ValueError(f"unknown semantic parameters: {', '.join(sorted(str(key) for key in unknown))}")
+        property_names = schema.get("propertyNames")
+        if property_names is not None:
+            for key in value:
+                validate_value(key, property_names, path=f"{path}.property_name")
         for key, item in value.items():
             if key in properties:
                 validate_value(item, properties[key], path=f"{path}.{key}")
+            elif isinstance(additional, Mapping):
+                validate_value(item, additional, path=f"{path}.{key}")
         return
     if expected == "string" and not isinstance(value, str):
         raise ValueError(f"{path} must be a string")
@@ -362,6 +404,8 @@ def _value_violation(
         return path, {"type": expected_type}, {"type": actual_type}
     if expected_type == "object":
         assert isinstance(value, Mapping)
+        if "maxProperties" in schema and len(value) > int(schema["maxProperties"]):
+            return path, {"maxProperties": schema["maxProperties"]}, {"too_many_properties": True}
         properties = schema.get("properties") or {}
         required = tuple(schema.get("required", ()))
         missing = next((str(key) for key in required if key not in value), None)
@@ -370,13 +414,24 @@ def _value_violation(
             return f"{path}.{missing}", dict(child), {"missing": True}
         if not isinstance(properties, Mapping):
             return path, {"type": "object"}, {"schema_invalid": True}
+        additional = schema.get("additionalProperties", False)
         unknown = next((str(key) for key in value if key not in properties), None)
-        if unknown is not None and schema.get("additionalProperties", False) is not True:
+        if unknown is not None and additional is False:
             safe_path = f"{path}.{unknown}" if not _private_name(unknown) else path
             return safe_path, {"declared_property": True}, {"unknown_property": True}
+        property_names = schema.get("propertyNames")
+        if isinstance(property_names, Mapping):
+            for key in value:
+                issue = _value_violation(key, property_names, f"{path}.property_name")
+                if issue is not None:
+                    return issue
         for key, item in value.items():
             if key in properties:
                 issue = _value_violation(item, properties[key], f"{path}.{key}")
+                if issue is not None:
+                    return issue
+            elif isinstance(additional, Mapping):
+                issue = _value_violation(item, additional, f"{path}.{key}")
                 if issue is not None:
                     return issue
         return None

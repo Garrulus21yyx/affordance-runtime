@@ -46,6 +46,30 @@ def test_finite_schema_ast_accepts_bounded_containers_scalars_and_discriminated_
     validate_value({"kind": "range", "value": 2.5}, schema)
 
 
+def test_finite_schema_ast_accepts_bounded_dynamic_object_keys_and_values() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "record": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {"type": "string", "maxLength": 8},
+                "maxProperties": 2,
+                "propertyNames": {"type": "string", "minLength": 1, "maxLength": 6},
+            }
+        },
+        "required": ["record"],
+        "additionalProperties": False,
+    }
+
+    validate_parameter_schema_contract(schema)
+    validate_value({"record": {"city": "Berlin", "code": "DE"}}, schema)
+    with pytest.raises(ValueError, match="too many properties"):
+        validate_value({"record": {"one": "1", "two": "2", "three": "3"}}, schema)
+    with pytest.raises(ValueError, match="maximum length"):
+        validate_value({"record": {"too_long": "value"}}, schema)
+
+
 @pytest.mark.parametrize(
     "schema",
     (
@@ -75,6 +99,16 @@ def test_finite_schema_ast_accepts_bounded_containers_scalars_and_discriminated_
             "type": "object",
             "properties": {"value": {"type": "number", "minimum": math.nan}},
             "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": True,
+        },
+        {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {"type": "string", "maxLength": 8},
         },
     ),
 )
