@@ -4582,7 +4582,7 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
     async def scenario() -> None:
         checkpoint = (
             "The complete positive set already supported by the current evidence must be preserved. "
-            + ("intermediate reasoning " * 300)
+            + ('intermediate "reasoning" \\ newline\n中 ' * 300)
             + "The next action should use the complete set without narrowing it."
         )
         truncated = ModelResponse(
@@ -4659,7 +4659,14 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
         projected = json.loads(checkpoint_payload)["action_selection_recovery"][
             "incomplete_reasoning_checkpoint"
         ]
-        assert len(projected) <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS
+        assert (
+            pydantic_bridge._json_string_payload_bytes(projected)
+            <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
+        )
+        assert len(checkpoint_payload.encode("utf-8")) <= (
+            pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES
+        )
+        assert "non-authoritative same-call reasoning" in checkpoint_payload
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
             {},
@@ -4670,6 +4677,63 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
         assert "action_selection_recovery" not in official_history
 
     asyncio.run(scenario())
+
+
+@given(
+    fragment=st.text(
+        alphabet=st.characters(blacklist_categories=("Cs",)),
+        min_size=0,
+        max_size=96,
+    ),
+    repetitions=st.integers(min_value=0, max_value=160),
+)
+@settings(max_examples=100, deadline=None)
+def test_reasoning_checkpoint_and_recovery_prompt_obey_the_wire_byte_contract(
+    fragment: str,
+    repetitions: int,
+) -> None:
+    reasoning = fragment * repetitions
+    normalized_reasoning = reasoning.strip()
+    messages = [
+        {
+            "kind": "response",
+            "finish_reason": "length",
+            "parts": [{"part_kind": "thinking", "content": reasoning}],
+        }
+    ]
+
+    projected = pydantic_bridge._truncated_reasoning_checkpoint(messages)
+    projected_bytes = pydantic_bridge._json_string_payload_bytes(projected)
+    assert projected_bytes <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
+
+    recovery_prompt = pydantic_bridge._pydantic_decision_recovery_prompt(
+        [],
+        reasoning_checkpoint=projected,
+    )[-1]
+    assert len(recovery_prompt.encode("utf-8")) <= (
+        pydantic_bridge._ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES
+    )
+
+    original_bytes = pydantic_bridge._json_string_payload_bytes(normalized_reasoning)
+    if original_bytes <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES:
+        assert projected == normalized_reasoning
+        return
+
+    marker = "\n[...truncated reasoning omitted...]\n"
+    tail_budget = (
+        pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
+        - pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES
+        - pydantic_bridge._json_string_payload_bytes(marker)
+    )
+    assert projected == (
+        pydantic_bridge._bounded_json_string_edge(
+            normalized_reasoning,
+            pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES,
+            suffix=False,
+        )
+        + marker
+        + pydantic_bridge._bounded_json_string_edge(normalized_reasoning, tail_budget, suffix=True)
+    )
 
 
 def test_length_recovery_preserves_the_single_current_operation_exposed_before_truncation() -> None:

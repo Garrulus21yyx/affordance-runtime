@@ -103,8 +103,9 @@ from affordance_runtime.world.public_refs import PublicRefCodec
 _MAX_PROVIDER_RETRIES = 1
 _ACTION_POLICY_TOOL_RETRY_BUDGET = 1
 _ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
-_ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS = 3_072
-_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS = 2_304
+_ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES = 3_072
+_ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES = 2_100
+_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES = 700
 _ACTION_POLICY_MAX_PROTOCOL_RETRIES = (
     _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
 )
@@ -3607,6 +3608,9 @@ def _pydantic_decision_recovery_prompt(
         {
             "action_selection_recovery": {
                 "cause": "previous response was truncated before one complete tool call",
+                "checkpoint_status": (
+                    "incomplete, non-authoritative same-call reasoning; verify against the same fresh context"
+                ),
                 "instruction": (
                     "Using the same fresh context and active control constraints, return exactly one complete "
                     "offered tool call now. Continue from the incomplete reasoning checkpoint instead of restarting "
@@ -3621,6 +3625,8 @@ def _pydantic_decision_recovery_prompt(
         ensure_ascii=False,
         separators=(",", ":"),
     )
+    if len(instruction.encode("utf-8")) > _ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES:
+        raise ValueError("action-selection recovery prompt exceeds its capacity reserve")
     if isinstance(prompt, list):
         return [*prompt, instruction]
     return [prompt, instruction]
@@ -3824,19 +3830,44 @@ def _truncated_reasoning_checkpoint(messages: list[dict[str, object]]) -> str:
         and part.get("part_kind") in {"thinking", "text"}
         and str(part.get("content") or "").strip()
     )
-    if len(reasoning) <= _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS:
+    if _json_string_payload_bytes(reasoning) <= _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES:
         return reasoning
     omission_marker = "\n[...truncated reasoning omitted...]\n"
-    tail_chars = (
-        _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS
-        - _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS
-        - len(omission_marker)
+    tail_json_bytes = (
+        _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
+        - _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES
+        - _json_string_payload_bytes(omission_marker)
     )
     return (
-        reasoning[:_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS]
+        _bounded_json_string_edge(
+            reasoning,
+            _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES,
+            suffix=False,
+        )
         + omission_marker
-        + reasoning[-tail_chars:]
+        + _bounded_json_string_edge(reasoning, tail_json_bytes, suffix=True)
     )
+
+
+def _bounded_json_string_edge(value: str, maximum_payload_bytes: int, *, suffix: bool) -> str:
+    """Return the longest prefix/suffix inside one compact-JSON string byte bound."""
+
+    if maximum_payload_bytes < 0:
+        raise ValueError("JSON string edge bound must be non-negative")
+    low, high = 0, len(value)
+    while low < high:
+        middle = (low + high + 1) // 2
+        candidate = value[-middle:] if suffix else value[:middle]
+        if _json_string_payload_bytes(candidate) <= maximum_payload_bytes:
+            low = middle
+        else:
+            high = middle - 1
+    return value[-low:] if suffix and low else value[:low]
+
+
+def _json_string_payload_bytes(value: str) -> int:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return len(encoded) - 2
 
 
 def _structured_output_failure_for_response(
