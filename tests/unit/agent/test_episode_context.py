@@ -9,7 +9,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
-from affordance_runtime.agent.context.contracts import AgentTurnView
+from affordance_runtime.agent.context.contracts import (
+    AgentTurnView,
+    history_operational_refs,
+    sanitize_history_arguments,
+    sanitize_history_prose,
+)
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
 )
@@ -184,7 +189,7 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
         "context:test",
         "count_children",
         {"containers": ("E1",), "evidence_ref": "F2"},
-        {"counts": {"E1": 2}, "source": "F2"},
+        {"counts": {"E1": 2}, "evidence_ref": "F2", "total": 2},
         "provider-call:refs",
     )
     result = StepResult(decision, world, world, _evaluation(world.observation_id), feedback="used E1 and F2")
@@ -194,6 +199,30 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
 
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
     assert "expired-ref" not in encoded
+
+
+def test_history_contract_distinguishes_typed_refs_from_ref_shaped_business_values() -> None:
+    value = {
+        "target": "E1",
+        "region_ref": "R4",
+        "text": "E6",
+        "query": "R2",
+        "label": "F3",
+    }
+
+    assert history_operational_refs(value, include_selectors=True) == frozenset({"E1", "R4"})
+    assert sanitize_history_arguments(value) == {
+        "text": "E6",
+        "query": "R2",
+        "label": "F3",
+    }
+    prose = sanitize_history_prose(
+        "Used E1 to enter business code E6; next query R2.",
+        expired_refs={"E1"},
+    )
+    assert "E1" not in prose
+    assert "E6" in prose
+    assert "R2" in prose
 
 
 def test_recent_trajectory_uses_the_same_model_state_allowlist_as_fresh_world() -> None:

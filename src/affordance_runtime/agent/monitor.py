@@ -12,7 +12,7 @@ from affordance_runtime.agent.attempt_signature import (
     public_attempt_signature,
     public_local_result_attempt_signature,
 )
-from affordance_runtime.agent.context.contracts import sanitize_history_value
+from affordance_runtime.agent.context.contracts import sanitize_history_arguments
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDelta,
     InformationDeltaKind,
@@ -1052,7 +1052,7 @@ def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:
 
 
 def _bounded_argument_summary(arguments: Mapping[str, object]) -> Mapping[str, object]:
-    public_arguments = sanitize_history_value(arguments)
+    public_arguments = sanitize_history_arguments(arguments)
     if not isinstance(public_arguments, Mapping):
         return {}
     summary: dict[str, object] = {}

@@ -17,6 +17,7 @@ pytest.importorskip("pydantic_ai")
 from pydantic_ai import DeferredToolRequests, ToolDefinition
 from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
@@ -41,7 +42,10 @@ from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteFragment,
     DeliveryObligationKind,
 )
-from affordance_runtime.agent.context.contracts import sanitize_history_value
+from affordance_runtime.agent.context.contracts import (
+    sanitize_history_arguments,
+    sanitize_history_value,
+)
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
 from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
@@ -751,12 +755,28 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
-        ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "call:checkpoint")]),
-        ModelRequest(parts=[ToolReturnPart("activate", {"status": "paused"}, "call:checkpoint")]),
+        ModelResponse(
+            parts=[ToolCallPart("type_text", {"target": "E1", "text": "E6"}, "call:checkpoint")]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "type_text",
+                    {
+                        "entered_text": "E6",
+                        "target_ref": "E1",
+                        "region_ref": "R2",
+                        "status": "paused",
+                    },
+                    "call:checkpoint",
+                )
+            ]
+        ),
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
     serialized = policy.export_checkpoint_history()
+    canonical_history = policy.port.message_history
 
     assert serialized["format"] == "pydantic-ai.messages.v1"
     assert serialized["active_task_identity"] == ["task:checkpoint", 3]
@@ -773,7 +793,19 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
         task_id="task:checkpoint",
         task_revision=3,
     )
-    assert restored.port.message_history == history
+    assert canonical_history != history
+    closed_call = canonical_history[1]
+    assert isinstance(closed_call, ModelResponse)
+    assert tuple(part.args for part in closed_call.parts if isinstance(part, ToolCallPart)) == ({"text": "E6"},)
+    closed_return = canonical_history[2]
+    assert isinstance(closed_return, ModelRequest)
+    assert tuple(part.content for part in closed_return.parts if isinstance(part, ToolReturnPart)) == (
+        {"entered_text": "E6", "status": "paused"},
+    )
+    assert "E1" not in json.dumps(serialized)
+    assert "R2" not in json.dumps(serialized)
+    assert "E6" in json.dumps(serialized)
+    assert restored.port.message_history == canonical_history
     assert restored.port.active_task_identity == ("task:checkpoint", 3)
 
     from affordance_runtime.immutable import freeze_json
@@ -785,7 +817,7 @@ def test_pydantic_ai_checkpoint_contains_only_official_message_history() -> None
         task_id="task:checkpoint",
         task_revision=3,
     )
-    assert restored_from_checkpoint.port.message_history == history
+    assert restored_from_checkpoint.port.message_history == canonical_history
     assert "strategy_revision" not in restored_from_checkpoint.export_checkpoint_history()
 
 
@@ -808,6 +840,7 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
         object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
 
         reference = await policy.persist_checkpoint_history()
+        canonical_history = policy.port.message_history
 
         assert reference["format"] == "pydantic-ai.step-persistence.v1"
         assert reference["conversation_id"] == "session:checkpoint"
@@ -815,7 +848,10 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
         snapshot = await store.latest_snapshot(run_id=reference["run_id"])
         assert snapshot is not None
         assert snapshot.state == "complete"
-        assert snapshot.messages == list(history)
+        assert canonical_history != history
+        assert ModelMessagesTypeAdapter.dump_json(snapshot.messages) == ModelMessagesTypeAdapter.dump_json(
+            list(canonical_history)
+        )
 
         restored = _policy(ScriptedModel(["first_gui_action"]).build())
         restarted_store = step_persistence.SqliteStepStore(database=database)
@@ -830,7 +866,7 @@ def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
             task_id="task:checkpoint",
             task_revision=3,
         )
-        assert restored.port.message_history == history
+        assert restored.port.message_history == canonical_history
 
         tampered = {**reference, "message_digest": "f" * 64}
         with pytest.raises(ValueError, match="digest"):
@@ -916,7 +952,10 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
         revised_revision=4,
     )
 
-    assert policy.port.message_history == history
+    assert policy.port.message_history != history
+    closed_call = policy.port.message_history[1]
+    assert isinstance(closed_call, ModelResponse)
+    assert tuple(part.args for part in closed_call.parts if isinstance(part, ToolCallPart)) == ({},)
     assert policy.export_checkpoint_history()["active_task_identity"] == [
         "task:checkpoint",
         4,
@@ -3017,7 +3056,7 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
         (part.tool_name, part.tool_call_id) for part in original_calls
     )
     assert tuple(part.args for part in projected_calls[:-1]) == tuple(
-        sanitize_history_value(part.args) for part in original_calls[:-1]
+        sanitize_history_arguments(part.args) for part in original_calls[:-1]
     )
     assert projected_calls[-1] == original_calls[-1]
     assert tuple(part.content for part in projected_returns) == tuple(
@@ -3094,7 +3133,7 @@ def test_history_projection_expires_only_closed_private_reasoning_with_public_co
         (part.tool_name, part.tool_call_id) for part in original_calls
     )
     assert tuple(part.args for part in projected_calls[:-1]) == tuple(
-        sanitize_history_value(part.args) for part in original_calls[:-1]
+        sanitize_history_arguments(part.args) for part in original_calls[:-1]
     )
     assert projected_calls[-1] == original_calls[-1]
     assert tuple(part.content for part in projected_returns) == tuple(
@@ -3291,6 +3330,107 @@ def test_history_projection_degrounds_closed_same_world_read_and_keeps_pending_c
         {"target": "E6"},
         "call:pending",
     )
+
+
+@given(
+    business_kind=st.sampled_from(("E", "N", "F", "R")),
+    business_index=st.integers(min_value=2, max_value=999),
+    selector_index=st.integers(min_value=1_000, max_value=1_999),
+)
+@settings(max_examples=24)
+def test_history_projection_preserves_ref_shaped_business_values(
+    business_kind: str,
+    business_index: int,
+    selector_index: int,
+) -> None:
+    business_value = f"{business_kind}{business_index}"
+    selector_ref = f"E{selector_index}"
+    original = (
+        ModelResponse(
+            parts=[
+                TextPart(f"Enter business code {business_value} into {selector_ref}."),
+                ToolCallPart(
+                    "type_text",
+                    {"target": selector_ref, "text": business_value},
+                    "call:closed",
+                ),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "type_text",
+                    {
+                        "entered_text": business_value,
+                        "status": "stable",
+                        "target_ref": selector_ref,
+                    },
+                    "call:closed",
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "search_page_content",
+                    {"query": business_value},
+                    "call:pending",
+                )
+            ]
+        ),
+    )
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=100_000,
+    )
+
+    closed_response = projected[0]
+    closed_return = projected[1]
+    assert isinstance(closed_response, ModelResponse)
+    assert isinstance(closed_return, ModelRequest)
+    assert tuple(part.args for part in closed_response.parts if isinstance(part, ToolCallPart)) == (
+        {"text": business_value},
+    )
+    assert tuple(part.content for part in closed_return.parts if isinstance(part, ToolReturnPart)) == (
+        {"entered_text": business_value, "status": "stable"},
+    )
+    closed_prose = tuple(part.content for part in closed_response.parts if isinstance(part, TextPart))
+    assert business_value in closed_prose[0]
+    assert selector_ref not in closed_prose[0]
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "search_page_content",
+        {"query": business_value},
+        "call:pending",
+    )
+
+
+def test_history_projection_locates_completion_by_exchange_not_reused_call_id() -> None:
+    original = (
+        ModelResponse(parts=[ToolCallPart("activate", {"target": "E1"}, "same-id")]),
+        ModelRequest(parts=[ToolReturnPart("activate", {"status": "stable"}, "same-id")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "type_text",
+                    {"target": "E2", "text": "keep me"},
+                    "same-id",
+                )
+            ]
+        ),
+    )
+
+    projected = pydantic_bridge._project_expired_history(
+        original,
+        max_estimated_tokens=100_000,
+    )
+
+    assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
+        "type_text",
+        {"target": "E2", "text": "keep me"},
+        "same-id",
+    )
+    assert projected[-1] == original[-1]
 
 
 @given(turns=st.integers(min_value=2, max_value=8))
@@ -3993,27 +4133,27 @@ def test_incremental_compaction_cutoff_preserves_every_completed_tool_pair() -> 
     canonical_envelope_module._project_pydantic_history(run.messages)
 
 
-def test_compaction_summary_degrounding_preserves_incremental_harness_prefix() -> None:
+def test_compaction_summary_preserves_ref_shaped_semantics_and_incremental_prefix() -> None:
     summary = ModelRequest(
         parts=[
             SystemPromptPart(
-                "Summary of previous conversation:\n\n## Verified facts\n- E23 was a call-local editor ref."
+                "Summary of previous conversation:\n\n## Verified facts\n- Product code E23 is required."
             )
         ]
     )
 
-    projected = pydantic_bridge._deground_compaction_summaries((summary,))
+    projected = pydantic_bridge._canonicalize_compaction_summaries((summary,))
 
     assert isinstance(projected[0], ModelRequest)
     part = projected[0].parts[0]
     assert isinstance(part, SystemPromptPart)
     assert part.content.startswith("Summary of previous conversation:\n\n")
-    assert "E23" not in part.content
+    assert "Product code E23 is required." in part.content
     legacy = replace(
         summary,
         parts=[SystemPromptPart("Summary of previous conversation: ## Verified facts - stable value")],
     )
-    migrated = pydantic_bridge._deground_compaction_summaries((legacy,))
+    migrated = pydantic_bridge._canonicalize_compaction_summaries((legacy,))
     assert isinstance(migrated[0], ModelRequest)
     migrated_part = migrated[0].parts[0]
     assert isinstance(migrated_part, SystemPromptPart)

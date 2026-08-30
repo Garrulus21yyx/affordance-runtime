@@ -11,7 +11,6 @@ import asyncio
 import hashlib
 import json
 import os
-import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -22,7 +21,12 @@ from uuid import uuid4
 from affordance_runtime.actions.schema_validation import validate_value_issue
 from affordance_runtime.agent.context.compact_world_renderer import DeliveryManifest
 from affordance_runtime.agent.context.context import AgentContext
-from affordance_runtime.agent.context.contracts import sanitize_history_value
+from affordance_runtime.agent.context.contracts import (
+    history_operational_refs,
+    sanitize_history_arguments,
+    sanitize_history_prose,
+    sanitize_history_value,
+)
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
     ModelFailureKind,
@@ -98,7 +102,6 @@ from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.model.providers.capabilities import model_supports_multimodal
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
-from affordance_runtime.world.public_refs import PublicRefCodec
 
 _MAX_PROVIDER_RETRIES = 1
 _ACTION_POLICY_TOOL_RETRY_BUDGET = 1
@@ -114,7 +117,6 @@ _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
 _HISTORY_COMPACTION_SCHEMA = "pydantic-ai-harness.summarizing-compaction.v1"
 _HISTORY_COMPACTION_SUMMARY_PREFIX = "Summary of previous conversation:\n\n"
-_HISTORY_GENERATION_REF = re.compile(rf"\b{PublicRefCodec.token_pattern()}\b")
 _HISTORY_COMPACTION_PRESSURE_RATIO = 0.8
 _HISTORY_ECONOMY_PRESSURE_RATIO = 0.5
 _HISTORY_COMPACTION_TARGET_RATIO = 0.3
@@ -355,7 +357,9 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(
             self,
             "message_history",
-            (*history, ModelRequest(parts=list(returns))),
+            _canonicalize_completed_history(
+                (*history, ModelRequest(parts=list(returns))),
+            ),
         )
 
     def export_checkpoint_history(self) -> Mapping[str, object]:
@@ -363,9 +367,12 @@ class PydanticAIGroundedDecisionPort:
 
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-        if _pending_tool_parts_from_history(self.message_history):
+        history = _canonicalize_completed_history(self.message_history)
+        if _pending_tool_parts_from_history(history):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
-        messages = json.loads(ModelMessagesTypeAdapter.dump_json(list(self.message_history)))
+        if history != self.message_history:
+            object.__setattr__(self, "message_history", history)
+        messages = json.loads(ModelMessagesTypeAdapter.dump_json(list(history)))
         if not isinstance(messages, list):
             raise TypeError("PydanticAI checkpoint history must serialize as a message list")
         identity = self.active_task_identity
@@ -482,7 +489,9 @@ class PydanticAIGroundedDecisionPort:
         mutable_messages = to_json_compatible(messages)
         if not isinstance(mutable_messages, list):
             raise TypeError("PydanticAI checkpoint history messages are invalid")
-        restored = tuple(ModelMessagesTypeAdapter.validate_python(mutable_messages))
+        restored = _canonicalize_completed_history(
+            tuple(ModelMessagesTypeAdapter.validate_python(mutable_messages))
+        )
         if _pending_tool_parts_from_history(restored):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
         object.__setattr__(self, "message_history", restored)
@@ -539,7 +548,7 @@ class PydanticAIGroundedDecisionPort:
         encoded = ModelMessagesTypeAdapter.dump_json(snapshot.messages)
         if hashlib.sha256(encoded).hexdigest() != expected_digest:
             raise ValueError("PydanticAI settled checkpoint history digest is invalid")
-        restored = tuple(snapshot.messages)
+        restored = _canonicalize_completed_history(tuple(snapshot.messages))
         if _pending_tool_parts_from_history(restored):
             raise ValueError("PydanticAI checkpoint history contains an unclosed tool call")
         object.__setattr__(self, "message_history", restored)
@@ -566,8 +575,11 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("model history contains an unclosed tool call")
         from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-        encoded = ModelMessagesTypeAdapter.dump_json(list(self.message_history))
+        canonical_history = _canonicalize_completed_history(self.message_history)
+        encoded = ModelMessagesTypeAdapter.dump_json(list(canonical_history))
         ModelMessagesTypeAdapter.validate_json(encoded)
+        if canonical_history != self.message_history:
+            object.__setattr__(self, "message_history", canonical_history)
         object.__setattr__(
             self,
             "active_task_identity",
@@ -2563,8 +2575,7 @@ def _closed_history_after_failed_output(
     ):
         raise ValueError("failed PydanticAI run did not close every deferred tool proposal")
     candidate = (*prior_history, *closing_requests)
-    _project_pydantic_history(candidate)
-    return candidate
+    return _canonicalize_completed_history(candidate)
 
 
 def _pending_tool_parts_from_history(messages: tuple[object, ...]) -> tuple[object, ...]:
@@ -2792,7 +2803,14 @@ def _project_expired_history(
 def _deground_completed_tool_exchanges(
     messages: tuple[object, ...],
 ) -> tuple[object, ...]:
-    """Remove closed operational handles without changing call/result pairing."""
+    """Remove closed operational handles without changing semantic values.
+
+    Completion is located by the actual response/return objects in the legal
+    message sequence.  Provider call IDs are pair identity within one exchange,
+    not globally unique episode identifiers.  Ref-shaped business strings are
+    preserved unless an explicit protocol field proves that exact value was an
+    operational handle in this completed exchange.
+    """
 
     if not messages:
         return messages
@@ -2805,36 +2823,40 @@ def _deground_completed_tool_exchanges(
         ToolReturnPart,
     )
 
-    closed_call_ids: set[str] = set()
-    closed_return_ids: set[str] = set()
-    for response, returns in _completed_tool_exchanges(messages):
-        closed_call_ids.update(
-            part.tool_call_id
-            for part in response.parts
-            if isinstance(part, ToolCallPart)
-        )
+    completed = _completed_tool_exchanges(messages)
+    if not completed:
+        return _canonicalize_compaction_summaries(messages)
+
+    refs_by_response: dict[int, frozenset[str]] = {}
+    refs_by_return: dict[int, frozenset[str]] = {}
+    for response, returns in completed:
+        refs: set[str] = set()
+        for part in response.parts:
+            if isinstance(part, ToolCallPart):
+                refs.update(history_operational_refs(part.args, include_selectors=True))
         for part in returns:
-            if not isinstance(part, ToolReturnPart):
-                continue
-            closed_return_ids.add(part.tool_call_id)
-    if not closed_call_ids and not closed_return_ids:
-        return _deground_compaction_summaries(messages)
+            if isinstance(part, ToolReturnPart):
+                refs.update(history_operational_refs(part.content))
+        frozen_refs = frozenset(refs)
+        refs_by_response[id(response)] = frozen_refs
+        refs_by_return.update({id(part): frozen_refs for part in returns})
 
     projected: list[object] = []
     for message in messages:
         if isinstance(message, ModelResponse):
-            response_closed = any(
-                isinstance(part, ToolCallPart) and part.tool_call_id in closed_call_ids for part in message.parts
-            )
-            if not response_closed:
+            expired_refs = refs_by_response.get(id(message))
+            if expired_refs is None:
                 projected.append(message)
                 continue
             parts: list[object] = []
             for part in message.parts:
-                if isinstance(part, ToolCallPart) and part.tool_call_id in closed_call_ids:
-                    parts.append(replace(part, args=sanitize_history_value(part.args)))
-                elif response_closed and isinstance(part, (TextPart, ThinkingPart)):
-                    content = str(sanitize_history_value(part.content))
+                if isinstance(part, ToolCallPart):
+                    parts.append(replace(part, args=sanitize_history_arguments(part.args)))
+                elif isinstance(part, (TextPart, ThinkingPart)):
+                    content = sanitize_history_prose(
+                        str(part.content),
+                        expired_refs=expired_refs,
+                    )
                     if content:
                         parts.append(replace(part, content=content))
                 else:
@@ -2842,25 +2864,33 @@ def _deground_completed_tool_exchanges(
             projected.append(replace(message, parts=tuple(parts)))
             continue
         if isinstance(message, ModelRequest):
-            if not any(
-                isinstance(part, ToolReturnPart) and part.tool_call_id in closed_return_ids for part in message.parts
-            ):
+            if not any(isinstance(part, ToolReturnPart) and id(part) in refs_by_return for part in message.parts):
                 projected.append(message)
                 continue
             parts = tuple(
                 replace(part, content=sanitize_history_value(part.content))
-                if isinstance(part, ToolReturnPart) and part.tool_call_id in closed_return_ids
+                if isinstance(part, ToolReturnPart) and id(part) in refs_by_return
                 else part
                 for part in message.parts
             )
             projected.append(replace(message, parts=parts))
             continue
         projected.append(message)
-    return _deground_compaction_summaries(tuple(projected))
+    return _canonicalize_compaction_summaries(tuple(projected))
 
 
-def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object, ...]:
-    """Remove local refs without changing Harness' incremental-summary identity."""
+def _canonicalize_completed_history(
+    messages: tuple[object, ...],
+) -> tuple[object, ...]:
+    """Keep one official history with every closed exchange ref-free at rest."""
+
+    projected = _deground_completed_tool_exchanges(messages)
+    _project_pydantic_history(projected)
+    return projected
+
+
+def _canonicalize_compaction_summaries(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Preserve Harness summary semantics under its stable official prefix."""
 
     from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
@@ -2884,7 +2914,7 @@ def _deground_compaction_summaries(messages: tuple[object, ...]) -> tuple[object
 
 
 def _canonical_compaction_summary(content: str) -> str:
-    """Preserve the exact Harness prefix while degrounding only its semantic body."""
+    """Preserve the exact Harness prefix and its already-degrounded semantics."""
 
     marker = _HISTORY_COMPACTION_SUMMARY_PREFIX.rstrip()
     if content.startswith(_HISTORY_COMPACTION_SUMMARY_PREFIX):
@@ -2894,8 +2924,6 @@ def _canonical_compaction_summary(content: str) -> str:
         body = content[len(marker) :].lstrip(": \r\n")
     else:
         return content
-    if _HISTORY_GENERATION_REF.search(body):
-        body = str(sanitize_history_value(body))
     return _HISTORY_COMPACTION_SUMMARY_PREFIX + body
 
 
@@ -3166,8 +3194,7 @@ def _accepted_message_history(
         if any(isinstance(part, ToolReturnPart) for message in requests_tuple for part in message.parts):
             raise ValueError("PydanticAI turn without a pending call cannot contain a deferred result")
         candidate = (*prior_history, *requests_tuple, accepted.response)
-        _project_pydantic_history(candidate)
-        return candidate
+        return _canonicalize_completed_history(candidate)
 
     pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
     matching_parts = tuple(
@@ -3183,10 +3210,12 @@ def _accepted_message_history(
         or set(returned_by_identity) != set(pending_identities)
     ):
         raise ValueError("PydanticAI did not close every deferred tool proposal")
-    return (
-        *prior_history,
-        *requests_tuple,
-        accepted.response,
+    return _canonicalize_completed_history(
+        (
+            *prior_history,
+            *requests_tuple,
+            accepted.response,
+        )
     )
 
 
@@ -3199,14 +3228,28 @@ def _completed_tool_exchanges(
     pending_response = None
     for message in messages:
         if isinstance(message, ModelResponse) and any(isinstance(part, ToolCallPart) for part in message.parts):
+            if pending_response is not None:
+                raise ValueError("model history contains overlapping unresolved tool responses")
             pending_response = message
             continue
-        if pending_response is None or not isinstance(message, ModelRequest):
+        if not isinstance(message, ModelRequest):
             continue
         returns = tuple(part for part in message.parts if isinstance(part, ToolReturnPart))
-        if returns:
-            completed.append((pending_response, returns))
-            pending_response = None
+        if not returns:
+            continue
+        if pending_response is None:
+            raise ValueError("model history contains an orphaned tool return")
+        calls = tuple(part for part in pending_response.parts if isinstance(part, ToolCallPart))
+        call_identities = tuple((part.tool_name, part.tool_call_id) for part in calls)
+        return_identities = tuple((part.tool_name, part.tool_call_id) for part in returns)
+        if (
+            len(call_identities) != len(return_identities)
+            or len(set(call_identities)) != len(call_identities)
+            or set(call_identities) != set(return_identities)
+        ):
+            raise ValueError("model history tool return does not close its preceding response")
+        completed.append((pending_response, returns))
+        pending_response = None
     return tuple(completed)
 
 

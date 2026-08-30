@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from affordance_runtime.actions.effect_semantics import Reversibility
@@ -14,9 +14,16 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
-_GENERATION_REF = re.compile(rf"\b{PublicRefCodec.token_pattern()}\b")
 _LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
 _PRIVATE_HISTORY_KEYS = frozenset({"subject_id", "target_id", "destination_id"})
+_PRIVATE_HISTORY_SEQUENCE_KEYS = frozenset(
+    {
+        "candidate_ids",
+        "destination_ids",
+        "subject_ids",
+        "target_ids",
+    }
+)
 _OPERATIONAL_HISTORY_KEYS = frozenset(
     {
         "cursor",
@@ -26,57 +33,150 @@ _OPERATIONAL_HISTORY_KEYS = frozenset(
         "verbs",
     }
 )
+_SELECTOR_HISTORY_KEYS = frozenset({"containers", "destination", "source", "target"})
+_REF_KEYED_HISTORY_KEYS = frozenset({"counts"})
+_PUBLIC_REF_HISTORY_KEYS = frozenset(
+    {
+        "candidate_refs",
+        "destination_ref",
+        "destination_refs",
+        "evidence_ref",
+        "evidence_refs",
+        "fact_ref",
+        "fact_refs",
+        "node_ref",
+        "node_refs",
+        "region_ref",
+        "region_refs",
+        "source_ref",
+        "source_refs",
+        "subject_ref",
+        "subject_refs",
+        "target_ref",
+        "target_refs",
+    }
+)
 
 
 def sanitize_history_value(value: object) -> object:
-    """Remove observation-generation identity before a value enters episode history."""
+    """Remove typed identity fields while preserving arbitrary semantic values.
 
-    return _sanitize_history_value(value)
+    A string such as ``E6`` or ``R2`` is not identity merely because it matches
+    the disposable public-ref grammar.  Ref authority comes from an explicit
+    protocol field.  Free-form prose is handled separately by
+    :func:`sanitize_history_prose` when its producer can supply the exact refs
+    issued for that exchange.
+    """
+
+    return _sanitize_history_value(value, strip_selectors=False)
 
 
-def _sanitize_history_value(value: object) -> object:
+def sanitize_history_arguments(value: object) -> object:
+    """Project tool arguments without their disposable selector operands."""
+
+    return _sanitize_history_value(value, strip_selectors=True)
+
+
+def history_operational_refs(
+    value: object,
+    *,
+    include_selectors: bool = False,
+) -> frozenset[str]:
+    """Collect refs only from explicit ref-bearing protocol fields.
+
+    This is deliberately not a lexical scan.  Values under ``label``, ``text``,
+    ``query`` and other semantic fields remain ordinary data even when they
+    look like a public ref.
+    """
+
+    refs: set[str] = set()
+
+    def add(item: object) -> None:
+        if isinstance(item, str) and PublicRefCodec.accepts(item):
+            refs.add(item)
+        elif isinstance(item, Mapping):
+            for key, child in item.items():
+                if PublicRefCodec.accepts(str(key)):
+                    refs.add(str(key))
+                add(child)
+        elif isinstance(item, tuple | list):
+            for child in item:
+                add(child)
+
+    def visit(item: object) -> None:
+        if isinstance(item, Mapping):
+            for key, child in item.items():
+                raw_key = str(key)
+                if _is_ref_field(raw_key) or (
+                    include_selectors and raw_key in _SELECTOR_HISTORY_KEYS
+                ):
+                    add(child)
+                elif raw_key in _REF_KEYED_HISTORY_KEYS and isinstance(child, Mapping):
+                    add(child)
+                else:
+                    visit(child)
+        elif isinstance(item, tuple | list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    return frozenset(refs)
+
+
+def sanitize_history_prose(value: str, *, expired_refs: Iterable[str] = ()) -> str:
+    """Remove only producer-proven operational refs from free-form prose."""
+
+    cleaned = _LEGACY_EXPIRED_REF.sub("", value)
+    refs = tuple(
+        sorted(
+            {item for item in expired_refs if isinstance(item, str) and PublicRefCodec.accepts(item)},
+            key=lambda item: (-len(item), item),
+        )
+    )
+    if refs:
+        pattern = re.compile(rf"\b(?:{'|'.join(re.escape(item) for item in refs)})\b")
+        cleaned, removed = pattern.subn("", cleaned)
+        if removed:
+            cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_history_value(value: object, *, strip_selectors: bool) -> object:
     if isinstance(value, str):
-        return _strip_generation_refs(value)
+        return _LEGACY_EXPIRED_REF.sub("", value)
     if isinstance(value, Mapping):
         sanitized: dict[str, object] = {}
         for key, item in value.items():
             raw_key = str(key)
             if (
                 raw_key in _PRIVATE_HISTORY_KEYS
+                or raw_key in _PRIVATE_HISTORY_SEQUENCE_KEYS
                 or raw_key in _OPERATIONAL_HISTORY_KEYS
-                or raw_key.endswith(("_ref", "_refs", "_cursor"))
-                or _GENERATION_REF.fullmatch(raw_key)
+                or _is_ref_field(raw_key)
+                or (strip_selectors and raw_key in _SELECTOR_HISTORY_KEYS)
             ):
                 continue
-            clean_key = _strip_generation_refs(raw_key)
+            clean_key = _LEGACY_EXPIRED_REF.sub("", raw_key)
             if not clean_key:
                 continue
-            if isinstance(item, str) and _ref_only(item):
+            if raw_key in _REF_KEYED_HISTORY_KEYS and isinstance(item, Mapping):
+                projected = {
+                    str(item_key): _sanitize_history_value(item_value, strip_selectors=strip_selectors)
+                    for item_key, item_value in item.items()
+                    if not PublicRefCodec.accepts(str(item_key))
+                }
+                if projected:
+                    sanitized[clean_key] = projected
                 continue
-            sanitized[clean_key] = _sanitize_history_value(item)
+            sanitized[clean_key] = _sanitize_history_value(item, strip_selectors=strip_selectors)
         return sanitized
     if isinstance(value, tuple | list):
-        return tuple(
-            _sanitize_history_value(item) for item in value if not isinstance(item, str) or not _ref_only(item)
-        )
+        return tuple(_sanitize_history_value(item, strip_selectors=strip_selectors) for item in value)
     return value
 
 
-def _strip_generation_refs(value: str) -> str:
-    cleaned = _LEGACY_EXPIRED_REF.sub("", value)
-    cleaned = _GENERATION_REF.sub("", cleaned)
-    cleaned = re.sub(r"\(\s*\)", "", cleaned)
-    cleaned = re.sub(r"\[\s*\]", "", cleaned)
-    cleaned = re.sub(r"\s+([,;:)\]])", r"\1", cleaned)
-    cleaned = re.sub(r"([(\[])\s+", r"\1", cleaned)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    return cleaned.strip(" ,;:-")
-
-
-def _ref_only(value: str) -> bool:
-    return bool(_GENERATION_REF.search(value) or _LEGACY_EXPIRED_REF.search(value)) and not _strip_generation_refs(
-        value
-    )
+def _is_ref_field(key: str) -> bool:
+    return key in _PUBLIC_REF_HISTORY_KEYS
 
 
 @dataclass(frozen=True)

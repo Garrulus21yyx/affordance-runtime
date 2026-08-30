@@ -16,6 +16,7 @@ from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import DecisionKind, RequestActionPage, SelectAction
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context import context_builder as context_builder_module
+from affordance_runtime.agent.context import model_turn_delivery as model_turn_delivery_module
 from affordance_runtime.agent.context.action_candidate_projection import (
     ActionRouteFragment,
     DeliveryObligationKind,
@@ -25,11 +26,15 @@ from affordance_runtime.agent.context.canonical_world_projection import (
     CanonicalPublicWorldProjection,
 )
 from affordance_runtime.agent.context.compact_world_renderer import (
+    DeliveryManifest,
     inspect_actor_world,
     inspect_outcome_public,
 )
 from affordance_runtime.agent.context.contracts import AgentHistoricalTargetView, AgentTurnView
-from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
+from affordance_runtime.agent.context.model_turn_delivery import (
+    DeferredToolDelivery,
+    build_model_turn_delivery,
+)
 from affordance_runtime.agent.context.observation_delivery import (
     ObservationDeliveryStore,
 )
@@ -2133,6 +2138,59 @@ def test_read_region_and_search_results_preserve_grounding_for_returned_readable
         expected_delivery_id=delivery.delivery_id,
     )
     assert isinstance(resolution.decision, SelectAction)
+
+
+@given(semantic_field=st.sampled_from(("label", "query", "text")))
+@settings(max_examples=3)
+def test_same_world_tool_result_never_promotes_ref_shaped_semantic_text(
+    semantic_field: str,
+) -> None:
+    _task, world, _actions, _evaluation, context = _context()
+    business_value = next(iter(context.canonical_world.region_refs.values()))
+    tool_result = DeferredToolDelivery(
+        "call:business-ref-shape",
+        "search_page_content",
+        {
+            "executable_grounding": "attached_to_returned_readable_targets",
+            "items": ({semantic_field: business_value},),
+        },
+        {
+            "before_world": world.observation_id,
+            "after_world": world.observation_id,
+        },
+    )
+
+    manifest = model_turn_delivery_module._manifest_with_same_world_tool_grounding(
+        DeliveryManifest(),
+        tool_result,
+        context,
+    )
+
+    assert manifest.region_refs == ()
+    assert manifest.readonly_refs == ()
+    assert manifest.fact_refs == ()
+    assert manifest.executable_refs == ()
+    assert manifest.action_routes == ()
+
+    typed_result = DeferredToolDelivery(
+        "call:typed-region",
+        "search_page_content",
+        {
+            "executable_grounding": "attached_to_returned_readable_targets",
+            "items": ({"region_ref": business_value},),
+        },
+        {
+            "before_world": world.observation_id,
+            "after_world": world.observation_id,
+        },
+    )
+    typed_manifest = model_turn_delivery_module._manifest_with_same_world_tool_grounding(
+        DeliveryManifest(),
+        typed_result,
+        context,
+    )
+
+    assert typed_manifest.region_refs == (business_value,)
 
 
 def test_opened_region_does_not_depend_on_candidate_implied_region_expansion() -> None:

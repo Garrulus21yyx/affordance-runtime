@@ -177,7 +177,7 @@ class ModelTurnDelivery:
         visible_refs = (
             set(re.findall(rf"\b{PublicRefCodec.token_pattern()}\b", self.view.text))
             | {mark.ref for item in media for mark in item.actual_marks}
-            | _public_refs_in_value(tool_result_value)
+            | _typed_public_refs_in_value(tool_result_value)
         )
         manifest_refs = {
             *self.manifest.executable_refs,
@@ -396,7 +396,7 @@ def _manifest_with_same_world_tool_grounding(
     ):
         return manifest
 
-    returned_refs = _public_refs_in_value(tool_result.return_value)
+    returned_refs = _typed_public_refs_in_value(tool_result.return_value)
     current_regions = set(context.canonical_world.region_refs.values())
     current_nodes = set(context.grounding.target_refs.values())
     current_facts = set(context.private_fact_bindings)
@@ -471,16 +471,44 @@ def _returned_read_routes(value: object) -> frozenset[tuple[str, str, str]]:
     return frozenset(routes)
 
 
-def _public_refs_in_value(value: object) -> set[str]:
+_TYPED_PUBLIC_REF_FIELDS = {
+    "evidence_ref": PublicRefKind.FACT,
+    "fact_ref": PublicRefKind.FACT,
+    "node_ref": PublicRefKind.NODE,
+    "region_ref": PublicRefKind.REGION,
+    "target_ref": PublicRefKind.EXECUTABLE,
+}
+_TYPED_PUBLIC_REF_SEQUENCE_FIELDS = {
+    "evidence_refs": PublicRefKind.FACT,
+    "fact_refs": PublicRefKind.FACT,
+    "node_refs": PublicRefKind.NODE,
+    "region_refs": PublicRefKind.REGION,
+    "target_refs": PublicRefKind.EXECUTABLE,
+}
+
+
+def _typed_public_refs_in_value(value: object) -> set[str]:
+    """Read authority only from producer-defined public-ref fields."""
+
     refs: set[str] = set()
 
+    def add(item: object, kind: PublicRefKind) -> None:
+        if isinstance(item, str) and PublicRefCodec.accepts(item, expected=kind):
+            refs.add(item)
+
     def visit(item: object) -> None:
-        if isinstance(item, str):
-            refs.update(re.findall(rf"\b{PublicRefCodec.token_pattern()}\b", item))
-        elif isinstance(item, Mapping):
+        if isinstance(item, Mapping):
             for key, child in item.items():
-                visit(str(key))
-                visit(child)
+                raw_key = str(key)
+                singular_kind = _TYPED_PUBLIC_REF_FIELDS.get(raw_key)
+                sequence_kind = _TYPED_PUBLIC_REF_SEQUENCE_FIELDS.get(raw_key)
+                if singular_kind is not None:
+                    add(child, singular_kind)
+                elif sequence_kind is not None and isinstance(child, tuple | list):
+                    for value_item in child:
+                        add(value_item, sequence_kind)
+                else:
+                    visit(child)
         elif isinstance(item, (tuple, list)):
             for child in item:
                 visit(child)
