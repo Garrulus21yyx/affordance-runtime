@@ -208,8 +208,8 @@ not that vision is mandatory; they also falsify a reliability claim for the old 
 history/ref and activity changes have provider-free gates but no authorized live rescore. Tasks545/66 likewise have
 no post-alias-fix live result. The diagnostic cohort therefore remains empirically open.
 
-The fixed BrowserGym Python provider-free gate reports 2172 passed, 19 skipped, 1 deselected, and 1 warning in
-118.55 seconds. The sole deselection is the documented repository-missing archived dashboard trace, which fails
+The final-SHA fixed BrowserGym Python provider-free gate reports 2172 passed, 19 skipped, 1 deselected, and 1 warning
+in 118.34 seconds. The sole deselection is the documented repository-missing archived dashboard trace, which fails
 before product code. Ruff with cache disabled and the diff check pass. No live case was run for the new
 working-evidence/ref contract.
 
