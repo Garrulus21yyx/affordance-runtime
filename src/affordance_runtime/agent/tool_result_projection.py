@@ -7,8 +7,10 @@ pending call, mutate delivery state, or create a second outcome wrapper.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, assert_never
 
+from affordance_runtime.agent.context.compact_world_renderer import inspect_result_grounding
 from affordance_runtime.agent.context.contracts import HISTORY_RETURN_PATHS_METADATA_KEY
 from affordance_runtime.agent.decisions import (
     Abort,
@@ -31,9 +33,38 @@ from affordance_runtime.world.observation_outcomes import (
     QueryScopeLocator,
     ResultLocator,
 )
+from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 if TYPE_CHECKING:
     from affordance_runtime.agent.run_state import StepResult
+
+
+@dataclass(frozen=True)
+class ToolReturnGrounding:
+    """Exact same-call refs/routes declared by the ToolReturn producer."""
+
+    public_refs: tuple[str, ...] = ()
+    action_routes: tuple[tuple[str, str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        refs = tuple(self.public_refs)
+        routes = tuple(tuple(route) for route in self.action_routes)
+        if len(set(refs)) != len(refs) or any(
+            not isinstance(ref, str) or not PublicRefCodec.accepts(ref) for ref in refs
+        ):
+            raise ValueError("ToolReturn grounding refs are invalid")
+        if len(set(routes)) != len(routes) or any(
+            len(route) != 3
+            or any(not isinstance(item, str) for item in route)
+            or not route[0].strip()
+            or not PublicRefCodec.accepts(route[1], expected=PublicRefKind.EXECUTABLE)
+            or route[2]
+            or route[1] not in refs
+            for route in routes
+        ):
+            raise ValueError("ToolReturn grounding routes are invalid")
+        object.__setattr__(self, "public_refs", refs)
+        object.__setattr__(self, "action_routes", routes)
 
 
 def committed_tool_call_id(step: StepResult) -> str:
@@ -327,6 +358,59 @@ def project_committed_tool_metadata(step: StepResult) -> Mapping[str, object]:
             HISTORY_RETURN_PATHS_METADATA_KEY: tuple(tuple(path) for path in ephemeral_paths),
         }
     )
+
+
+def project_committed_tool_grounding(
+    step: StepResult,
+    return_value: Mapping[str, object],
+) -> ToolReturnGrounding:
+    """Project same-call grounding without scanning arbitrary result values."""
+
+    if return_value.get("executable_grounding") != "attached_to_returned_readable_targets":
+        return ToolReturnGrounding()
+    decision = step.decision
+    if isinstance(decision, ReadRegionResult | SearchPageContentResult):
+        refs, routes = inspect_result_grounding(return_value)
+        return ToolReturnGrounding(refs, routes)
+    if isinstance(decision, RequestObservation):
+        return _observation_tool_return_grounding(return_value)
+    return ToolReturnGrounding()
+
+
+def _observation_tool_return_grounding(
+    return_value: Mapping[str, object],
+) -> ToolReturnGrounding:
+    refs: set[str] = set()
+    routes: set[tuple[str, str, str]] = set()
+    items = return_value.get("observed_items", ())
+    if not isinstance(items, tuple | list):
+        return ToolReturnGrounding()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        evidence_refs = item.get("evidence_refs", ())
+        if isinstance(evidence_refs, tuple | list):
+            refs.update(
+                ref
+                for ref in evidence_refs
+                if isinstance(ref, str) and PublicRefCodec.accepts(ref, expected=PublicRefKind.FACT)
+            )
+        target_refs = item.get("target_refs", ())
+        if isinstance(target_refs, tuple | list):
+            refs.update(ref for ref in target_refs if isinstance(ref, str) and PublicRefCodec.accepts(ref))
+        target_ref = item.get("target_ref")
+        if isinstance(target_ref, str) and PublicRefCodec.accepts(target_ref):
+            refs.add(target_ref)
+        verbs = item.get("verbs", ())
+        if (
+            isinstance(target_ref, str)
+            and PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE)
+            and isinstance(verbs, tuple | list)
+        ):
+            routes.update(
+                (operation, target_ref, "") for operation in verbs if isinstance(operation, str) and operation.strip()
+            )
+    return ToolReturnGrounding(tuple(sorted(refs)), tuple(sorted(routes)))
 
 
 def _committed_tool_return_ephemeral_paths(

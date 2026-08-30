@@ -25,6 +25,7 @@ from affordance_runtime.agent.context.compact_world_renderer import (
     inspect_actor_world,
     inspect_outcome_ephemeral_paths,
     inspect_outcome_public,
+    inspect_result_grounding,
     render_compact_actor_world,
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
@@ -150,6 +151,95 @@ def test_inspect_result_history_contract_preserves_ref_shaped_semantics_only() -
         "read_only": True,
         "zero_browser_dispatch": True,
     }
+
+
+@given(
+    semantic_key=st.builds(
+        lambda name, suffix: f"{name}_{suffix}",
+        st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=12),
+        st.sampled_from(("ref", "refs")),
+    ),
+    semantic_value=st.one_of(
+        st.text(
+            alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            min_size=1,
+            max_size=20,
+        ),
+        st.lists(
+            st.text(
+                alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                min_size=1,
+                max_size=8,
+            ),
+            min_size=1,
+            max_size=4,
+        ).map(tuple),
+    ),
+)
+@settings(max_examples=40)
+def test_inspect_result_history_never_guesses_refs_inside_semantic_state(
+    semantic_key: str,
+    semantic_value: str | tuple[str, ...],
+) -> None:
+    outcome = Matches(
+        (
+            {
+                "state": {semantic_key: semantic_value, "ordinary": "keep"},
+                "target_ref": "E1",
+                "verbs": ("activate",),
+            },
+        ),
+        "complete",
+    )
+    public = inspect_outcome_public(outcome)
+
+    projected = sanitize_history_arguments(
+        public,
+        ephemeral_paths=inspect_outcome_ephemeral_paths(outcome, public),
+    )
+
+    assert projected["items"] == ({"state": {semantic_key: semantic_value, "ordinary": "keep"}},)
+
+
+def test_inspect_result_grounding_reads_only_producer_owned_record_slots() -> None:
+    outcome = Matches(
+        (
+            {
+                "target_ref": "E1",
+                "verbs": ("activate",),
+                "state": {"target_ref": "E2", "verbs": ("type_text",)},
+            },
+            {
+                "region_ref": "R1",
+                "content": (
+                    {
+                        "target_ref": "E3",
+                        "verbs": ("type_text",),
+                        "state": {"evidence_ref": "F4"},
+                    },
+                ),
+            },
+        ),
+        "complete",
+    )
+    public = inspect_outcome_public(outcome)
+
+    refs, routes = inspect_result_grounding(public)
+
+    assert refs == ("E1", "E3", "R1")
+    assert routes == (("activate", "E1", ""), ("type_text", "E3", ""))
+    assert public["executable_grounding"] == "attached_to_returned_readable_targets"
+
+
+def test_nested_semantic_route_collision_does_not_emit_executable_grounding() -> None:
+    outcome = Matches(
+        ({"state": {"target_ref": "E1", "verbs": ("activate",)}},),
+        "complete",
+    )
+    public = inspect_outcome_public(outcome)
+
+    assert inspect_result_grounding(public) == ((), ())
+    assert "executable_grounding" not in public
 
 
 def test_delivery_probe_requires_one_item_to_close_label_role_operation_and_manifest() -> None:

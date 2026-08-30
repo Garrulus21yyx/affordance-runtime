@@ -840,9 +840,23 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
     return _with_world_read_metadata({"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit})
 
 
+_INSPECT_RECORD_REF_KINDS: tuple[tuple[str, PublicRefKind | None], ...] = (
+    ("region_ref", PublicRefKind.REGION),
+    ("structural_context", PublicRefKind.REGION),
+    ("target_ref", PublicRefKind.EXECUTABLE),
+    ("node_ref", PublicRefKind.NODE),
+    ("evidence_ref", PublicRefKind.FACT),
+    ("match_ref", None),
+)
+_INSPECT_RECORD_EPHEMERAL_FIELDS = tuple(name for name, _kind in _INSPECT_RECORD_REF_KINDS) + (
+    "verbs",
+    "follow_up",
+)
+
+
 def inspect_outcome_ephemeral_paths(
     outcome: InspectWorldOutcome,
-    value: Mapping[str, object],
+    _value: Mapping[str, object],
 ) -> tuple[tuple[str, ...], ...]:
     """Describe observation-local fields in this producer's public result.
 
@@ -851,33 +865,14 @@ def inspect_outcome_ephemeral_paths(
     by this result producer can expire.
     """
 
-    paths: set[tuple[str, ...]] = set()
-    ephemeral_names = frozenset(
-        {
-            "executable_grounding",
-            "follow_up",
-            "next_cursor",
-            "verbs",
-        }
-    )
-
-    def visit(item: object, path: tuple[str, ...]) -> None:
-        if isinstance(item, Mapping):
-            for raw_key, child in item.items():
-                key = str(raw_key)
-                child_path = (*path, key)
-                if key in ephemeral_names or key.endswith("_ref") or key.endswith("_refs"):
-                    paths.add(child_path)
-                    continue
-                if key == "structural_context" and isinstance(child, str) and PublicRefCodec.accepts(child):
-                    paths.add(child_path)
-                    continue
-                visit(child, child_path)
-        elif isinstance(item, tuple | list):
-            for child in item:
-                visit(child, (*path, "*"))
-
-    visit(value, ())
+    paths: set[tuple[str, ...]] = {("executable_grounding",)}
+    if isinstance(outcome, Opened | Matches | Page):
+        paths.add(("next_cursor",))
+        for prefix in (("items", "*"), ("items", "*", "content", "*")):
+            paths.update((*prefix, field_name) for field_name in _INSPECT_RECORD_EPHEMERAL_FIELDS)
+            paths.add((*prefix, "source_context", "region_ref"))
+    if isinstance(outcome, InvalidRegion):
+        paths.add(("region_ref",))
     if isinstance(outcome, StaleContext):
         paths.update({("expected",), ("actual",)})
     return tuple(sorted(paths))
@@ -890,26 +885,60 @@ def _with_world_read_metadata(result: Mapping[str, object]) -> Mapping[str, obje
         "read_only": True,
         "zero_browser_dispatch": True,
     }
-    if _contains_executable_read_route(result.get("items")):
+    if inspect_result_grounding(result)[1]:
         public["executable_grounding"] = "attached_to_returned_readable_targets"
     return public
 
 
-def _contains_executable_read_route(value: object) -> bool:
-    if isinstance(value, Mapping):
-        target_ref = value.get("target_ref")
-        verbs = value.get("verbs")
-        if (
-            isinstance(target_ref, str)
-            and PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE)
-            and isinstance(verbs, tuple | list)
-            and any(isinstance(verb, str) and verb.strip() for verb in verbs)
-        ):
-            return True
-        return any(_contains_executable_read_route(item) for item in value.values())
-    if isinstance(value, tuple | list):
-        return any(_contains_executable_read_route(item) for item in value)
-    return False
+def inspect_result_grounding(
+    value: Mapping[str, object],
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]]:
+    """Project live refs/routes from this producer's closed record slots.
+
+    Readable ``state`` and other semantic subtrees are intentionally opaque.
+    A business predicate named ``target_ref`` or ``verbs`` cannot become
+    grounding merely by matching protocol field names.
+    """
+
+    refs: set[str] = set()
+    routes: set[tuple[str, str, str]] = set()
+    items = value.get("items", ())
+    if not isinstance(items, tuple | list):
+        return (), ()
+
+    def add_ref(item: object, kind: PublicRefKind | None = None) -> None:
+        if isinstance(item, str) and PublicRefCodec.accepts(item, expected=kind):
+            refs.add(item)
+
+    def add_record(record: object) -> None:
+        if not isinstance(record, Mapping):
+            return
+        for field_name, kind in _INSPECT_RECORD_REF_KINDS:
+            add_ref(record.get(field_name), kind)
+        source_context = record.get("source_context")
+        if isinstance(source_context, Mapping):
+            add_ref(source_context.get("region_ref"), PublicRefKind.REGION)
+        follow_up = record.get("follow_up")
+        if isinstance(follow_up, Mapping):
+            add_ref(follow_up.get("region_ref"), PublicRefKind.REGION)
+        target_ref = record.get("target_ref")
+        verbs = record.get("verbs")
+        if isinstance(target_ref, str) and PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE):
+            if isinstance(verbs, tuple | list):
+                routes.update(
+                    (operation, target_ref, "")
+                    for operation in verbs
+                    if isinstance(operation, str) and operation.strip()
+                )
+
+    for item in items:
+        add_record(item)
+        if isinstance(item, Mapping):
+            content = item.get("content", ())
+            if isinstance(content, tuple | list):
+                for child in content:
+                    add_record(child)
+    return tuple(sorted(refs)), tuple(sorted(routes))
 
 
 def _search_match_with_follow_up(item: Mapping[str, object]) -> Mapping[str, object]:

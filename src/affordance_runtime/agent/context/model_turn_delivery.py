@@ -24,7 +24,9 @@ from affordance_runtime.agent.context.context import (
     VisualEvidenceFragment,
 )
 from affordance_runtime.agent.tool_result_projection import (
+    ToolReturnGrounding,
     committed_tool_call_id,
+    project_committed_tool_grounding,
     project_committed_tool_metadata,
     project_committed_tool_return,
 )
@@ -88,10 +90,13 @@ class DeferredToolDelivery:
     return_value: Mapping[str, object]
     metadata: Mapping[str, object] = field(repr=False, compare=False, metadata={"serialize": False})
     failed: bool = False
+    grounding: ToolReturnGrounding = field(default_factory=ToolReturnGrounding, repr=False)
 
     def __post_init__(self) -> None:
         if not self.tool_call_id.strip() or not self.tool_name.strip():
             raise ValueError("deferred tool delivery requires one call identity")
+        if not isinstance(self.grounding, ToolReturnGrounding):
+            raise TypeError("deferred tool delivery grounding must be producer-typed")
         object.__setattr__(self, "return_value", to_json_compatible(self.return_value))
         object.__setattr__(self, "metadata", to_json_compatible(self.metadata))
 
@@ -170,11 +175,11 @@ class ModelTurnDelivery:
             for candidate in self.action_candidates.candidates
         ):
             raise ValueError("every action candidate requires one exact delivered operation")
-        tool_result_value = self.tool_result.return_value if self.tool_result is not None else {}
+        tool_result_refs = self.tool_result.grounding.public_refs if self.tool_result is not None else ()
         visible_refs = (
             set(self.view.rendered_refs)
             | {mark.ref for item in media for mark in item.actual_marks}
-            | _typed_public_refs_in_value(tool_result_value)
+            | set(tool_result_refs)
         )
         manifest_refs = {
             *self.manifest.executable_refs,
@@ -314,12 +319,14 @@ def _deferred_tool_delivery(
     admitted = project_committed_tool_return(committed_step)
     if admitted is None:
         raise ValueError("pending official call requires one projected result")
+    grounding = project_committed_tool_grounding(committed_step, admitted)
     return DeferredToolDelivery(
         call_id,
         pending_tool_name,
         admitted,
         project_committed_tool_metadata(committed_step),
         bool(getattr(committed_step, "runtime_failure", None)),
+        grounding,
     )
 
 
@@ -393,7 +400,7 @@ def _manifest_with_same_world_tool_grounding(
     ):
         return manifest
 
-    returned_refs = _typed_public_refs_in_value(tool_result.return_value)
+    returned_refs = set(tool_result.grounding.public_refs)
     current_regions = set(context.canonical_world.region_refs.values())
     current_nodes = set(context.grounding.target_refs.values())
     current_facts = set(context.private_fact_bindings)
@@ -408,7 +415,7 @@ def _manifest_with_same_world_tool_grounding(
         elif ref.startswith("R") and ref in current_regions and ref not in regions:
             regions.append(ref)
 
-    claimed_routes = _returned_read_routes(tool_result.return_value)
+    claimed_routes = frozenset(tool_result.grounding.action_routes)
     current_routes = {
         (option.operation, option.target_ref, ""): option
         for option in context.complete_actions
@@ -441,77 +448,6 @@ def _manifest_with_same_world_tool_grounding(
         tuple(regions),
         tuple(routes),
     )
-
-
-def _returned_read_routes(value: object) -> frozenset[tuple[str, str, str]]:
-    routes: set[tuple[str, str, str]] = set()
-
-    def visit(item: object) -> None:
-        if isinstance(item, Mapping):
-            target_ref = str(item.get("target_ref", ""))
-            verbs = item.get("verbs", ())
-            if PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE) and isinstance(
-                verbs, (tuple, list)
-            ):
-                routes.update(
-                    (str(operation), target_ref, "")
-                    for operation in verbs
-                    if isinstance(operation, str) and operation.strip()
-                )
-            for child in item.values():
-                visit(child)
-        elif isinstance(item, (tuple, list)):
-            for child in item:
-                visit(child)
-
-    visit(value)
-    return frozenset(routes)
-
-
-_TYPED_PUBLIC_REF_FIELDS = {
-    "evidence_ref": PublicRefKind.FACT,
-    "fact_ref": PublicRefKind.FACT,
-    "node_ref": PublicRefKind.NODE,
-    "region_ref": PublicRefKind.REGION,
-    "target_ref": PublicRefKind.EXECUTABLE,
-}
-_TYPED_PUBLIC_REF_SEQUENCE_FIELDS = {
-    "evidence_refs": PublicRefKind.FACT,
-    "fact_refs": PublicRefKind.FACT,
-    "node_refs": PublicRefKind.NODE,
-    "region_refs": PublicRefKind.REGION,
-    "target_refs": PublicRefKind.EXECUTABLE,
-}
-
-
-def _typed_public_refs_in_value(value: object) -> set[str]:
-    """Read authority only from producer-defined public-ref fields."""
-
-    refs: set[str] = set()
-
-    def add(item: object, kind: PublicRefKind) -> None:
-        if isinstance(item, str) and PublicRefCodec.accepts(item, expected=kind):
-            refs.add(item)
-
-    def visit(item: object) -> None:
-        if isinstance(item, Mapping):
-            for key, child in item.items():
-                raw_key = str(key)
-                singular_kind = _TYPED_PUBLIC_REF_FIELDS.get(raw_key)
-                sequence_kind = _TYPED_PUBLIC_REF_SEQUENCE_FIELDS.get(raw_key)
-                if singular_kind is not None:
-                    add(child, singular_kind)
-                elif sequence_kind is not None and isinstance(child, tuple | list):
-                    for value_item in child:
-                        add(value_item, sequence_kind)
-                else:
-                    visit(child)
-        elif isinstance(item, (tuple, list)):
-            for child in item:
-                visit(child)
-
-    visit(value)
-    return refs
 
 
 def _public_ref_order(ref: str) -> tuple[str, int]:

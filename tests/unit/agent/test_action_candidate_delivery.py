@@ -45,6 +45,7 @@ from affordance_runtime.agent.context.world_transition import WorldTransitionPro
 from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decisions import SearchPageContentResult
 from affordance_runtime.agent.run_state import RunState, StepResult
+from affordance_runtime.agent.tool_result_projection import ToolReturnGrounding
 from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.evaluation import TaskEvaluation, TaskEvaluationStatus
 from affordance_runtime.execution import (
@@ -2149,12 +2150,21 @@ def test_same_world_tool_result_never_promotes_ref_shaped_semantic_text(
 ) -> None:
     _task, world, _actions, _evaluation, context = _context()
     business_value = next(iter(context.canonical_world.region_refs.values()))
+    current_option = next(item for item in context.complete_actions if item.destination_mode == "forbidden")
     tool_result = DeferredToolDelivery(
         "call:business-ref-shape",
         "search_page_content",
         {
             "executable_grounding": "attached_to_returned_readable_targets",
-            "items": ({semantic_field: business_value},),
+            "items": (
+                {
+                    semantic_field: business_value,
+                    "state": {
+                        "target_ref": current_option.target_ref,
+                        "verbs": (current_option.operation,),
+                    },
+                },
+            ),
         },
         {
             "before_world": world.observation_id,
@@ -2185,6 +2195,7 @@ def test_same_world_tool_result_never_promotes_ref_shaped_semantic_text(
             "before_world": world.observation_id,
             "after_world": world.observation_id,
         },
+        grounding=ToolReturnGrounding((business_value,), ()),
     )
     typed_manifest = model_turn_delivery_module._manifest_with_same_world_tool_grounding(
         DeliveryManifest(),
@@ -2193,6 +2204,38 @@ def test_same_world_tool_result_never_promotes_ref_shaped_semantic_text(
     )
 
     assert typed_manifest.region_refs == (business_value,)
+
+    executable_result = DeferredToolDelivery(
+        "call:typed-route",
+        "search_page_content",
+        {
+            "executable_grounding": "attached_to_returned_readable_targets",
+            "items": (
+                {
+                    "target_ref": current_option.target_ref,
+                    "verbs": (current_option.operation,),
+                },
+            ),
+        },
+        {
+            "before_world": world.observation_id,
+            "after_world": world.observation_id,
+        },
+        grounding=ToolReturnGrounding(
+            (current_option.target_ref,),
+            ((current_option.operation, current_option.target_ref, ""),),
+        ),
+    )
+    executable_manifest = model_turn_delivery_module._manifest_with_same_world_tool_grounding(
+        DeliveryManifest(),
+        executable_result,
+        context,
+    )
+
+    assert executable_manifest.executable_refs == (current_option.target_ref,)
+    assert tuple(
+        (route.operation, route.source_ref, route.destination_ref) for route in executable_manifest.action_routes
+    ) == ((current_option.operation, current_option.target_ref, ""),)
 
 
 def test_renderer_manifest_cannot_use_ref_shaped_business_prose_as_authority() -> None:
