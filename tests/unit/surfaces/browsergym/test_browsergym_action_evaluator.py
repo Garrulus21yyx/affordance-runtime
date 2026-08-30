@@ -2,7 +2,8 @@ import asyncio
 from dataclasses import replace
 
 import numpy as np
-from hypothesis import assume, given, settings
+import pytest
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from affordance_runtime.actions.capabilities import VerificationFamily
@@ -200,22 +201,63 @@ def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it()
     assert "private" not in repr(evaluation)
 
 
-@given(
-    requested=st.text(min_size=1, max_size=40),
-    observed=st.text(max_size=40),
+@pytest.mark.parametrize(
+    ("scenario", "semantic", "expected_change", "expected_postcondition"),
+    (
+        ("exact_changed", "type_text", ObservedChange.CHANGED, LocalPostconditionStatus.SATISFIED),
+        ("exact_unchanged", "type_text", ObservedChange.UNCHANGED, LocalPostconditionStatus.SATISFIED),
+        ("changed_mismatch", "type_text", ObservedChange.CHANGED, LocalPostconditionStatus.UNKNOWN),
+        ("unchanged_mismatch", "type_text", ObservedChange.UNCHANGED, LocalPostconditionStatus.UNSATISFIED),
+        ("truncated_exact", "type_text", ObservedChange.CHANGED, LocalPostconditionStatus.UNKNOWN),
+        ("exact_changed", "select_option", ObservedChange.CHANGED, LocalPostconditionStatus.SATISFIED),
+        ("exact_unchanged", "select_option", ObservedChange.UNCHANGED, LocalPostconditionStatus.SATISFIED),
+        ("changed_mismatch", "select_option", ObservedChange.CHANGED, LocalPostconditionStatus.UNSATISFIED),
+        ("unchanged_mismatch", "select_option", ObservedChange.UNCHANGED, LocalPostconditionStatus.UNSATISFIED),
+    ),
 )
-@settings(max_examples=24)
-def test_unchanged_complete_text_mismatch_is_a_hard_local_failure(
-    requested: str,
-    observed: str,
+@given(
+    token=st.text(
+        alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters=("\x00",)),
+        min_size=1,
+        max_size=20,
+    ),
+)
+@settings(max_examples=8)
+def test_value_postcondition_algebra_is_closed_for_complete_and_truncated_evidence(
+    scenario: str,
+    semantic: str,
+    expected_change: ObservedChange,
+    expected_postcondition: LocalPostconditionStatus,
+    token: str,
 ) -> None:
-    assume(requested != observed)
-    before = _world("obs:before", "type_text", observed)
-    after = _world("obs:after", "type_text", observed)
+    if semantic == "select_option":
+        requested = "A" if len(token) % 2 else "B"
+        other = "B" if requested == "A" else "A"
+    elif scenario == "truncated_exact":
+        requested = (token * (MAX_SEMANTIC_TEXT // len(token) + 1))[:MAX_SEMANTIC_TEXT]
+        other = f"before:{token}"
+    else:
+        requested = token
+        other = f"{token}|other"
 
-    evaluation = _evaluate(before, after, "type_text", requested)
+    if scenario == "exact_changed":
+        before_value, after_value = other, requested
+    elif scenario == "exact_unchanged":
+        before_value = after_value = requested
+    elif scenario == "changed_mismatch":
+        before_value, after_value = requested, other
+    elif scenario == "unchanged_mismatch":
+        before_value = after_value = other
+    else:
+        assert scenario == "truncated_exact"
+        before_value, after_value = other, f"{requested}x"
 
-    assert evaluation.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+    before = _world("obs:before", semantic, before_value)
+    after = _world("obs:after", semantic, after_value)
+    evaluation = _evaluate(before, after, semantic, requested)
+
+    assert evaluation.observed_change is expected_change
+    assert evaluation.local_postcondition is expected_postcondition
 
 
 def test_truncated_value_prefix_cannot_prove_exact_text_satisfaction() -> None:
