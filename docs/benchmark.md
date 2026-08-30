@@ -285,11 +285,12 @@ retry supported by the lifecycle, and rejects every larger positive budget at co
 therefore reaches typed `RECOVER(1) -> RECOVER(2) -> BLOCK(3)` without constructing an out-of-domain
 `RecoverySignal`.
 
-The post-`a27d2ca6` fixed-environment suite reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The
+The post-`366b4d26` fixed-environment suite reports `2156 passed, 19 skipped, 1 deselected, 1 warning` in 121.34
+seconds. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
-`FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and
-repeated live semantic reliability remain open; the focused owner set reports `296 passed, 3 skipped`. The declared
-W1b diagnostic cohort is not re-closed.
+`FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. The final-SHA fresh review
+is an independent gate and cannot close repeated live semantic reliability; the focused owner set reports
+`297 passed, 3 skipped`. The declared W1b diagnostic cohort is not re-closed.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 

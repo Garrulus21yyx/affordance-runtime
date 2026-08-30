@@ -371,11 +371,12 @@ margin under the canonical three-bytes-per-token estimator even for Unicode and 
 positive values fail at profile construction instead of exceeding `RecoverySignal`'s bounded attempt algebra inside
 an episode.
 
-The post-`a27d2ca6` fixed-environment repository gate reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The sole
+The post-`366b4d26` fixed-environment repository gate reports `2156 passed, 19 skipped, 1 deselected, 1 warning`. The sole
 deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the
 absent file before product code. The exact-local-replay owner tests cover Monitor, CoreLoop, `find_controls`, and
-PydanticAI same-call ToolReturn boundaries; the focused owner set reports `296 passed, 3 skipped`. Final fresh review
-and repeated live semantic reliability remain open; no closure is claimed from the earlier single passing run.
+PydanticAI same-call ToolReturn boundaries; the focused owner set reports `297 passed, 3 skipped`. The final-SHA fresh
+review is an independent gate and cannot close the still-open repeated live semantic reliability boundary; no closure
+is claimed from the earlier single passing run.
 
 ### 2026-08-29 tool-contract convergence
 
