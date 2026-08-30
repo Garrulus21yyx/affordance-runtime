@@ -275,6 +275,26 @@ that the former looping/over-reading failure was removed, exposes the now-fixed 
 single-model semantic adherence empirically open. Runtime does not add a reviewer-name rule, answer oracle, second
 planner, or automatic semantic critic from this one case.
 
+The clean final-SHA Task21
+[`truthful-progress-run19`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-truthful-progress-run19/run.json)
+then exercised the repaired chain at `91b1af46`. It again ended native `blocked`, now after eight policy calls, two
+browser executions, two Monitor recovery calls, zero waits, and one native submission. The first repeated page-2
+`R10` read was classified exact replay and opened recovery; the ActionPolicy changed to the page-status `R11` route,
+then one later exact `R10` read opened a new recovery and the policy submitted. The first page-2 read itself correctly
+counted one new semantic record: the source HTML contains distinct page-1/page-2 records whose author values are
+`Michelle DavisMichelle Davis` and `Michelle Davis`. Treating those as the same record by string similarity would
+violate the changed-business-value novelty contract and would move source semantics into Monitor.
+
+The final response improved from run18 to Dibbins, Anglebert Dinkherhump, and Michelle Davis, but still omitted Catso.
+The model had Catso's complete text in native history and repeatedly described it accurately, then interpreted
+“for people with very small ears” as about the person rather than as evidence that the product's ear cups are small.
+This is single-ActionPolicy semantic adherence, not lost evidence, false currentness, or an unobserved dead end. The
+mechanical route now converges in a bounded number of calls, but broad efficiency is not closed: four deliberate
+generations reached a length boundary, total usage was 255,318 tokens, and model latency was 125.63 seconds. A
+reviewer-name rule, fuzzy Runtime record merger, larger progress store, or second planner would be the wrong owner.
+Semantic accuracy and reasoning-token efficiency remain open for held-out comparison or a stronger ActionPolicy
+profile; they are not inferred fixed from the provider-free gate.
+
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
@@ -978,7 +998,8 @@ compactions retained cumulative historical conclusions while recent reasoning/ca
 there was no per-step progress producer. Run6 closes the Task8 zero-result/provider/progress witness, but one accepted
 case does not establish held-out cohort stability.
 
-Run18 is the accepted post-repair Task21 witness: Runtime ended `done` and the native evaluator returned
+The legacy Task21 witness labeled Run18 in the 2026-08-24 record—distinct from the 2026-08-30
+`cross-page-convergence-run18` above—is accepted: Runtime ended `done` and the native evaluator returned
 `verified_success`. Task27 run2 accepted with native `verified_success`, live-verifying the post-action recapture
 repair; Task44 run1 also accepted. Task266 run1 is a stopped, failed pre-repair diagnostic for the liveness defect
 described below; Task266 run2 live-validates liveness but is a failed pre-repair diagnostic for the subsequent media
@@ -1508,7 +1529,8 @@ The repair deletes those two obsolete declarations and does not weaken `validate
 vertical test opens the W1b composition over fake BrowserGym, supplies a valid official response, and proves
 codec-normalized content -> exactly one STOP -> post-STOP capture -> native success -> `RunStatus.DONE`, while
 `TaskEvaluation.outputs` remains empty. No response artifact, evaluator projection, Store, or additional terminal state
-was added. Run16 remains diagnostic evidence; run18 is the accepted post-repair live witness.
+was added. Run16 remains diagnostic evidence; the legacy 2026-08-24 Task21 Run18 is the accepted post-repair live
+witness.
 
 Task27 run1 failed after the model correctly selected and BrowserGym dispatched the Forums link exactly once. The
 transition trace records `/ -> /forums`, navigation start and commit, and document epoch `1 -> 2`, but the bounded

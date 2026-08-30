@@ -1708,8 +1708,9 @@ URL itself supplied the ID. This is context pollution and excess latency, not a 
 failure. This pre-repair witness motivated the direct Harness owner contract above; live closure still depends on the
 fresh post-repair run rather than the provider-free gates alone.
 
-Run18 live-verified the terminal output-ownership repair on Task21: the official response was accepted, Runtime ended
-`done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
+The legacy Task21 witness labeled Run18 in the 2026-08-24 record—distinct from the 2026-08-30
+`cross-page-convergence-run18`—live-verified the terminal output-ownership repair: the official response was accepted,
+Runtime ended `done`, and the native evaluator returned `verified_success`. Task27 run2 then live-verified the bounded post-action
 recapture path, and Task44 run1 independently completed with native `verified_success`.
 Task266 run2 live-verified the large-page liveness repair, then exposed the separate screenshot-grounding projection
 defect described below. Run3 crossed that media boundary and exposed the subsequent public-identity capacity defect;
@@ -1860,7 +1861,7 @@ The owner repair removes the obsolete W1b requested-output/manifest declarations
 validator remains strict for real World-backed deliverables. A fake-BrowserGym vertical gate now exercises the exact
 positive path: official codec normalization -> one STOP -> post-STOP capture -> native success -> validated
 `TaskEvaluation(COMPLETE)` -> `RunStatus.DONE`, with no output artifact, response Store, or projection side channel.
-Run16 remains a failed pre-repair witness. Run18 is the post-repair accepted live witness.
+Run16 remains a failed pre-repair witness. That legacy Task21 Run18 is the post-repair accepted live witness.
 
 Task27 run1 then exposed the still-open BrowserGym causal-transition gate. The model correctly selected the Forums
 link; BrowserGym recorded one `sent` dispatch, a URL change from `/` to `/forums`, navigation start and commit, and a
