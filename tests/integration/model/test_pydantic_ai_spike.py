@@ -3353,6 +3353,11 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "bounded record-by-record inclusion audit" in MODEL_POLICY_INSTRUCTIONS
     assert "including clear\n  paraphrases" in MODEL_POLICY_INSTRUCTIONS
     assert "reconcile the output count with that" in MODEL_POLICY_INSTRUCTIONS
+    assert "each required fresh UI pagination state at most once" in MODEL_POLICY_INSTRUCTIONS
+    assert "duplicate\n  identities are deduplicated evidence" in MODEL_POLICY_INSTRUCTIONS
+    assert "not proof that the fresh page failed to load" in MODEL_POLICY_INSTRUCTIONS
+    assert "audit never expands the task-defined scope" in MODEL_POLICY_INSTRUCTIONS
+    assert "revisit a fresh pagination state" in MODEL_POLICY_INSTRUCTIONS
     assert "normalize or reinterpret values only after blur or form submission" in MODEL_POLICY_INSTRUCTIONS
     assert "fresh controls no longer encode the intended constraints" in MODEL_POLICY_INSTRUCTIONS
     assert not {

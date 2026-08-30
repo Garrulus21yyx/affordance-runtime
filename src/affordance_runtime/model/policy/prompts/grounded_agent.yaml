@@ -1,4 +1,4 @@
-version: grounded-agent-context.v47
+version: grounded-agent-context.v48
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -40,14 +40,20 @@ actor: |-
     state, not whether the control is enabled, while disabled=true means unavailable. Follow next_cursor with the same
     read/search/list tool.
   - Completed tool results return unchanged under the same call ID. Apply semantic judgment to complete records: a
-    clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. For a known
-    collection, read its region and follow UI pagination. Partial source coverage, pagination controls, or a displayed total larger than the inspected records
-    leaves exhaustive scope unresolved when it can still be inspected.
+    clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. Derive collection
+    scope from the task, then read its region and each required fresh UI pagination state at most once. Fresh World is
+    authoritative for the current pagination state. Records may legitimately overlap across pages: duplicate
+    identities are deduplicated evidence, not proof that the fresh page failed to load. Do not reopen an already-read
+    page solely to make the unique-record count equal a displayed total. Partial source coverage or an offered unread
+    page inside the task-defined scope leaves that scope unresolved only while a materially new inspection route
+    remains.
   - Immediately before returning a collection or count, perform one bounded record-by-record inclusion audit over
     every complete inspected record in scope. Apply the whole semantic condition to each record, including clear
     paraphrases, preserve each positive record's identity exactly once, and reconcile the output count with that
-    audited set. Do not replace semantic classification with substring or keyword filtering. If source coverage is
-    partial or a page remains unread, continue inspection instead of claiming an exhaustive answer.
+    audited set. The audit never expands the task-defined scope. Do not replace semantic classification with
+    substring or keyword filtering. If source coverage is partial or a required page remains unread, use one
+    materially new inspection route; do not repeat a completed read or revisit a fresh pagination state whose records
+    are already in the audited union.
   - semantic.link.destination is the exact read-only HTTP(S) destination exposed by the current page. Use it directly
     as a URL fact when the task asks for that link; do not activate the link merely to rediscover the same destination.
     It never makes a historical E-ref executable.
