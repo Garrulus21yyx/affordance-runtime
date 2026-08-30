@@ -105,13 +105,23 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => {
     return {family, tone};
   };
   const style = getComputedStyle(el);
+  const parentStyle = el.parentElement ? getComputedStyle(el.parentElement) : null;
   const backgroundAppearance = classifyColor(style.backgroundColor);
-  const svgFill = el.namespaceURI === 'http://www.w3.org/2000/svg'
+  const isSvg = el.namespaceURI === 'http://www.w3.org/2000/svg';
+  const svgFill = isSvg
     ? classifyColor(style.fill)
     : null;
-  const foregroundAppearance = svgFill || classifyColor(style.color);
+  const foregroundRaw = svgFill ? style.fill : style.color;
+  const inheritedForegroundRaw = parentStyle
+    ? (isSvg && classifyColor(parentStyle.fill) ? parentStyle.fill : parentStyle.color)
+    : '';
+  const foregroundAppearance = (
+    !parentStyle || foregroundRaw !== inheritedForegroundRaw
+      ? classifyColor(foregroundRaw)
+      : null
+  );
   const legacyAppearance = (
-    el.namespaceURI === 'http://www.w3.org/2000/svg' && !backgroundAppearance
+    isSvg && !backgroundAppearance
       ? svgFill
       : backgroundAppearance
   );

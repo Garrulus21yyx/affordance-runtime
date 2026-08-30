@@ -306,6 +306,7 @@ def test_computed_foreground_and_background_appearance_are_public_semantics() ->
     assert "foregroundFamily" in script
     assert "backgroundFamily" in script
     assert "luminance" in script
+    assert "inheritedForegroundRaw" in script
     raw = raw_observation(ax_node("rating-mark", "generic", "★"))
     raw["extra_element_properties"]["rating-mark"]["clickable"] = True
     raw[PRIVATE_CONTROL_PROPERTIES_KEY]["rating-mark"].update(
