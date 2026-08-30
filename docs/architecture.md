@@ -156,9 +156,10 @@ native evaluation. Thus the run does not falsify the repaired Monitor ownership,
 closure open on separate action-delivery and final-response representation gaps. It authorizes diagnosis, not a
 task-specific branch or an evaluator shortcut.
 
-The post-run owner repairs are implemented in `87efa081`, `6c7fb0a8`, `ff9e5662`, `02ff15e4`, and `e93880c3`.
+The post-run owner repairs are implemented in `87efa081`, `6c7fb0a8`, `ff9e5662`, `02ff15e4`, `e93880c3`,
+`6ff2b14f`, and `978c02e9`.
 `ActionDeliveryPlan` now derives one active
-interaction region only when a current editable focus belongs to a non-repeated `form | dialog | search`. Every
+interaction region only when a current interactive focus belongs to a non-repeated `form | dialog | search`. Every
 current entity action in that region forms one required target-atomic prefix and is presented before background
 ActionPager breadth. While that prefix is active, the base obligation hard-retains only declared browser-context
 capabilities and fills its remaining task-ranked/source-order page opportunistically under the existing request
@@ -180,13 +181,15 @@ the codec's existing `normalize -> STOP -> native evaluator` path. CoreLoop does
 opaque `content` payload is rejected at tool validation rather than after the policy has terminated the task. The
 codec boundary validates the complete finite schema at construction, including bounded arrays and bounded dynamic
 object keys/values, and conservatively proves that every schema-valid compact encoding fits the `FinalResponse`
-decision bound. Consequently Catalog acceptance and Binding encoding implement the same algebra; malformed `$ref`,
+decision bound. Numeric proof includes the decimal width of integers admitted by JSON `number` schemas even when
+their declared endpoints use compact exponent notation. Consequently Catalog acceptance and Binding encoding
+implement the same algebra; malformed `$ref`,
 unbounded arrays, open objects, and over-limit schemas fail before Context identity or Catalog compilation. Plain
-text remains limited to 8,000 nonblank characters through a schema-visible pattern; structured compact encoding has
-a conservative 128-KiB decision bound. No live
+text remains limited to 8,000 nonblank characters through a schema-visible pattern, including for codec extensions;
+structured compact encoding has a conservative 128-KiB decision bound. No live
 Task554 rerun has yet verified these two post-run repairs, so empirical closure remains open.
 
-The final fixed-environment gate reports `2117 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
+The final fixed-environment gate reports `2119 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
 and `git diff --check` pass. One deselection is the documented absent archived dashboard trace. The other three are
 wall-clock deadline assertions that fail with the same approximately 0.23–0.27 second measurements on the untouched
 pre-repair `6aae7598` baseline, so they remain an environment/baseline limitation rather than authorizing a Runner or
@@ -2623,7 +2626,7 @@ a filter inside a repeated table/list cannot promote every repeated row action. 
 current `expanded`, `checked`, `selected`, or `pressed` state are also structural interaction anchors, so a collapsed
 disclosure such as a sort menu remains discoverable without teaching lexical search what option should be chosen.
 
-When a current editable focus identifies a non-repeated `form | dialog | search`, that whole region is instead the
+When a current interactive focus identifies a non-repeated `form | dialog | search`, that whole region is instead the
 active interaction bundle: all of its current entity routes form the required prefix and precede background base
 actions. Only the browser-context prefix of the base group is simultaneously mandatory; ordinary task-ranked and
 source-order breadth fills remaining capacity. When `find_controls` returns an explicit query group, that complete

@@ -106,15 +106,17 @@ domains derived from the installed upstream schema. Compatibility and structured
 compile that nested contract, valid `MUTATE/SUCCESS` resolves to canonical JSON for the existing codec, and the old
 opaque `content` shape fails as typed invalid arguments before STOP. Fresh review additionally required codec-owned
 finite-schema validation and a proof that every Catalog-valid payload fits the downstream encoded response bound;
-`ff9e5662` supplies both, including bounded dynamic result-object keys and values. `e93880c3` makes plain
+`ff9e5662` supplies both, including bounded dynamic result-object keys and values; `6ff2b14f` additionally proves the
+full decimal width of integers admitted by exponent-form JSON `number` bounds. `e93880c3` makes plain
 compatibility expose
 its nonblank invariant in the Catalog schema, so whitespace-only content cannot pass Catalog and fail later in the
-Binding. Structured encoding is conservatively capped at 128 KiB while plain content remains capped at 8,000
+Binding; `978c02e9` applies the 8,000-character compatibility cap to codec extensions as well. Structured encoding is
+conservatively capped at 128 KiB while plain content remains capped at 8,000
 characters. The repaired focused action/schema/
-Catalog/WebArena set reports `167 passed`, and the plan/packer property set reports `85 passed`. A live Task554 rerun
+Catalog/WebArena set reports `170 passed`, and the plan/packer property set reports `85 passed`. A live Task554 rerun
 remains required.
 
-The final fixed-environment suite reports `2117 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
+The final fixed-environment suite reports `2119 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
 and `git diff --check` pass. The deselections are the known unavailable archived dashboard-trace witness plus three
 wall-clock deadline tests that reproduce unchanged on the pre-repair `6aae7598` baseline at approximately 0.23–0.27
 seconds. They are recorded as baseline/environment limitations, not product exemptions and not grounds to change the
