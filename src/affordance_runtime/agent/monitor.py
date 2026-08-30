@@ -570,6 +570,9 @@ class EpisodeMonitor:
                 exact_replay,
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION,
+                information_delta is not None
+                and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+                and self.observation_only_streak >= 2,
                 gui_dispatched and self.same_attempt_streak >= 2,
                 control_discovery and self.observation_only_streak >= _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS,
                 not gui_dispatched
@@ -888,6 +891,14 @@ def _control_stall_instruction(result: StepResult) -> str:
             "already supported, finish; otherwise choose one materially different current route for a specific "
             "missing output. Follow next_cursor only when has_more is true, and stop with a typed no-progress outcome "
             "when no materially new route remains."
+        )
+    if isinstance(result.decision, RequestObservation):
+        return (
+            "The latest perception produced no new usable public fact; its typed unknown/failure reason is route "
+            "evidence, not a task answer. Do not paraphrase the same perception request on the unchanged World. "
+            "Use one materially different acquisition route, first reveal the target with an offered GUI action, "
+            "finish when existing evidence is sufficient, or return a typed no-progress outcome when routes are "
+            "exhausted."
         )
     return (
         "Use a materially different current control, relevant page content, or offered browser navigation action; "

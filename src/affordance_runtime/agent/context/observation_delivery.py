@@ -15,11 +15,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.context.contracts import sanitize_history_arguments
-from affordance_runtime.agent.decisions import LocalToolResult, ToolRejectedResult
+from affordance_runtime.agent.decisions import LocalToolResult, RequestObservation, ToolRejectedResult
 from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.observation_outcomes import (
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+)
 from affordance_runtime.world.public_semantic_digest import target_semantics
 
 _MAX_LOCAL_DELIVERY_RECORDS = 64
@@ -28,6 +32,7 @@ _MAX_LOCAL_INFORMATION_ITEMS = 32
 
 class InformationDeltaKind(StrEnum):
     NEW_INFORMATION = "new_information"
+    NO_USABLE_INFORMATION = "no_usable_information"
     NO_MATCHES = "no_matches"
     NO_NEW_INFORMATION = "no_new_information"
     EXACT_REPLAY = "exact_replay"
@@ -139,6 +144,11 @@ class ObservationDeliveryStore:
             # Monitor transition owns the failure; novelty must not describe
             # the rejected call as information progress.
             return DeliveryTransition(self, None, getattr(step, "runtime_failure", None))
+        if isinstance(decision, RequestObservation):
+            outcome = getattr(step, "observation_outcome", None)
+            if outcome is None:
+                return DeliveryTransition(self, None, getattr(step, "runtime_failure", None))
+            return self._reduce_observation(step, decision, outcome)
         if isinstance(decision, LocalToolResult):
             operation = decision.tool_name
             arguments = decision.arguments
@@ -217,6 +227,82 @@ class ObservationDeliveryStore:
         )
         return DeliveryTransition(next_store, delta, getattr(step, "runtime_failure", None))
 
+    def _reduce_observation(
+        self,
+        step: object,
+        decision: RequestObservation,
+        outcome: ObservationQueryOutcome,
+    ) -> DeliveryTransition:
+        """Reduce one typed perception result to novelty facts, never a second memory."""
+
+        before = getattr(step, "before_world")
+        after = getattr(step, "after_world")
+        world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
+        operation = "request_evidence"
+        arguments_digest = _public_digest(_observation_attempt(decision, before))
+        item_digests = _observation_fact_digests(outcome, after)
+        result_digest = _public_digest(_observation_result_receipt(outcome, item_digests))
+        exact = next(
+            (
+                item
+                for item in reversed(self.local_deliveries)
+                if (item.operation, item.world_digest, item.arguments_digest, item.result_digest)
+                == (operation, world_digest, arguments_digest, result_digest)
+            ),
+            None,
+        )
+        if exact is not None:
+            return DeliveryTransition(
+                self,
+                InformationDelta(
+                    InformationDeltaKind.EXACT_REPLAY,
+                    operation,
+                    world_digest,
+                    arguments_digest,
+                    result_digest,
+                ),
+                getattr(step, "runtime_failure", None),
+            )
+
+        delivered = {
+            digest
+            for record in self.local_deliveries
+            for digest in record.item_digests
+        }
+        already_current = set(_world_information_digests(before))
+        new_digests = tuple(
+            item for item in item_digests if item not in delivered and item not in already_current
+        )
+        if outcome.disposition in {
+            ObservationQueryDisposition.UNKNOWN,
+            ObservationQueryDisposition.FAILED,
+        }:
+            kind = InformationDeltaKind.NO_USABLE_INFORMATION
+        elif new_digests:
+            kind = InformationDeltaKind.NEW_INFORMATION
+        else:
+            kind = InformationDeltaKind.NO_NEW_INFORMATION
+        delta = InformationDelta(
+            kind,
+            operation,
+            world_digest,
+            arguments_digest,
+            result_digest,
+            _public_digest(item_digests),
+            new_digests if kind is InformationDeltaKind.NEW_INFORMATION else (),
+        )
+        record = LocalDeliveryRecord(
+            operation,
+            world_digest,
+            arguments_digest,
+            result_digest,
+            item_digests,
+        )
+        next_store = ObservationDeliveryStore(
+            (*self.local_deliveries, record)[-_MAX_LOCAL_DELIVERY_RECORDS:]
+        )
+        return DeliveryTransition(next_store, delta, getattr(step, "runtime_failure", None))
+
 
 def _monitor_items(result: Mapping[str, object]) -> tuple[object, ...]:
     """Select bounded novelty atoms without retaining the result body."""
@@ -226,6 +312,101 @@ def _monitor_items(result: Mapping[str, object]) -> tuple[object, ...]:
         if isinstance(values, tuple | list):
             return tuple(values)
     return (result,)
+
+
+def _observation_attempt(
+    decision: RequestObservation,
+    world: WorldObservation,
+) -> Mapping[str, object]:
+    targets = {item.target_id: item for item in world.targets}
+    bases = {
+        item.target_id: (item.role, item.label, to_json_compatible(item.state))
+        for item in world.targets
+    }
+    return {
+        "purpose": decision.purpose.value,
+        "subjects": tuple(
+            target_semantics(targets[item], bases)
+            for item in decision.subject_ids
+            if item in targets
+        ),
+        "candidates": tuple(
+            target_semantics(targets[item], bases)
+            for item in decision.candidate_ids
+            if item in targets
+        ),
+        "atomic_query": decision.atomic_query.strip(),
+        "predicate": decision.predicate.strip(),
+        "max_results": decision.max_results,
+    }
+
+
+def _observation_result_receipt(
+    outcome: ObservationQueryOutcome,
+    item_digests: tuple[str, ...],
+) -> Mapping[str, object]:
+    return {
+        "purpose": outcome.purpose.value,
+        "status": outcome.disposition.value,
+        "facts": item_digests,
+        "unknown_reasons": tuple(item.reason.value for item in outcome.unknown_items),
+        "failure_reason": outcome.failure_reason.value if outcome.failure_reason is not None else "",
+    }
+
+
+def _observation_fact_digests(
+    outcome: ObservationQueryOutcome,
+    world: WorldObservation,
+) -> tuple[str, ...]:
+    targets = {item.target_id: item for item in world.targets}
+    bases = {
+        item.target_id: (item.role, item.label, to_json_compatible(item.state))
+        for item in world.targets
+    }
+    facts = {item.fact_id: item for item in world.facts}
+    atoms: list[object] = []
+    for observed in outcome.observed_items:
+        atoms.extend(
+            ("subject", target_semantics(targets[subject], bases))
+            for subject in observed.subject_ids
+            if subject in targets
+        )
+        for evidence_ref in observed.evidence_refs:
+            fact = facts.get(evidence_ref)
+            if fact is None or fact.subject_id not in targets:
+                continue
+            atoms.append(
+                (
+                    "fact",
+                    target_semantics(targets[fact.subject_id], bases),
+                    fact.predicate,
+                    to_json_compatible(fact.value),
+                )
+            )
+    return tuple(dict.fromkeys(_public_digest(item) for item in atoms))[:_MAX_LOCAL_INFORMATION_ITEMS]
+
+
+def _world_information_digests(world: WorldObservation) -> tuple[str, ...]:
+    targets = {item.target_id: item for item in world.targets}
+    bases = {
+        item.target_id: (item.role, item.label, to_json_compatible(item.state))
+        for item in world.targets
+    }
+    atoms: list[object] = [
+        ("subject", target_semantics(item, bases))
+        for item in world.targets
+    ]
+    atoms.extend(
+        (
+            "fact",
+            target_semantics(targets[fact.subject_id], bases),
+            fact.predicate,
+            to_json_compatible(fact.value),
+        )
+        for fact in world.facts
+        if fact.subject_id in targets
+    )
+    return tuple(dict.fromkeys(_public_digest(item) for item in atoms))
 
 
 def _public_digest(value: object) -> str:

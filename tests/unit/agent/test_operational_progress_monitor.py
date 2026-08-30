@@ -17,6 +17,7 @@ from affordance_runtime.actions import (
 from affordance_runtime.agent import (
     ReadRegionResult,
     RequestActionPage,
+    RequestObservation,
     SearchPageContentResult,
     SelectAction,
     ToolRejectedResult,
@@ -64,6 +65,17 @@ from affordance_runtime.execution import (
 )
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import AcquisitionOrigin, SemanticTarget, StateFact
+from affordance_runtime.world.observation_needs import ObservationPurpose
+from affordance_runtime.world.observation_outcomes import (
+    ObservationObservedItem,
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+    ObservationUnknownItem,
+    QueryScopeLocator,
+    ResultLocator,
+    VisualQueryFailureReason,
+    VisualUnknownReason,
+)
 from tests.support.observation_acquisition import acquired_acquisition
 from tests.support.world import fused_world
 
@@ -349,6 +361,189 @@ def _control_discovery_step(world, query: str, label: str) -> StepResult:
             "complete",
         ),
     )
+
+
+def _unknown_observation_step(
+    world,
+    query: str,
+    index: int,
+    reason: VisualUnknownReason = VisualUnknownReason.TARGET_NOT_VISIBLE,
+) -> StepResult:
+    decision = RequestObservation(
+        "context:test",
+        f"observation-query:unknown:{index}",
+        ObservationPurpose.ENTITY_DISCOVERY,
+        atomic_query=query,
+        max_results=5,
+        tool_call_id=f"call:unknown:{index}",
+    )
+    return StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world),
+        feedback="observation_unknown",
+        observation_outcome=ObservationQueryOutcome(
+            decision.query_id,
+            decision.purpose,
+            ObservationQueryDisposition.UNKNOWN,
+            unknown_items=(
+                ObservationUnknownItem(
+                    QueryScopeLocator(),
+                    reason,
+                ),
+            ),
+        ),
+    )
+
+
+def _failed_observation_step(world, query: str, index: int) -> StepResult:
+    decision = RequestObservation(
+        "context:test",
+        f"observation-query:failed:{index}",
+        ObservationPurpose.ENTITY_DISCOVERY,
+        atomic_query=query,
+        max_results=5,
+        tool_call_id=f"call:failed:{index}",
+    )
+    return StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world),
+        feedback="observation_unavailable",
+        observation_outcome=ObservationQueryOutcome(
+            decision.query_id,
+            decision.purpose,
+            ObservationQueryDisposition.FAILED,
+            failure_reason=VisualQueryFailureReason.PROVIDER_ERROR,
+        ),
+    )
+
+
+def _informative_observation_step(before, after) -> StepResult:
+    decision = RequestObservation(
+        "context:test",
+        "observation-query:observed",
+        ObservationPurpose.ENTITY_DISCOVERY,
+        atomic_query="visible result records",
+        max_results=5,
+        tool_call_id="call:observed",
+    )
+    fact = next(item for item in after.facts if item.subject_id == "result")
+    return StepResult(
+        decision,
+        before,
+        after,
+        _evaluation(after),
+        feedback="observation_acquired",
+        observation_outcome=ObservationQueryOutcome(
+            decision.query_id,
+            decision.purpose,
+            ObservationQueryDisposition.OBSERVED,
+            observed_items=(
+                ObservationObservedItem(
+                    ResultLocator(0),
+                    ("result",),
+                    (fact.fact_id,),
+                ),
+            ),
+        ),
+    )
+
+
+def test_two_no_usable_perception_results_trigger_one_deliberate_recovery() -> None:
+    world = _world("observation:perception-unknown")
+    monitor = EpisodeMonitor()
+    monitor.start_episode(world, _evaluation(world))
+    store = ObservationDeliveryStore()
+
+    first_step = _unknown_observation_step(world, "locate the hidden target", 1)
+    first = store.reduce(first_step, step_index=1)
+    first_monitor = monitor.evaluate(
+        first_step,
+        current_findings_digest(world),
+        first.information_delta,
+    )
+    second_step = _unknown_observation_step(world, "find that target visually", 2)
+    second = first.next_store.reduce(second_step, step_index=2)
+    recovery = monitor.evaluate(
+        second_step,
+        current_findings_digest(world),
+        second.information_delta,
+    )
+
+    assert first.information_delta is not None
+    assert first.information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+    assert second.information_delta is not None
+    assert second.information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+    assert first_monitor.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert "not a task answer" in recovery.recovery_signal.human_instruction
+    assert monitor.recovery_count == 1
+
+
+@given(reason=st.sampled_from(tuple(VisualUnknownReason)))
+def test_every_typed_unknown_reason_is_no_usable_information(
+    reason: VisualUnknownReason,
+) -> None:
+    world = _world("observation:perception-unknown-algebra")
+    step = _unknown_observation_step(world, "locate visible evidence", 1, reason)
+
+    transition = ObservationDeliveryStore().reduce(step, step_index=1)
+
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+    assert transition.information_delta.new_information_count == 0
+
+
+def test_typed_perception_failure_is_no_usable_information() -> None:
+    world = _world("observation:perception-failed")
+    step = _failed_observation_step(world, "locate visible evidence", 1)
+
+    transition = ObservationDeliveryStore().reduce(step, step_index=1)
+
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+    assert transition.information_delta.new_information_count == 0
+
+
+def test_new_observation_fact_closes_local_perception_recovery() -> None:
+    before = _world("observation:perception-before")
+    after = _world(
+        "observation:perception-after",
+        result_text="new visible record",
+    )
+    monitor = EpisodeMonitor()
+    monitor.start_episode(before, _evaluation(before))
+    store = ObservationDeliveryStore()
+
+    first_step = _unknown_observation_step(before, "locate target", 1)
+    first = store.reduce(first_step, step_index=1)
+    monitor.evaluate(first_step, current_findings_digest(before), first.information_delta)
+    second_step = _unknown_observation_step(before, "find target visually", 2)
+    second = first.next_store.reduce(second_step, step_index=2)
+    recovery = monitor.evaluate(
+        second_step,
+        current_findings_digest(before),
+        second.information_delta,
+    )
+    observed_step = _informative_observation_step(before, after)
+    observed = second.next_store.reduce(observed_step, step_index=3)
+    resolved = monitor.evaluate(
+        observed_step,
+        current_findings_digest(after),
+        observed.information_delta,
+    )
+
+    assert recovery.recovery_lifecycle is RecoveryLifecycleTransition.STARTED
+    assert observed.information_delta is not None
+    assert observed.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert observed.information_delta.new_information_count == 2
+    assert resolved.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert resolved.recovery_signal is None
 
 
 def test_control_discovery_recovery_is_not_cleared_by_a_different_query() -> None:
