@@ -151,7 +151,7 @@ single unavailable witness explicitly deselected, the formal gate reports
 this run without threshold changes. A new live Task554 run remains separately authorized work; run10 did not exercise
 the structured final-response call and does not close either Task554 or the broader W2 cohort.
 
-### 2026-08-30 held-out W1b failures — owner repairs verified, reruns pending
+### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
 diagnostic evidence, not a basis for case-specific production logic:
@@ -175,23 +175,57 @@ diagnostic evidence, not a basis for case-specific production logic:
   evaluation in 2 policy calls.
 
 The repairs are generic and owner-local. `cf6cb3ab` closes the provider's physical-request algebra and maps local
-budget exhaustion to a typed non-provider protocol failure. `58a8e390` makes WebArena's model-visible final response
-a four-branch cross-field union, uses the same contract at codec normalization, converts unrecoverable semantic
-argument proposals into same-call zero-dispatch rejection, and opens deliberate recovery on the first typed
-rejection. `92d75034` updates the sole ActionPolicy with a bounded fresh-control consistency check and a
-record-by-record semantic inclusion audit. `1e5ea44a` migrates the prior semantic-repair regression to assert the new
-recoverable ToolReturn instead of a terminal provider failure.
+budget exhaustion to a typed non-provider protocol failure. `58a8e390` makes the native final response a four-branch
+cross-field union, uses the same contract at codec normalization, converts unrecoverable semantic argument proposals
+into same-call zero-dispatch rejection, and opens deliberate recovery on the first typed rejection. `92d75034` and
+the later prompt revisions keep fresh-control consistency plus a bounded record-by-record semantic inclusion audit in
+the sole ActionPolicy. `feccf021` delivers bounded ref-free read scope/trajectory; `a7b971ce` prevents GoalPlan from
+changing TaskGoal semantics and allows 4,096-token deliberate calls; `6cbc63f7` and `b9bf0299` make relational
+entailment and complete-positive-set preservation explicit.
+
+The remaining Task21 runs isolated two output-boundary defects rather than candidate ranking. In
+[`run10`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run10/run.json), the initial
+final attempt concluded the correct four-item set, then emitted optional presentation material before its required
+native response and was truncated; the recovery regenerated only three. Forcing all ordinary calls to
+`tool_choice=required` made behavior worse in
+[`run11`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run11/run.json), so `eb0a65df`
+reverts that experiment. `04964995` adds a contract-owned `supports_presentation_sidecars` capability: strict native
+codecs expose only their response, while capable codecs retain the existing artifact/public-intent fields. This is
+not keyed by suite, task, label, or JSON encoding.
+
+[`run12`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run12/run.json) crossed the
+minimal final tool but still ended native failure: its final deliberate attempt used all 4,096 reasoning tokens before
+one ToolCall, and the non-thinking retry restarted classification and omitted Catso. `8d039bae` repairs the same-call
+owner boundary. A pre-operation truncation now projects at most 3,072 characters from the head and tail of the same
+ActionPolicy's incomplete reasoning into its one forced ToolCall retry, instructs the retry to preserve supported
+intermediate positives, and strips that checkpoint from official history on every outcome. It is a bounded physical
+continuation, not memory, a semantic judge, or a second planner. Prompt v52 also removes duplicate instructions rather
+than raising the soft request threshold; generated focused-bundle and 84/167/500-control cases prove the editor/submit
+bundle remains admitted and large candidate surfaces remain within the existing soft target.
+
+The accepted reruns are:
+
+- Task0 [`run2`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260830-contract-convergence-run2/run.json):
+  `done / complete / verified_success`, 35 policy calls, submitting `Quest Lumaflex™ Band` after the generic fresh-control
+  representation check;
+- Task7 [`run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260830-contract-convergence-run2/run.json):
+  `done / complete / verified_success`, seven policy calls, with no local request-budget misclassification;
+- Task21 [`run13`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run13/run.json):
+  `done / complete / verified_success`, ten policy calls and one deliberate recovery; the first final attempt was
+  length-truncated after identifying all positives, the checkpoint-backed retry submitted Dibbins, Anglebert
+  Dinkherhump, Michelle Davis, and Catso, and Runtime performed exactly one STOP/post-STOP capture/native evaluation;
+- Task27 and Task44 remain the unchanged native-success controls from `seq1`.
 
 No production branch contains a task ID, site, label, record, expected answer, date grammar, DOM class, selector,
-fixed ordering, or benchmark keyword. In particular, Task0 is not implemented as dynamic date-tool injection because
-the source exposes no stable public date-format contract to inject. Task21 does not add a semantic judge or Runtime
-predicate evaluator; the one ActionPolicy remains the only semantic owner.
+fixed ordering, or benchmark keyword. Task0 is not dynamic date-tool injection because the World exposes no stable
+date-format contract to inject. Task21 adds neither a semantic judge nor Runtime predicate evaluation; ActionPolicy
+remains the only semantic owner.
 
-Provider-free evidence is `115 passed` for the complete PydanticAI integration file and
-`2139 passed, 19 skipped, 1 deselected, 1 warning` for the fixed-environment repository suite. The deselected test is
-the already-documented missing archived dashboard trace and fails before product code with `FileNotFoundError` when
-run normally. Full Ruff, `compileall`, and `git diff --check` pass. Fresh sequential Task0 -> Task7 -> Task21 runs are
-still required; until then these three live failures and the broader benchmark remain open.
+The final fixed-environment suite reports `2147 passed, 19 skipped, 1 deselected, 1 warning` in 115.60 seconds. The
+sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
+`FileNotFoundError`. The combined ActionPolicy/provider/candidate convergence set reports `181 passed`; full Ruff,
+`compileall`, modified-production negative scans, and `git diff --check` pass. These five cases close the declared
+W1b diagnostic cohort, not broad WebArena accuracy or overall benchmark closure.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 

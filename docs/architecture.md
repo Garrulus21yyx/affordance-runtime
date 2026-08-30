@@ -49,7 +49,7 @@ TaskGoal
 + optional static GoalPlan
 + fresh World
 + current ToolCatalog
-+ latest four ref-free action -> committed outcome records
++ latest eight ref-free action -> committed outcome records
 + Harness summary of stable completed outcomes/facts/failed strategies
 + active Monitor recovery facts and exact hard constraints
 -> one ActionPolicy call
@@ -261,19 +261,56 @@ semantics are retained; the rewritten call is not executed. The first such typed
 Monitor recovery epoch, so the next invocation of the same ActionPolicy is deliberate and receives the rejection as
 the matching ToolReturn. No second planner or final-answer judge was added.
 
-Open-world inclusion remains solely with ActionPolicy. Prompt v47 requires one bounded record-by-record audit before
-returning a collection or count: apply the whole semantic condition including clear paraphrases, preserve each
-positive identity once, and reconcile the output count with the audited positives. It explicitly rejects
-substring/keyword filtering. Runtime still does not parse task predicates, force a task-specific second pass, or
-decide whether a business record qualifies.
+Open-world inclusion remains solely with ActionPolicy. Prompt v52 keeps one bounded record-by-record audit: apply the
+whole semantic condition and relational entailment, preserve every positive identity once, and reconcile the output
+with that union. Runtime still does not parse task predicates, force a task-specific second pass, or decide whether a
+business record qualifies. The prompt was reduced from 11,202 to about 7,900 characters by removing duplicated
+instructions while retaining the tested authority, semantic, recovery, pagination, safety, and finalization rules.
+That is a request-budget repair, not an arbitrary threshold increase: generated 84/167/500-control Worlds remain
+under the existing soft target, and the focused editor plus its submit sibling again fit the same admitted turn.
 
-Commits `cf6cb3ab`, `58a8e390`, `92d75034`, and `1e5ea44a` implement and migrate those contracts. Production contains
-no Task ID, site name, expected answer, record name, date format, selector, fixed action ID, or benchmark vocabulary.
-The complete PydanticAI integration file reports `115 passed`; the fixed-environment repository gate reports
-`2139 passed, 19 skipped, 1 deselected, 1 warning`. The sole deselection is the documented repository-missing archived
-dashboard trace; the unmodified test fails while opening that absent file before product code. Full-repository Ruff,
-`compileall`, and `git diff --check` pass. These results establish provider-free contract coherence; fresh Task0,
-Task7, and Task21 live runs remain the empirical gate.
+Two output surfaces are now explicit in `FinalResponseToolContract`: the native payload schema/encoding and whether
+the environment supports presentation sidecars. Structured interaction no longer unconditionally composes a large
+optional artifact into a strict native STOP call. A direct-only codec exposes only its required response; a codec
+that supports presentation still exposes `artifact` and `public_intent`. The capability is part of contract identity,
+so Catalog and Binding share it without checking benchmark, environment class, task, label, or payload encoding.
+
+The bounded physical-output algebra also preserves semantic continuity. If a length-truncated response already names
+one current operation, the existing required-only operation recovery completes that operation without reconsidering
+it. If truncation occurs before any operation, the same ActionPolicy's one non-thinking ToolCall retry receives a
+maximum 3,072-character, explicitly incomplete and non-authoritative head/tail checkpoint of its own rejected
+reasoning. It is used only inside that physical retry, preserves supported intermediate positives instead of
+restarting classification, and is removed from official history on success, cancellation, or provider failure. No
+Memory Store, semantic parser, second policy, or post-hoc answer repair was added.
+
+The Task21 live sequence falsified each narrower hypothesis. In
+[`run10`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run10/run.json), the first final
+attempt reasoned to all four positives but generated optional presentation fields before the required native response,
+hit its output limit, and a required-only regeneration omitted one positive. The experiment that forced every
+ordinary call to `tool_choice=required` regressed semantic behavior in
+[`run11`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run11/run.json) and is explicitly
+reverted by `eb0a65df`. After the contract-owned sidecar repair,
+[`run12`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run12/run.json) proved that the
+native tool was minimal, but the final deliberate response itself spent all 4,096 reasoning tokens before emitting an
+operation; its non-thinking retry again narrowed the answer. Finally,
+[`run13`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run13/run.json) at clean commit
+`8d039bae` crossed both owners: the deliberate prefix was length-truncated after concluding the complete four-item
+set, its bounded same-call checkpoint reached the retry, the retry submitted all four items, and the single native
+evaluator returned `complete / verified_success` after one STOP.
+
+Task0 and Task7 also cross their distinct repairs in
+[`Task0 run2`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260830-contract-convergence-run2/run.json) and
+[`Task7 run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260830-contract-convergence-run2/run.json), both with
+native `verified_success`; the unchanged Task27 and Task44 controls had already passed. Commits `cf6cb3ab`,
+`58a8e390`, `92d75034`, `1e5ea44a`, `feccf021`, `a7b971ce`, `6cbc63f7`, `12b64dff`, `b9bf0299`, `eb0a65df`,
+`04964995`, `8d039bae`, and `64bc82e7` form the converged causal surface. Production contains no Task ID, site name,
+expected answer, record name, date grammar, selector, fixed action ID, or benchmark vocabulary.
+
+The final fixed-environment repository gate reports `2147 passed, 19 skipped, 1 deselected, 1 warning`. The sole
+deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the
+absent file before product code. The ActionPolicy/provider/candidate convergence set reports `181 passed`; full Ruff,
+`compileall`, negative modified-production scans, and `git diff --check` pass. These results and the five live native
+verdicts close this bounded W1b cohort; they do not claim broad WebArena accuracy or overall benchmark closure.
 
 ### 2026-08-29 tool-contract convergence
 
