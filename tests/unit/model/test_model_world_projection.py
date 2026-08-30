@@ -800,7 +800,7 @@ def test_explicit_region_lens_keeps_navigation_region_folded_while_candidates_re
     assert f"region [{navigation_ref}]" not in rendered.text
 
 
-def test_context_delivers_only_the_workspace_latest_four_detailed_steps() -> None:
+def test_context_delivers_only_the_workspace_latest_eight_detailed_steps() -> None:
     observation = fused_world("world:history", surface="dom")
     task = TaskGoal("history", "Inspect recent steps")
     steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(10))
@@ -810,12 +810,12 @@ def test_context_delivers_only_the_workspace_latest_four_detailed_steps() -> Non
         observation,
         ActionSpace(observation.observation_id, ()),
         _evaluation(task, observation.observation_id),
-        AgentWorkspace(steps[-4:]),
+        AgentWorkspace(steps[-8:]),
         current_step_index=len(steps),
     )
 
     assert tuple(item.reason for item in context.workspace.recent_steps) == tuple(
-        f"step:{index}" for index in range(6, 10)
+        f"step:{index}" for index in range(2, 10)
     )
     assert context.current_step_index == 10
 

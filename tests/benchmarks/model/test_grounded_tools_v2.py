@@ -2560,10 +2560,10 @@ def test_grounded_workspace_is_not_a_second_model_visible_history() -> None:
         )
         for index in range(10)
     )
-    context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
+    context = replace(context, workspace=AgentWorkspace(turns[-8:]), current_step_index=len(turns))
 
     assert "recent_steps" not in _bound_public_context(context)
-    assert len(context.workspace.recent_steps) == 4
+    assert len(context.workspace.recent_steps) == 8
 
 
 def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
@@ -2575,13 +2575,13 @@ def test_grounded_trajectory_never_keeps_prior_observations_or_refs() -> None:
             AgentHistoricalTargetView("button", "Like", ("Rosie", "@nibh", "Id sit.")),
             reason=f"step-{index}",
         )
-        for index in range(5)
+        for index in range(9)
     )
-    context = replace(context, workspace=AgentWorkspace(turns[-4:]), current_step_index=len(turns))
+    context = replace(context, workspace=AgentWorkspace(turns[-8:]), current_step_index=len(turns))
 
     assert "recent_steps" not in _bound_public_context(context)
     assert {"observation", "target_ref", "destination_ref", "images"}.isdisjoint(AgentTurnView.__dataclass_fields__)
-    assert len(context.workspace.recent_steps) == 4
+    assert len(context.workspace.recent_steps) == 8
 
 
 def test_historical_target_neighborhood_stops_at_nearest_semantic_group() -> None:

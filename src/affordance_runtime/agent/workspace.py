@@ -17,7 +17,7 @@ from affordance_runtime.agent.context.projection import project_public_value
 from affordance_runtime.agent.context.world_transition import PublicWorldDelta
 from affordance_runtime.immutable import to_json_compatible
 
-MAX_WORKSPACE_RECENT_STEPS = 4
+MAX_WORKSPACE_RECENT_STEPS = 8
 MAX_WORKSPACE_SEMANTIC_EVENTS = 24
 
 
@@ -94,7 +94,7 @@ class AgentWorkspace:
         events = tuple(self.semantic_events)
         activities = tuple(self.activities)
         if len(recent) > MAX_WORKSPACE_RECENT_STEPS or any(not isinstance(item, AgentTurnView) for item in recent):
-            raise ValueError("workspace retains at most four typed detailed steps")
+            raise ValueError("workspace retains at most eight typed detailed steps")
         if any(not isinstance(item, SemanticEvent) for item in events):
             raise TypeError("workspace semantic events must be typed")
         if any(not isinstance(item, ActivitySummary) for item in activities):

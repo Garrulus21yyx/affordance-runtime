@@ -46,7 +46,7 @@ def _context(world, resolution=None, recent_steps: tuple[AgentTurnView, ...] = (
         world,
         ActionSpace(world.observation_id, ()),
         TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "incomplete"),
-        AgentWorkspace(recent_steps[-4:]),
+        AgentWorkspace(recent_steps[-8:]),
         current_step_index=len(recent_steps),
         goal_resolution=resolution,
     )
@@ -135,13 +135,13 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "dependencies express semantic order, not an action gate" in system
     assert "Outcomes need not remain simultaneously visible" in system
     assert "search_page_content is only an exact-substring locator" in system
-    assert "read its region and follow UI pagination" in system
+    assert "read its region and each required fresh UI pagination state" in system
     assert "sole authority for current" in system
     assert "override stale or conflicting statements" in system
     assert "clear paraphrase or" in system
     assert "incidental keyword overlap does not" in system
     assert "Partial source coverage" in system
-    assert "displayed total larger than the inspected records" in system
+    assert "make the unique-record count equal a displayed total" in system
     assert "An E ref with a supported verb is executable" in system
     assert "active describes current/selected" in system
     assert "disabled=true means unavailable" in system

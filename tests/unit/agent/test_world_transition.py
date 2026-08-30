@@ -397,7 +397,7 @@ def test_frozen_later_stage_contracts_close_types_and_lifecycle_bounds() -> None
     )
     activity = ActivitySummary(ActivityFamily.READ_REGION, "digest", 3, 0, "unchanged")
     workspace = AgentWorkspace(
-        tuple(AgentTurnView(f"turn:{index}") for index in range(4)),
+        tuple(AgentTurnView(f"turn:{index}") for index in range(8)),
         (event,),
         (activity,),
     )
@@ -413,11 +413,11 @@ def test_frozen_later_stage_contracts_close_types_and_lifecycle_bounds() -> None
     )
     profile = AgentLoopProfile(8, 1)
 
-    assert len(workspace.recent_steps) == 4
+    assert len(workspace.recent_steps) == 8
     assert version.version == 1
     assert profile.max_consecutive_observation_only == 8
     assert profile.max_recovery_retries == 1
-    with pytest.raises(ValueError, match="at most four"):
-        AgentWorkspace(tuple(AgentTurnView(str(index)) for index in range(5)))
+    with pytest.raises(ValueError, match="at most eight"):
+        AgentWorkspace(tuple(AgentTurnView(str(index)) for index in range(9)))
     with pytest.raises(ValueError, match="positive"):
         AgentLoopProfile(8, 0)

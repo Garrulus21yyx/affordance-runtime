@@ -983,6 +983,12 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
     assert outcome.source_coverage == "partial"
     assert outcome.region_membership == "complete"
     assert outcome.result_page == "1/1"
+    assert to_json_compatible(outcome.scope) == {
+        "role": "table",
+        "heading": table.heading,
+        "context": list(table.scope_path),
+    }
+    assert inspect_outcome_public(outcome)["scope"] is outcome.scope
     schema_labels = {item["label"] for item in outcome.items if item.get("kind") == "schema_member"}
     rows = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
     assert schema_labels >= {"Product", "Price", "Quantity"}

@@ -246,7 +246,17 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
             "committed": False,
         }
     if isinstance(decision, LocalToolResult):
-        return project_public_value(decision.arguments)
+        summary = dict(project_public_value(decision.arguments))
+        for name in (
+            "scope",
+            "has_more",
+            "result_page",
+            "source_coverage",
+            "region_membership",
+        ):
+            if name in decision.result:
+                summary[name] = project_public_value(decision.result[name])
+        return summary
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content), "public_intent": _bounded(decision.public_intent)}
     if isinstance(decision, Wait):

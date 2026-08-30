@@ -220,6 +220,10 @@ class Opened:
     source_coverage: str = "complete"
     region_membership: str = "complete"
     result_page: str = "1/1"
+    scope: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scope", freeze_json(dict(self.scope)))
 
 
 @dataclass(frozen=True)
@@ -693,6 +697,7 @@ def inspect_actor_world(
                 hard_limit=hard_limit,
                 source_coverage=region.source_coverage,
                 region_membership=region.region_membership,
+                scope=_region_read_scope(region),
             )
         if action == "find":
             if not query.strip():
@@ -776,6 +781,7 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
                     "source_coverage": outcome.source_coverage,
                     "region_membership": outcome.region_membership,
                     "result_page": outcome.result_page,
+                    "scope": outcome.scope,
                 }
             )
         return _with_world_read_metadata(result)
@@ -2012,6 +2018,7 @@ def _page_region_items(
     hard_limit: int,
     source_coverage: str,
     region_membership: str,
+    scope: Mapping[str, object],
 ) -> Opened | CapacityExceeded:
     """Pack stable public records against the final serialized result size."""
 
@@ -2032,6 +2039,7 @@ def _page_region_items(
             source_coverage,
             region_membership,
             _region_result_page(offset, candidate_end, len(items)),
+            scope,
         )
         if _inspect_outcome_bytes(outcome) <= hard_limit:
             page.append(items[index])
@@ -2045,6 +2053,7 @@ def _page_region_items(
                 source_coverage,
                 region_membership,
                 _region_result_page(offset, index, len(items)),
+                scope,
             )
             if _inspect_outcome_bytes(admitted) <= hard_limit:
                 return admitted
@@ -2056,6 +2065,7 @@ def _page_region_items(
             source_coverage,
             region_membership,
             _region_result_page(offset, candidate_end, len(items)),
+            scope,
         )
         if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
             page.append(bounded)
@@ -2069,6 +2079,7 @@ def _page_region_items(
         source_coverage,
         region_membership,
         _region_result_page(offset, index, len(items)),
+        scope,
     )
 
 
@@ -2137,6 +2148,17 @@ def _region_item(region, region_ref: str) -> Mapping[str, object]:
         "coverage": region.coverage,
         "recovery": "read_region",
     }
+
+
+def _region_read_scope(region: WorldRegion) -> Mapping[str, object]:
+    """Return the small ref-free semantic identity of one read scope."""
+
+    scope: dict[str, object] = {"role": region.role}
+    if region.heading.strip():
+        scope["heading"] = region.heading
+    if region.scope_path:
+        scope["context"] = region.scope_path
+    return scope
 
 
 def _decode_read_cursor(cursor: str, total: int, fingerprint: str) -> int:

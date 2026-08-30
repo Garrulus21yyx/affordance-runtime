@@ -54,9 +54,9 @@ def test_workspace_reducer_is_total_for_one_thousand_ordinary_reads() -> None:
         workspace = reducer.reduce(workspace, step, project_step_result(step), index + 1)
         trace.step_completed(index + 1, step)
 
-    assert len(workspace.recent_steps) == 4
+    assert len(workspace.recent_steps) == 8
     assert tuple(item.semantic_summary["query"] for item in workspace.recent_steps) == tuple(
-        f"query-{index}" for index in range(996, 1_000)
+        f"query-{index}" for index in range(992, 1_000)
     )
     activity = next(item for item in workspace.activities if item.family is ActivityFamily.READ_REGION)
     assert activity.attempt_count == 1_000
@@ -99,8 +99,8 @@ def test_workspace_reducer_folds_generated_observation_activity_sequences(
     expected = Counter(operations)
     actual = {item.family.value: item.attempt_count for item in workspace.activities}
     assert actual == expected
-    assert len(workspace.recent_steps) == min(4, len(operations))
-    assert tuple(item.semantic_action for item in workspace.recent_steps) == tuple(operations[-4:])
+    assert len(workspace.recent_steps) == min(8, len(operations))
+    assert tuple(item.semantic_action for item in workspace.recent_steps) == tuple(operations[-8:])
     assert workspace.semantic_events == ()
 
 
@@ -135,14 +135,37 @@ def test_workspace_keeps_gui_effect_summary_without_copying_exact_values() -> No
         runtime_failure=None,
         feedback="local_tool_result",
     )
-    for index in range(2, 10):
+    for index in range(2, 9):
         workspace = reducer.reduce(
             workspace,
             ordinary,
-            AgentTurnView("read_region", "read_region", reason=f"read-{index}"),
+            AgentTurnView(
+                "read_region",
+                "read_region",
+                reason=f"read-{index}",
+                semantic_summary={
+                    "scope": {"role": "main", "heading": f"section-{index}"},
+                    "result_page": "1/1",
+                },
+            ),
             index,
         )
 
+    assert workspace.recent_steps[0].semantic_action == "activate"
+    assert tuple(item.semantic_summary["scope"]["heading"] for item in workspace.recent_steps[1:]) == tuple(
+        f"section-{index}" for index in range(2, 9)
+    )
+    workspace = reducer.reduce(
+        workspace,
+        ordinary,
+        AgentTurnView(
+            "read_region",
+            "read_region",
+            reason="read-9",
+            semantic_summary={"scope": {"role": "main", "heading": "section-9"}, "result_page": "1/1"},
+        ),
+        9,
+    )
     assert all(item.semantic_action != "activate" for item in workspace.recent_steps)
     rendered = json.dumps(to_json_compatible(render_agent_workspace(workspace, total_step_count=9)))
     assert tuple(item.kind for item in workspace.semantic_events) == (SemanticEventKind.GUI_EFFECT,)
@@ -166,6 +189,45 @@ def test_projected_workspace_removes_generation_local_entity_and_fact_refs() -> 
 
     assert not re.search(r"\b[EF][1-9][0-9]{0,2}\b", encoded)
     assert "expired-ref" not in encoded
+
+
+def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body() -> None:
+    world = shared_world("observation:read-scope", False)
+    decision = ReadRegionResult(
+        "context:test",
+        "read_region",
+        {"region_ref": "R7", "cursor": "opaque"},
+        {
+            "kind": "Opened",
+            "items": ({"kind": "complete_item", "content": ({"text": "private body"},)},),
+            "has_more": True,
+            "result_page": "1/3",
+            "source_coverage": "complete",
+            "region_membership": "complete",
+            "scope": {
+                "role": "main",
+                "heading": "Results",
+                "context": ("Account", "Results"),
+            },
+        },
+    )
+    projected = project_step_result(
+        StepResult(decision, world, world, _evaluation(world.observation_id), feedback="local_tool_result")
+    )
+    encoded = json.dumps(
+        to_json_compatible(render_agent_workspace(AgentWorkspace((projected,)), total_step_count=1))
+    )
+
+    assert to_json_compatible(projected.semantic_summary["scope"]) == {
+        "role": "main",
+        "heading": "Results",
+        "context": ["Account", "Results"],
+    }
+    assert projected.semantic_summary["has_more"] is True
+    assert projected.semantic_summary["result_page"] == "1/3"
+    assert "private body" not in encoded
+    assert "R7" not in encoded
+    assert "opaque" not in encoded
 
 
 def test_rejected_action_workspace_keeps_receipt_not_result_body_or_ref_identity() -> None:
