@@ -1391,7 +1391,7 @@ def _dynamic_purpose_applicable(
     del delivery  # refs were already intersected with this exact manifest
     ref_count = len(refs)
     if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
-        return _has_structural_projection_gap(context)
+        return bool(context.actor_world.media) or _has_structural_projection_gap(context)
     if purpose in {
         ObservationPurpose.VISUAL_PROPERTY.value,
         ObservationPurpose.TEXT_IN_IMAGE.value,

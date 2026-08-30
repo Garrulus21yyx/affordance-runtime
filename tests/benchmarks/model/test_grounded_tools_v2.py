@@ -899,14 +899,15 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     )
 
 
-def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None:
+def test_dynamic_entity_discovery_requires_current_media_or_a_structural_projection_gap() -> None:
     base = _context()
 
-    def catalog(*, projection_coverage: str):
+    def catalog(*, projection_coverage: str, include_media: bool):
         context = replace(
             base,
             actor_world=replace(
                 base.actor_world,
+                media=base.actor_world.media if include_media else (),
                 sources=tuple(
                     replace(source, projection_coverage=projection_coverage)
                     if source.modality == "structural"
@@ -929,12 +930,14 @@ def test_dynamic_entity_discovery_requires_a_structural_projection_gap() -> None
             ObservationToolExposureProfile.DYNAMIC_VISUAL,
         )
 
-    complete = catalog(projection_coverage="complete")
-    incomplete = catalog(projection_coverage="truncated")
+    complete_with_media = catalog(projection_coverage="complete", include_media=True)
+    complete_without_media = catalog(projection_coverage="complete", include_media=False)
+    incomplete_without_media = catalog(projection_coverage="truncated", include_media=False)
 
-    assert "request_evidence" not in {item.name for item in complete.specs}
-    spec = next(item for item in incomplete.specs if item.name == "request_evidence")
-    assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
+    assert "request_evidence" not in {item.name for item in complete_without_media.specs}
+    for available in (complete_with_media, incomplete_without_media):
+        spec = next(item for item in available.specs if item.name == "request_evidence")
+        assert spec.input_schema["properties"]["purpose"]["enum"] == ("entity_discovery",)
 
 
 def test_dynamic_text_in_image_excludes_non_pixel_container_refs() -> None:
