@@ -212,6 +212,69 @@ complete fixed-environment suite reports `2123 passed, 19 skipped, 1 deselected,
 repository-missing archived dashboard trace deselected. Task554 empirical closure remains open until a separately
 authorized fresh live run crosses both the prefix repair and the structured final-response path.
 
+### 2026-08-30 held-out response/protocol/semantic convergence
+
+The sequential W1b Task0/7/21 failures do not share one candidate-ranking defect. They expose three different owner
+invariants, while Task27 and Task44 pass unchanged as controls. Task0's date fields accepted the policy's ISO-looking
+text, but the fresh controls contained different values and the report was empty. The policy then submitted
+`RETRIEVE/SUCCESS` with an empty result array. Task7 completed its page reasoning, then a stale-tool protocol retry
+and a text-output retry exhausted a wrapper request limit that was smaller than the wrapper's own declared composed
+retry algebra; the local `UsageLimitExceeded` was mislabeled as provider unavailability. Task21's complete read result
+already contained all four qualifying records, but the final answer omitted one clear semantic match. That last
+failure is an ActionPolicy semantic false negative, not a World, read pagination, ActionCandidate, ToolCatalog, or
+Binder omission.
+
+The source inspection for Task0 found no standard date input type, placeholder, pattern, or other stable public
+format declaration: the controls are ordinary text inputs with an implementation CSS class. Runtime therefore does
+not infer a date grammar from a site, label, class name, locale, previous successful answer, or benchmark case. This
+is not repaired through dynamic date-tool injection. The generic owner contract is that ActionPolicy compares fresh
+task-defining controls with the intended constraints after any form action; a rewritten, truncated, or reinterpreted
+value means the result cannot yet support those constraints, and an empty report is not evidence of an empty answer
+when the controls no longer encode the request.
+
+The provider owner now declares one closed request algebra:
+
+```text
+maximum physical requests
+  = initial request
+  + bounded current-tool protocol retries
+  + bounded output/representation retries
+```
+
+PydanticAI's tool and output budgets, `UsageLimits.request_limit`, accepted rejected-exchange history, and trace
+closure derive from that algebra. Exhaustion is the typed local `invalid_response /
+action_policy_protocol_retry_budget_exhausted`, not `provider_unavailable`; every started local attempt receives a
+failed terminal trace record. A generated sequence of stale tool -> text-only output -> valid current tool proves
+that the legal third request is admitted without executing either rejected proposal.
+
+The final-response contract owner now exposes a closed four-branch `oneOf` algebra. Successful retrieval requires a
+non-empty bounded result array and null error; failed/not-found retrieval requires null data and a nonblank error;
+successful navigation/mutation requires both optional payload fields null; and their non-success branches require a
+nonblank error. The same `FinalResponseToolContract` validates the model-visible Catalog and the codec's pre-STOP
+normalization, so Catalog-valid values cannot become contradictory only at binding. This is a hard protocol rule,
+not something left to model self-awareness: models may still propose invalid values, while Runtime must prevent an
+invalid response from reaching STOP or the native evaluator.
+
+A parsed semantic call that cannot be repaired without deleting or changing an effect-bearing operand becomes its
+same-ID `ToolRejectedResult(dispatch=not_sent)` after the bounded representation attempt. The original attempted
+semantics are retained; the rewritten call is not executed. The first such typed rejection immediately opens a
+Monitor recovery epoch, so the next invocation of the same ActionPolicy is deliberate and receives the rejection as
+the matching ToolReturn. No second planner or final-answer judge was added.
+
+Open-world inclusion remains solely with ActionPolicy. Prompt v47 requires one bounded record-by-record audit before
+returning a collection or count: apply the whole semantic condition including clear paraphrases, preserve each
+positive identity once, and reconcile the output count with the audited positives. It explicitly rejects
+substring/keyword filtering. Runtime still does not parse task predicates, force a task-specific second pass, or
+decide whether a business record qualifies.
+
+Commits `cf6cb3ab`, `58a8e390`, `92d75034`, and `1e5ea44a` implement and migrate those contracts. Production contains
+no Task ID, site name, expected answer, record name, date format, selector, fixed action ID, or benchmark vocabulary.
+The complete PydanticAI integration file reports `115 passed`; the fixed-environment repository gate reports
+`2139 passed, 19 skipped, 1 deselected, 1 warning`. The sole deselection is the documented repository-missing archived
+dashboard trace; the unmodified test fails while opening that absent file before product code. Full-repository Ruff,
+`compileall`, and `git diff --check` pass. These results establish provider-free contract coherence; fresh Task0,
+Task7, and Task21 live runs remain the empirical gate.
+
 ### 2026-08-29 tool-contract convergence
 
 Stable interaction semantics now have one owner: `InteractionCapabilityRegistry`. Each registered action owns its

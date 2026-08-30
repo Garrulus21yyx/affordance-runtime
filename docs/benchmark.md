@@ -151,6 +151,48 @@ single unavailable witness explicitly deselected, the formal gate reports
 this run without threshold changes. A new live Task554 run remains separately authorized work; run10 did not exercise
 the structured final-response call and does not close either Task554 or the broader W2 cohort.
 
+### 2026-08-30 held-out W1b failures — owner repairs verified, reruns pending
+
+Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
+diagnostic evidence, not a basis for case-specific production logic:
+
+- Task0 [`seq1`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260830-post-convergence-seq1/run.json) ended
+  `blocked / verified_terminal_task_failure` after 42 policy calls. The policy entered `2022-01-01` and `2022-12-31`;
+  after `Show Report`, the fresh controls contained different values and the report had no rows. It nevertheless sent
+  `RETRIEVE/SUCCESS` with `retrieved_data=[]`. The native expected answer in this witness is `Quest Lumaflex™ Band`,
+  but no answer or date representation is present in production code.
+- Task7 [`seq1`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260830-post-convergence-seq1/run.json) ended
+  `failed / provider_unavailable` after 9 policy calls. Its final provider attempt was left started when PydanticAI's
+  local request limit rejected a third physical request that was legal under the separately configured tool and
+  output retry budgets. This is a composed-budget and failure-classification defect, not provider downtime.
+- Task21 [`seq1`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-post-convergence-seq1/run.json) ended
+  `blocked / verified_terminal_task_failure` after 5 policy calls. One complete `read_region` result contained Catso,
+  Dibbins, Anglebert, and Michelle as qualifying records; the submitted answer omitted Catso. Delivery was complete;
+  the failure is a semantic inclusion false negative in ActionPolicy.
+- Task27 [`seq1`](../evidence/live/w1b-task-27-deepseek-v4-flash-20260830-post-convergence-seq1/run.json) passed native
+  evaluation in 12 policy calls.
+- Task44 [`seq1`](../evidence/live/w1b-task-44-deepseek-v4-flash-20260830-post-convergence-seq1/run.json) passed native
+  evaluation in 2 policy calls.
+
+The repairs are generic and owner-local. `cf6cb3ab` closes the provider's physical-request algebra and maps local
+budget exhaustion to a typed non-provider protocol failure. `58a8e390` makes WebArena's model-visible final response
+a four-branch cross-field union, uses the same contract at codec normalization, converts unrecoverable semantic
+argument proposals into same-call zero-dispatch rejection, and opens deliberate recovery on the first typed
+rejection. `92d75034` updates the sole ActionPolicy with a bounded fresh-control consistency check and a
+record-by-record semantic inclusion audit. `1e5ea44a` migrates the prior semantic-repair regression to assert the new
+recoverable ToolReturn instead of a terminal provider failure.
+
+No production branch contains a task ID, site, label, record, expected answer, date grammar, DOM class, selector,
+fixed ordering, or benchmark keyword. In particular, Task0 is not implemented as dynamic date-tool injection because
+the source exposes no stable public date-format contract to inject. Task21 does not add a semantic judge or Runtime
+predicate evaluator; the one ActionPolicy remains the only semantic owner.
+
+Provider-free evidence is `115 passed` for the complete PydanticAI integration file and
+`2139 passed, 19 skipped, 1 deselected, 1 warning` for the fixed-environment repository suite. The deselected test is
+the already-documented missing archived dashboard trace and fails before product code with `FileNotFoundError` when
+run normally. Full Ruff, `compileall`, and `git diff --check` pass. Fresh sequential Task0 -> Task7 -> Task21 runs are
+still required; until then these three live failures and the broader benchmark remain open.
+
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
 The tool-contract repair is implementation-complete on `codex/tool-contract-convergence`; no live benchmark was
