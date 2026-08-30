@@ -118,10 +118,11 @@ active
 
 Only a local-origin observation recovery may close on owner-produced `NEW_INFORMATION`. A GUI-origin recovery remains
 active across `read_region`, `search_page_content`, and `find_controls`; those tools may improve evidence but cannot
-prove that the failed GUI postcondition recovered. Pause/checkpoint persists the epoch in checkpoint v6. Restoring a
-v5 checkpoint preserves the epoch but drops its old whole-page hard signature because that identity is not comparable
-with the v6 action-scoped signature. Unsupported or legacy constraints therefore fail open without inventing a
-dispatch prohibition.
+prove that the failed GUI postcondition recovered. Checkpoint v7 persists the epoch together with the same bounded,
+ref-free `ObservationDeliveryStore` receipts, so pause/reconnect cannot relabel an already delivered record as new
+progress. Checkpoints v2-v6 have no receipt field and restore an empty novelty window; v5 additionally drops its old
+whole-page hard signature because that identity is not comparable with the v6 action-scoped signature. Unsupported
+or legacy constraints therefore fail open without inventing a dispatch prohibition.
 
 Every committed `StepResult` that can encounter an active epoch crosses one gateway: `_commit_step` applies the
 delivery transition, asks `EpisodeMonitor` for the recovery transition, then commits both to `RunState`. A consumed
@@ -306,6 +307,11 @@ convergence is implemented by 63e16452, 2c1fbb38, 470659fb, 44275bd1, 30fcc814, 
    read with no local continuation leases the same ActionPolicy one bounded evidence review. New semantic records
    still count as real progress, ordinary non-collection steps stay lightweight, and only exact attempts enter the
    Runtime prohibition set. Provider-free invariants are verified below; live efficiency remains open.
+8. Commit `0840babb` closes the lifecycle and zero-record halves of that same owner contract. Checkpoint v7 persists
+   only the bounded digest receipts and restores them with the active Monitor epoch; task revision starts both owners
+   empty. Every producer-owned read/search outcome now has an explicit record inventory, so `Empty`, invalid cursor or
+   region, stale context, and capacity failure produce `NO_MATCHES`, never false `NEW_INFORMATION`. A typed rejected
+   ToolCall produces no novelty receipt and remains owned by its dedicated Monitor failure transition.
 
 The single inference path is:
 
@@ -1800,7 +1806,8 @@ The repair restores one currentness authority:
 - fresh `WorldObservation` is the only current GUI state supplied to the model;
 - a completed GUI action remains only in its `StepResult`, bounded recent receipt, and SDK call/result history;
 - `AgentContext`, `ContextBuilder`, action packing, and the renderer have no Store/effect projection input;
-- `ObservationDeliveryStore` lives only in `RunState` and retains bounded local-result digests for Monitor novelty;
+- `ObservationDeliveryStore` is owned only by `RunState`, retains bounded local-result digests for Monitor novelty,
+  and is durably projected into checkpoint v7 for same-episode pause/reconnect;
 - the fresh `PageMap` is always rendered directly from the current `WorldDeliveryIndex`.
 
 No replacement effect channel, transition state machine, cursor protocol, summary model, or retrieval system was
@@ -2222,7 +2229,7 @@ into another episode.
 | delivery text/Manifest atomicity | compact World renderer | TurnPacker, provider bridge, Trace |
 | task anchor, historical-World removal, typed call/result history, correlation, and Harness compaction | PydanticAI boundary | Store, Workspace, Monitor |
 | committed step | `StepResult` | ToolReturn projection, Trace |
-| local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState` | AgentContext, provider bridge, resolver |
+| local-result novelty/repetition digest | `ObservationDeliveryStore.reduce` in `RunState`; checkpoint v7 is its durable same-episode projection | AgentContext, provider bridge, resolver |
 | task completion | `TaskEvaluator` / native verifier | action receipt, GoalPlan |
 
 Projections are never authorities. Trace and benchmark artifacts observe owner-produced facts; they cannot rebuild a
@@ -2274,9 +2281,10 @@ required initially; Harness reuses the configured provider through the existing 
 
 - a bounded sequence of local-result digests used for Monitor novelty/repetition.
 
-It is owned by `RunState` and is absent from `AgentContext`. It does not retain public result bodies, result prefixes,
-result cursors, action-query inventories, provider pending calls, or continuation capabilities, and it never retains
-or projects GUI effects.
+It is owned by `RunState` and is absent from `AgentContext`. Checkpoint v7 serializes the same bounded receipts so a
+pause/reconnect stays in the same novelty epoch; a task revision clears them. It does not retain public result bodies,
+result prefixes, result cursors, action-query inventories, provider pending calls, or continuation capabilities, and
+it never retains or projects GUI effects.
 
 `AgentWorkspace` keeps bounded semantic receipts and activity summaries. It has no working-fact inventory and does not
 receive exact local-result bodies. `EpisodeMonitor` consumes typed `InformationDelta` and bounded digests; it cannot

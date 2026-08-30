@@ -246,6 +246,35 @@ full Ruff with cache disabled and `git diff --check` pass. The same repository-m
 the sole deselection. No live case is inferred from this provider-free result; Task0/Task21 efficiency and the
 diagnostic-ten aggregate remain open until a fresh run.
 
+Fresh review then found two halves of the same novelty-owner lifecycle that the first gate had not exercised. A
+pause restored the active Monitor epoch but not its bounded delivered-record receipts, so an old record could become
+false progress after reconnect. Separately, the real inspect producer omitted `items` for `Empty`, invalid cursor or
+region, stale context, and capacity failure; the reducer consequently treated each status object as a new record.
+That false `NEW_INFORMATION` was visible both to Monitor and recent trajectory, and could close a local recovery.
+Commit `0840babb` keeps the existing single chain: checkpoint v7 persists only the bounded ref-free receipts with the
+same episode, task revision clears them, every zero-record inspect outcome exposes an empty inventory, and a typed
+ToolCall rejection produces no novelty receipt. It adds no result body, cursor, coverage ledger, model-visible state,
+or policy role.
+
+On code/test SHA `0840babb`, the fixed BrowserGym Python repository gate reports `2220 passed, 19 skipped,
+1 deselected, 1 warning` in 118.35 seconds. The sole deselection remains the repository-missing archived dashboard
+trace. The affected owner/consumer suites cover producer projection, novelty reduction, Monitor recovery, CoreLoop,
+checkpoint restore and legacy-v6 fallback, task revision, reasoning profile, same-call delivery, and provider history.
+Full Ruff with cache disabled and `git diff --check` pass.
+
+The authorized Task21
+[`cross-page-convergence-run18`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-cross-page-convergence-run18/run.json)
+is a clean `c576a62b` pre-`0840babb` diagnostic, not final acceptance. It was efficient—six policy calls, two browser
+executions, no wait, no Monitor recovery, and one native submission—but the native evaluator returned terminal
+failure. The first collection ToolReturn already contained all four expected reviewers. The model explicitly
+discussed Catso, Dibbins, Anglebert Dinkherhump, and Michelle Davis; both 2,048-token evidence-review calls exhausted
+their reasoning budget, and the second correctly noticed that page 2 overlapped page 1. Its follow-up exact-substring
+search returned the then-uniformless `Empty` shape and was falsely labeled progress. The final ordinary call submitted
+only Dibbins after reintroducing an explicit-wording rule that the generic prompt forbids. Thus the run demonstrates
+that the former looping/over-reading failure was removed, exposes the now-fixed zero-record algebra, and leaves
+single-model semantic adherence empirically open. Runtime does not add a reviewer-name rule, answer oracle, second
+planner, or automatic semantic critic from this one case.
+
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 
 Five frozen W1b cases were run sequentially at clean base commit `6553e0cb`, seed 7, with DeepSeek v4 Flash. They are
