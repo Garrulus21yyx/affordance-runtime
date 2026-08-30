@@ -1466,8 +1466,16 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
     assert "NAVIGATE: Use when navigating or browsing to show a specific page or location" in spec.description
     assert set(spec.input_schema["properties"]) == {"response"}
     response_schema = spec.input_schema["properties"]["response"]
-    assert response_schema["properties"]["task_type"]["enum"] == ["RETRIEVE", "MUTATE", "NAVIGATE"]
-    assert response_schema["required"] == ["task_type", "status"]
+    assert len(response_schema["oneOf"]) == 4
+    assert all(
+        branch["required"] == ["task_type", "status", "retrieved_data", "error_details"]
+        for branch in response_schema["oneOf"]
+    )
+    assert {
+        value
+        for branch in response_schema["oneOf"]
+        for value in branch["properties"]["task_type"]["enum"]
+    } == {"RETRIEVE", "MUTATE", "NAVIGATE"}
 
     response = {
         "task_type": "MUTATE",
@@ -1583,7 +1591,7 @@ def test_webarena_final_response_catalog_and_binding_share_one_bounded_payload_a
             {f"field_{field}": "v" * 128 for field in range(6)}
             for _record in range(16)
         ],
-        "error_details": "e" * 512,
+        "error_details": None,
     }
     resolved = _resolve_catalog_call(
         catalog,
@@ -1602,6 +1610,114 @@ def test_webarena_final_response_catalog_and_binding_share_one_bounded_payload_a
             expected_context_id=context.context_id,
         )
     assert exc_info.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+@pytest.mark.parametrize(
+    "response",
+    (
+        {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "retrieved_data": [],
+            "error_details": None,
+        },
+        {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "retrieved_data": None,
+            "error_details": None,
+        },
+        {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "retrieved_data": ["result"],
+            "error_details": "contradictory error",
+        },
+        {
+            "task_type": "RETRIEVE",
+            "status": "NOT_FOUND_ERROR",
+            "retrieved_data": [],
+            "error_details": "nothing found",
+        },
+        {
+            "task_type": "RETRIEVE",
+            "status": "NOT_FOUND_ERROR",
+            "retrieved_data": None,
+            "error_details": None,
+        },
+        {
+            "task_type": "NAVIGATE",
+            "status": "SUCCESS",
+            "retrieved_data": ["not allowed"],
+            "error_details": None,
+        },
+        {
+            "task_type": "MUTATE",
+            "status": "UNKNOWN_ERROR",
+            "retrieved_data": None,
+            "error_details": "   ",
+        },
+    ),
+)
+def test_webarena_final_response_rejects_cross_field_contradictions(response) -> None:
+    pytest.importorskip("webarena_verified")
+    codec = WebArenaVerifiedFinalResponseCodec()
+    context = replace(_context(), final_response_contract=codec.model_tool_contract)
+    catalog = _compile_catalog(context)
+
+    with pytest.raises(GroundedToolResolutionError) as exc_info:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("submit_final_response", {"response": response}),
+            expected_context_id=context.context_id,
+        )
+
+    assert exc_info.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
+
+@pytest.mark.parametrize(
+    "response",
+    (
+        {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "retrieved_data": ["result"],
+            "error_details": None,
+        },
+        {
+            "task_type": "RETRIEVE",
+            "status": "NOT_FOUND_ERROR",
+            "retrieved_data": None,
+            "error_details": "nothing found after inspection",
+        },
+        {
+            "task_type": "NAVIGATE",
+            "status": "SUCCESS",
+            "retrieved_data": None,
+            "error_details": None,
+        },
+        {
+            "task_type": "MUTATE",
+            "status": "PERMISSION_DENIED_ERROR",
+            "retrieved_data": None,
+            "error_details": "permission denied",
+        },
+    ),
+)
+def test_webarena_final_response_accepts_each_supported_outcome_branch(response) -> None:
+    pytest.importorskip("webarena_verified")
+    codec = WebArenaVerifiedFinalResponseCodec()
+    context = replace(_context(), final_response_contract=codec.model_tool_contract)
+    catalog = _compile_catalog(context)
+
+    resolved = _resolve_catalog_call(
+        catalog,
+        ToolCall("submit_final_response", {"response": response}),
+        expected_context_id=context.context_id,
+    )
+
+    assert isinstance(resolved.decision, FinalResponse)
+    assert json.loads(resolved.decision.content) == response
 
 
 def test_every_registered_local_tool_resolver_produces_its_contract_decision_type() -> None:

@@ -1106,6 +1106,7 @@ class PydanticAIGroundedDecisionPort:
                 request.context_id,
                 source_response=source_response,
             )
+            initial_resolution_error = resolution_error
             if accepted_exchange is None:
                 accepted_exchange = _grounded_rejection_exchange(
                     result.output,
@@ -1174,6 +1175,20 @@ class PydanticAIGroundedDecisionPort:
                 self._set_tool_resolution(repair_error, accepted=repair_exchange is not None)
                 if repair_exchange is not None:
                     accepted_exchange = repair_exchange
+                else:
+                    semantic_rejection = _grounded_rejection_exchange(
+                        result.output,
+                        initial_resolution_error,
+                        initial_calls,
+                        request.agent_context,
+                        catalog.manifest,
+                        source_response=source_response,
+                        allow_invalid_arguments=True,
+                    )
+                    if semantic_rejection is not None:
+                        accepted_exchange = semantic_rejection
+                        resolution_error = initial_resolution_error
+                        self._set_tool_resolution(resolution_error, accepted=True)
             if accepted_exchange is None:
                 return self._invocation_failure(
                     _tool_resolution_failure(resolution_error),
@@ -2342,20 +2357,27 @@ def _grounded_rejection_exchange(
     manifest: DeliveryManifest,
     *,
     source_response,
+    allow_invalid_arguments: bool = False,
 ) -> AcceptedToolExchange | None:
     """Close one parsed semantic rejection as its same-call ToolReturn.
 
-    Representation failures still use the one bounded representation repair.
     A known, schema-valid operation applied to an unavailable current target is
     already semantically parsed, so asking the provider to rewrite its JSON
     would hide the real feedback and can repeat the same invalid operation.
+    Invalid arguments reach this path only after the bounded representation
+    repair proved that pruning cannot preserve the attempted semantics.
     """
 
     from pydantic_ai import DeferredToolRequests
 
     if (
         error is None
-        or error.code is not GroundedToolResolutionCode.GROUNDING_GAP
+        or error.code
+        not in (
+            {GroundedToolResolutionCode.GROUNDING_GAP, GroundedToolResolutionCode.INVALID_ARGUMENTS}
+            if allow_invalid_arguments
+            else {GroundedToolResolutionCode.GROUNDING_GAP}
+        )
         or len(calls) != 1
         or not isinstance(output, DeferredToolRequests)
     ):

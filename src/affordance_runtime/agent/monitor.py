@@ -315,7 +315,7 @@ class EpisodeMonitor:
                 signal,
             )
 
-        if self.recovery_count and isinstance(result.decision, ToolRejectedResult):
+        if isinstance(result.decision, ToolRejectedResult):
             signature = _same_world_attempt_signature(result)
             repeats_latest = signature == self.latest_attempt_signature
             self.no_progress_count += 1

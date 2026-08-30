@@ -47,7 +47,7 @@ class FinalResponseToolContract:
         encoding = FinalResponsePayloadEncoding(self.encoding)
         schema = freeze_json(self.payload_schema)
         expected_type = "string" if encoding is FinalResponsePayloadEncoding.TEXT else "object"
-        if not isinstance(schema, Mapping) or schema.get("type") != expected_type:
+        if not isinstance(schema, Mapping) or not _declares_payload_type(schema, expected_type):
             raise ValueError("final response payload schema does not match its encoding")
         object.__setattr__(self, "encoding", encoding)
         validate_parameter_schema_contract(
@@ -96,6 +96,22 @@ class FinalResponseToolContract:
         if not encoded.strip() or len(encoded) > MAX_FINAL_RESPONSE_CHARS:
             raise ValueError("encoded final response is outside its bounded contract")
         return encoded
+
+
+def _declares_payload_type(schema: Mapping[str, object], expected_type: str) -> bool:
+    if schema.get("type") == expected_type:
+        return True
+    variants = schema.get("oneOf") or schema.get("anyOf")
+    return bool(
+        "type" not in schema
+        and isinstance(variants, Sequence)
+        and not isinstance(variants, str | bytes)
+        and variants
+        and all(
+            isinstance(item, Mapping) and _declares_payload_type(item, expected_type)
+            for item in variants
+        )
+    )
 
 
 def _maximum_text_chars(schema: Mapping[str, object]) -> int:

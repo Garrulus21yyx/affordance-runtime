@@ -186,6 +186,22 @@ def test_webarena_final_response_codec_rejects_non_upstream_response() -> None:
         WebArenaVerifiedFinalResponseCodec().normalize('{"status":"SUCCESS"}')
 
 
+def test_webarena_final_response_codec_rejects_upstream_valid_but_contradictory_success() -> None:
+    pytest.importorskip("webarena_verified")
+
+    with pytest.raises(ValueError, match="declared union"):
+        WebArenaVerifiedFinalResponseCodec().normalize(
+            json.dumps(
+                {
+                    "task_type": "RETRIEVE",
+                    "status": "SUCCESS",
+                    "retrieved_data": [],
+                    "error_details": None,
+                }
+            )
+        )
+
+
 @pytest.mark.parametrize("case_ref", (WA_W1_SMOKE_CASES[0], WA_W1_HELD_OUT_CASES[0]))
 def test_webarena_intake_separates_semantic_goal_from_upstream_response_envelope(case_ref) -> None:
     semantic_goal = "Retrieve every qualifying item."

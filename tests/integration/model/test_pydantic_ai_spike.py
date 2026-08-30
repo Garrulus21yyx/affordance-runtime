@@ -55,6 +55,7 @@ from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
+from affordance_runtime.benchmarks.webarena_verified import WebArenaVerifiedFinalResponseCodec
 from affordance_runtime.evaluation import (
     ActionOutcome,
     EvaluatedOutput,
@@ -5002,16 +5003,20 @@ def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> N
             [
                 ("ask_user", {}),
                 ("ask_user", {"question": "Which value?", "requested_fields": ["value"]}),
+                ("ask_user", {"question": "Which value?", "requested_fields": ["value"]}),
             ]
         )
         environment = ScriptedEnvironment(initial_observation=shared_world("before", False))
+        runtime = replace(_runtime(scripted.build()), episode_monitor=EpisodeMonitor())
 
-        state = await _runtime(scripted.build()).run_task(environment, shared_task())
+        state = await runtime.run_task(environment, shared_task())
 
-        assert state.status is RunStatus.FAILED
-        assert scripted.calls == 2
+        assert state.status is RunStatus.WAITING_USER
+        assert scripted.calls == 3
         assert "representation-only repaired tool call" in repr(scripted.messages)
-        assert state.workspace.recent_steps == ()
+        assert state.workspace.recent_steps
+        assert state.workspace.recent_steps[0].semantic_action == "tool_rejected"
+        assert scripted.records[2].model_settings["max_tokens"] == 2048
 
     asyncio.run(scenario())
 
@@ -5264,6 +5269,97 @@ def test_final_response_prunes_non_contractual_world_fact_refs_without_losing_co
         ]
         final_spec = next(tool for tool in scripted.records[0].function_tools if tool.name == "submit_final_response")
         assert set(final_spec.parameters_json_schema["properties"]) == {"content"}
+
+    asyncio.run(scenario())
+
+
+def test_webarena_contradictory_final_response_becomes_recoverable_same_call_rejection() -> None:
+    async def scenario() -> None:
+        codec = WebArenaVerifiedFinalResponseCodec()
+        scripted = ScriptedModel(
+            [
+                (
+                    "submit_final_response",
+                    {
+                        "response": {
+                            "task_type": "RETRIEVE",
+                            "status": "SUCCESS",
+                            "retrieved_data": [],
+                            "error_details": None,
+                        }
+                    },
+                ),
+                ("list_regions", {}),
+                ("list_regions", {}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("webarena-final-cross-field-retry", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+            final_response_guidance=codec.model_guidance,
+            final_response_contract=codec.model_tool_contract,
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:final-cross-field-reject", context))
+
+        assert result.failure is None and result.output is not None
+        rejected = result.output.decision
+        assert isinstance(rejected, ToolRejectedResult)
+        assert rejected.tool_call_id == "recording-call:1"
+        assert rejected.result["kind"] == GroundedToolResolutionCode.INVALID_ARGUMENTS.value
+        assert rejected.result["dispatch"] == "not_sent"
+        assert scripted.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "ordinary",
+            "representation_repair",
+        ]
+
+        committed = StepResult(
+            rejected,
+            world,
+            world,
+            await SharedTaskEvaluator().evaluate(task, world),
+            RunStatus.RUNNING,
+            feedback="local_tool_result",
+        )
+        next_context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+            last_step=committed,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "recovery:final-response-contract",
+                "recovery_attempt": 1,
+            },
+            final_response_guidance=codec.model_guidance,
+            final_response_contract=codec.model_tool_contract,
+        )
+        recovered = await policy.port.generate(
+            ModelDecisionRequest("request:final-cross-field-recover", next_context, committed)
+        )
+
+        assert recovered.failure is None and recovered.output is not None
+        assert isinstance(recovered.output.decision, ReadRegionResult)
+        assert scripted.calls == 3
+        assert [attempt.phase for attempt in recovered.attempts] == ["deliberate"]
+        recorded = normalize_recorded_provider_input(scripted.records[2])
+        returns = tuple(
+            part
+            for message in recorded["messages"]
+            for part in message["parts"]
+            if part["part_kind"] == "tool-return"
+        )
+        assert len(returns) == 1
+        assert returns[0]["tool_call_id"] == rejected.tool_call_id
+        assert returns[0]["content"]["kind"] == GroundedToolResolutionCode.INVALID_ARGUMENTS.value
+        assert returns[0]["content"]["dispatch"] == "not_sent"
 
     asyncio.run(scenario())
 

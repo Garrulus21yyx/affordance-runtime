@@ -568,77 +568,113 @@ class WebArenaVerifiedFinalResponseCodec:
     @property
     def model_tool_contract(self) -> FinalResponseToolContract:
         _description, objective_values, status_values = self._upstream_response_enums()
+        success = "SUCCESS"
+        failure_values = [value for value in status_values if value != success]
+        non_retrieval_values = [value for value in objective_values if value != "RETRIEVE"]
+        if (
+            success not in status_values
+            or not failure_values
+            or "RETRIEVE" not in objective_values
+            or not non_retrieval_values
+        ):
+            raise ValueError("WebArena final-response outcome algebra is incomplete")
+        retrieved_item_schema = self._retrieved_item_schema()
+        nonblank_error_schema = {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": r"[\s\S]*\S[\s\S]*",
+        }
+
+        def branch(
+            task_types: list[str],
+            statuses: list[str],
+            retrieved_data: Mapping[str, object],
+            error_details: Mapping[str, object],
+        ) -> dict[str, object]:
+            return {
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": task_types},
+                    "status": {"type": "string", "enum": statuses},
+                    "retrieved_data": retrieved_data,
+                    "error_details": error_details,
+                },
+                "required": ["task_type", "status", "retrieved_data", "error_details"],
+                "additionalProperties": False,
+            }
+
         return FinalResponseToolContract(
             FinalResponsePayloadEncoding.JSON,
             {
-                "type": "object",
-                "properties": {
-                    "task_type": {"type": "string", "enum": objective_values},
-                    "status": {"type": "string", "enum": status_values},
-                    "retrieved_data": {
-                        "anyOf": [
-                            {
-                                "type": "array",
-                                "items": {
-                                    "anyOf": [
-                                        {"type": "string", "maxLength": 512},
-                                        {
-                                            "type": "integer",
-                                            "minimum": -1_000_000_000_000_000,
-                                            "maximum": 1_000_000_000_000_000,
-                                        },
-                                        {
-                                            "type": "number",
-                                            "minimum": -1_000_000_000_000_000,
-                                            "maximum": 1_000_000_000_000_000,
-                                        },
-                                        {"type": "boolean"},
-                                        {
-                                            "type": "object",
-                                            "properties": {},
-                                            "additionalProperties": {
-                                                "anyOf": [
-                                                    {"type": "string", "maxLength": 128},
-                                                    {
-                                                        "type": "integer",
-                                                        "minimum": -1_000_000_000_000_000,
-                                                        "maximum": 1_000_000_000_000_000,
-                                                    },
-                                                    {
-                                                        "type": "number",
-                                                        "minimum": -1_000_000_000_000_000,
-                                                        "maximum": 1_000_000_000_000_000,
-                                                    },
-                                                    {"type": "boolean"},
-                                                    {"type": "null"},
-                                                ]
-                                            },
-                                            "maxProperties": 6,
-                                            "propertyNames": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 32,
-                                            },
-                                        },
-                                        {"type": "null"},
-                                    ]
-                                },
-                                "maxItems": 16,
-                            },
-                            {"type": "null"},
-                        ]
-                    },
-                    "error_details": {
-                        "anyOf": [
-                            {"type": "string", "maxLength": 512},
-                            {"type": "null"},
-                        ]
-                    },
-                },
-                "required": ["task_type", "status"],
-                "additionalProperties": False,
+                "oneOf": [
+                    branch(
+                        ["RETRIEVE"],
+                        [success],
+                        {
+                            "type": "array",
+                            "items": retrieved_item_schema,
+                            "minItems": 1,
+                            "maxItems": 16,
+                        },
+                        {"type": "null"},
+                    ),
+                    branch(
+                        ["RETRIEVE"],
+                        failure_values,
+                        {"type": "null"},
+                        nonblank_error_schema,
+                    ),
+                    branch(
+                        non_retrieval_values,
+                        [success],
+                        {"type": "null"},
+                        {"type": "null"},
+                    ),
+                    branch(
+                        non_retrieval_values,
+                        failure_values,
+                        {"type": "null"},
+                        nonblank_error_schema,
+                    ),
+                ],
             },
         )
+
+    @staticmethod
+    def _retrieved_item_schema() -> dict[str, object]:
+        bounded_number = {
+            "minimum": -1_000_000_000_000_000,
+            "maximum": 1_000_000_000_000_000,
+        }
+        return {
+            "anyOf": [
+                {"type": "string", "maxLength": 512},
+                {"type": "integer", **bounded_number},
+                {"type": "number", **bounded_number},
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": {
+                        "anyOf": [
+                            {"type": "string", "maxLength": 128},
+                            {"type": "integer", **bounded_number},
+                            {"type": "number", **bounded_number},
+                            {"type": "boolean"},
+                            {"type": "null"},
+                        ]
+                    },
+                    "maxProperties": 6,
+                    "propertyNames": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                    },
+                },
+                {"type": "null"},
+            ]
+        }
 
     @staticmethod
     def _upstream_response_enums() -> tuple[str, list[str], list[str]]:
@@ -699,8 +735,8 @@ Your message in `send_msg_to_user` will be validated against this schema.
 
     def normalize(self, content: str) -> str:
         final_agent_response = importlib.import_module("webarena_verified.types").FinalAgentResponse
-
-        return final_agent_response.model_validate_json(content).model_dump_json()
+        normalized = final_agent_response.model_validate_json(content)
+        return self.model_tool_contract.encode(normalized.model_dump(mode="json"))
 
 
 @dataclass

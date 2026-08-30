@@ -18,6 +18,7 @@ from affordance_runtime.agent import (
     RequestActionPage,
     SearchPageContentResult,
     SelectAction,
+    ToolRejectedResult,
 )
 from affordance_runtime.agent import monitor as monitor_module
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
@@ -199,6 +200,30 @@ def _local_step(before, after=None, *, query: str = "route", region: str = "") -
     )
 
 
+def _tool_rejected_step(world) -> StepResult:
+    return StepResult(
+        ToolRejectedResult(
+            "context:test",
+            "tool_rejected",
+            {
+                "operation": "submit_final_response",
+                "arguments": {"response": {"status": "SUCCESS"}},
+            },
+            {
+                "kind": "invalid_arguments",
+                "failure_kind": "invalid_arguments",
+                "dispatch": "not_sent",
+                "world_changed": False,
+            },
+            "call:rejected",
+        ),
+        world,
+        world,
+        _evaluation(world),
+        feedback="local_tool_result",
+    )
+
+
 def _dispatched_step(world, after=None, *, target_id: str | None = None) -> StepResult:
     after = after or world
     options = ActionSpaceBuilder().build(_task(), world).options
@@ -334,6 +359,21 @@ def test_control_discovery_recovery_is_not_cleared_by_a_different_query() -> Non
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recovery_signal is not None
     assert continued.recovery_signal.recovery_attempt == 1
+    assert monitor.recovery_count == 1
+
+
+def test_first_typed_tool_rejection_opens_deliberate_recovery_immediately() -> None:
+    world = _world("observation:typed-tool-rejection")
+    monitor = EpisodeMonitor()
+    monitor.start_episode(world, _evaluation(world))
+
+    transition = _evaluate(monitor, _tool_rejected_step(world))
+
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert transition.recovery_lifecycle is RecoveryLifecycleTransition.STARTED
+    assert transition.recovery_signal is not None
+    assert transition.recovery_signal.kind is RecoveryKind.CONTROL_STALL
+    assert transition.recovery_signal.recovery_attempt == 1
     assert monitor.recovery_count == 1
 
 
