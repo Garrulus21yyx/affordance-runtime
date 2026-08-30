@@ -514,7 +514,15 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
     assert requests[0]["reasoning_effort"] == "medium"
     assert requests[1]["tool_choice"] == "required"
     assert requests[1].get("reasoning_effort") == "none"
-    assert requests[0]["messages"] == requests[1]["messages"]
+    assert requests[0]["messages"][0] == requests[1]["messages"][0]
+    fallback_content = requests[1]["messages"][1]["content"]
+    assert isinstance(fallback_content, list)
+    fallback_text = "\n".join(
+        str(item.get("text", "")) for item in fallback_content if isinstance(item, dict)
+    )
+    assert requests[0]["messages"][1]["content"] in fallback_text
+    assert "action_selection_recovery" in fallback_text
+    assert "return exactly one complete offered tool call now" in fallback_text
 
 
 async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
@@ -4632,15 +4640,17 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
         assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "disabled"]
         assert [attempt.final_tool_call_present for attempt in result.attempts] == [False, True]
         assert [record.model_settings["tool_choice"] for record in scripted.records] == ["auto", "required"]
+        fallback_prompt = json.dumps(scripted.records[1].messages, default=str)
+        assert "action_selection_recovery" in fallback_prompt
+        assert "return exactly one complete offered tool call now" in fallback_prompt
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
             {},
             "recording-call:2",
         )
-        assert "The stalled route needs a different current action." not in json.dumps(
-            port.message_history,
-            default=str,
-        )
+        official_history = json.dumps(port.message_history, default=str)
+        assert "The stalled route needs a different current action." not in official_history
+        assert "action_selection_recovery" not in official_history
 
     asyncio.run(scenario())
 
@@ -4722,6 +4732,7 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
         retained = json.dumps(port.message_history, default=str)
         assert "recording-call:2" not in retained
         assert "R999" not in retained
+        assert "representation_recovery" not in retained
 
     asyncio.run(scenario())
 

@@ -757,6 +757,8 @@ class PydanticAIGroundedDecisionPort:
                         current_prompt,
                         required_tool_name=required_tool_name,
                     )
+                elif force_required_action:
+                    sequence_prompt = _pydantic_decision_recovery_prompt(current_prompt)
                 current_agent = Agent(
                     self.model,
                     name=agent_name,
@@ -3146,7 +3148,7 @@ def _accepted_message_history(
         or rejected_response_count > _ACTION_POLICY_MAX_PROTOCOL_RETRIES
     ):
         raise ValueError("PydanticAI output retry history is incomplete or unbounded")
-    requests_tuple = tuple(requests)
+    requests_tuple = _without_pydantic_protocol_recovery(tuple(requests))
     if not any(isinstance(part, UserPromptPart) for message in requests_tuple for part in message.parts):
         raise ValueError("PydanticAI current turn lost its fresh World prompt")
     if not pending_calls:
@@ -3578,6 +3580,69 @@ def _pydantic_operation_recovery_prompt(
     if isinstance(prompt, list):
         return [*prompt, instruction]
     return [prompt, instruction]
+
+
+def _pydantic_decision_recovery_prompt(prompt: object) -> list[object]:
+    """Append one decision-only instruction after pre-operation truncation."""
+
+    instruction = json.dumps(
+        {
+            "action_selection_recovery": {
+                "cause": "previous response was truncated before one complete tool call",
+                "instruction": (
+                    "Using the same fresh context and active control constraints, return exactly one complete "
+                    "offered tool call now. Do not repeat analysis, a completed read, or a pagination state already "
+                    "recorded in recent_trajectory. If existing evidence supports the requested output, select the "
+                    "offered final-response tool; otherwise select one materially new action. Add no explanatory text."
+                ),
+            }
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    if isinstance(prompt, list):
+        return [*prompt, instruction]
+    return [prompt, instruction]
+
+
+def _without_pydantic_protocol_recovery(messages: tuple[object, ...]) -> tuple[object, ...]:
+    """Remove same-call protocol instructions before committing official history."""
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+    cleaned: list[object] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            cleaned.append(message)
+            continue
+        parts: list[object] = []
+        for part in message.parts:
+            if not isinstance(part, UserPromptPart):
+                parts.append(part)
+                continue
+            content = part.content
+            if isinstance(content, list | tuple):
+                retained = [item for item in content if not _is_pydantic_protocol_recovery_text(item)]
+                if retained:
+                    parts.append(replace(part, content=retained))
+            elif not _is_pydantic_protocol_recovery_text(content):
+                parts.append(part)
+        if parts:
+            cleaned.append(replace(message, parts=parts))
+    return tuple(cleaned)
+
+
+def _is_pydantic_protocol_recovery_text(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, Mapping) and set(payload) in (
+        {"representation_recovery"},
+        {"action_selection_recovery"},
+    )
 
 
 def _attempt_token_delta(
