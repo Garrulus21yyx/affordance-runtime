@@ -174,7 +174,7 @@ below. The repaired, typed admission runs are
 | 553 | verified success | 77 / 27 | The native-accepted JSON edit was exposed through a composite input proxy and falsely hard-projected as an unsatisfied exact value, causing clear/retype cycles. |
 | 598 | verified success | 13 / 8 | Relatively direct success control; no recovery call. |
 | 321 | verified success | 75 / 16 | Repeated order-page inspection and route changes; no missing executor operation or terminal contract failure. |
-| 214 | case timeout | 54 / 12 | Numeric review ratings were not available in the initial compact structural view; the policy repeatedly read pages instead of completing a structural/visual evidence route. |
+| 214 | case timeout | 55 / 12 | Numeric review ratings were not available in the initial compact structural view; the policy repeatedly read pages instead of completing a structural/visual evidence route. One call produced no valid ToolCall. |
 | 66 | blocked | 23 / 11 | The same browsergym semantic-conflicting-bid fresh-capture failure as Task545. |
 | 343 | verified success | 20 / 7 | Autocomplete/filter routing detour before reaching the requested issue list. |
 | 425 | invalid response | 73 / 18 | ActionPolicy assumed a plausible bridge before verifying the task-defining comparison through the requested wiki source, exhausted the wrong route, then ended on provider output failure. |
@@ -189,11 +189,23 @@ causal distribution is:
 - one semantic source/entity route failure followed by provider output failure (425); and
 - successful but inefficient completion/route judgment (418/321/343), with 435/598 as lower-cost controls.
 
-Commit 1bbd2a0c fixes the shared AX/DOM alias owner without task labels. Commits 4ec89550 and 3630fac3 close the
-working-evidence chain generically: completed history is semantic-only and ref-free, the single unresolved provider
-frontier remains exact, current-World ActivitySummary facts reach the sole ActionPolicy, adapter truncation is an
-explicit public fact, and one changed unequal text echo cannot be promoted to a hard application failure. A complete
-unchanged mismatch remains UNSATISFIED and eligible for exact-replay prevention. Prompt v53 tells the
+Commit 1bbd2a0c fixes the shared AX/DOM alias owner without task labels. Commits 4ec89550 and 3630fac3 repair
+ActivitySummary delivery and text-outcome certainty; b09b11ae generates the complete text/closed-option outcome
+algebra across exact, unequal, unchanged, changed, and explicitly truncated evidence. Commits 63e16452, 2c1fbb38,
+470659fb, 44275bd1, 30fcc814, b7235524, and 4ed5b536 close the provider-free working-evidence contract: the single
+unresolved provider frontier and immediate ToolReturn remain exact, while completed SDK history, settled checkpoints,
+and recent Workspace steps retain semantic evidence but no closed operational handles. ToolSpec owns ephemeral input
+paths, each ToolReturn producer owns ephemeral result paths, and the renderer/result producer emits the typed
+grounding used by DeliveryManifest validation. The provider transcript keeps raw wire responses; SDK history keeps
+the one normalized accepted call and only the identities of unexecuted proposals. Schema-invalid provided values,
+provider-forged settlement markers, old World prompts, screenshots, return metadata, selectors, and internal
+correlation IDs are removed only at their owning
+settlement/projection boundaries. No component infers authority from arbitrary ref-shaped strings or field names, so
+legitimate labels, queries, result values, state keys, and prose such as `E6` or `R2` are preserved. Current-World
+ActivitySummary facts still reach the sole
+ActionPolicy; adapter truncation is an explicit public fact; and one changed unequal text echo cannot be promoted to a
+hard application failure. A complete unchanged mismatch remains UNSATISFIED and eligible for exact-replay
+prevention. Prompt v53 tells the
 same ActionPolicy to consume immediate ToolReturn refs before another local tool, select structural versus visual
 evidence by the unresolved property, verify task-defining comparisons from the requested source, and avoid retyping
 only to force an accessibility-value echo. Runtime still does not rank business candidates or rewrite answers.
@@ -202,16 +214,17 @@ Task214 has two important post-sample witnesses. The visual-profile
 [f2d4d015 rerun](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/revalidation-f2d4d015-task-214/run.json)
 reached native verified success in 53 policy calls and 15 executions. The later
 [bb53f818 rerun](../evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/revalidation-bb53f818-task-214/run.json)
-timed out after 56 calls; it attempted visual_property with refs from an already completed read delivery and received
-typed zero-dispatch rejection. Together they show that the page is solvable and that vision is selective fallback,
-not that vision is mandatory; they also falsify a reliability claim for the old ref/history contract. The new
-history/ref and activity changes have provider-free gates but no authorized live rescore. Tasks545/66 likewise have
-no post-alias-fix live result. The diagnostic cohort therefore remains empirically open.
+timed out after 57 policy calls (56 valid ToolCalls); it attempted visual_property with refs from an already completed
+read delivery and received typed zero-dispatch rejection. Together they show that the page is solvable and that vision
+is selective fallback, not that vision is mandatory; they also falsify a reliability claim for the old ref/history
+contract. The new history/ref and activity changes have provider-free gates but no authorized live rescore.
+Tasks545/66 likewise have no post-alias-fix live result. The diagnostic cohort therefore remains empirically open.
 
-The final-SHA fixed BrowserGym Python provider-free gate reports 2172 passed, 19 skipped, 1 deselected, and 1 warning
-in 118.34 seconds. The sole deselection is the documented repository-missing archived dashboard trace, which fails
-before product code. Ruff with cache disabled and the diff check pass. No live case was run for the new
-working-evidence/ref contract.
+On code/test SHA `b09b11ae` (product SHA `4ed5b536`), the fixed BrowserGym Python provider-free gate reports
+`2208 passed, 19 skipped, 1 deselected, 1 warning` in 120.32 seconds. The sole deselection is the documented
+repository-missing archived dashboard trace, which fails before product code. Ruff with cache disabled and the diff
+check pass. No live case was run for this working-evidence contract, so the ten-case empirical result remains 6/10
+and open rather than being silently re-scored from unit evidence.
 
 ### 2026-08-30 held-out W1b convergence — five-case sequence live-verified
 

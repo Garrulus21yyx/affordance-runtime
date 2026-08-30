@@ -249,7 +249,9 @@ ordering defect:
   inspection, and route switching rather than a missing executor primitive. Tasks435 and 598 are the relatively
   direct success controls.
 
-The resulting positive contract is implemented by 4ec89550, 3630fac3, and a7cf4d95:
+The text/outcome contract is implemented by 4ec89550, 3630fac3, and a7cf4d95, with its complete generated
+value-state algebra gated by b09b11ae. The working-evidence authority
+convergence is implemented by 63e16452, 2c1fbb38, 470659fb, 44275bd1, 30fcc814, b7235524, and 4ed5b536:
 
 1. Surface adapters must state value loss honestly. semantic.value.truncated=true is now a surface-neutral public
    predicate. An exact fresh value with no incompleteness marker may prove text satisfaction; a truncated prefix may
@@ -259,15 +261,29 @@ The resulting positive contract is implemented by 4ec89550, 3630fac3, and a7cf4d
    value. A complete unchanged mismatch and a closed-option mismatch remain UNSATISFIED, so exact proven replays can
    still be rejected. Dispatch receipt, observed change, local postcondition, and native task result remain four
    independent facts.
-3. PydanticAI history retains the semantic content and call/result identity of completed exchanges, but strips every
-   closed E/N/F/R handle. Only the single unresolved frontier remains exact. The immediate same-call ToolReturn and
-   its current DeliveryManifest may authorize its returned refs for the next ActionPolicy delivery; a later history
-   record cannot advertise an unusable ref. No ref Store or extended ref lifetime was added.
-4. The existing bounded AgentWorkspace.activities is now projected as current_activity only when its public World
+3. PydanticAI history retains semantic content and exchange identity, including legitimate business values such as
+   `E6` or `R2`, while removing closed operational handles. ToolCatalog owns each call's ephemeral argument paths;
+   the ToolReturn producer owns its ephemeral result paths. Those typed paths, not a regex over arbitrary strings,
+   drive settlement. The provider transcript retains the exact raw wire response; SDK working history records the
+   one Catalog-normalized accepted call, retains only the identity of explicitly unexecuted proposals, and rejects
+   provider attempts to predeclare Runtime settlement metadata. For an invalid-arguments rejection, the schema owner
+   marks unsupported provided values while preserving legal semantic siblings. The immediate same-call ToolReturn
+   and sole unresolved accepted frontier remain exact; completed exchanges cannot advertise an unusable ref. Settled
+   checkpoint export also folds old World prompts and binary screenshots. The persistent anchor contains only the
+   revision-stable TaskGoal/GoalPlan; fresh evaluator evidence remains current-turn input. A task revision starts an
+   empty SDK history because the identity-only rebind boundary cannot truthfully synthesize the new anchor.
+4. DeliveryManifest authority comes from renderer-produced typed rendered refs, media marks, and typed same-call
+   ToolReturn fields. Ref-shaped labels, queries, result text, and free prose never grant authority and are never
+   deleted merely because their spelling resembles a public ref.
+5. Recent Workspace steps retain semantic targets, business fields, outcomes, and prior discovery operations but omit
+   closed selectors/routes and observation/interaction correlation IDs at their producer. Arbitrary semantic state
+   keys are opaque data even when named `target_ref`, `cursor`, or `verbs`; only producer-declared paths confer
+   operational meaning. The existing bounded AgentWorkspace.activities is
+   projected as current_activity only when its public World
    digest equals the fresh World. It reports route family, attempt count, last information increment, and last
    outcome. It contains no result body, task progress, ref, or semantic recommendation. ActionPolicy alone uses those
    mechanical facts to leave an exhausted read/search/find route.
-5. Prompt v53 makes that same lifecycle explicit: consume a just-returned ref before another local tool; use
+6. Prompt v53 makes that same lifecycle explicit: consume a just-returned ref before another local tool; use
    visual_property on current subjects, entity_discovery when the needed visible entity/property lacks a delivered
    structural ref, and point_grounding only to make an identified control actionable. It also requires source-backed
    verification for task-defining relations/comparisons and forbids reflexive retyping solely to force an exact
@@ -277,9 +293,9 @@ The closed inference path is:
 
     fresh Unified World + current ToolCatalog
     + immediate same-call ToolReturn/DeliveryManifest
-    + ref-free recent trajectory
+    + operational-handle-free recent trajectory
     + fresh-World ActivitySummary projection
-    + semantic-only completed SDK history
+    + semantic completed SDK history without closed handles or old World media
     + active mechanical recovery facts
     -> one ActionPolicy
     -> one current ToolCall
@@ -292,8 +308,8 @@ always-on vision, Runtime answer rewriting, a second planner, or a second memory
 cheap default; a configured visual provider is a typed open-world fallback when the current structural World lacks a
 task-relevant visible property. Route and completion judgment remain with the single ActionPolicy, while native
 evaluation remains the only terminal authority. Provider-free implementation gates pass; the ten-case cohort is not
-re-scored or declared closed without a separately authorized live rerun. The fixed BrowserGym Python gate reports
-2172 passed, 19 skipped, 1 deselected, and 1 warning; the sole deselection is the repository-missing archived
+re-scored or declared closed without a separately authorized live rerun. The final fixed-interpreter gate attestation
+is recorded in the matching benchmark section below; the sole deselection is the repository-missing archived
 dashboard trace. Ruff and diff checks pass.
 
 ### 2026-08-30 held-out response/protocol/semantic convergence
@@ -624,10 +640,13 @@ cursor owner, retry, alternate resolver, or currentness state was added.
 
 Observation-local handles also have one temporal rule. Trace retains the original physical provider calls and
 results. Model-facing PydanticAI history retains same-ID call/result pairing, names, labels, factual values, outcomes,
-and current-World grounding, but its existing history processor removes E/N/F/R refs, cursors, and attached verbs
-from a closed exchange once the ToolReturn's owner-produced before/after World metadata no longer identifies the
-fresh World. The unresolved call and same-World read result remain exact. This uses the existing SDK history and
-`sanitize_history_value`; it creates neither a second history nor a memory/progress path.
+and the one accepted canonical call, while producer-owned argument/result paths remove closed selectors, cursors, and
+current target refs. Per-match operation names may remain as non-authoritative semantics; only a fresh typed
+target-ref/operation pair in the current DeliveryManifest grants a route. Free prose and arbitrary semantic mappings
+are never scanned for ref-like spellings. Unexecuted proposal identities remain paired with their zero-execution
+ToolReturns, but their argument objects have no settled semantic authority. The unresolved accepted call and
+immediate same-call read result remain exact. This uses the existing SDK history; it creates neither a second history
+nor a memory/progress path.
 
 The first post-repair live rerun,
 [`delivery-manifest-run4`](../evidence/live/w2-task-426-deepseek-v4-flash-20260827-delivery-manifest-run4/run.json),
