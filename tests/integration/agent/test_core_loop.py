@@ -722,6 +722,129 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
+def test_exact_local_result_replay_is_rejected_under_the_same_recovery_epoch() -> None:
+    @dataclass
+    class LocalReplayPolicy:
+        turns: int = 0
+        rejected: ToolRejectedResult | None = None
+        recovery_epoch: str = ""
+        prohibited: tuple[object, ...] = ()
+
+        @staticmethod
+        def original(context, call_id: str) -> SearchPageContentResult:
+            return SearchPageContentResult(
+                context.context_id,
+                "search_page_content",
+                {"query": "airport"},
+                {
+                    "kind": "Matches",
+                    "items": ({"label": "Airport", "value": "33 km"},),
+                    "total_count": 1,
+                },
+                call_id,
+            )
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns == 1:
+                return self.original(context, "provider-call:local-first")
+            if self.turns == 2:
+                return self.original(context, "provider-call:local-replay-proof")
+            if self.turns == 3:
+                assert len(context.control_feedback["prohibited_attempt_signatures"]) == 1
+                return SearchPageContentResult(
+                    context.context_id,
+                    "search_page_content",
+                    {"query": "different"},
+                    {"kind": "NoMatches", "items": (), "total_count": 0},
+                    "provider-call:local-different",
+                )
+            if self.turns == 4:
+                assert context.control_feedback["kind"] == "control_stall"
+                return self.original(context, "provider-call:local-hard-replay")
+            if self.turns == 5:
+                assert context.last_step is not None
+                assert isinstance(context.last_step.decision, ToolRejectedResult)
+                self.rejected = context.last_step.decision
+                self.recovery_epoch = str(context.control_feedback["epoch_id"])
+                self.prohibited = tuple(context.control_feedback["prohibited_attempt_signatures"])
+                return Abort(context.context_id, "rejection observed", AbortCategory.USER_REQUEST)
+            raise AssertionError("local replay test exceeded its bounded sequence")
+
+    async def scenario() -> None:
+        policy = LocalReplayPolicy()
+        monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("local_replay_constraint_test"),
+            episode_monitor=monitor,
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("local-replay", False))
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert policy.turns == 5
+        assert environment.execute_calls == 0
+        assert policy.rejected is not None
+        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
+        assert policy.rejected.result["failure_kind"] == "recovery_prohibited_attempt_replay"
+        assert policy.rejected.result["dispatch"] == "not_sent"
+        assert policy.rejected.result["epoch_id"] == policy.recovery_epoch
+        assert policy.rejected.rejected_attempt_signature is not None
+        assert any(
+            item["parameter_digest"] == policy.rejected.rejected_attempt_signature.parameter_digest
+            for item in policy.prohibited
+        )
+
+    asyncio.run(scenario())
+
+
+def test_exact_control_discovery_replay_is_rejected_without_dispatch() -> None:
+    @dataclass
+    class DiscoveryReplayPolicy:
+        turns: int = 0
+        rejected: ToolRejectedResult | None = None
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns <= 3:
+                return RequestActionPage(
+                    context.context_id,
+                    query="shared state",
+                    tool_call_id=f"provider-call:discovery-{self.turns}",
+                )
+            assert context.last_step is not None
+            assert isinstance(context.last_step.decision, ToolRejectedResult)
+            self.rejected = context.last_step.decision
+            return Abort(context.context_id, "discovery rejection observed", AbortCategory.USER_REQUEST)
+
+    async def scenario() -> None:
+        policy = DiscoveryReplayPolicy()
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            CoreTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("discovery_replay_constraint_test"),
+            episode_monitor=EpisodeMonitor(),
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("discovery-replay", False))
+
+        state = await runtime.run_task(environment, _task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert policy.turns == 4
+        assert environment.execute_calls == 0
+        assert policy.rejected is not None
+        assert policy.rejected.tool_name == "find_controls"
+        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
+        assert policy.rejected.result["dispatch"] == "not_sent"
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     "refresh_method",
     (
@@ -1760,7 +1883,7 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         ]
         assert state.last_step is not None
         assert isinstance(state.last_step.decision, ToolRejectedResult)
-        assert state.last_step.decision.result["kind"] == "proven_failed_attempt_rejected"
+        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
         assert state.last_step.decision.result["dispatch"] == "not_sent"
         assert state.last_step.execution_receipts is None
         assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"

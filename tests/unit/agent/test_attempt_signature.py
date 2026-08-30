@@ -3,7 +3,10 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from affordance_runtime.agent.attempt_signature import public_attempt_signature
+from affordance_runtime.agent.attempt_signature import (
+    public_attempt_signature,
+    public_local_result_attempt_signature,
+)
 from affordance_runtime.world import (
     ObservationSourceProfile,
     SemanticTarget,
@@ -119,3 +122,45 @@ def test_duplicate_controls_have_distinct_but_ref_free_stable_identity() -> None
     assert before_first != before_second
     assert before_first == after_first
     assert before_second == after_second
+
+
+def test_local_result_attempt_identity_is_stable_across_public_id_churn() -> None:
+    before = _world("before", (("commit:before", {"enabled": True}),))
+    after = _world("after", (("commit:after", {"enabled": True}),))
+    arguments = {"region_ref": "R10"}
+    result = {"kind": "Region", "items": ({"label": "review"},)}
+
+    assert public_local_result_attempt_signature("read_region", arguments, result, before) == (
+        public_local_result_attempt_signature("read_region", arguments, result, after)
+    )
+
+
+def test_local_result_attempt_identity_changes_with_world_or_result() -> None:
+    before = _world("before", (("commit:before", {"enabled": True}),))
+    changed_world = _world(
+        "after",
+        (("commit:after", {"enabled": True}),),
+        status_text="new public content",
+    )
+    arguments = {"query": "reviews"}
+    first_result = {"kind": "Matches", "items": ({"label": "first"},)}
+    changed_result = {"kind": "Matches", "items": ({"label": "second"},)}
+    original = public_local_result_attempt_signature(
+        "search_page_content",
+        arguments,
+        first_result,
+        before,
+    )
+
+    assert original != public_local_result_attempt_signature(
+        "search_page_content",
+        arguments,
+        first_result,
+        changed_world,
+    )
+    assert original != public_local_result_attempt_signature(
+        "search_page_content",
+        arguments,
+        changed_result,
+        before,
+    )

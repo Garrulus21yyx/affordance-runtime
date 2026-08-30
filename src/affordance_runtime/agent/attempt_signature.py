@@ -11,6 +11,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import SemanticTarget, WorldObservation
 from affordance_runtime.world.public_semantic_digest import (
     public_page_semantics,
+    public_world_semantic_digest,
     target_semantics,
 )
 
@@ -54,6 +55,35 @@ def public_attempt_signature(
         _target_digest(targets.get(target_id), targets, world),
         _target_digest(targets.get(destination_id), targets, world),
         _digest(to_json_compatible(parameters)),
+    )
+
+
+def public_local_result_attempt_signature(
+    operation: str,
+    arguments: Mapping[str, object],
+    result: Mapping[str, object],
+    world: WorldObservation,
+) -> PublicAttemptSignature:
+    """Identify one deterministic local call/result on one public World.
+
+    Local inspection tools have no target identity or dispatch receipt.  Their
+    exact-replay proof is therefore the closed tuple of current public World,
+    normalized operation arguments, and the owner-produced result.  Public
+    identity churn does not change the World digest, while any semantic World
+    or result change invalidates the proof conservatively.
+    """
+
+    return PublicAttemptSignature(
+        operation,
+        public_world_semantic_digest(world),
+        "",
+        "",
+        _digest(
+            {
+                "arguments": to_json_compatible(arguments),
+                "result": to_json_compatible(result),
+            }
+        ),
     )
 
 

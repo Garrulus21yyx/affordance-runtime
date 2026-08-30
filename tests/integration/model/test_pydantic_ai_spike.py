@@ -1077,7 +1077,7 @@ def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> Non
         assert scripted.calls == 4
         assert state.last_step is not None
         assert isinstance(state.last_step.decision, ToolRejectedResult)
-        assert state.last_step.decision.result["kind"] == "proven_failed_attempt_rejected"
+        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
         assert state.last_step.execution_receipts is None
 
         recorded = normalize_recorded_provider_input(scripted.records[3])
@@ -1090,9 +1090,58 @@ def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> Non
         )
         assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
         assert rejected_return["tool_name"] == rejected_call["tool_name"]
-        assert rejected_return["content"]["kind"] == "proven_failed_attempt_rejected"
+        assert rejected_return["content"]["kind"] == "prohibited_attempt_rejected"
         assert rejected_return["content"]["dispatch"] == "not_sent"
         assert rejected_return["content"]["transport_success"] is False
+
+    asyncio.run(scenario())
+
+
+def test_runtime_rejection_closes_exact_local_replay_as_same_call_tool_return() -> None:
+    async def scenario() -> None:
+        repeated = ("search_page_content", {"query": "Shared state"})
+        scripted = ScriptedModel(
+            [
+                repeated,
+                repeated,
+                repeated,
+                ("abort", {"reason": "local replay rejection observed", "category": "user_request"}),
+            ]
+        )
+        policy = _policy(scripted.build())
+        environment = ScriptedEnvironment(
+            initial_observation=shared_world("local-replay-tool-return", False),
+        )
+
+        state = await TargetRuntime(
+            AgentDecisionPorts(policy),
+            SharedActionOutcomeProjector(),
+            SharedTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("runtime_local_replay_admission_test"),
+            episode_monitor=EpisodeMonitor(),
+        ).run_task(environment, shared_task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert state.execution_count == 0
+        assert environment.execute_calls == 0
+        assert scripted.calls == 4
+
+        recorded = normalize_recorded_provider_input(scripted.records[3])
+        parts = tuple(part for message in recorded["messages"] for part in message["parts"])
+        rejected_call = next(
+            part for part in parts if part["part_kind"] == "tool-call" and part["tool_call_id"] == "recording-call:3"
+        )
+        rejected_return = next(
+            part
+            for part in parts
+            if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
+        )
+        assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
+        assert rejected_return["tool_name"] == rejected_call["tool_name"]
+        assert rejected_return["content"]["kind"] == "prohibited_attempt_rejected"
+        assert rejected_return["content"]["failure_kind"] == "recovery_prohibited_attempt_replay"
+        assert rejected_return["content"]["dispatch"] == "not_sent"
+        assert rejected_return["content"]["world_changed"] is False
 
     asyncio.run(scenario())
 

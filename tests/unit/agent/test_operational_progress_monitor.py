@@ -387,6 +387,10 @@ def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
         monitor,
         _control_discovery_step(world, "address bar", "Search Wikipedia"),
     )
+    constrained = _evaluate(
+        monitor,
+        _control_discovery_step(world, "address bar", "Search Wikipedia"),
+    )
     blocked = _evaluate(
         monitor,
         _control_discovery_step(world, "address bar", "Search Wikipedia"),
@@ -394,6 +398,9 @@ def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
 
     assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert constrained.recovery_signal is not None
+    assert constrained.recovery_signal.prohibited_attempt_signatures
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -432,6 +439,7 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert replay.information_delta.kind is InformationDeltaKind.EXACT_REPLAY
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.prohibited_attempt_signatures == (monitor.latest_attempt_signature,)
     assert "returned next_cursor" in recovery.recovery_signal.human_instruction
     assert "find a current executable control" in recovery.recovery_signal.human_instruction
     assert "do not repeat control discovery" not in recovery.recovery_signal.human_instruction
@@ -615,6 +623,7 @@ def test_recovery_allows_one_turn_to_use_a_nonempty_discovered_control() -> None
     second_recovery = _evaluate(monitor, _local_step(world, query="second"))
     discovery_step = _control_discovery_step(world, "search", "Search Wikipedia")
     handoff = _evaluate(monitor, discovery_step)
+    constrained = _evaluate(monitor, discovery_step)
     blocked = _evaluate(monitor, discovery_step)
 
     assert first_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
@@ -624,7 +633,10 @@ def test_recovery_allows_one_turn_to_use_a_nonempty_discovered_control() -> None
     assert handoff.recovery_signal.recovery_attempt == 1
     assert "find_controls" in handoff.recovery_signal.attempted_modes
     assert handoff.recovery_signal.epoch_id == first_recovery.recovery_signal.epoch_id
-    assert monitor.recovery_count == 1
+    assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert constrained.recovery_signal is not None
+    assert constrained.recovery_signal.prohibited_attempt_signatures
+    assert monitor.recovery_count == 3
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -718,7 +730,7 @@ def test_same_attempt_after_recovery_is_control_stalled() -> None:
     assert blocked.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
 
 
-def test_local_recovery_does_not_create_a_hard_gui_prohibition() -> None:
+def test_observation_streak_recovery_without_an_exact_receipt_creates_no_hard_prohibition() -> None:
     world = _world("observation:local-recovery")
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -730,7 +742,7 @@ def test_local_recovery_does_not_create_a_hard_gui_prohibition() -> None:
     assert recovery.recovery_signal.prohibited_attempt_signatures == ()
 
 
-def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
+def test_untyped_world_increment_carries_recovery_without_calling_the_changed_world_a_replay() -> None:
     first_world = _world("observation:first")
     changed_world = _world("observation:changed", route="/map/results", result_text="33 km")
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
@@ -740,7 +752,7 @@ def test_untyped_world_increment_does_not_clear_a_no_progress_episode() -> None:
 
     transition = _evaluate(monitor, _local_step(first_world, changed_world))
 
-    assert transition.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert EpisodeMonitorEvent.STATE_CHANGED in transition.events
     assert transition.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
     assert monitor.active_recovery is not None

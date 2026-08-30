@@ -13,7 +13,11 @@ from affordance_runtime.actions.reconciliation import (
     EffectReconciliationStatus,
 )
 from affordance_runtime.actions.space_contracts import ActionSpace
-from affordance_runtime.agent.attempt_signature import public_attempt_signature
+from affordance_runtime.agent.attempt_signature import (
+    PublicAttemptSignature,
+    public_attempt_signature,
+    public_local_result_attempt_signature,
+)
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.canonical_world_projection import (
     CanonicalPublicWorldProjection,
@@ -1354,6 +1358,14 @@ class CoreAgentLoop:
             case DecisionKind.FIND_CONTROLS:
                 assert isinstance(decision, RequestActionPage)
                 result = self._action_page(task, state, action_space, context, decision)
+                rejection = _prohibited_local_attempt_replay_rejection(state.recovery_signal, result)
+                if rejection is not None:
+                    result = _same_world_step(
+                        state,
+                        rejection,
+                        RunStatus.RUNNING,
+                        "recovery_repeat_rejected",
+                    )
             case DecisionKind.READ_REGION | DecisionKind.SEARCH_PAGE_CONTENT | DecisionKind.TOOL_REJECTED:
                 assert isinstance(decision, LocalToolResult)
                 result = StepResult(
@@ -1364,6 +1376,14 @@ class CoreAgentLoop:
                     RunStatus.RUNNING,
                     feedback="local_tool_result",
                 )
+                rejection = _prohibited_local_attempt_replay_rejection(state.recovery_signal, result)
+                if rejection is not None:
+                    result = _same_world_step(
+                        state,
+                        rejection,
+                        RunStatus.RUNNING,
+                        "recovery_repeat_rejected",
+                    )
             case DecisionKind.WAIT:
                 assert isinstance(decision, Wait)
                 result = await self._wait(environment, task, state, decision)
@@ -1905,7 +1925,7 @@ class CoreAgentLoop:
                 RunStatus.BLOCKED,
                 "effect_reconciliation:resource_mismatch",
             )
-        recovery_rejection = _proven_failure_replay_rejection(
+        recovery_rejection = _prohibited_gui_attempt_replay_rejection(
             state.recovery_signal,
             decision,
             selection,
@@ -2555,7 +2575,7 @@ def _control_feedback(state: RunState) -> dict[str, object]:
     return feedback
 
 
-def _proven_failure_replay_rejection(signal, decision, selection, world) -> ToolRejectedResult | None:
+def _prohibited_gui_attempt_replay_rejection(signal, decision, selection, world) -> ToolRejectedResult | None:
     if signal is None or not signal.prohibited_attempt_signatures:
         return None
     current = public_attempt_signature(
@@ -2565,28 +2585,82 @@ def _proven_failure_replay_rejection(signal, decision, selection, world) -> Tool
         selection.parameters,
         world,
     )
-    if current not in signal.prohibited_attempt_signatures:
+    return _prohibited_attempt_replay_rejection(
+        signal,
+        context_id=decision.context_id,
+        tool_call_id=decision.tool_call_id,
+        operation=selection.semantic_action,
+        signature=current,
+    )
+
+
+def _prohibited_local_attempt_replay_rejection(signal, step: StepResult) -> ToolRejectedResult | None:
+    if signal is None or not signal.prohibited_attempt_signatures:
+        return None
+    decision = step.decision
+    if isinstance(decision, ToolRejectedResult):
+        return None
+    if isinstance(decision, LocalToolResult):
+        operation = decision.tool_name
+        signature = public_local_result_attempt_signature(
+            operation,
+            decision.arguments,
+            decision.result,
+            step.after_world,
+        )
+        context_id = decision.context_id
+        tool_call_id = decision.tool_call_id
+    elif isinstance(decision, RequestActionPage) and step.action_page_result is not None:
+        operation = "find_controls"
+        signature = public_local_result_attempt_signature(
+            operation,
+            {"query": decision.query},
+            step.action_page_result.to_public_value(),
+            step.after_world,
+        )
+        context_id = decision.context_id
+        tool_call_id = decision.tool_call_id
+    else:
+        return None
+    return _prohibited_attempt_replay_rejection(
+        signal,
+        context_id=context_id,
+        tool_call_id=tool_call_id,
+        operation=operation,
+        signature=signature,
+    )
+
+
+def _prohibited_attempt_replay_rejection(
+    signal,
+    *,
+    context_id: str,
+    tool_call_id: str,
+    operation: str,
+    signature: PublicAttemptSignature,
+) -> ToolRejectedResult | None:
+    if signature not in signal.prohibited_attempt_signatures:
         return None
     return ToolRejectedResult(
-        decision.context_id,
-        selection.semantic_action,
+        context_id,
+        operation,
         {
-            "operation": selection.semantic_action,
-            "attempt_signature": current.digest,
+            "operation": operation,
+            "attempt_signature": signature.digest,
         },
         {
-            "kind": "proven_failed_attempt_rejected",
-            "failure_kind": "recovery_proven_failure_replay",
+            "kind": "prohibited_attempt_rejected",
+            "failure_kind": "recovery_prohibited_attempt_replay",
             "epoch_id": signal.epoch_id,
             "evidence_revision": signal.evidence_revision,
-            "attempted_operation": selection.semantic_action,
+            "attempted_operation": operation,
             "dispatch": "not_sent",
             "transport_success": False,
             "world_changed": False,
             "must_change": ("attempt",),
         },
-        decision.tool_call_id,
-        rejected_attempt_signature=current,
+        tool_call_id,
+        rejected_attempt_signature=signature,
     )
 
 

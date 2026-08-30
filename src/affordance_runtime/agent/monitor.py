@@ -7,7 +7,11 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from affordance_runtime.agent.attempt_signature import PublicAttemptSignature, public_attempt_signature
+from affordance_runtime.agent.attempt_signature import (
+    PublicAttemptSignature,
+    public_attempt_signature,
+    public_local_result_attempt_signature,
+)
 from affordance_runtime.agent.context.contracts import sanitize_history_value
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDelta,
@@ -50,6 +54,7 @@ from affordance_runtime.world.public_semantic_digest import (
 
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
 _MAX_RECENT_GUI_ATTEMPTS = 16
+_MAX_PROHIBITED_ATTEMPTS = 16
 
 
 @dataclass(frozen=True)
@@ -146,7 +151,7 @@ class EpisodeMonitor:
         attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, *candidate.attempted_modes)))
         prohibited = tuple(
             dict.fromkeys((*active.prohibited_attempt_signatures, *candidate.prohibited_attempt_signatures))
-        )[-_MAX_RECENT_GUI_ATTEMPTS:]
+        )[-_MAX_PROHIBITED_ATTEMPTS:]
         signal = replace(
             active,
             kind=candidate.kind,
@@ -290,7 +295,8 @@ class EpisodeMonitor:
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
         if self.recovery_count and result.feedback == "recovery_repeat_rejected":
-            signature = self.latest_attempt_signature or _same_world_attempt_signature(result)
+            rejected_signature = _rejected_attempt_signature(result)
+            signature = rejected_signature or _same_world_attempt_signature(result)
             repeats_latest = signature == self.latest_attempt_signature
             self.no_progress_count += 1
             self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
@@ -300,6 +306,7 @@ class EpisodeMonitor:
                 result,
                 self,
                 recovery_attempt=self.recovery_count,
+                prohibited_attempt_signature=rejected_signature,
             )
             if self.recovery_count > self.profile.max_recovery_retries + 1:
                 return self._recovery_transition(
@@ -326,6 +333,7 @@ class EpisodeMonitor:
                 result,
                 self,
                 recovery_attempt=self.recovery_count,
+                prohibited_attempt_signature=result.decision.rejected_attempt_signature,
             )
             if self.recovery_count > self.profile.max_recovery_retries + 1:
                 return self._recovery_transition(
@@ -376,6 +384,28 @@ class EpisodeMonitor:
             self.no_progress_count += 1
             self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
             self.latest_attempt_signature = signature
+            exact_replay = _has_exact_local_result_replay(
+                result,
+                information_delta,
+                repeats_latest=repeats_latest,
+            )
+            if exact_replay:
+                already_prohibited = signature in self.active_recovery.prohibited_attempt_signatures
+                self.recovery_count = self.recovery_count + 1 if repeats_latest else 1
+                signal = _control_stall_signal(
+                    result,
+                    self,
+                    recovery_attempt=min(self.recovery_count, 3),
+                    prohibited_attempt_signature=signature,
+                )
+                return self._recovery_transition(
+                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
+                    EpisodeMonitorRecommendation.BLOCK
+                    if already_prohibited
+                    else EpisodeMonitorRecommendation.RECOVER,
+                    "control_stalled" if already_prohibited else RecoveryKind.CONTROL_STALL.value,
+                    signal,
+                )
             self.recovery_count = 1
             if repeats_latest:
                 return self._carry_recovery(
@@ -490,11 +520,13 @@ class EpisodeMonitor:
                 return self._carry_recovery(result, events, information_delta)
             return EpisodeMonitorTransition(tuple(dict.fromkeys(events)), EpisodeMonitorRecommendation.CONTINUE)
 
-        exact_replay = bool(
-            information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY
-        )
         signature = _same_world_attempt_signature(result)
         repeats_latest = signature == self.latest_attempt_signature
+        exact_replay = _has_exact_local_result_replay(
+            result,
+            information_delta,
+            repeats_latest=repeats_latest,
+        )
         self.no_progress_count += 1
         self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
         self.latest_attempt_signature = signature
@@ -505,7 +537,12 @@ class EpisodeMonitor:
 
         if self.recovery_count:
             if repeats_latest:
-                signal = _control_stall_signal(result, self, recovery_attempt=self.recovery_count)
+                signal = _control_stall_signal(
+                    result,
+                    self,
+                    recovery_attempt=self.recovery_count,
+                    prohibited_attempt_signature=signature if exact_replay else None,
+                )
                 return self._recovery_transition(
                     (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                     EpisodeMonitorRecommendation.BLOCK,
@@ -521,6 +558,7 @@ class EpisodeMonitor:
                 result,
                 self,
                 recovery_attempt=self.recovery_count,
+                prohibited_attempt_signature=signature if exact_replay else None,
             )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.REPEATED_ACTION),
@@ -545,7 +583,12 @@ class EpisodeMonitor:
 
         self.recovery_count = 1
         self.observation_only_streak = 0
-        signal = _control_stall_signal(result, self, recovery_attempt=1)
+        signal = _control_stall_signal(
+            result,
+            self,
+            recovery_attempt=1,
+            prohibited_attempt_signature=signature if exact_replay else None,
+        )
         return self._recovery_transition(
             (*events, EpisodeMonitorEvent.REPEATED_ACTION),
             EpisodeMonitorRecommendation.RECOVER,
@@ -577,6 +620,21 @@ class EpisodeMonitor:
         repeated = key in self.recent_gui_results
         self.recent_gui_results = (*self.recent_gui_results, key)[-_MAX_RECENT_GUI_ATTEMPTS:]
         return repeated
+
+
+def _has_exact_local_result_replay(
+    result: StepResult,
+    information_delta: InformationDelta | None,
+    *,
+    repeats_latest: bool,
+) -> bool:
+    if information_delta is not None and information_delta.kind is InformationDeltaKind.EXACT_REPLAY:
+        return True
+    return bool(
+        repeats_latest
+        and isinstance(result.decision, RequestActionPage)
+        and result.action_page_result is not None
+    )
 
 
 def _diagnostic_events(result: StepResult) -> list[EpisodeMonitorEvent]:
@@ -620,11 +678,12 @@ def _control_stall_signal(
     monitor: EpisodeMonitor,
     *,
     recovery_attempt: int,
+    prohibited_attempt_signature: PublicAttemptSignature | None = None,
 ) -> RecoverySignal:
     prohibited_attempt_signature = (
-        monitor.latest_attempt_signature
-        if result.feedback == "recovery_repeat_rejected" and monitor.latest_attempt_signature is not None
-        else _proven_failed_gui_attempt_signature(result)
+        prohibited_attempt_signature
+        or _rejected_attempt_signature(result)
+        or _proven_failed_gui_attempt_signature(result)
     )
     signature_payload: tuple[object, ...] = (
         monitor.world_digest,
@@ -879,11 +938,22 @@ def _same_world_attempt_signature(result: StepResult) -> PublicAttemptSignature:
     if isinstance(decision, LocalToolResult):
         if decision.rejected_attempt_signature is not None:
             return decision.rejected_attempt_signature
-        operation = decision.tool_name
-        parameters: Mapping[str, object] = decision.arguments
+        return public_local_result_attempt_signature(
+            decision.tool_name,
+            decision.arguments,
+            decision.result,
+            result.after_world,
+        )
     elif isinstance(decision, RequestActionPage):
+        if result.action_page_result is not None:
+            return public_local_result_attempt_signature(
+                "find_controls",
+                {"query": decision.query},
+                result.action_page_result.to_public_value(),
+                result.after_world,
+            )
         operation = "find_controls"
-        parameters = {"query": decision.query}
+        parameters: Mapping[str, object] = {"query": decision.query}
     elif isinstance(decision, SelectAction):
         operation = "select_action"
         parameters = {
@@ -911,6 +981,11 @@ def _same_world_attempt_signature(result: StepResult) -> PublicAttemptSignature:
         parameters,
         result.before_world,
     )
+
+
+def _rejected_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
+    decision = result.decision
+    return decision.rejected_attempt_signature if isinstance(decision, ToolRejectedResult) else None
 
 
 def _gui_has_operational_result(result: StepResult) -> bool:
