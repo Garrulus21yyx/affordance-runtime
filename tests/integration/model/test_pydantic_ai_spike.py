@@ -953,7 +953,7 @@ def test_pydantic_ai_decision_executes_one_action_then_runtime_auto_completes() 
                 "max_tokens": 1024,
                 "temperature": 0.0,
                 "parallel_tool_calls": False,
-                "tool_choice": "auto",
+                "tool_choice": "required",
                 "timeout": 4.0,
             }
         ]
@@ -1294,11 +1294,11 @@ def test_text_only_output_uses_one_pydantic_retry_and_retains_only_the_accepted_
         assert result.attempts[1].output_failure_kind is None
         assert result.diagnostics["policy_model_call_count"] == 2
         assert [record.model_settings["tool_choice"] for record in scripted.records] == [
-            "auto",
+            "required",
             "required",
         ]
         assert [attempt.transcript["llm.model_settings"]["tool_choice"] for attempt in result.attempts] == [
-            "auto",
+            "required",
             "required",
         ]
         canonical_history = json.dumps(policy.port.message_history, default=str)
@@ -1950,8 +1950,11 @@ def test_cancelled_length_fallback_closes_pending_history_without_rejected_outpu
 
         async def cancel_required_fallback(self, call, **kwargs):
             settings = kwargs.get("physical_settings")
-            if isinstance(settings, Mapping) and settings.get("tool_choice") == "required":
-
+            if (
+                isinstance(settings, Mapping)
+                and settings.get("tool_choice") == "required"
+                and str(kwargs.get("phase", "")).endswith("_output_retry")
+            ):
                 async def cancelled_call():
                     raise asyncio.CancelledError
 
@@ -2348,7 +2351,11 @@ def test_accepted_exchange_conserves_every_proposal_across_the_next_provider_tur
         assert second.failure is None and second.output is not None, json.dumps(second.diagnostics, default=str)
         assert isinstance(second.output.decision, FinalResponse)
         recorded = normalize_recorded_provider_input(scripted.records[1])
-        assert recorded == policy.port.last_admitted_envelopes[0].model_boundary_projection()
+        canonical = policy.port.last_admitted_envelopes[0].model_boundary_projection()
+        assert recorded["model_settings"]["tool_choice"] == "required"
+        assert canonical["model_settings"]["tool_choice"] == "auto"
+        recorded["model_settings"]["tool_choice"] = "auto"
+        assert recorded == canonical
         prior_calls = tuple(part for part in recorded["messages"][-2]["parts"] if part["part_kind"] == "tool-call")
         paired_results = tuple(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "tool-return")
         assert prior_calls[0] == {
@@ -2479,7 +2486,7 @@ def test_exact_model_reasoning_and_calls_survive_into_the_next_turn() -> None:
 
         assert first.failure is None and first.output is not None
         assert first.output.decision.tool_call_id == "recording-call:progress"
-        assert scripted.records[0].model_settings["tool_choice"] == "auto"
+        assert scripted.records[0].model_settings["tool_choice"] == "required"
         retained = policy.port.message_history[1]
         assert isinstance(retained, ModelResponse)
         assert [type(part) for part in retained.parts] == [
@@ -4709,7 +4716,7 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
             "accepted",
         ]
         assert [record.model_settings["tool_choice"] for record in scripted.records] == [
-            "auto",
+            "required",
             "required",
             "required",
         ]
