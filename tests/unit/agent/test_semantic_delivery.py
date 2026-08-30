@@ -147,6 +147,7 @@ def test_inspect_result_history_contract_preserves_ref_shaped_semantics_only() -
         ephemeral_paths=inspect_outcome_ephemeral_paths(stale, stale_public),
     ) == {
         "kind": "StaleContext",
+        "items": (),
         "searched_domain": "readable_content",
         "read_only": True,
         "zero_browser_dispatch": True,

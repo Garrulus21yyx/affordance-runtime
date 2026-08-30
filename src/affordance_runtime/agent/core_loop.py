@@ -27,6 +27,7 @@ from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.failures import ModelFailureKind
 from affordance_runtime.agent.context.observation_delivery import (
     DeliveryTransition,
+    ObservationDeliveryStore,
     current_findings_digest,
 )
 from affordance_runtime.agent.context.step_projection import project_step_result
@@ -336,6 +337,7 @@ class CoreAgentLoop:
             step_count=facts.step_count,
             context_generation=facts.context_generation,
             workspace=facts.workspace,
+            delivery_store=facts.delivery_store,
             waited_ms=facts.waited_ms,
             task_revision=facts.task_revision,
             goal_resolution=facts.goal_resolution,
@@ -854,6 +856,7 @@ class CoreAgentLoop:
         state.install_canonical_world(projection)
         state.goal_resolution = resolution
         state.recovery_signal = None
+        state.delivery_store = ObservationDeliveryStore()
         self._start_episode(state.current_world, evaluation)
         if isinstance(resolution, Ready):
             state.goal_plan_version_counter = resolution.accepted_plan.plan_version

@@ -12,6 +12,10 @@ from affordance_runtime.agent import (
     AskUser,
     RunStatus,
 )
+from affordance_runtime.agent.context.observation_delivery import (
+    LocalDeliveryRecord,
+    ObservationDeliveryStore,
+)
 from affordance_runtime.app import (
     compose_target_runtime,
 )
@@ -85,6 +89,17 @@ def test_target_runtime_runs_natural_language_request_and_resumes_input() -> Non
         assert isinstance(outcome.intake, ReadyTask)
         assert outcome.state is not None
         assert outcome.state.status is RunStatus.WAITING_USER
+        outcome.state.delivery_store = ObservationDeliveryStore(
+            (
+                LocalDeliveryRecord(
+                    "read_region",
+                    "sha256:" + "a" * 64,
+                    "sha256:" + "b" * 64,
+                    "sha256:" + "c" * 64,
+                    ("sha256:" + "d" * 64,),
+                ),
+            )
+        )
 
         resumed = await runtime.resume_request(
             environment,
@@ -94,6 +109,7 @@ def test_target_runtime_runs_natural_language_request_and_resumes_input() -> Non
 
         assert resumed.state is not None
         assert resumed.state.status is RunStatus.DONE
+        assert resumed.state.delivery_store == ObservationDeliveryStore()
         assert policy.calls == 1
 
     asyncio.run(scenario())

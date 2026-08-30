@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.context.contracts import sanitize_history_arguments
-from affordance_runtime.agent.decisions import LocalToolResult
+from affordance_runtime.agent.decisions import LocalToolResult, ToolRejectedResult
 from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.immutable import to_json_compatible
@@ -134,6 +134,11 @@ class ObservationDeliveryStore:
             raise ValueError("delivery reducer requires a positive committed step")
         decision = getattr(step, "decision", None)
         discovery = getattr(step, "action_page_result", None)
+        if isinstance(decision, ToolRejectedResult):
+            # A typed rejection contains no task evidence.  Its dedicated
+            # Monitor transition owns the failure; novelty must not describe
+            # the rejected call as information progress.
+            return DeliveryTransition(self, None, getattr(step, "runtime_failure", None))
         if isinstance(decision, LocalToolResult):
             operation = decision.tool_name
             arguments = decision.arguments

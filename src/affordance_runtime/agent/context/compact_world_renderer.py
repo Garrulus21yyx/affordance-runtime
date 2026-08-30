@@ -826,18 +826,30 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
         return _with_world_read_metadata(
             {
                 "kind": kind,
+                "items": (),
                 "query": outcome.query,
                 "coverage": outcome.coverage,
                 "safe_relaxations": outcome.safe_relaxations,
             }
         )
     if isinstance(outcome, InvalidRegion):
-        return _with_world_read_metadata({"kind": kind, "region_ref": outcome.region_ref})
+        return _with_world_read_metadata(
+            {"kind": kind, "items": (), "region_ref": outcome.region_ref}
+        )
     if isinstance(outcome, InvalidCursor):
-        return _with_world_read_metadata({"kind": kind})
+        return _with_world_read_metadata({"kind": kind, "items": ()})
     if isinstance(outcome, StaleContext):
-        return _with_world_read_metadata({"kind": kind, "expected": outcome.expected, "actual": outcome.actual})
-    return _with_world_read_metadata({"kind": kind, "required": outcome.required, "hard_limit": outcome.hard_limit})
+        return _with_world_read_metadata(
+            {"kind": kind, "items": (), "expected": outcome.expected, "actual": outcome.actual}
+        )
+    return _with_world_read_metadata(
+        {
+            "kind": kind,
+            "items": (),
+            "required": outcome.required,
+            "hard_limit": outcome.hard_limit,
+        }
+    )
 
 
 _INSPECT_RECORD_REF_KINDS: tuple[tuple[str, PublicRefKind | None], ...] = (

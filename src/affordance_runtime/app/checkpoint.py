@@ -24,6 +24,10 @@ from affordance_runtime.agent.context.contracts import (
     AgentHistoricalTargetView,
     AgentTurnView,
 )
+from affordance_runtime.agent.context.observation_delivery import (
+    LocalDeliveryRecord,
+    ObservationDeliveryStore,
+)
 from affordance_runtime.agent.decisions import DecisionKind, SelectAction
 from affordance_runtime.agent.interactions import (
     InteractionRequest,
@@ -70,13 +74,14 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v6"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v7"
 _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
     {
         "affordance-runtime.checkpoint.v2",
         "affordance-runtime.checkpoint.v3",
         "affordance-runtime.checkpoint.v4",
         "affordance-runtime.checkpoint.v5",
+        "affordance-runtime.checkpoint.v6",
         RUNTIME_CHECKPOINT_SCHEMA_VERSION,
     }
 )
@@ -846,6 +851,7 @@ def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, obje
         },
         "currentness_probe_count": state.currentness_probe_count,
         "workspace": to_json_compatible(state.workspace),
+        "delivery_store": _delivery_store_payload(state.delivery_store),
         "recovery_signal": _recovery_signal_payload(state.recovery_signal),
         "pause_boundary": to_json_compatible(boundary),
         "current_observation_id": state.current_world.observation_id,
@@ -868,6 +874,23 @@ def _goal_resolution_payload(resolution: object | None) -> object:
     if kind is None:
         raise RuntimeCheckpointError("checkpoint_goal_resolution_invalid")
     return {"kind": kind, "value": to_json_compatible(resolution)}
+
+
+def _delivery_store_payload(store: ObservationDeliveryStore) -> dict[str, object]:
+    """Persist only the Monitor's bounded ref-free novelty receipts."""
+
+    return {
+        "local_deliveries": [
+            {
+                "operation": item.operation,
+                "world_digest": item.world_digest,
+                "arguments_digest": item.arguments_digest,
+                "result_digest": item.result_digest,
+                "item_digests": list(item.item_digests),
+            }
+            for item in store.local_deliveries
+        ]
+    }
 
 
 def _recovery_signal_payload(signal: RecoverySignal | None) -> dict[str, object] | None:
@@ -1105,6 +1128,7 @@ def _restore_run_facts(
         latest_effect = _restore_committed_effect(run_payload.get("latest_effect"))
         reconciliation = _restore_effect_reconciliation(run_payload.get("effect_reconciliation"))
         recovery_signal = _restore_recovery_signal(run_payload.get("recovery_signal"))
+        delivery_store = _restore_delivery_store(run_payload.get("delivery_store"))
         return RunCheckpointFacts(
             status_before_pause=status,
             remaining_steps=_integer(run_payload["remaining_steps"]),
@@ -1121,6 +1145,7 @@ def _restore_run_facts(
             currentness_probe_count=_integer(run_payload["currentness_probe_count"]),
             workspace=workspace,
             pause_boundary=boundary,
+            delivery_store=delivery_store,
             recovery_signal=recovery_signal,
             latest_effect=latest_effect,
             effect_reconciliation=reconciliation,
@@ -1132,6 +1157,24 @@ def _restore_run_facts(
         raise
     except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeCheckpointError("checkpoint_run_state_invalid") from exc
+
+
+def _restore_delivery_store(payload: object) -> ObservationDeliveryStore:
+    if payload is None:
+        # Checkpoint v2-v6 began a fresh bounded novelty window on restore.
+        return ObservationDeliveryStore()
+    store = _mapping(payload)
+    records = tuple(
+        LocalDeliveryRecord(
+            str(item["operation"]),
+            str(item["world_digest"]),
+            str(item["arguments_digest"]),
+            str(item["result_digest"]),
+            _string_sequence(item.get("item_digests", [])),
+        )
+        for item in _mapping_sequence(store.get("local_deliveries", []))
+    )
+    return ObservationDeliveryStore(records)
 
 
 def _restore_goal_resolution(payload: object):

@@ -23,6 +23,14 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent import monitor as monitor_module
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
+from affordance_runtime.agent.context.compact_world_renderer import (
+    CapacityExceeded,
+    Empty,
+    InvalidCursor,
+    InvalidRegion,
+    StaleContext,
+    inspect_outcome_public,
+)
 from affordance_runtime.agent.context.observation_delivery import (
     InformationDeltaKind,
     ObservationDeliveryStore,
@@ -198,6 +206,29 @@ def _local_step(before, after=None, *, query: str = "route", region: str = "") -
         after,
         _evaluation(after),
         feedback="local_tool_result",
+    )
+
+
+def _producer_inspection_step(world, query: str, outcome) -> StepResult:
+    return StepResult(
+        SearchPageContentResult(
+            "context:test",
+            "search_page_content",
+            {"query": query},
+            inspect_outcome_public(outcome),
+        ),
+        world,
+        world,
+        _evaluation(world),
+        feedback="local_tool_result",
+    )
+
+
+def _producer_empty_search_step(world, query: str) -> StepResult:
+    return _producer_inspection_step(
+        world,
+        query,
+        Empty(query, "partial", ("broaden the query",)),
     )
 
 
@@ -584,6 +615,91 @@ def test_local_delivery_closed_algebra_covers_empty_cross_world_overlap_and_new_
     assert changed_semantics.information_delta is not None
     assert changed_semantics.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
     assert changed_semantics.information_delta.new_information_count == 1
+
+
+def test_real_empty_search_results_accumulate_no_progress_instead_of_false_novelty() -> None:
+    world = _world("observation:producer-empty-results")
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
+    monitor.start_episode(world, _evaluation(world))
+    store = ObservationDeliveryStore()
+
+    first_step = _producer_empty_search_step(world, "missing one")
+    first = store.reduce(first_step, step_index=1)
+    first_monitor = monitor.evaluate(
+        first_step,
+        current_findings_digest(world),
+        first.information_delta,
+    )
+    second_step = _producer_empty_search_step(world, "missing two")
+    second = first.next_store.reduce(second_step, step_index=2)
+    second_monitor = monitor.evaluate(
+        second_step,
+        current_findings_digest(world),
+        second.information_delta,
+    )
+
+    assert first.information_delta is not None
+    assert first.information_delta.kind is InformationDeltaKind.NO_MATCHES
+    assert second.information_delta is not None
+    assert second.information_delta.kind is InformationDeltaKind.NO_MATCHES
+    assert first_monitor.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second_monitor.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second_monitor.recovery_lifecycle is RecoveryLifecycleTransition.STARTED
+
+
+def test_zero_record_inspection_failures_cannot_close_local_recovery_as_progress() -> None:
+    world = _world("observation:producer-zero-record-failures")
+    monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
+    monitor.start_episode(world, _evaluation(world))
+    store = ObservationDeliveryStore()
+
+    for index, query in enumerate(("missing one", "missing two"), start=1):
+        step = _producer_empty_search_step(world, query)
+        delivery = store.reduce(step, step_index=index)
+        transition = monitor.evaluate(
+            step,
+            current_findings_digest(world),
+            delivery.information_delta,
+        )
+        store = delivery.next_store
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert monitor.active_recovery is not None
+    epoch_id = monitor.active_recovery.epoch_id
+
+    failures = (
+        InvalidCursor("cursor:stale"),
+        CapacityExceeded(2_000, 1_000),
+        StaleContext("observation:old", "observation:fresh"),
+        InvalidRegion("R99"),
+    )
+    for index, outcome in enumerate(failures, start=3):
+        step = _producer_inspection_step(world, f"failure {index}", outcome)
+        delivery = store.reduce(step, step_index=index)
+        transition = monitor.evaluate(
+            step,
+            current_findings_digest(world),
+            delivery.information_delta,
+        )
+        store = delivery.next_store
+
+        assert delivery.information_delta is not None
+        assert delivery.information_delta.kind is InformationDeltaKind.NO_MATCHES
+        assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+        assert transition.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+        assert transition.recovery_signal is not None
+        assert transition.recovery_signal.epoch_id == epoch_id
+
+
+def test_tool_rejection_has_no_information_novelty_receipt() -> None:
+    world = _world("observation:tool-rejection-no-novelty")
+
+    transition = ObservationDeliveryStore().reduce(
+        _tool_rejected_step(world),
+        step_index=1,
+    )
+
+    assert transition.information_delta is None
+    assert transition.next_store == ObservationDeliveryStore()
 
 
 def test_local_delivery_novelty_expires_refs_but_preserves_ref_shaped_business_text() -> None:

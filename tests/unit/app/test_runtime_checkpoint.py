@@ -11,10 +11,26 @@ import pytest
 
 from affordance_runtime.actions.effect_semantics import Reversibility
 from affordance_runtime.actions.reconciliation import EffectReconciliationStatus
-from affordance_runtime.agent import SelectAction
+from affordance_runtime.agent import ReadRegionResult, SelectAction
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDeltaKind,
+    ObservationDeliveryStore,
+    current_findings_digest,
+)
 from affordance_runtime.agent.policy import AgentDecisionPorts
-from affordance_runtime.agent.recovery import RecoveryKind, RecoverySignal
+from affordance_runtime.agent.recovery import (
+    EpisodeMonitorRecommendation,
+    RecoveryKind,
+    RecoverySignal,
+)
+from affordance_runtime.agent.run_control import (
+    RunControlBoundary,
+    RunControlKind,
+    RunControlOutcome,
+    RunControlOutcomeKind,
+)
+from affordance_runtime.agent.run_state import RunState, StepResult
 from affordance_runtime.app.checkpoint import (
     RuntimeCheckpoint,
     RuntimeCheckpointCommandOutcome,
@@ -54,6 +70,7 @@ from affordance_runtime.task import (
     RevisionReady,
     RiskProfile,
     TaskBoundary,
+    TaskGoal,
     TaskRevisionProposal,
 )
 from affordance_runtime.task.contracts import criterion_id
@@ -114,6 +131,176 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
     restored = _restore_recovery_signal(_recovery_signal_payload(signal))
 
     assert restored == signal
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_restore_preserves_cross_world_novelty_and_active_recovery() -> None:
+    task = TaskGoal(
+        "session:delivery-checkpoint",
+        "Inspect the current records",
+        risk_profile=RiskProfile.READ_ONLY,
+    )
+    first_world = _action_world("delivery-checkpoint:first", False)
+    second_world = _action_world("delivery-checkpoint:second", False)
+
+    def evaluation(world) -> TaskEvaluation:
+        return TaskEvaluation(
+            task.task_id,
+            world.observation_id,
+            TaskEvaluationStatus.INCOMPLETE,
+            "fixture evaluation",
+        )
+
+    def read_step(world, *, region_ref: str, node_ref: str) -> StepResult:
+        return StepResult(
+            ReadRegionResult(
+                "context:delivery-checkpoint",
+                "read_region",
+                {"region_ref": region_ref},
+                {
+                    "kind": "Opened",
+                    "items": (
+                        {
+                            "kind": "complete_item",
+                            "region_ref": region_ref,
+                            "content": ({"node_ref": node_ref, "role": "StaticText", "text": "same record"},),
+                        },
+                    ),
+                    "has_more": False,
+                    "next_cursor": None,
+                    "source_coverage": "partial",
+                    "region_membership": "complete",
+                    "result_page": "1/1",
+                    "scope": {"role": "list", "heading": "Results"},
+                },
+                ephemeral_argument_paths=(("region_ref",),),
+                ephemeral_result_paths=(
+                    ("next_cursor",),
+                    ("items", "*", "region_ref"),
+                    ("items", "*", "content", "*", "node_ref"),
+                ),
+            ),
+            world,
+            world,
+            evaluation(world),
+            feedback="local_tool_result",
+        )
+
+    first_delivery = ObservationDeliveryStore().reduce(
+        read_step(first_world, region_ref="R1", node_ref="N1"),
+        step_index=1,
+    )
+    recovery = RecoverySignal(
+        RecoveryKind.CONTROL_STALL,
+        "control_stall:delivery-checkpoint",
+        {"origin_dispatch": "not_sent"},
+        attempted_modes=("read_region",),
+        human_instruction="use one materially different route",
+        epoch_id="recovery:1:delivery-checkpoint",
+    )
+    pause_boundary = RunControlOutcome(
+        "pause:delivery-checkpoint",
+        RunControlKind.PAUSE,
+        RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED,
+        RunControlBoundary.BEFORE_POLICY,
+    )
+    state = RunState(
+        first_world,
+        evaluation(first_world),
+        5,
+        recovery_signal=recovery,
+        delivery_store=first_delivery.next_store,
+        control_boundary=pause_boundary,
+    )
+    checkpoint = RuntimeCheckpoint.capture(
+        session_id=task.task_id,
+        task=task,
+        state=state,
+        model_history={"format": "pydantic-ai.messages.v1", "messages": []},
+        environment_reference="browser-lease:delivery-checkpoint",
+    )
+    facts = checkpoint.restore_run_facts()
+
+    assert checkpoint.schema_version == "affordance-runtime.checkpoint.v7"
+    assert facts.delivery_store == first_delivery.next_store
+    assert "same record" not in checkpoint.to_json()
+
+    runtime = _runtime()
+    environment = ScriptedEnvironment(
+        initial_observation=second_world,
+        independent_observations=(second_world,),
+    )
+    restored = await runtime.restore_paused_checkpoint(
+        environment,
+        task,
+        facts,
+        checkpoint.checkpoint_id,
+    )
+    duplicate_step = read_step(restored.current_world, region_ref="R8", node_ref="N9")
+    duplicate = restored.delivery_store.reduce(duplicate_step, step_index=2)
+
+    assert restored.delivery_store == first_delivery.next_store
+    assert restored.recovery_signal == recovery
+    assert duplicate.information_delta is not None
+    assert duplicate.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+
+    monitor_transition = runtime.episode_monitor.evaluate(
+        duplicate_step,
+        current_findings_digest(restored.current_world),
+        duplicate.information_delta,
+    )
+    assert monitor_transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert monitor_transition.recovery_signal is not None
+    assert monitor_transition.recovery_signal.epoch_id == recovery.epoch_id
+
+
+def test_checkpoint_v6_without_delivery_receipts_restores_an_empty_novelty_window() -> None:
+    task = TaskGoal(
+        "session:legacy-delivery-checkpoint",
+        "Inspect the current records",
+        risk_profile=RiskProfile.READ_ONLY,
+    )
+    world = _action_world("legacy-delivery-checkpoint", False)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "fixture evaluation",
+    )
+    state = RunState(
+        world,
+        evaluation,
+        5,
+        control_boundary=RunControlOutcome(
+            "pause:legacy-delivery-checkpoint",
+            RunControlKind.PAUSE,
+            RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED,
+            RunControlBoundary.BEFORE_POLICY,
+        ),
+    )
+    checkpoint = RuntimeCheckpoint.capture(
+        session_id=task.task_id,
+        task=task,
+        state=state,
+        model_history={"format": "pydantic-ai.messages.v1", "messages": []},
+        environment_reference="browser-lease:legacy-delivery-checkpoint",
+    )
+    raw = json.loads(checkpoint.to_json())
+    raw["schema_version"] = "affordance-runtime.checkpoint.v6"
+    raw["run"].pop("delivery_store")
+    unsigned = {key: value for key, value in raw.items() if key not in {"checkpoint_id", "digest"}}
+    digest = hashlib.sha256(
+        json.dumps(unsigned, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    raw["digest"] = digest
+    raw["checkpoint_id"] = f"runtime-checkpoint:{digest}"
+
+    restored = RuntimeCheckpoint.from_json(
+        json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+
+    assert restored.schema_version == "affordance-runtime.checkpoint.v6"
+    assert restored.restore_run_facts().delivery_store == ObservationDeliveryStore()
 
 
 def test_legacy_page_digest_recovery_resumes_without_an_invalid_hard_prohibition() -> None:
