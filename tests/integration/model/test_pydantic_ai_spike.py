@@ -522,7 +522,9 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
     )
     assert requests[0]["messages"][1]["content"] in fallback_text
     assert "action_selection_recovery" in fallback_text
-    assert "return exactly one complete offered tool call now" in fallback_text
+    assert "return exactly one complete offered tool call" in fallback_text
+    assert "Complete any unfinished enumeration, classification, or record audit" in fallback_text
+    assert "the truncation boundary never completes a set" in fallback_text
 
 
 async def _bound_envelope_for_port(port: PydanticAIGroundedDecisionPort, request_id: str):
@@ -4647,7 +4649,9 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
         assert [record.model_settings["tool_choice"] for record in scripted.records] == ["auto", "required"]
         fallback_prompt = json.dumps(scripted.records[1].messages, default=str)
         assert "action_selection_recovery" in fallback_prompt
-        assert "return exactly one complete offered tool call now" in fallback_prompt
+        assert "return exactly one complete offered tool call" in fallback_prompt
+        assert "Complete any unfinished enumeration, classification, or record audit" in fallback_prompt
+        assert "the truncation boundary never completes a set" in fallback_prompt
         assert "The complete positive set already supported" in fallback_prompt
         assert "The next action should use the complete set" in fallback_prompt
         assert "truncated reasoning omitted" in fallback_prompt

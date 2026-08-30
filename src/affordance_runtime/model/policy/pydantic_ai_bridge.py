@@ -3612,12 +3612,12 @@ def _pydantic_decision_recovery_prompt(
                     "incomplete, non-authoritative same-call reasoning; verify against the same fresh context"
                 ),
                 "instruction": (
-                    "Using the same fresh context and active control constraints, return exactly one complete "
-                    "offered tool call now. Continue from the incomplete reasoning checkpoint instead of restarting "
-                    "semantic classification; preserve every supported intermediate positive conclusion and do not "
-                    "narrow its set. Do not repeat analysis, a completed read, or a pagination state already recorded "
-                    "in recent_trajectory. If existing evidence supports the requested output, select the offered "
-                    "final-response tool; otherwise select one materially new action. Add no explanatory text."
+                    "Use the checkpoint only to retain settled work; it is not a completed decision. Complete any "
+                    "unfinished enumeration, classification, or record audit against the same fresh context and "
+                    "active constraints. Preserve every supported positive; the truncation boundary never completes "
+                    "a set. Then return exactly one complete offered tool call. Do not repeat a settled read or "
+                    "pagination state. If evidence supports the requested output, use the final-response tool; "
+                    "otherwise use one materially new action. Add no explanatory text."
                 ),
                 "incomplete_reasoning_checkpoint": reasoning_checkpoint,
             }
