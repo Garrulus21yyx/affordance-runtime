@@ -13,6 +13,7 @@ from affordance_runtime.evaluation.evidence_records import evidence_source_is_cu
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.public_semantic_digest import public_subject_semantics_changed
 from affordance_runtime.world.source_profile import assurance_satisfies
+from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
 
 
 def apply_action_evidence_profile(
@@ -56,7 +57,13 @@ def apply_action_evidence_profile(
         if evaluation.observed_change is ObservedChange.UNCHANGED:
             return (
                 evaluation
-                if _all_supported_structural_unchanged(records, before, after)
+                if _all_supported_structural_unchanged(
+                    records,
+                    evaluation,
+                    request,
+                    before,
+                    after,
+                )
                 else _unknown(evaluation, "current evidence does not support the claimed local non-change")
             )
         return evaluation
@@ -81,7 +88,7 @@ def _any_supported_structural_change(records, request, before, after) -> bool:
             allow_truncated=(
                 allow_truncated
                 and item.subject_id == request.intent.target_id
-            ),
+            ) or _is_exact_requested_value(item, request, after),
         )
         and _before_values(before, item.subject_id, item.predicate) != (item.value,)
         for item in records
@@ -111,20 +118,64 @@ def _all_supported_target_value_postcondition(records, evaluation, request, afte
         )
         and evidence_source_is_current(record, after)
         and assurance_satisfies(record.source_assurance, "structural")
-        and _source_coverage_complete(record.source_observation_id, after)
+        and _source_coverage_admits(
+            record.source_observation_id,
+            after,
+            allow_truncated=(
+                evaluation.local_postcondition is LocalPostconditionStatus.SATISFIED
+                and _is_exact_requested_value(record, request, after)
+            ),
+        )
         for record in records
     )
 
 
-def _all_supported_structural_unchanged(records, before, after) -> bool:
+def _all_supported_structural_unchanged(
+    records,
+    evaluation,
+    request,
+    before,
+    after,
+) -> bool:
     return bool(records) and all(
         item is not None
         and item.kind == "fact"
         and evidence_source_is_current(item, after)
         and assurance_satisfies(item.source_assurance, "structural")
-        and _source_coverage_complete(item.source_observation_id, after)
+        and _source_coverage_admits(
+            item.source_observation_id,
+            after,
+            allow_truncated=(
+                evaluation.local_postcondition is LocalPostconditionStatus.SATISFIED
+                and _is_exact_requested_value(item, request, after)
+            ),
+        )
         and _before_values(before, item.subject_id, item.predicate) == (item.value,)
         for item in records
+    )
+
+
+def _is_exact_requested_value(record, request, after) -> bool:
+    requested_values = tuple(request.intent.parameters.values())
+    return bool(
+        len(requested_values) == 1
+        and isinstance(requested_values[0], str)
+        and record is not None
+        and record.kind == "fact"
+        and record.subject_id == request.intent.target_id
+        and record.predicate == "value"
+        and record.value == requested_values[0]
+        and not any(
+            item.subject_id == request.intent.target_id
+            and item.predicate == VALUE_TRUNCATED_STATE_KEY
+            and item.value is True
+            for item in after.facts
+        )
+        and not any(
+            item.subject_id == request.intent.target_id
+            and item.predicate in {"value", VALUE_TRUNCATED_STATE_KEY}
+            for item in after.conflicts
+        )
     )
 
 

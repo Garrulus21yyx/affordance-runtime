@@ -145,7 +145,6 @@ def test_fill_exact_echo_is_satisfied_and_unchanged_mismatch_is_unsatisfied() ->
 def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
     before = _world("obs:before", "type_text", "old")
     cases = (
-        _world("obs:after", "type_text", "desired", coverage=CoverageState.TRUNCATED),
         _world("obs:after", "type_text", "desired", conflict=True),
         _world("obs:after", "type_text", "desired", weak=True),
     )
@@ -164,6 +163,31 @@ def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
     evaluation = _evaluate(before, missing, "type_text", "desired")
     assert evaluation.observed_change is ObservedChange.UNKNOWN
     assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
+
+
+def test_exact_current_value_proves_positive_effect_on_a_truncated_page_source() -> None:
+    before = _world("obs:before", "type_text", "old")
+    exact = _world(
+        "obs:after-exact",
+        "type_text",
+        "desired",
+        coverage=CoverageState.TRUNCATED,
+    )
+    mismatch = _world(
+        "obs:after-mismatch",
+        "type_text",
+        "other",
+        coverage=CoverageState.TRUNCATED,
+    )
+
+    accepted = _evaluate(before, exact, "type_text", "desired")
+    unresolved = _evaluate(before, mismatch, "type_text", "desired")
+
+    assert accepted.observed_change is ObservedChange.CHANGED
+    assert accepted.local_postcondition is LocalPostconditionStatus.SATISFIED
+    assert accepted.evidence_method is EvidenceMethod.NATIVE
+    assert unresolved.observed_change is ObservedChange.UNKNOWN
+    assert unresolved.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
 
 def test_select_transition_and_already_selected_are_symmetric() -> None:

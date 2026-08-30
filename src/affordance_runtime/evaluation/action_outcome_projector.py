@@ -61,7 +61,7 @@ class ProductionActionOutcomeProjector:
         current = _current_value_evidence(after, request.intent.target_id)
         if current is None:
             return _evaluation(request, before, after, public_world_delta=public_world_delta)
-        after_value, evidence_ref, value_complete = current
+        after_value, evidence_ref, value_complete, source_complete = current
         before_value = _single_value(before, request.intent.target_id)
         effect = (
             ObservedChange.UNKNOWN
@@ -76,7 +76,7 @@ class ProductionActionOutcomeProjector:
         )
         if value_complete and after_value == requested:
             postcondition = LocalPostconditionStatus.SATISFIED
-        elif not value_complete or (
+        elif not value_complete or not source_complete or (
             definition.parameter_contract is ParameterContractKind.TEXT
             and effect is not ObservedChange.UNCHANGED
         ):
@@ -111,7 +111,10 @@ def _single_value(observation, target_id: str):
     return values[0] if len(values) == 1 else _MISSING
 
 
-def _current_value_evidence(observation, target_id: str) -> tuple[object, str, bool] | None:
+def _current_value_evidence(
+    observation,
+    target_id: str,
+) -> tuple[object, str, bool, bool] | None:
     if target_id not in {item.target_id for item in observation.targets}:
         return None
     if any(item.subject_id == target_id and item.predicate == "value" for item in observation.conflicts):
@@ -129,13 +132,19 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str, b
         (item for item in observation.sources if item.observation_id == record.source_observation_id),
         None,
     )
+    manifest = next(
+        (
+            item
+            for item in observation.source_manifest
+            if source is not None and item.source_observation_id == source.observation_id
+        ),
+        None,
+    )
     if (
         source is None
-        or source.coverage != CoverageState.COMPLETE
-        or not any(
-            item.source_observation_id == source.observation_id and item.coverage == CoverageState.COMPLETE
-            for item in observation.source_manifest
-        )
+        or manifest is None
+        or source.coverage not in {CoverageState.COMPLETE, CoverageState.TRUNCATED}
+        or manifest.coverage not in {CoverageState.COMPLETE, CoverageState.TRUNCATED}
         or not evidence_source_is_current(record, observation)
         or not assurance_satisfies(record.source_assurance, "structural")
     ):
@@ -149,7 +158,11 @@ def _current_value_evidence(observation, target_id: str) -> tuple[object, str, b
         item.subject_id == target_id and item.predicate == VALUE_TRUNCATED_STATE_KEY
         for item in observation.conflicts
     )
-    return record.value, record.evidence_ref, value_complete
+    source_complete = (
+        source.coverage is CoverageState.COMPLETE
+        and manifest.coverage is CoverageState.COMPLETE
+    )
+    return record.value, record.evidence_ref, value_complete, source_complete
 
 
 def _evaluation(
