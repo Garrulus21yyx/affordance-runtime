@@ -3350,6 +3350,19 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "point_grounding once for that target" in MODEL_POLICY_INSTRUCTIONS
     assert "do not replay the same semantic action" in MODEL_POLICY_INSTRUCTIONS
     assert "visible unauthenticated state plus missing expected content" in MODEL_POLICY_INSTRUCTIONS
+    assert "bounded record-by-record inclusion audit" in MODEL_POLICY_INSTRUCTIONS
+    assert "including clear\n  paraphrases" in MODEL_POLICY_INSTRUCTIONS
+    assert "reconcile the output count with that" in MODEL_POLICY_INSTRUCTIONS
+    assert "normalize or reinterpret values only after blur or form submission" in MODEL_POLICY_INSTRUCTIONS
+    assert "fresh controls no longer encode the intended constraints" in MODEL_POLICY_INSTRUCTIONS
+    assert not {
+        "Catso",
+        "Dibbins",
+        "Quest Lumaflex",
+        "small ears",
+        "MM/DD/YYYY",
+        "sales_report_from",
+    }.intersection(MODEL_POLICY_INSTRUCTIONS)
     assert "destination is unavailable" in MODEL_POLICY_EVIDENCE_STATUS
     assert "must not also appear unresolved" in MODEL_POLICY_EVIDENCE_STATUS
     assert pydantic_bridge._HISTORY_RECENT_EXACT_TOKENS_RATIO == 0.12

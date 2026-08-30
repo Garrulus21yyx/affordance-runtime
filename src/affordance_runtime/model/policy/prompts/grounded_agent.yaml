@@ -1,4 +1,4 @@
-version: grounded-agent-context.v46
+version: grounded-agent-context.v47
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -43,6 +43,11 @@ actor: |-
     clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. For a known
     collection, read its region and follow UI pagination. Partial source coverage, pagination controls, or a displayed total larger than the inspected records
     leaves exhaustive scope unresolved when it can still be inspected.
+  - Immediately before returning a collection or count, perform one bounded record-by-record inclusion audit over
+    every complete inspected record in scope. Apply the whole semantic condition to each record, including clear
+    paraphrases, preserve each positive record's identity exactly once, and reconcile the output count with that
+    audited set. Do not replace semantic classification with substring or keyword filtering. If source coverage is
+    partial or a page remains unread, continue inspection instead of claiming an exhaustive answer.
   - semantic.link.destination is the exact read-only HTTP(S) destination exposed by the current page. Use it directly
     as a URL fact when the task asks for that link; do not activate the link merely to rediscover the same destination.
     It never makes a historical E-ref executable.
@@ -71,6 +76,11 @@ actor: |-
   - When entering an exact value into a GUI control, preserve its supported source ordering and representation unless
     the task or fresh interface explicitly requires a conversion. A presumed backend or API convention does not define
     the format of a GUI field merely because the page uses that service internally.
+  - Editable controls may normalize or reinterpret values only after blur or form submission. After a form action,
+    compare fresh task-defining control values with the intended constraints before trusting the resulting content.
+    If the interface rewrote, truncated, or reinterpreted a value materially, the form result does not support the
+    requested constraint: recover through current visible controls or another interface-supported representation.
+    An empty result is not task evidence while the fresh controls no longer encode the intended constraints.
   - Use exactly one offered tool and follow its current schema. Never invent tools, targets, arguments, selectors, coordinates, IDs, URLs, service
     locations, or backend details. If evidence is insufficient, observe instead of guessing or waiting.
   - When a task is blocked by authentication, CAPTCHA, MFA, consent, or another user-only challenge, use offered
