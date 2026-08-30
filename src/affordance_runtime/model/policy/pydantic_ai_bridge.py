@@ -720,10 +720,25 @@ class PydanticAIGroundedDecisionPort:
                 *,
                 force_required_action: bool,
                 attempt_phase: str,
+                tool_retry_budget: int,
                 output_retry_budget: int,
+                required_tool_name: str = "",
             ):
                 nonlocal transport_retries_remaining
                 persistence_run_id, persistence_capabilities = self._step_persistence_capabilities(agent_name)
+                sequence_toolset = current_toolset
+                if required_tool_name:
+                    required_tool_defs = [item for item in current_toolset.tool_defs if item.name == required_tool_name]
+                    if len(required_tool_defs) != 1:
+                        raise ValueError("truncated operation anchor is not in the current toolset")
+                    # Representation recovery may complete arguments, but it
+                    # cannot reopen semantic operation selection. Expose the
+                    # one already-selected current operation as the complete
+                    # physical tool surface for this bounded retry.
+                    sequence_toolset = ExternalToolset(
+                        required_tool_defs,
+                        id=current_toolset.id,
+                    )
                 current_agent = Agent(
                     self.model,
                     name=agent_name,
@@ -736,7 +751,7 @@ class PydanticAIGroundedDecisionPort:
                     # World and catalog; Runtime still resolves and executes
                     # only the finally accepted current tool call.
                     retries={
-                        "tools": _ACTION_POLICY_TOOL_RETRY_BUDGET,
+                        "tools": tool_retry_budget,
                         "output": output_retry_budget,
                     },
                     capabilities=persistence_capabilities,
@@ -772,7 +787,8 @@ class PydanticAIGroundedDecisionPort:
                 provider_retries_before = self.last_provider_retry_count
                 captured_messages: tuple[object, ...] = ()
                 protocol_request_limit = _action_policy_protocol_request_limit(
-                    output_retry_budget
+                    tool_retry_budget,
+                    output_retry_budget,
                 )
 
                 async def invoke_current_agent():
@@ -786,7 +802,7 @@ class PydanticAIGroundedDecisionPort:
                         try:
                             return await current_agent.run(
                                 current_prompt,
-                                toolsets=[current_toolset],
+                                toolsets=[sequence_toolset],
                                 usage=RunUsage(),
                                 usage_limits=UsageLimits(request_limit=protocol_request_limit),
                                 model_settings=action_policy_model_settings,
@@ -901,6 +917,7 @@ class PydanticAIGroundedDecisionPort:
                 result, error, captured, can_retry_length = await run_output_sequence(
                     force_required_action=False,
                     attempt_phase=phase,
+                    tool_retry_budget=_ACTION_POLICY_TOOL_RETRY_BUDGET,
                     output_retry_budget=output_retry_budget,
                 )
             except (asyncio.CancelledError, Exception):
@@ -909,11 +926,28 @@ class PydanticAIGroundedDecisionPort:
             if result is not None:
                 return result
             if can_retry_length:
+                serialized_truncation = _serialized_current_pydantic_invocation(
+                    captured,
+                    max_response_count=_action_policy_protocol_request_limit(
+                        _ACTION_POLICY_TOOL_RETRY_BUDGET,
+                        output_retry_budget,
+                    ),
+                )
+                required_tool_name = _truncated_current_tool_name(
+                    serialized_truncation,
+                    offered_names=frozenset(item.name for item in current_envelope.function_tools),
+                )
                 try:
                     result, error, captured, _unused = await run_output_sequence(
                         force_required_action=True,
                         attempt_phase=f"{phase}_output_retry",
+                        # A recognized operation is a semantic anchor. Spend
+                        # the one remaining retry on enforcing the narrowed
+                        # operation surface. Without an anchor, retain the
+                        # existing current-tool retry over the full catalog.
+                        tool_retry_budget=_ACTION_POLICY_TOOL_RETRY_BUDGET,
                         output_retry_budget=0,
+                        required_tool_name=required_tool_name,
                     )
                 except (asyncio.CancelledError, Exception):
                     close_dispatched_pending_history()
@@ -3544,12 +3578,17 @@ def _action_policy_physical_settings(
     return settings
 
 
-def _action_policy_protocol_request_limit(output_retry_budget: int) -> int:
+def _action_policy_protocol_request_limit(
+    tool_retry_budget: int,
+    output_retry_budget: int,
+) -> int:
     """Close the SDK request algebra over independent tool and output retries."""
 
+    if not 0 <= tool_retry_budget <= _ACTION_POLICY_TOOL_RETRY_BUDGET:
+        raise ValueError("ActionPolicy tool retry budget is outside its bounded contract")
     if not 0 <= output_retry_budget <= _ACTION_POLICY_OUTPUT_RETRY_BUDGET:
         raise ValueError("ActionPolicy output retry budget is outside its bounded contract")
-    return 1 + _ACTION_POLICY_TOOL_RETRY_BUDGET + output_retry_budget
+    return 1 + tool_retry_budget + output_retry_budget
 
 
 def _serialized_current_pydantic_invocation(
@@ -3582,6 +3621,38 @@ def _captured_output_failure(
         responses[-1],
         has_tool_call=has_tool_call,
     )
+
+
+def _truncated_current_tool_name(
+    messages: list[dict[str, object]],
+    *,
+    offered_names: frozenset[str],
+) -> str:
+    """Return the one operation already fixed by a truncated current response.
+
+    A tool name is a semantic anchor only when the final physical response was
+    length-truncated and exposed exactly one name from the current catalog.
+    Arguments are deliberately ignored because representation recovery owns
+    completing them; unknown or ambiguous operations remain unanchored.
+    """
+
+    responses = tuple(message for message in messages if message.get("kind") == "response")
+    if not responses:
+        return ""
+    response = responses[-1]
+    finish_reason = str(response.get("finish_reason") or "").casefold()
+    if finish_reason not in {"length", "max_tokens"}:
+        return ""
+    parts = response.get("parts")
+    parts = parts if isinstance(parts, list) else []
+    names = tuple(
+        str(part.get("tool_name") or "")
+        for part in parts
+        if isinstance(part, Mapping) and part.get("part_kind") == "tool-call"
+    )
+    if len(names) != 1 or names[0] not in offered_names:
+        return ""
+    return names[0]
 
 
 def _structured_output_failure_for_response(

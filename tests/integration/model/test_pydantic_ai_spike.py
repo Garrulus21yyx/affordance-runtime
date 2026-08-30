@@ -4644,6 +4644,137 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
     asyncio.run(scenario())
 
 
+def test_length_recovery_preserves_the_single_current_operation_exposed_before_truncation() -> None:
+    async def scenario() -> None:
+        truncated = ModelResponse(
+            parts=[
+                TextPart("The current evidence is sufficient; return the selected operation."),
+                ToolCallPart(
+                    "list_regions",
+                    {},
+                    "recording-call:truncated-operation",
+                ),
+            ],
+            usage=RequestUsage(input_tokens=20, output_tokens=1024),
+            finish_reason="length",
+            provider_response_id="recording-response:truncated-operation",
+        )
+        scripted = ScriptedModel(
+            [
+                truncated,
+                ("read_region", {"region_ref": "R999"}),
+                ("list_regions", {}),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("truncated-operation-preservation", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:truncated-operation-preservation", context))
+
+        assert result.failure is None and result.output is not None
+        assert isinstance(result.output.decision, ReadRegionResult)
+        assert result.output.decision.tool_name == "list_regions"
+        assert result.output.decision.tool_call_id == "recording-call:3"
+        assert scripted.calls == 3
+        assert [attempt.status for attempt in result.attempts] == [
+            "invalid",
+            "invalid",
+            "accepted",
+        ]
+        assert [record.model_settings["tool_choice"] for record in scripted.records] == [
+            "auto",
+            "required",
+            "required",
+        ]
+        assert scripted.offered_tools == [
+            scripted.offered_tools[0],
+            ("list_regions",),
+            ("list_regions",),
+        ]
+        retry_text = json.dumps(scripted.records[2].messages[-1], default=str)
+        assert "Unknown tool name" in retry_text
+        assert "list_regions" in retry_text
+        retained = json.dumps(port.message_history, default=str)
+        assert "recording-call:2" not in retained
+        assert "R999" not in retained
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("response", "offered_names", "expected"),
+    [
+        (
+            {
+                "kind": "response",
+                "finish_reason": "length",
+                "parts": [{"part_kind": "tool-call", "tool_name": "current_action"}],
+            },
+            frozenset({"current_action"}),
+            "current_action",
+        ),
+        (
+            {
+                "kind": "response",
+                "finish_reason": "stop",
+                "parts": [{"part_kind": "tool-call", "tool_name": "current_action"}],
+            },
+            frozenset({"current_action"}),
+            "",
+        ),
+        (
+            {
+                "kind": "response",
+                "finish_reason": "length",
+                "parts": [{"part_kind": "tool-call", "tool_name": "historical_action"}],
+            },
+            frozenset({"current_action"}),
+            "",
+        ),
+        (
+            {
+                "kind": "response",
+                "finish_reason": "length",
+                "parts": [
+                    {"part_kind": "tool-call", "tool_name": "first_action"},
+                    {"part_kind": "tool-call", "tool_name": "second_action"},
+                ],
+            },
+            frozenset({"first_action", "second_action"}),
+            "",
+        ),
+    ],
+)
+def test_truncated_operation_anchor_requires_one_unambiguous_current_tool(
+    response: dict[str, object],
+    offered_names: frozenset[str],
+    expected: str,
+) -> None:
+    assert (
+        pydantic_bridge._truncated_current_tool_name(
+            [response],
+            offered_names=offered_names,
+        )
+        == expected
+    )
+
+
 def test_length_fallback_shares_one_transport_retry_budget(monkeypatch) -> None:
     async def scenario() -> None:
         delays: list[float] = []
