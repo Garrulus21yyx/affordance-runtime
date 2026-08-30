@@ -401,6 +401,7 @@ def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
     assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert constrained.recovery_signal is not None
     assert constrained.recovery_signal.prohibited_attempt_signatures
+    assert constrained.recovery_signal.recovery_attempt == 1
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -636,7 +637,8 @@ def test_recovery_allows_one_turn_to_use_a_nonempty_discovered_control() -> None
     assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert constrained.recovery_signal is not None
     assert constrained.recovery_signal.prohibited_attempt_signatures
-    assert monitor.recovery_count == 3
+    assert constrained.recovery_signal.recovery_attempt == 1
+    assert monitor.recovery_count == 2
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -711,6 +713,68 @@ def test_new_read_information_does_not_close_an_unresolved_gui_effect_recovery()
     assert resolved.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert resolved.recovery_signal is None
+
+
+def test_new_local_prohibition_inside_gui_recovery_restarts_its_rejection_phase() -> None:
+    first_world = _world("observation:gui-local-phase-before")
+    second_world = _world("observation:gui-local-phase-after-1")
+    third_world = _world("observation:gui-local-phase-after-2")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(first_world, second_world)),
+    )
+    gui_recovery = _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(second_world, third_world)),
+    )
+    local_step = _search_with_items(third_world)
+    first_delivery = ObservationDeliveryStore().reduce(local_step, step_index=3)
+    assert first_delivery.information_delta is not None
+    monitor.evaluate(
+        local_step,
+        current_findings_digest(third_world),
+        first_delivery.information_delta,
+    )
+    replay_delivery = first_delivery.next_store.reduce(local_step, step_index=4)
+    constrained = monitor.evaluate(
+        local_step,
+        current_findings_digest(third_world),
+        replay_delivery.information_delta,
+    )
+    assert constrained.recovery_signal is not None
+    prohibited = constrained.recovery_signal.prohibited_attempt_signatures[-1]
+    rejected_step = StepResult(
+        ToolRejectedResult(
+            "context:test",
+            "search_page_content",
+            {"operation": "search_page_content", "attempt_signature": prohibited.digest},
+            {
+                "kind": "prohibited_attempt_rejected",
+                "failure_kind": "recovery_prohibited_attempt_replay",
+                "dispatch": "not_sent",
+                "world_changed": False,
+            },
+            "call:local-rejected",
+            rejected_attempt_signature=prohibited,
+        ),
+        third_world,
+        third_world,
+        _evaluation(third_world),
+        feedback="recovery_repeat_rejected",
+    )
+    rejected = _evaluate(monitor, rejected_step)
+
+    assert gui_recovery.recovery_signal is not None
+    assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert constrained.recovery_signal.epoch_id == gui_recovery.recovery_signal.epoch_id
+    assert constrained.recovery_signal.recovery_attempt == 1
+    assert rejected.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert rejected.recovery_signal is not None
+    assert rejected.recovery_signal.epoch_id == gui_recovery.recovery_signal.epoch_id
+    assert rejected.recovery_signal.recovery_attempt == 2
 
 
 def test_same_attempt_after_recovery_is_control_stalled() -> None:

@@ -277,7 +277,7 @@ The post-`839ad3a8` fixed-environment suite reports `2153 passed, 19 skipped, 1 
 seconds. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
 `FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and
-repeated live semantic reliability remain open; the focused owner set reports `295 passed, 3 skipped`. The declared
+repeated live semantic reliability remain open; the focused owner set reports `296 passed, 3 skipped`. The declared
 W1b diagnostic cohort is not re-closed.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified

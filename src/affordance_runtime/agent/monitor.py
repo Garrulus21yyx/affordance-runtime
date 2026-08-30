@@ -391,7 +391,11 @@ class EpisodeMonitor:
             )
             if exact_replay:
                 already_prohibited = signature in self.active_recovery.prohibited_attempt_signatures
-                self.recovery_count = self.recovery_count + 1 if repeats_latest else 1
+                self.recovery_count = (
+                    self.recovery_count + 1
+                    if already_prohibited and repeats_latest
+                    else 1
+                )
                 signal = _control_stall_signal(
                     result,
                     self,
