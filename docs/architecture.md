@@ -94,11 +94,20 @@ to the active epoch; Runtime returns the original call ID as
 `ToolRejectedResult(kind=prohibited_attempt_rejected, dispatch=not_sent)` before the local result is committed. It
 does not parse the task, rank candidates, or judge record inclusion.
 
+Exact-attempt identity and information novelty are deliberately different. `ObservationDeliveryStore` now hashes
+each read/search record after applying the result producer's typed ephemeral paths, then compares those bounded
+semantic digests across the episode rather than only inside one World digest. A page rebuild may change E/N/R refs,
+cursor, observation identity, or route without turning the same record into new evidence. Conversely, a changed
+business value—including a legitimate ref-shaped value such as `E6` or `R2`—changes the digest and remains
+`NEW_INFORMATION`. A cross-World overlap is therefore `NO_NEW_INFORMATION`: Monitor opens one advisory recovery,
+but Runtime receives no prohibited attempt because the new route itself was not an exact replay. The store retains
+only bounded digests, never record bodies, coverage state, or another model-visible progress timeline.
+
 Recovery is one Monitor-owned epoch:
 
 ```text
 inactive
-  -- mechanical stall/cycle/no-effect --> active(epoch, evidence_revision=1, bounded constraints)
+  -- mechanical stall/cycle/no-effect/no-new-records --> active(epoch, evidence_revision=1, bounded constraints)
 active
   -- read/search/find_controls -------> active(same epoch, evidence_revision+1)
   -- exact GUI/local replay rejected -> active(same epoch, typed zero-dispatch result)
@@ -126,10 +135,15 @@ projection is preserved fail-closed until revision or terminal settlement; that 
 advances the lifecycle.
 
 While the recovery epoch is active, every ActionPolicy call uses the existing deliberate profile. A diagnostic read
-does not consume a one-shot reasoning token or downgrade the following call. `StrategyRevision`, its provider schema,
-prompt field, trace branch, context field, and scheduling state have been removed. Monitor still cannot name a
-business control or route; it supplies only typed evidence, attempted modes, lifecycle identity, and any exactly
-proved prohibited attempt. Runtime still cannot choose the alternative action.
+does not consume a one-shot reasoning token or downgrade the following call. Independently, when an owner-produced
+`read_region` result contains collection records, has no local `next_cursor`, and carries valid source/membership
+coverage, `ActionPolicyReasoningPolicy` leases the same ActionPolicy one bounded 2,048-token deliberate call. That
+lease does not declare the source complete: `source_coverage=partial` still tells the policy that only a materially
+different outer route could add evidence. An active Monitor recovery takes precedence and retains its configured
+deliberate budget. `StrategyRevision`, its provider schema, prompt field, trace branch, context field, and scheduling
+state have been removed. Monitor still cannot name a business control or route; it supplies only typed evidence,
+attempted modes, lifecycle identity, and any exactly proved prohibited attempt. Runtime still cannot choose the
+alternative action.
 
 This is the thin inference-time design supported by the primary-source comparison below, rechecked on 2026-08-30.
 These papers and reference implementations are research evidence about responsibility placement, not claims of
@@ -286,6 +300,12 @@ convergence is implemented by 63e16452, 2c1fbb38, 470659fb, 44275bd1, 30fcc814, 
    structural ref, and point_grounding only to make an identified control actionable. Its collection guidance is
    task-neutral: classify complete records once, preserve the supported set, inspect only while coverage is open and
    a materially new route exists, then submit or typed-abort instead of self-verifying.
+7. Commit `1708fe48` repairs the bounded novelty/reasoning handoff without adding progress state. Producer-declared
+   ephemeral paths remove observation-local refs before Monitor hashing; bounded semantic record digests are compared
+   across Worlds; a page containing no unseen record starts advisory recovery immediately; and a typed collection
+   read with no local continuation leases the same ActionPolicy one bounded evidence review. New semantic records
+   still count as real progress, ordinary non-collection steps stay lightweight, and only exact attempts enter the
+   Runtime prohibition set. Provider-free invariants are verified below; live efficiency remains open.
 
 The single inference path is:
 

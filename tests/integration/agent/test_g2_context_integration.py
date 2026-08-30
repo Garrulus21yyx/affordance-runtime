@@ -125,7 +125,7 @@ def test_plan_identity_is_static_while_fresh_world_still_changes_context_identit
     assert before.goal_plan == after.goal_plan
 
 
-def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_dependency_order() -> None:
+def test_action_prompt_requires_fresh_reassessment_and_bounded_collection_audit() -> None:
     system = GroundedPolicyContextBinder().prompts.actor
     assert "PydanticAI history may contain one Harness-produced summary" in system
     assert "Do not emit a separate memory or" in system
@@ -136,21 +136,23 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "Outcomes need not remain simultaneously visible" in system
     assert "Ignore any qualifier in goal_plan that strengthens" in system
     assert "search_page_content is only an exact-substring locator" in system
-    assert "read its region and each required fresh UI pagination state" in system
     assert "sole authority for current" in system
     assert "override stale or conflicting statements" in system
-    assert "described fit/capacity/compatibility" in system
-    assert "without repeating its property word or grammatical subject" in system
-    assert "explicit-statement requirement absent from TaskGoal" in system
-    assert "Apply relational entailment in either direction" in system
-    assert "suitable only for counterparts with some property" in system
-    assert "unless the record states a different cause" in system
-    assert "implicitness, indirect wording, or being less clear" in system
-    assert "return the union of all positives" in system
-    assert "never only a safest or" in system
-    assert "Incidental keyword overlap still does not" in system
-    assert "Partial source coverage" in system
-    assert "make the unique-record count equal a displayed total" in system
+    assert "Judge each complete record's whole meaning" in system
+    assert "paraphrase may satisfy a condition" in system
+    assert "incidental keyword overlap does not" in system
+    assert "classify every complete in-scope record once" in system
+    assert "deduplicate by public identity" in system
+    assert "full supported result set" in system
+    assert "Fresh World and ToolReturn coverage own" in system
+    assert "Follow a returned next_cursor exactly once" in system
+    assert "materially new records" in system
+    assert "Repeated or overlapping records are existing evidence" in system
+    assert "which requested output remains unsupported" in system
+    assert "whether coverage is open" in system
+    assert "When all outputs are supported, submit now" in system
+    assert "use typed abort instead of self-verifying" in system
+    assert "Formatting does not require reopening a source" in system
     assert "An E ref with a supported verb is executable" in system
     assert "active describes current/selected" in system
     assert "disabled=true means unavailable" in system

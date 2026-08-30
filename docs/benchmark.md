@@ -223,6 +223,17 @@ contract. The new history/ref changes have provider-free gates but no authorized
 represent cross-World progress; the internal diagnostic aggregate remains non-authoritative and model-hidden.
 Tasks545/66 likewise have no post-alias-fix live result. The diagnostic cohort therefore remains empirically open.
 
+Commit `1708fe48` addresses the remaining generic pagination-efficiency mechanism in the existing Monitor chain,
+without adding a coverage ledger or second model role. Read/search novelty is now computed from producer-declared
+ref-free semantic record digests across Worlds, so a page containing only previously delivered records produces
+`NO_NEW_INFORMATION` even when page navigation rebuilt all E/N/R refs. That fact immediately opens advisory recovery
+and a deliberate call to the same ActionPolicy, while the new route remains dispatchable because it is not an exact
+attempt replay. A genuinely changed record remains `NEW_INFORMATION`. Separately, a typed collection `read_region`
+result with records and no local cursor leases one 2,048-token evidence-review call; open cursor pages and ordinary
+non-collection turns remain ordinary. The policy still owns whether partial coverage warrants one new outer route,
+whether evidence is sufficient to submit, or whether no-progress abort is appropriate. These are provider-free
+contract results, not a post-repair score for Task0, Task21, or the ten-case cohort.
+
 On code/test SHA `b09b11ae` (product SHA `4ed5b536`), the fixed BrowserGym Python provider-free gate reports
 `2208 passed, 19 skipped, 1 deselected, 1 warning` in 120.32 seconds. The sole deselection is the documented
 repository-missing archived dashboard trace, which fails before product code. Ruff with cache disabled and the diff
