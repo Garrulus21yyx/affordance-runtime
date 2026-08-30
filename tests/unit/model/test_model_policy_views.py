@@ -19,6 +19,8 @@ from affordance_runtime.agent.context import (
     project_task,
 )
 from affordance_runtime.agent.context.step_projection import project_decision_summary
+from affordance_runtime.agent.decisions import InteractionResponseKind
+from affordance_runtime.agent.interactions import InteractionRequest
 from affordance_runtime.schema_digest import schema_digest
 from affordance_runtime.task import MaterialBinding, RiskProfile, TaskGoal
 from tests.support.action_contracts import verification_kwargs
@@ -328,3 +330,34 @@ def test_rejected_interaction_draft_preserves_ask_user_history_projection() -> N
     assert summary["requested_fields"] == ("account",)
     assert summary["response_kind"] == "structured_fields"
     assert summary["committed"] is False
+
+
+def test_completed_turn_summaries_do_not_project_internal_correlation_ids() -> None:
+    observation = RequestObservation(
+        context_id="context:1",
+        query_id="observation-query:SECRET",
+        purpose="entity_discovery",
+        atomic_query="find products",
+    )
+    interaction = InteractionRequest(
+        "context:1",
+        f"interaction:{'a' * 32}",
+        "Which account?",
+        InteractionResponseKind.FREE_TEXT,
+    )
+
+    observation_summary = project_decision_summary(observation)
+    interaction_summary = project_decision_summary(interaction)
+
+    assert observation_summary == {
+        "purpose": "entity_discovery",
+        "atomic_query": "find products",
+        "predicate": "",
+        "max_results": 1,
+        "public_intent": "",
+    }
+    assert interaction_summary == {
+        "prompt": "Which account?",
+        "response_kind": "free_text",
+        "public_intent": "",
+    }

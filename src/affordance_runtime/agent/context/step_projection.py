@@ -205,10 +205,7 @@ def _historical_value(value: object) -> object:
 def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Mapping[str, object]:
     if isinstance(decision, RequestObservation):
         return {
-            "query_id": _bounded(decision.query_id),
             "purpose": decision.purpose.value,
-            "subject_ids": tuple(_bounded(item) for item in decision.subject_ids),
-            "candidate_ids": tuple(_bounded(item) for item in decision.candidate_ids),
             "atomic_query": _bounded(decision.atomic_query),
             "predicate": _bounded(decision.predicate),
             "max_results": decision.max_results,
@@ -218,7 +215,6 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
         return {"query": decision.query, "public_intent": _bounded(decision.public_intent)}
     if isinstance(decision, InteractionRequest):
         return {
-            "request_id": decision.request_id,
             "prompt": decision.prompt,
             "response_kind": decision.response_kind.value,
             "public_intent": _bounded(decision.public_intent),
