@@ -329,9 +329,7 @@ class DeliveryObligation:
     def next_atomic_prefix_count(self, admitted_count: int) -> int:
         """Advance one complete current target, or one non-route record."""
 
-        if not 0 <= admitted_count <= len(self.records) or not _is_target_atomic_prefix(
-            self.records, admitted_count
-        ):
+        if not 0 <= admitted_count <= len(self.records) or not _is_target_atomic_prefix(self.records, admitted_count):
             raise ValueError("admitted obligation prefix splits one current target")
         return _next_target_atomic_prefix_count(self.records, admitted_count)
 
@@ -399,10 +397,7 @@ class ActionDeliveryPlan:
         seen_routes: set[tuple[str, str, str]] = set()
         for obligation in self.obligations:
             count = counts.get(obligation.kind.value, len(obligation.remaining) if admitted is None else 0)
-            if (
-                not 0 <= count <= len(obligation.remaining)
-                or not _is_target_atomic_prefix(obligation.remaining, count)
-            ):
+            if not 0 <= count <= len(obligation.remaining) or not _is_target_atomic_prefix(obligation.remaining, count):
                 raise ValueError("admitted obligation prefix is invalid")
             for record in obligation.remaining[:count]:
                 route_fragments = (record,) if isinstance(record, ActionRouteFragment) else ()
@@ -460,10 +455,7 @@ class ActionDeliveryPlan:
     def bounded_preview_counts(self) -> dict[str, int]:
         """Bounded non-authoritative preview for non-provider diagnostics."""
 
-        return {
-            item.kind.value: item.bounded_atomic_prefix_count(5)
-            for item in self.obligations
-        }
+        return {item.kind.value: item.bounded_atomic_prefix_count(5) for item in self.obligations}
 
 
 def build_action_delivery_plan(
@@ -561,12 +553,8 @@ def build_action_delivery_plan(
             raise ValueError("action discovery result must close every returned route over the current ActionSpace")
 
     options_by_target = {item.target_id: item for item in complete_actions}
-    already_present_routes = {
-        (item.target_ref, item.operation)
-        for item in base_actions
-    } | {
-        (ranked.target_ref, ranked.operation)
-        for ranked in automatic.candidates
+    already_present_routes = {(item.target_ref, item.operation) for item in base_actions} | {
+        (ranked.target_ref, ranked.operation) for ranked in automatic.candidates
     }
 
     def is_direct_value_option(option: AgentActionOptionView) -> bool:
@@ -577,19 +565,11 @@ def build_action_delivery_plan(
         )
 
     def is_stateful_interaction_option(option: AgentActionOptionView) -> bool:
-        return (
-            option.subject_kind == InteractionSubjectKind.ENTITY.value
-            and any(
-                str(key).casefold().rsplit(".", 1)[-1] in _STATEFUL_INTERACTION_STATES
-                for key in option.target_state
-            )
+        return option.subject_kind == InteractionSubjectKind.ENTITY.value and any(
+            str(key).casefold().rsplit(".", 1)[-1] in _STATEFUL_INTERACTION_STATES for key in option.target_state
         )
 
-    non_repeated_region_keys = {
-        region.key
-        for region in region_index.regions
-        if not region.repeated_item_roots
-    }
+    non_repeated_region_keys = {region.key for region in region_index.regions if not region.repeated_item_roots}
     value_control_regions = {
         target_context.primary_region_key
         for option in complete_actions
@@ -626,12 +606,23 @@ def build_action_delivery_plan(
         same_focus_container = bool(
             target_context is not None and target_context.primary_region_key in focused_containers
         )
+        # The delivery-plan owner declares every route in an active
+        # interaction container as one simultaneous hard minimum.  Public
+        # Worlds may legitimately retain another focused marker outside that
+        # container (for example, after cross-source fusion or a focus-moving
+        # fill).  Required membership therefore precedes the presentation
+        # heuristics below; otherwise an unrelated directly-focused target can
+        # split the required target-atomic prefix and make a supported fresh
+        # World impossible to deliver.
+        required_interaction = option.target_ref in active_interaction_target_refs
         if direct_focus or same_focus_container:
             return (
+                0 if required_interaction else 1,
                 0 if direct_focus else 1,
                 *_public_option_view_order(option),
             )
         return (
+            0 if required_interaction else 1,
             2,
             0 if target_context is not None and target_context.viewport == "visible" else 1,
             _INTERACTION_CONTAINER_ORDER.get(
@@ -649,8 +640,7 @@ def build_action_delivery_plan(
             target_context is not None and target_context.primary_region_key in focused_containers
         )
         direct_value_control = (
-            is_direct_value_option(option)
-            and (option.target_ref, option.operation) not in already_present_routes
+            is_direct_value_option(option) and (option.target_ref, option.operation) not in already_present_routes
         )
         same_value_container = (
             option.subject_kind == InteractionSubjectKind.ENTITY.value
@@ -1029,11 +1019,7 @@ def _required_target_prefix_count(
 
     if not required_target_refs:
         return 0
-    route_refs = tuple(
-        item.candidate.target_ref
-        for item in records
-        if isinstance(item, ActionRouteFragment)
-    )
+    route_refs = tuple(item.candidate.target_ref for item in records if isinstance(item, ActionRouteFragment))
     missing = required_target_refs.difference(route_refs)
     if missing:
         raise ValueError("required delivery targets are absent from their obligation")

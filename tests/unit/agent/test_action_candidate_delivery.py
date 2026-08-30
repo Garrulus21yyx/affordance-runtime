@@ -264,11 +264,17 @@ def _multi_verb_context():
         TaskEvaluationStatus.INCOMPLETE,
         "ongoing",
     )
-    return task, world, actions, evaluation, ContextBuilder().build(
+    return (
         task,
         world,
         actions,
         evaluation,
+        ContextBuilder().build(
+            task,
+            world,
+            actions,
+            evaluation,
+        ),
     )
 
 
@@ -828,17 +834,9 @@ def test_large_page_preserves_current_content_editor_without_promoting_private_b
     base = plan.obligation(DeliveryObligationKind.BASE_ACTIONS)
     interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
     assert base is not None and interaction is not None
-    base_refs = {
-        record.candidate.target_ref
-        for record in base.records
-        if isinstance(record, ActionRouteFragment)
-    }
+    base_refs = {record.candidate.target_ref for record in base.records if isinstance(record, ActionRouteFragment)}
     assert {editor_ref, submit_ref, sort_ref}.isdisjoint(base_refs)
-    interaction_routes = tuple(
-        record
-        for record in interaction.records
-        if isinstance(record, ActionRouteFragment)
-    )
+    interaction_routes = tuple(record for record in interaction.records if isinstance(record, ActionRouteFragment))
     assert interaction_routes[0].candidate.target_ref == editor_ref
     assert interaction_routes[0].inclusion_reason == "value_control"
     assert any(
@@ -881,8 +879,7 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
 ) -> None:
     def build_context(observation_id: str):
         background_links = tuple(
-            SemanticTarget(f"target:background-{index:02d}", "link", f"Background {index:02d}")
-            for index in range(40)
+            SemanticTarget(f"target:background-{index:02d}", "link", f"Background {index:02d}") for index in range(40)
         )
         background_action = SemanticTarget("target:background-action", "button", shared_label)
         editor = SemanticTarget(
@@ -1012,9 +1009,7 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
 
         assert plan.foreground_scope == interaction.scope == "interaction"
         assert {
-            record.candidate.target_ref
-            for record in required_interaction
-            if isinstance(record, ActionRouteFragment)
+            record.candidate.target_ref for record in required_interaction if isinstance(record, ActionRouteFragment)
         } == active_refs
         assert base.required_record_count == 0
         assert any(
@@ -1093,10 +1088,7 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
         assert discovered_interaction.required_record_count == interaction.required_record_count
         assert discovered_query.required_record_count == len(discovered_query.records)
 
-        discovered_required = {
-            item.kind.value: item.required_record_count
-            for item in discovered_plan.obligations
-        }
+        discovered_required = {item.kind.value: item.required_record_count for item in discovered_plan.obligations}
         discovered_request = ModelDecisionRequest(
             f"request:discovery:{discovered.context_id}",
             discovered,
@@ -1127,12 +1119,9 @@ def test_fresh_focused_form_is_an_atomic_foreground_ahead_of_same_label_backgrou
             ),
         )
         discovered_counts = dict(discovered_packed.admitted_record_counts)
-        assert discovered_counts[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(
-            discovered_query.records
-        )
+        assert discovered_counts[DeliveryObligationKind.EXPLICIT_QUERY.value] == len(discovered_query.records)
         assert (
-            discovered_counts[DeliveryObligationKind.INTERACTION.value]
-            >= discovered_interaction.required_record_count
+            discovered_counts[DeliveryObligationKind.INTERACTION.value] >= discovered_interaction.required_record_count
         )
         assert active_refs <= set(discovered_packed.delivery.manifest.executable_refs)
 
@@ -1146,8 +1135,7 @@ def test_repeated_rows_inside_a_focused_form_do_not_become_an_unbounded_hard_bun
         {"focused": True, "value": "ready"},
     )
     row_actions = tuple(
-        SemanticTarget(f"target:row-action:{index}", "button", f"Apply row {index}")
-        for index in range(7)
+        SemanticTarget(f"target:row-action:{index}", "button", f"Apply row {index}") for index in range(7)
     )
     row_ids = tuple(f"row:{index}" for index in range(len(row_actions)))
     structure = (
@@ -1170,11 +1158,7 @@ def test_repeated_rows_inside_a_focused_form_do_not_become_an_unbounded_hard_bun
                 "listitem",
                 f"Row {index}",
                 parent_structure_id="active-form",
-                child_structure_ids=(
-                    ("row-editor", f"row-action:{index}")
-                    if index == 0
-                    else (f"row-action:{index}",)
-                ),
+                child_structure_ids=(("row-editor", f"row-action:{index}") if index == 0 else (f"row-action:{index}",)),
             )
             for index, row_id in enumerate(row_ids)
         ),
@@ -1303,8 +1287,7 @@ def test_focused_multi_verb_target_is_one_atomic_manifest_catalog_and_resolver_c
     )
     target_ref = next(iter(context.grounding.target_refs.values()))
     routes = {
-        (route.operation, route.source_ref, route.destination_ref)
-        for route in packed.delivery.manifest.action_routes
+        (route.operation, route.source_ref, route.destination_ref) for route in packed.delivery.manifest.action_routes
     }
     assert routes == {
         ("press_key", target_ref, ""),
@@ -1831,6 +1814,73 @@ def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_f
 
     assert "Alpha control" in reasons
     assert reasons["Zulu control"] == "focus_container"
+
+
+@settings(max_examples=4, deadline=None)
+@given(
+    focus_overview=st.booleans(),
+    focus_account=st.booleans(),
+)
+def test_active_interaction_bundle_is_a_required_prefix_with_other_focused_controls(
+    focus_overview: bool,
+    focus_account: bool,
+) -> None:
+    task, world, _actions, evaluation, _context_value = _context()
+    active_world = replace(
+        world,
+        sources=tuple(
+            replace(
+                source,
+                structure=tuple(
+                    replace(node, role="form") if node.structure_id == "auxiliary" else node
+                    for node in source.structure
+                ),
+            )
+            for source in world.sources
+        ),
+        targets=tuple(
+            replace(
+                target,
+                role="textbox",
+                state={**dict(target.state), "focused": True},
+            )
+            if target.target_id == "target:alpha"
+            else replace(target, state={**dict(target.state), "focused": True})
+            if (target.target_id == "target:overview-settings" and focus_overview)
+            or (target.target_id == "target:account-settings" and focus_account)
+            else target
+            for target in world.targets
+        ),
+    )
+    actions = ActionSpaceBuilder().build(task, active_world)
+    context = ContextBuilder().build(task, active_world, actions, evaluation)
+    plan = context.action_delivery_plan
+    assert plan is not None
+    interaction = plan.obligation(DeliveryObligationKind.INTERACTION)
+    assert interaction is not None
+
+    required_records = interaction.records[: interaction.required_record_count]
+    required_refs = {
+        record.candidate.target_ref for record in required_records if isinstance(record, ActionRouteFragment)
+    }
+    active_refs = {
+        context.grounding.target_refs[f"target:{label.casefold()}"]
+        for label in ("Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Zulu")
+    }
+    optional_focused_refs = {
+        context.grounding.target_refs[target_id]
+        for target_id, focused in (
+            ("target:overview-settings", focus_overview),
+            ("target:account-settings", focus_account),
+        )
+        if focused
+    }
+
+    assert required_refs == active_refs
+    assert required_refs.isdisjoint(optional_focused_refs)
+    packed = _pack(ModelDecisionRequest("request:active-bundle-prefix", context))
+    delivered_refs = {route.source_ref for route in packed.delivery.manifest.action_routes}
+    assert active_refs <= delivered_refs
 
 
 def test_bounded_base_page_and_fresh_focus_survive_a_one_route_soft_target() -> None:
