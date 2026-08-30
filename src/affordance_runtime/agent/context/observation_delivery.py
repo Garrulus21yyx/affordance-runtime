@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from affordance_runtime.agent.context.contracts import sanitize_history_arguments
 from affordance_runtime.agent.decisions import LocalToolResult
 from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.agent.runtime_failure import RuntimeFailure
@@ -147,8 +148,16 @@ class ObservationDeliveryStore:
 
         world_digest = "sha256:" + getattr(step, "public_world_delta").after_world_digest
         arguments_digest = _public_digest(arguments or {})
-        result_digest = _public_digest(result)
-        item_digests = tuple(dict.fromkeys(_public_digest(item) for item in _monitor_items(result)))[
+        semantic_result = sanitize_history_arguments(
+            result,
+            ephemeral_paths=decision.ephemeral_result_paths,
+        )
+        if not isinstance(semantic_result, Mapping):
+            raise TypeError("local tool result projection must remain an object")
+        result_digest = _public_digest(semantic_result)
+        item_digests = tuple(
+            dict.fromkeys(_public_digest(item) for item in _monitor_items(semantic_result))
+        )[
             :_MAX_LOCAL_INFORMATION_ITEMS
         ]
         exact = next(
@@ -173,7 +182,6 @@ class ObservationDeliveryStore:
         delivered = {
             digest
             for record in self.local_deliveries
-            if record.world_digest == world_digest
             for digest in record.item_digests
         }
         new_digests = tuple(item for item in item_digests if item not in delivered)

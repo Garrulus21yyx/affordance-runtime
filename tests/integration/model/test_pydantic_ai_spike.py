@@ -3830,8 +3830,8 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "do not preserve incidental current browser URLs" in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in prompt
     assert MODEL_POLICY_EVIDENCE_STATUS in MODEL_POLICY_INSTRUCTIONS
-    assert "When every requested field is supported" in MODEL_POLICY_INSTRUCTIONS
-    assert "does not require reopening its" in MODEL_POLICY_INSTRUCTIONS
+    assert "When all outputs are supported" in MODEL_POLICY_INSTRUCTIONS
+    assert "Formatting does not require reopening a source" in MODEL_POLICY_INSTRUCTIONS
     assert "returned no usable control on unchanged World" in MODEL_POLICY_INSTRUCTIONS
     assert "point_grounding once for that target" in MODEL_POLICY_INSTRUCTIONS
     assert "immediately following ActionPolicy delivery" in MODEL_POLICY_INSTRUCTIONS
@@ -3842,7 +3842,7 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "do not replay the same semantic action" in MODEL_POLICY_INSTRUCTIONS
     assert "visible unauthenticated state plus missing expected content" in MODEL_POLICY_INSTRUCTIONS
     assert "classify every complete in-scope record once" in MODEL_POLICY_INSTRUCTIONS
-    assert "the full supported result set" in MODEL_POLICY_INSTRUCTIONS
+    assert "full supported result set" in MODEL_POLICY_INSTRUCTIONS
     assert "whether coverage is open" in MODEL_POLICY_INSTRUCTIONS
     assert "whether the proposed route is" in MODEL_POLICY_INSTRUCTIONS
     assert "use typed abort instead of self-verifying" in MODEL_POLICY_INSTRUCTIONS
@@ -4853,6 +4853,57 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
         assert second.attempts[0].thinking_requested == "enabled"
         assert second.attempts[0].max_output_tokens == 4096
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [4096, 4096]
+
+    asyncio.run(scenario())
+
+
+def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_boundary() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(["first_gui_action"])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("collection-evidence-boundary", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+        read_result = ReadRegionResult(
+            context.context_id,
+            "read_region",
+            {"region_ref": "R1"},
+            {
+                "kind": "Opened",
+                "items": ({"kind": "complete_item", "content": ({"text": "record"},)},),
+                "has_more": False,
+                "next_cursor": None,
+                "source_coverage": "partial",
+                "region_membership": "complete",
+                "result_page": "1/1",
+                "scope": {"role": "list", "heading": "Results"},
+            },
+        )
+        committed = StepResult(
+            read_result,
+            world,
+            world,
+            evaluation,
+            feedback="local_tool_result",
+        )
+        next_context = replace(context, last_step=committed)
+
+        result = await policy.port.generate(
+            ModelDecisionRequest("request:evidence-review", next_context, last_step=committed)
+        )
+
+        assert result.output is not None
+        assert result.attempts[0].phase == "deliberate"
+        assert result.attempts[0].trigger == "evidence_review"
+        assert result.attempts[0].thinking_requested == "enabled"
+        assert result.attempts[0].max_output_tokens == 2048
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048]
 
     asyncio.run(scenario())
 

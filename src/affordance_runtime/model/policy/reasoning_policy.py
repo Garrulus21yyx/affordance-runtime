@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.decisions import ReadRegionResult
+
+_COLLECTION_SCOPE_ROLES = frozenset({"feed", "grid", "list", "table", "tree"})
+_EVIDENCE_REVIEW_MAX_TOKENS = 2048
 
 
 class ActionPolicyInvocationPhase(StrEnum):
@@ -20,6 +25,7 @@ class ActionPolicyInvocationTrigger(StrEnum):
     EVIDENCE_GAP = "evidence_gap"
     OPERATIONAL_STALL = "operational_stall"
     CONTROL_STALL = "control_stall"
+    EVIDENCE_REVIEW = "evidence_review"
     REPRESENTATION_ERROR = "representation_error"
 
 
@@ -56,6 +62,13 @@ class ActionPolicyReasoningPolicy:
                 self.deliberate_max_tokens,
                 "enabled",
             )
+        if _at_collection_evidence_boundary(context.last_step):
+            return ActionPolicyCallProfile(
+                ActionPolicyInvocationPhase.DELIBERATE,
+                ActionPolicyInvocationTrigger.EVIDENCE_REVIEW,
+                min(self.deliberate_max_tokens, _EVIDENCE_REVIEW_MAX_TOKENS),
+                "enabled",
+            )
         return ActionPolicyCallProfile(
             ActionPolicyInvocationPhase.ORDINARY,
             ActionPolicyInvocationTrigger.ORDINARY,
@@ -82,3 +95,27 @@ def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
     if kind in {"effect_stall", "uncertain_effect", "state_oscillation", "strategy_review"}:
         return ActionPolicyInvocationTrigger.OPERATIONAL_STALL
     return None
+
+
+def _at_collection_evidence_boundary(last_step: object | None) -> bool:
+    """Lease one bounded audit when a typed collection read has no local continuation."""
+
+    decision = getattr(last_step, "decision", None)
+    if not isinstance(decision, ReadRegionResult):
+        return False
+    result = decision.result
+    scope = result.get("scope")
+    items = result.get("items")
+    return bool(
+        result.get("kind") == "Opened"
+        and result.get("has_more") is False
+        and result.get("source_coverage") in {"complete", "partial"}
+        and result.get("region_membership") in {"complete", "partial"}
+        and isinstance(scope, Mapping)
+        and str(scope.get("role", "")).casefold() in _COLLECTION_SCOPE_ROLES
+        and isinstance(items, tuple | list)
+        and any(
+            isinstance(item, Mapping) and item.get("kind") in {"complete_item", "partial_item"}
+            for item in items
+        )
+    )

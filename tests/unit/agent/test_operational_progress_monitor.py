@@ -15,6 +15,7 @@ from affordance_runtime.actions import (
     ActionSpaceBuilder,
 )
 from affordance_runtime.agent import (
+    ReadRegionResult,
     RequestActionPage,
     SearchPageContentResult,
     SelectAction,
@@ -460,8 +461,8 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.prohibited_attempt_signatures == (monitor.latest_attempt_signature,)
-    assert "returned next_cursor" in recovery.recovery_signal.human_instruction
-    assert "find a current executable control" in recovery.recovery_signal.human_instruction
+    assert "Follow next_cursor only when has_more is true" in recovery.recovery_signal.human_instruction
+    assert "one materially different current route" in recovery.recovery_signal.human_instruction
     assert "do not repeat control discovery" not in recovery.recovery_signal.human_instruction
     assert stalled.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert stalled.reason == "control_stalled"
@@ -541,7 +542,7 @@ def test_local_delivery_novelty_is_stable_for_generated_nonempty_results(query, 
     assert replay.information_delta.new_information_count == 0
 
 
-def test_local_delivery_closed_algebra_covers_empty_overlap_and_new_world() -> None:
+def test_local_delivery_closed_algebra_covers_empty_cross_world_overlap_and_new_semantics() -> None:
     first_world = _world("observation:algebra-first")
     second_world = _world("observation:algebra-second", route="/other")
 
@@ -567,6 +568,10 @@ def test_local_delivery_closed_algebra_covers_empty_overlap_and_new_world() -> N
     first = empty.next_store.reduce(step(first_world, "both", (item_a, item_b)), step_index=2)
     overlap = first.next_store.reduce(step(first_world, "only beta", (item_b,)), step_index=3)
     changed_world = overlap.next_store.reduce(step(second_world, "both", (item_a, item_b)), step_index=4)
+    changed_semantics = changed_world.next_store.reduce(
+        step(second_world, "changed beta", (item_a, {"label": "beta", "value": "three"})),
+        step_index=5,
+    )
 
     assert empty.information_delta is not None
     assert empty.information_delta.kind is InformationDeltaKind.NO_MATCHES
@@ -574,8 +579,129 @@ def test_local_delivery_closed_algebra_covers_empty_overlap_and_new_world() -> N
     assert overlap.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
     assert overlap.information_delta.new_information_count == 0
     assert changed_world.information_delta is not None
-    assert changed_world.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-    assert changed_world.information_delta.new_information_count == 2
+    assert changed_world.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+    assert changed_world.information_delta.new_information_count == 0
+    assert changed_semantics.information_delta is not None
+    assert changed_semantics.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert changed_semantics.information_delta.new_information_count == 1
+
+
+def test_local_delivery_novelty_expires_refs_but_preserves_ref_shaped_business_text() -> None:
+    first_world = _world("observation:semantic-record-first")
+    second_world = _world("observation:semantic-record-second", route="/page/2")
+
+    def step(world, *, region_ref: str, node_ref: str, text: str) -> StepResult:
+        return StepResult(
+            ReadRegionResult(
+                "context:test",
+                "read_region",
+                {"region_ref": region_ref},
+                {
+                    "kind": "Opened",
+                    "items": (
+                        {
+                            "kind": "complete_item",
+                            "region_ref": region_ref,
+                            "content": ({"node_ref": node_ref, "role": "StaticText", "text": text},),
+                        },
+                    ),
+                    "has_more": False,
+                    "next_cursor": None,
+                    "source_coverage": "partial",
+                    "region_membership": "complete",
+                    "result_page": "1/1",
+                    "scope": {"role": "list", "heading": "Results"},
+                },
+                ephemeral_argument_paths=(("region_ref",),),
+                ephemeral_result_paths=(
+                    ("next_cursor",),
+                    ("items", "*", "region_ref"),
+                    ("items", "*", "content", "*", "node_ref"),
+                ),
+            ),
+            world,
+            world,
+            _evaluation(world),
+            feedback="local_tool_result",
+        )
+
+    first_step = step(first_world, region_ref="R1", node_ref="N1", text="Product code E6")
+    duplicate_step = step(second_world, region_ref="R9", node_ref="N8", text="Product code E6")
+    changed_step = step(second_world, region_ref="R9", node_ref="N7", text="Product code R2")
+
+    first = ObservationDeliveryStore().reduce(first_step, step_index=1)
+    duplicate = first.next_store.reduce(duplicate_step, step_index=2)
+    changed = duplicate.next_store.reduce(changed_step, step_index=3)
+
+    assert first.information_delta is not None
+    assert first.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert duplicate.information_delta is not None
+    assert duplicate.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+    assert changed.information_delta is not None
+    assert changed.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+
+
+def test_cross_world_duplicate_records_open_recovery_without_prohibiting_a_new_route() -> None:
+    first_world = _world("observation:duplicate-page-one")
+    second_world = _world("observation:duplicate-page-two", route="/page/2")
+
+    def step(world, *, region_ref: str, node_ref: str) -> StepResult:
+        return StepResult(
+            ReadRegionResult(
+                "context:test",
+                "read_region",
+                {"region_ref": region_ref},
+                {
+                    "kind": "Opened",
+                    "items": (
+                        {
+                            "kind": "complete_item",
+                            "region_ref": region_ref,
+                            "content": ({"node_ref": node_ref, "role": "StaticText", "text": "same record"},),
+                        },
+                    ),
+                    "has_more": False,
+                    "next_cursor": None,
+                    "source_coverage": "partial",
+                    "region_membership": "complete",
+                    "result_page": "1/1",
+                    "scope": {"role": "list", "heading": "Results"},
+                },
+                ephemeral_argument_paths=(("region_ref",),),
+                ephemeral_result_paths=(
+                    ("next_cursor",),
+                    ("items", "*", "region_ref"),
+                    ("items", "*", "content", "*", "node_ref"),
+                ),
+            ),
+            world,
+            world,
+            _evaluation(world),
+            feedback="local_tool_result",
+        )
+
+    first = ObservationDeliveryStore().reduce(
+        step(first_world, region_ref="R1", node_ref="N1"),
+        step_index=1,
+    )
+    repeated_step = step(second_world, region_ref="R8", node_ref="N9")
+    repeated = first.next_store.reduce(repeated_step, step_index=2)
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(second_world, _evaluation(second_world))
+
+    transition = monitor.evaluate(
+        repeated_step,
+        current_findings_digest(second_world),
+        repeated.information_delta,
+    )
+
+    assert repeated.information_delta is not None
+    assert repeated.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+    assert transition.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert transition.recovery_lifecycle is RecoveryLifecycleTransition.STARTED
+    assert transition.recovery_signal is not None
+    assert transition.recovery_signal.prohibited_attempt_signatures == ()
+    assert "added no semantic record" in transition.recovery_signal.human_instruction
 
 
 def test_different_queries_and_regions_share_one_no_progress_family() -> None:

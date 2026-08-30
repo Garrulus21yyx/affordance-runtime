@@ -568,6 +568,8 @@ class EpisodeMonitor:
         recovery_due = any(
             (
                 exact_replay,
+                information_delta is not None
+                and information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION,
                 gui_dispatched and self.same_attempt_streak >= 2,
                 control_discovery and self.observation_only_streak >= _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS,
                 not gui_dispatched
@@ -881,9 +883,11 @@ def _control_stall_instruction(result: StepResult) -> str:
         )
     if isinstance(result.decision, ReadRegionResult | SearchPageContentResult):
         return (
-            "This read/search result is already present in completed tool history. Do not request the same result "
-            "again: use that tool's returned next_cursor when has_more is true, inspect a different relevant region, "
-            "find a current executable control, or use an offered browser navigation action."
+            "This read/search added no semantic record that is not already present in completed tool history. "
+            "Preserve and use that evidence instead of reopening it for verification. If the requested output is "
+            "already supported, finish; otherwise choose one materially different current route for a specific "
+            "missing output. Follow next_cursor only when has_more is true, and stop with a typed no-progress outcome "
+            "when no materially new route remains."
         )
     return (
         "Use a materially different current control, relevant page content, or offered browser navigation action; "

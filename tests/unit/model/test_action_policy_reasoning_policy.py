@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from affordance_runtime.agent import ReadRegionResult
 from affordance_runtime.model.policy.reasoning_policy import (
     ActionPolicyInvocationPhase,
     ActionPolicyInvocationTrigger,
@@ -12,7 +13,13 @@ from affordance_runtime.model.policy.reasoning_policy import (
 from tests.support.legacy_compact_json_decision_port import _semantic_choice
 
 
-def _context(kind: str = "", signature: str = "", *, recovery_attempt: int = 1):
+def _context(
+    kind: str = "",
+    signature: str = "",
+    *,
+    recovery_attempt: int = 1,
+    last_step: object | None = None,
+):
     return SimpleNamespace(
         control_feedback=(
             {
@@ -22,6 +29,27 @@ def _context(kind: str = "", signature: str = "", *, recovery_attempt: int = 1):
             }
             if kind
             else {}
+        ),
+        last_step=last_step,
+    )
+
+
+def _collection_read_step(*, has_more: bool = False, role: str = "list") -> object:
+    return SimpleNamespace(
+        decision=ReadRegionResult(
+            "context:test",
+            "read_region",
+            {"region_ref": "R1"},
+            {
+                "kind": "Opened",
+                "items": ({"kind": "complete_item", "content": ({"text": "record"},)},),
+                "has_more": has_more,
+                "next_cursor": "next" if has_more else None,
+                "source_coverage": "partial",
+                "region_membership": "complete",
+                "result_page": "1/1",
+                "scope": {"role": role, "heading": "Results"},
+            },
         )
     )
 
@@ -92,6 +120,47 @@ def test_recovery_kind_without_epoch_identity_cannot_enable_deliberate_mode() ->
     assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
     assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
     assert profile.thinking_mode == "disabled"
+
+
+def test_closed_collection_read_leases_one_bounded_evidence_review() -> None:
+    profile = ActionPolicyReasoningPolicy(deliberate_max_tokens=4096).select(
+        _context(last_step=_collection_read_step())
+    )
+
+    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
+    assert profile.trigger is ActionPolicyInvocationTrigger.EVIDENCE_REVIEW
+    assert profile.max_output_tokens == 2048
+    assert profile.thinking_mode == "enabled"
+
+
+@pytest.mark.parametrize(
+    "last_step",
+    (
+        _collection_read_step(has_more=True),
+        _collection_read_step(role="main"),
+        None,
+    ),
+)
+def test_open_or_noncollection_reads_remain_ordinary(last_step: object | None) -> None:
+    profile = ActionPolicyReasoningPolicy().select(_context(last_step=last_step))
+
+    assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
+    assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
+    assert profile.thinking_mode == "disabled"
+
+
+def test_active_monitor_recovery_outranks_collection_evidence_review() -> None:
+    profile = ActionPolicyReasoningPolicy().select(
+        _context(
+            "control_stall",
+            "epoch:stable",
+            last_step=_collection_read_step(),
+        )
+    )
+
+    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
+    assert profile.trigger is ActionPolicyInvocationTrigger.CONTROL_STALL
+    assert profile.max_output_tokens == 4096
 
 
 def test_representation_semantic_choice_is_operation_and_target_stable() -> None:
