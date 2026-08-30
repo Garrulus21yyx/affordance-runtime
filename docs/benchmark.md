@@ -202,11 +202,15 @@ not keyed by suite, task, label, or JSON encoding.
 [`run12`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run12/run.json) crossed the
 minimal final tool but still ended native failure: its final deliberate attempt used all 4,096 reasoning tokens before
 one ToolCall, and the non-thinking retry restarted classification and omitted Catso. `8d039bae` repairs the same-call
-owner boundary. A pre-operation truncation now projects at most 2,100 JSON-encoded bytes from the head and tail of
-the same ActionPolicy's incomplete reasoning into its one forced ToolCall retry. The retry retains settled positives
-but must finish any interrupted enumeration, classification, or record audit against the same fresh context; a
-physical truncation boundary never completes a result set. The checkpoint is stripped from official history on every outcome. It is a bounded physical
-continuation, not memory, a semantic judge, or a second planner. The complete recovery instruction is bounded to
+owner boundary. When the provider adapter separately surfaces a pre-operation length fallback, such as a thinking-only
+deliberate response, it projects at most 2,100 JSON-encoded bytes from the head and tail of the same ActionPolicy's
+incomplete reasoning into its one forced ToolCall retry. The retry retains settled positives but must finish any
+interrupted enumeration, classification, or record audit against the same fresh context; a physical truncation
+boundary never completes a result set. An ordinary text-without-tool output retry can instead remain inside the same
+PydanticAI `Agent.run`, where the bounded raw provider response and unchanged fresh context are already present and no
+second checkpoint is synthesized. Both forms are same-call, non-authoritative physical continuations and are stripped
+from official history on every outcome; neither is memory, a semantic judge, or a second planner. The complete
+recovery instruction is bounded to
 3,072 encoded bytes, so it stays within the existing 1,024-token admission safety margin under the canonical
 three-bytes-per-token estimator, including Unicode and escaped controls. Prompt v52 also removes duplicate instructions rather
 than raising the soft request threshold; generated focused-bundle and 84/167/500-control cases prove the editor/submit
@@ -259,10 +263,13 @@ reliability remains open.
 
 The clean-commit Task21
 [`run17`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run17/run.json) is the second
-post-repair semantic witness. It made ten policy calls, entered no recovery, crossed one STOP/native evaluation, and
-submitted Dibbins, Anglebert Dinkherhump, and Michelle Davis while omitting Catso. Its reasoning again imposed a
-literal-ear-cup wording requirement even though the existing general contract explicitly maps a counterpart-only
-property to the corresponding fit constraint and forbids excluding implicit or less-clear positives. Together,
+post-repair semantic witness. It made ten policy calls, entered no Monitor recovery epoch
+(`action_policy_recovery_calls=0`), performed no exact local replay, crossed one STOP/native evaluation, and submitted
+Dibbins, Anglebert Dinkherhump, and Michelle Davis while omitting Catso. Its final ordinary generation did reach the
+output-length boundary once and completed through the existing `ordinary_output_retry`; that physical provider retry
+did not change the available semantic evidence. Its reasoning again imposed a literal-ear-cup wording requirement
+even though the existing general contract explicitly maps a counterpart-only property to the corresponding fit
+constraint and forbids excluding implicit or less-clear positives. Together,
 runs 16–17 show a current DeepSeek v4 Flash ActionPolicy adherence/capability limit, not a Runtime or tool-contract
 gap. Run13 proves the complete answer remains reachable, but one pass among three post-boundary runs is not a
 reliability claim. A stronger general policy provider may be evaluated separately; Runtime semantic rewriting,
@@ -273,8 +280,7 @@ fixed ordering, or benchmark keyword. Task0 is not dynamic date-tool injection b
 date-format contract to inject. Task21 adds neither a semantic judge nor Runtime predicate evaluation; ActionPolicy
 remains the only semantic owner.
 
-The post-`839ad3a8` fixed-environment suite reports `2153 passed, 19 skipped, 1 deselected, 1 warning` in 117.56
-seconds. The
+The post-`a27d2ca6` fixed-environment suite reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
 `FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and
 repeated live semantic reliability remain open; the focused owner set reports `296 passed, 3 skipped`. The declared

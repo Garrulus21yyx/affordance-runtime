@@ -286,13 +286,16 @@ so Catalog and Binding share it without checking benchmark, environment class, t
 
 The bounded physical-output algebra also preserves semantic continuity. If a length-truncated response already names
 one current operation, the existing required-only operation recovery completes that operation without reconsidering
-it. If truncation occurs before any operation, the same ActionPolicy's one non-thinking ToolCall retry receives a
-JSON-encoded 2,100-byte, explicitly incomplete and non-authoritative head/tail checkpoint of its own rejected
-reasoning. It is used only inside that physical retry, preserves supported intermediate positives instead of
-discarding them, and is removed from official history on success, cancellation, or provider failure. Because the
-checkpoint is necessarily incomplete, the retry must finish any interrupted enumeration, classification, or record
-audit against the unchanged fresh context; the physical truncation boundary is never evidence that a result set is
-complete. No Memory Store, semantic parser, second policy, or post-hoc answer repair was added.
+it. When the provider adapter separately surfaces a pre-operation length fallback, such as a thinking-only deliberate
+response, the same ActionPolicy's one non-thinking ToolCall retry receives a JSON-encoded 2,100-byte, explicitly
+incomplete and non-authoritative head/tail checkpoint of its own rejected reasoning. If an ordinary response instead
+contains text but no operation, PydanticAI may perform its output retry inside the same `Agent.run`; that retry already
+receives the bounded raw provider response and unchanged fresh context, so it does not synthesize a second checkpoint.
+Both forms are same-call physical continuations, and their rejected response/retry material is removed from official
+history on success, cancellation, or provider failure. Any incomplete continuation must finish an interrupted
+enumeration, classification, or record audit against the unchanged fresh context; a physical truncation boundary is
+never evidence that a result set is complete. No Memory Store, semantic parser, second policy, or post-hoc answer
+repair was added.
 
 The Task21 live sequence falsified each narrower hypothesis. In
 [`run10`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run10/run.json), the first final
@@ -341,10 +344,13 @@ is added. The live cohort remains open for repeated ActionPolicy reliability eve
 gap is implementation-complete.
 
 The clean-commit [`run17`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run17/run.json)
-repeated that semantic limitation without any recovery or exact local replay. After ten policy calls it submitted
-Dibbins, Anglebert Dinkherhump, and Michelle Davis but omitted Catso, then received one native
-`verified_terminal_task_failure`. Its reasoning again replaced the prompt's explicit relational-entailment rule with
-an unstated requirement that the review literally name ear cups. Runs 16–17 therefore establish an empirical
+repeated that semantic limitation without any Monitor recovery epoch (`action_policy_recovery_calls=0`) or exact
+local replay. Its final ordinary generation reached the output-length boundary once and completed through the
+existing `ordinary_output_retry`; this provider-call retry did not create a Monitor recovery epoch or change the
+semantic evidence. After ten policy calls it submitted Dibbins, Anglebert Dinkherhump, and Michelle Davis but omitted
+Catso, then received one native `verified_terminal_task_failure`. Its reasoning again replaced the prompt's explicit
+relational-entailment rule with an unstated requirement that the review literally name ear cups. Runs 16–17 therefore
+establish an empirical
 DeepSeek v4 Flash ActionPolicy adherence/capability limit for this open semantic boundary, while run13 shows the
 answer is reachable. Changing the configured general policy provider is a legitimate evaluation option; teaching
 Runtime this predicate, adding a second answer judge, or accumulating synonymous prompt examples is not an owner-
@@ -355,13 +361,14 @@ Task0 and Task7 also cross their distinct repairs in
 [`Task7 run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260830-contract-convergence-run2/run.json), both with
 native `verified_success`; the unchanged Task27 and Task44 controls had already passed. Commits `cf6cb3ab`,
 `58a8e390`, `92d75034`, `1e5ea44a`, `feccf021`, `a7b971ce`, `6cbc63f7`, `12b64dff`, `b9bf0299`, `eb0a65df`,
-`04964995`, `8d039bae`, `64bc82e7`, `bb398c71`, `9e5927c3`, and `839ad3a8` form the current causal surface. Production contains no Task ID, site name,
+`04964995`, `8d039bae`, `64bc82e7`, `bb398c71`, `9e5927c3`, `839ad3a8`, and `a27d2ca6` form the current causal surface.
+Production contains no Task ID, site name,
 expected answer, record name, date grammar, selector, fixed action ID, or benchmark vocabulary.
 
 The complete recovery prompt is capped at 3,072 encoded bytes, fitting the existing 1,024-token admission safety
 margin under the canonical three-bytes-per-token estimator even for Unicode and escaped control text.
 
-The post-`839ad3a8` fixed-environment repository gate reports `2153 passed, 19 skipped, 1 deselected, 1 warning`. The sole
+The post-`a27d2ca6` fixed-environment repository gate reports `2154 passed, 19 skipped, 1 deselected, 1 warning`. The sole
 deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the
 absent file before product code. The exact-local-replay owner tests cover Monitor, CoreLoop, `find_controls`, and
 PydanticAI same-call ToolReturn boundaries; the focused owner set reports `296 passed, 3 skipped`. Final fresh review
