@@ -5522,7 +5522,7 @@ def test_representation_repair_cannot_delete_legal_optional_operands() -> None:
     )
 
 
-def test_provider_repair_dropping_legal_optional_operand_is_rejected() -> None:
+def test_provider_repair_dropping_legal_optional_operand_becomes_same_call_rejection() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -5549,7 +5549,21 @@ def test_provider_repair_dropping_legal_optional_operand_is_rejected() -> None:
 
         result = await policy.port.generate(ModelDecisionRequest("request:optional-pruning", context))
 
-        assert result.failure is not None
+        assert result.failure is None
+        assert result.output is not None
+        rejected = result.output.decision
+        assert isinstance(rejected, ToolRejectedResult)
+        assert rejected.tool_name == "tool_rejected"
+        assert rejected.arguments == {
+            "operation": "ask_user",
+            "arguments": {
+                "question": "Which value?",
+                "requested_fields": ["account"],
+                "unexpected": "x",
+            },
+        }
+        assert rejected.result["kind"] == GroundedToolResolutionCode.INVALID_ARGUMENTS.value
+        assert rejected.result["dispatch"] == "not_sent"
         assert scripted.calls == 2
         assert [attempt.phase for attempt in result.attempts] == [
             "ordinary",
