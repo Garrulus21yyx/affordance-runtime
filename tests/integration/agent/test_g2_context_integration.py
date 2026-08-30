@@ -134,12 +134,15 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "Treat final=true only as an ordering hint" in system
     assert "dependencies express semantic order, not an action gate" in system
     assert "Outcomes need not remain simultaneously visible" in system
+    assert "Ignore any qualifier in goal_plan that strengthens" in system
     assert "search_page_content is only an exact-substring locator" in system
     assert "read its region and each required fresh UI pagination state" in system
     assert "sole authority for current" in system
     assert "override stale or conflicting statements" in system
-    assert "clear paraphrase or" in system
-    assert "incidental keyword overlap does not" in system
+    assert "described fit/capacity/compatibility" in system
+    assert "without repeating its property word or grammatical subject" in system
+    assert "explicit-statement requirement absent from TaskGoal" in system
+    assert "Incidental keyword overlap still does not" in system
     assert "Partial source coverage" in system
     assert "make the unique-record count equal a displayed total" in system
     assert "An E ref with a supported verb is executable" in system
@@ -148,5 +151,6 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "preserve its supported source ordering and representation" in system
     assert "A presumed backend or API convention does not define" in system
     assert "earliest dependency-ready" not in system
+    assert all(name not in system for name in ("Catso", "Dibbins", "Anglebert", "Michelle Davis"))
     assert "visibly satisfied" not in system
     assert "exactly one" in system

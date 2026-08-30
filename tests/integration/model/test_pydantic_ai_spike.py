@@ -1135,8 +1135,8 @@ def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() 
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [
             1024,
             1024,
-            2048,
-            2048,
+            4096,
+            4096,
         ]
         fourth = normalize_recorded_provider_input(scripted.records[3])
         current_prompt = next(part for part in fourth["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
@@ -4363,12 +4363,12 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
         assert first.attempts[0].phase == "deliberate"
         assert first.attempts[0].trigger == "grounding_gap"
         assert first.attempts[0].thinking_requested == "enabled"
-        assert first.attempts[0].max_output_tokens == 2048
+        assert first.attempts[0].max_output_tokens == 4096
         assert second.attempts[0].phase == "deliberate"
         assert second.attempts[0].trigger == "grounding_gap"
         assert second.attempts[0].thinking_requested == "enabled"
-        assert second.attempts[0].max_output_tokens == 2048
-        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 2048]
+        assert second.attempts[0].max_output_tokens == 4096
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [4096, 4096]
 
     asyncio.run(scenario())
 
@@ -4424,7 +4424,7 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
         assert first.attempts[0].trigger == "operational_stall"
         assert second.attempts[0].phase == "deliberate"
         assert second.attempts[0].trigger == "control_stall"
-        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048, 2048]
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [4096, 4096]
 
     asyncio.run(scenario())
 
@@ -5208,7 +5208,7 @@ def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> N
         assert "representation-only repaired tool call" in repr(scripted.messages)
         assert state.workspace.recent_steps
         assert state.workspace.recent_steps[0].semantic_action == "tool_rejected"
-        assert scripted.records[2].model_settings["max_tokens"] == 2048
+        assert scripted.records[2].model_settings["max_tokens"] == 4096
 
     asyncio.run(scenario())
 
@@ -6263,7 +6263,7 @@ def test_strategy_review_signal_goes_directly_to_one_deliberate_action_policy_ca
         assert not hasattr(policy.port, "revise_strategy")
         assert policy.port.last_call_profile is not None
         assert policy.port.last_call_profile.phase.value == "deliberate"
-        assert [record.model_settings["max_tokens"] for record in scripted.records] == [2048]
+        assert [record.model_settings["max_tokens"] for record in scripted.records] == [4096]
         action_input = json.dumps(
             normalize_recorded_provider_input(scripted.records[0]),
             sort_keys=True,

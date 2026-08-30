@@ -123,12 +123,16 @@ def test_initial_attempt_uses_independent_prompt_and_preserves_transcript() -> N
 
 
 def test_needs_input_contract_reserves_environment_facts_for_action_policy() -> None:
-    assert GOAL_COMPILER_PROMPT_VERSION == "goal-plan-compiler.v7"
+    assert GOAL_COMPILER_PROMPT_VERSION == "goal-plan-compiler.v8"
     assert "user exclusively owns" in GOAL_COMPILER_INSTRUCTIONS
     assert "GUI surface, screenshot, page, application, file" in GOAL_COMPILER_INSTRUCTIONS
     assert "never ask the user to supply the requested result" in GOAL_COMPILER_INSTRUCTIONS
     assert "Do not collapse a genuinely multi-stage information task" in GOAL_COMPILER_INSTRUCTIONS
     assert "separate dependent items" in GOAL_COMPILER_INSTRUCTIONS
+    assert "TaskGoal is the sole semantic authority" in GOAL_COMPILER_INSTRUCTIONS
+    assert "turn an implication into" in GOAL_COMPILER_INSTRUCTIONS
+    assert "explicit-statement requirement" in GOAL_COMPILER_INSTRUCTIONS
+    assert "return not_required rather than rewriting the criterion" in GOAL_COMPILER_INSTRUCTIONS
 
 
 def test_generation_attempt_records_role_thinking_contract() -> None:

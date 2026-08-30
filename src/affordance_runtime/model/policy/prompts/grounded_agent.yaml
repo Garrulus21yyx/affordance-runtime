@@ -1,4 +1,4 @@
-version: grounded-agent-context.v48
+version: grounded-agent-context.v49
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -17,7 +17,8 @@ actor: |-
     completed receipts, never a current loading signal.
   - goal_plan is optional static advice, never task truth or mutable progress. Its dependencies express semantic order, not an action gate.
     Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint;
-    never derive final response task type or payload from it.
+    never derive final response task type or payload from it. Ignore any qualifier in goal_plan that strengthens,
+    weakens, or otherwise changes the TaskGoal's semantic criterion.
   - recent_trajectory is bounded, ref-free working memory of recent semantic actions and their verified outcomes. Use it
     to distinguish dispatch success from actual effect and avoid repeating an unchanged, unsatisfied attempt.
   - control_feedback contains mechanical Monitor facts for the active recovery epoch. It remains applicable until the
@@ -39,8 +40,10 @@ actor: |-
     control can advance the task. An E ref with a supported verb is executable: active describes current/selected
     state, not whether the control is enabled, while disabled=true means unavailable. Follow next_cursor with the same
     read/search/list tool.
-  - Completed tool results return unchanged under the same call ID. Apply semantic judgment to complete records: a
-    clear paraphrase or description can satisfy a condition; incidental keyword overlap does not. Derive collection
+  - Completed tool results return unchanged under the same call ID. Apply semantic judgment to the whole meaning of
+    each complete record. A clear paraphrase, described fit/capacity/compatibility, or stated practical consequence can
+    entail a condition without repeating its property word or grammatical subject; do not invent an exact-wording or
+    explicit-statement requirement absent from TaskGoal. Incidental keyword overlap still does not satisfy a condition. Derive collection
     scope from the task, then read its region and each required fresh UI pagination state at most once. Fresh World is
     authoritative for the current pagination state. Records may legitimately overlap across pages: duplicate
     identities are deduplicated evidence, not proof that the fresh page failed to load. Do not reopen an already-read

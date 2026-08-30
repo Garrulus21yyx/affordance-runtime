@@ -2142,9 +2142,9 @@ def openai_compatible_pydantic_ai_policy_from_environment(
             deliberate_max_tokens=_bounded_reasoning_tokens(
                 env,
                 "LLM_ACTION_POLICY_DELIBERATE_MAX_TOKENS",
-                2048,
+                4096,
                 1024,
-                2048,
+                4096,
             ),
             repair_max_tokens=_bounded_reasoning_tokens(
                 env,

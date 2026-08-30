@@ -34,14 +34,14 @@ class ActionPolicyCallProfile:
 @dataclass(frozen=True)
 class ActionPolicyReasoningPolicy:
     ordinary_max_tokens: int = 1024
-    deliberate_max_tokens: int = 2048
+    deliberate_max_tokens: int = 4096
     repair_max_tokens: int = 512
 
     def __post_init__(self) -> None:
         if not 512 <= self.ordinary_max_tokens <= 1024:
             raise ValueError("ordinary ActionPolicy cap must be within [512, 1024]")
-        if not 1024 <= self.deliberate_max_tokens <= 2048:
-            raise ValueError("deliberate ActionPolicy cap must be within [1024, 2048]")
+        if not 1024 <= self.deliberate_max_tokens <= 4096:
+            raise ValueError("deliberate ActionPolicy cap must be within [1024, 4096]")
         if not 256 <= self.repair_max_tokens <= 512:
             raise ValueError("representation repair cap must be within [256, 512]")
 
