@@ -1,4 +1,4 @@
-version: grounded-agent-context.v50
+version: grounded-agent-context.v51
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load, open, or look
@@ -56,7 +56,9 @@ actor: |-
   - Immediately before returning a collection or count, perform one bounded record-by-record inclusion audit over
     every complete inspected record in scope. Apply the whole semantic condition to each record, including clear
     paraphrases, preserve each positive record's identity exactly once, and reconcile the output count with that
-    audited set. The audit never expands the task-defined scope. Do not replace semantic classification with
+    audited set. Once a record logically entails the condition, implicitness, indirect wording, or being less clear
+    than another positive is not an exclusion reason; return the union of all positives, never only a safest or
+    clearest subset. The audit never expands the task-defined scope. Do not replace semantic classification with
     substring or keyword filtering. If source coverage is partial or a required page remains unread, use one
     materially new inspection route; do not repeat a completed read or revisit a fresh pagination state whose records
     are already in the audited union.

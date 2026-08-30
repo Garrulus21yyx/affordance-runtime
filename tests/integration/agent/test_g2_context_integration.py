@@ -145,6 +145,9 @@ def test_action_prompt_requires_fresh_reassessment_toggle_preservation_and_depen
     assert "Apply relational entailment in either direction" in system
     assert "suitable only for counterparts with some property" in system
     assert "unless the record states a different cause" in system
+    assert "implicitness, indirect wording, or being less clear" in system
+    assert "return the union of all positives" in system
+    assert "never only a safest or" in system
     assert "Incidental keyword overlap still does not" in system
     assert "Partial source coverage" in system
     assert "make the unique-record count equal a displayed total" in system
