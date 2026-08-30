@@ -1527,6 +1527,18 @@ def test_upstream_webarena_response_definitions_fit_the_final_tool_contract() ->
             "required": ["value"],
             "additionalProperties": False,
         },
+        {
+            "type": "object",
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {"type": "number", "minimum": -1e308, "maximum": 1e308},
+                    "maxItems": 512,
+                }
+            },
+            "required": ["values"],
+            "additionalProperties": False,
+        },
     ),
 )
 def test_final_response_codec_contract_rejects_invalid_or_unbounded_schema_at_its_owner(

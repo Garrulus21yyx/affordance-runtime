@@ -146,9 +146,12 @@ def _maximum_json_chars(schema: Mapping[str, object]) -> int:
         maximum = schema.get("maximum")
         if not isinstance(minimum, int | float) or not isinstance(maximum, int | float):
             raise ValueError("structured final response numbers must be bounded")
-        # Python JSON numbers are finite ints/floats at this boundary.  Float
-        # repr is bounded; endpoint digit lengths cover integral values.
-        return max(32, len(str(minimum)), len(str(maximum)))
+        # The number schema also admits Python ints.  A float endpoint such as
+        # 1e308 can therefore admit a 309-digit integer even though its own
+        # repr is only five characters.  Converting each finite endpoint to
+        # int conservatively captures that integral wire width; 32 covers
+        # ordinary finite float reprs and fractional syntax.
+        return max(32, len(str(int(minimum))), len(str(int(maximum))))
     if schema_type == "array":
         maximum = schema.get("maxItems")
         items = schema.get("items")
