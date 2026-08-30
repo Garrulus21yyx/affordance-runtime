@@ -122,6 +122,35 @@ wall-clock deadline tests that reproduce unchanged on the pre-repair `6aae7598` 
 seconds. They are recorded as baseline/environment limitations, not product exemptions and not grounds to change the
 Runner thresholds. No live WebArena-Verified case was run as part of this provider-free gate.
 
+The subsequently authorized Task554
+[`candidate-response-convergence-run10`](../evidence/live/w2-task-554-deepseek-v4-flash-20260830-candidate-response-convergence-run10/run.json)
+ran the unchanged frozen case with seed 7 and DeepSeek v4 Flash at clean commit `3b6cf984`. It ended after about 339
+seconds. The trace contains 38 completed model turns/steps and 26 observations, but the formal report has unmeasured
+case metrics because a product exception prevented final case projection. The run is therefore formally
+`failed / harness_projection / case_projection_failed`, sent no STOP, invoked no native evaluator, and is not
+benchmark acceptance evidence.
+
+The live episode nevertheless crossed the run9 omissions: it reached the real commit form and step 38 filled the
+commit message with `observed_change=changed`, `local_postcondition=satisfied`, and native evidence. The next fresh
+context failed before ActionPolicy, packing, or dynamic Catalog compilation with
+`ValueError: required delivery targets must form one structural prefix`. The causal state is supported and generic:
+one focused non-repeated form declared its complete entity-route bundle required, while another current target outside
+that form also retained a public focus marker. The old interaction ordering placed every direct-focus target before
+same-form siblings even though the required set contained only the form bundle, so an optional target could split the
+owner-declared target-atomic prefix.
+
+Commit `3de10c1c` repairs that owner invariant by sorting active-bundle membership before all presentation heuristics;
+focus, viewport, container kind, and public source order still deterministically rank within the required and optional
+partitions. It does not widen the required set, weaken the strict prefix validator, alter `TurnPacker`, or add a
+task/label/site branch. A Hypothesis regression covers all four combinations of two outside focus markers, verifies
+that only the active form is the exact required prefix, and resolves the admitted routes through the current
+DeliveryManifest/Catalog. The focused delivery/plan/Catalog suite reports `158 passed`. The complete fixed-environment
+suite first reported `2123 passed, 19 skipped` plus the repository-known missing archived dashboard trace; with that
+single unavailable witness explicitly deselected, the formal gate reports
+`2123 passed, 19 skipped, 1 deselected, 1 warning` in 114.25 seconds. The three historical wall-clock tests passed in
+this run without threshold changes. A new live Task554 run remains separately authorized work; run10 did not exercise
+the structured final-response call and does not close either Task554 or the broader W2 cohort.
+
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
 The tool-contract repair is implementation-complete on `codex/tool-contract-convergence`; no live benchmark was

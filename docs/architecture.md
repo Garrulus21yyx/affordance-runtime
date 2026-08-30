@@ -186,14 +186,31 @@ their declared endpoints use compact exponent notation. Consequently Catalog acc
 implement the same algebra; malformed `$ref`,
 unbounded arrays, open objects, and over-limit schemas fail before Context identity or Catalog compilation. Plain
 text remains limited to 8,000 nonblank characters through a schema-visible pattern, including for codec extensions;
-structured compact encoding has a conservative 128-KiB decision bound. No live
-Task554 rerun has yet verified these two post-run repairs, so empirical closure remains open.
+structured compact encoding has a conservative 128-KiB decision bound.
 
-The final fixed-environment gate reports `2119 passed, 19 skipped, 4 deselected, 1 warning`; Ruff with cache disabled
-and `git diff --check` pass. One deselection is the documented absent archived dashboard trace. The other three are
-wall-clock deadline assertions that fail with the same approximately 0.23–0.27 second measurements on the untouched
-pre-repair `6aae7598` baseline, so they remain an environment/baseline limitation rather than authorizing a Runner or
-threshold change. This verifies provider-free implementation consistency, not Task554 live success.
+The authorized Task554
+[`candidate-response-convergence-run10`](../evidence/live/w2-task-554-deepseek-v4-flash-20260830-candidate-response-convergence-run10/run.json)
+executed these post-run repairs at clean commit `3b6cf984`, but did not close the task. The trace completed 38 model
+turns and 26 observations, reached the actual commit form, and successfully filled its commit-message textbox with a
+native satisfied postcondition. Before the next ActionPolicy request, the fresh-World delivery-plan constructor raised
+`ValueError: required delivery targets must form one structural prefix`. The formal case report consequently records
+`failed / harness_projection / case_projection_failed` with unmeasured terminal metrics; those zero projections do
+not mean that the preceding GUI episode did no work. No STOP or native evaluator call occurred, and the run never
+reached a call of the repaired final-response tool.
+
+This was a remaining algebra defect at the existing `ActionDeliveryPlan` owner, not dynamic ToolCatalog injection.
+An active non-repeated form correctly declared all of its entity routes as one hard target-atomic bundle, while the
+same fused fresh World could retain another directly focused control outside that form. The presentation ordering put
+all direct-focus routes before same-container routes, but the required set contained only the active form. The
+unrelated focused route could therefore split the required prefix before packing or Catalog compilation. Commit
+`3de10c1c` makes required-bundle membership the first interaction-order key and retains the existing focus, viewport,
+container, and public source order only within the required and optional partitions. The strict prefix validator is
+unchanged and still fails closed on a genuinely non-atomic plan. A generated four-combination regression varies the
+outside focus markers, proves that the exact active bundle is the required prefix, and carries all of its routes
+through `TurnPacker`, DeliveryManifest, and Catalog. The focused delivery/plan/Catalog gate reports `158 passed`; the
+complete fixed-environment suite reports `2123 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented
+repository-missing archived dashboard trace deselected. Task554 empirical closure remains open until a separately
+authorized fresh live run crosses both the prefix repair and the structured final-response path.
 
 ### 2026-08-29 tool-contract convergence
 
