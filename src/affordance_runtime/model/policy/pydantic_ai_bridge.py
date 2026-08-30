@@ -101,6 +101,11 @@ from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 from affordance_runtime.world.public_refs import PublicRefCodec
 
 _MAX_PROVIDER_RETRIES = 1
+_ACTION_POLICY_TOOL_RETRY_BUDGET = 1
+_ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
+_ACTION_POLICY_MAX_PROTOCOL_RETRIES = (
+    _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
+)
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
 _POLICY_DEADLINE_SAFETY_S = 0.5
@@ -730,7 +735,10 @@ class PydanticAIGroundedDecisionPort:
                     # this turn.  The bounded retry sees the same current
                     # World and catalog; Runtime still resolves and executes
                     # only the finally accepted current tool call.
-                    retries={"tools": 1, "output": output_retry_budget},
+                    retries={
+                        "tools": _ACTION_POLICY_TOOL_RETRY_BUDGET,
+                        "output": output_retry_budget,
+                    },
                     capabilities=persistence_capabilities,
                 )
                 current_agent.instrument = InstrumentationSettings(
@@ -763,6 +771,9 @@ class PydanticAIGroundedDecisionPort:
                 started = time.perf_counter()
                 provider_retries_before = self.last_provider_retry_count
                 captured_messages: tuple[object, ...] = ()
+                protocol_request_limit = _action_policy_protocol_request_limit(
+                    output_retry_budget
+                )
 
                 async def invoke_current_agent():
                     nonlocal captured_messages, pending_delivery_capture
@@ -777,7 +788,7 @@ class PydanticAIGroundedDecisionPort:
                                 current_prompt,
                                 toolsets=[current_toolset],
                                 usage=RunUsage(),
-                                usage_limits=UsageLimits(request_limit=output_retry_budget + 1),
+                                usage_limits=UsageLimits(request_limit=protocol_request_limit),
                                 model_settings=action_policy_model_settings,
                                 message_history=current_history,
                                 deferred_tool_results=current_deferred_results,
@@ -802,7 +813,7 @@ class PydanticAIGroundedDecisionPort:
                         object.__setattr__(self, "last_step_run_id", persistence_run_id)
                     serialized = _serialized_current_pydantic_invocation(
                         captured_messages,
-                        max_response_count=output_retry_budget + 1,
+                        max_response_count=protocol_request_limit,
                     )
                     response_count, failure_kind = _captured_output_failure(serialized)
                     if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
@@ -833,10 +844,25 @@ class PydanticAIGroundedDecisionPort:
                             can_retry_length,
                         )
                     return result, None, (), False
+                except UsageLimitExceeded as error:
+                    serialized = _serialized_current_pydantic_invocation(
+                        captured_messages,
+                        max_response_count=protocol_request_limit,
+                    )
+                    self._record_output_validation_exchanges(
+                        serialized,
+                        attempt_phase,
+                        current_envelope,
+                        accepted=False,
+                        terminal_failure=True,
+                        physical_settings=physical_settings,
+                        latency_ms=(time.perf_counter() - started) * 1000,
+                    )
+                    raise error
                 except UnexpectedModelBehavior as error:
                     serialized = _serialized_current_pydantic_invocation(
                         captured_messages,
-                        max_response_count=output_retry_budget + 1,
+                        max_response_count=protocol_request_limit,
                     )
                     response_count, failure_kind = _captured_output_failure(serialized)
                     can_retry_length = (
@@ -866,7 +892,11 @@ class PydanticAIGroundedDecisionPort:
                         transport_retries_remaining - (self.last_provider_retry_count - provider_retries_before),
                     )
 
-            output_retry_budget = 0 if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value else 1
+            output_retry_budget = (
+                0
+                if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
+                else _ACTION_POLICY_OUTPUT_RETRY_BUDGET
+            )
             try:
                 result, error, captured, can_retry_length = await run_output_sequence(
                     force_required_action=False,
@@ -1157,12 +1187,28 @@ class PydanticAIGroundedDecisionPort:
                 delivery,
             )
             raise
-        except UsageLimitExceeded:
+        except UsageLimitExceeded as error:
+            self._record_local_failure(
+                error,
+                "action_policy_protocol_retry_budget",
+                catalog.specs if catalog is not None else (),
+            )
+            if (
+                envelope is not None
+                and self.last_generation_attempts
+                and self.last_generation_attempts[-1].status == "started"
+            ):
+                self._record_local_protocol_failure(
+                    error,
+                    call_profile.phase.value,
+                    envelope,
+                    latency_ms=(time.perf_counter() - semantic_started) * 1000,
+                )
             return self._invocation_failure(
                 _failure(
-                    ModelFailureKind.PROVIDER_UNAVAILABLE,
-                    "provider_request_limit_exhausted",
-                    retryable=True,
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "action_policy_protocol_retry_budget_exhausted",
+                    attempt_origin=ProviderAttemptOrigin.LOCAL_RUNTIME,
                 ),
                 request,
                 delivery,
@@ -1927,6 +1973,45 @@ class PydanticAIGroundedDecisionPort:
                 "provider_attempts": self.last_model_call_count,
             },
         )
+
+    def _record_local_protocol_failure(
+        self,
+        error: Exception,
+        phase: str,
+        envelope: CanonicalProviderEnvelope,
+        *,
+        latency_ms: float,
+    ) -> None:
+        """Close a dispatched SDK-local protocol guard without blaming the provider."""
+
+        actual_settings = dict(envelope.model_settings)
+        transcript = {
+            "openinference.span.kind": "LLM",
+            "llm.system": self.provider_id,
+            "llm.model_name": self.model_id,
+            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.input_messages": envelope.model_boundary_projection()["messages"],
+            "llm.output_messages": [],
+            "llm.tools": _tool_transcript(envelope.function_tools),
+            "llm.model_settings": to_json_compatible(actual_settings),
+            "status": "failed",
+            "network_dispatched": True,
+            "error.code": "action_policy_protocol_retry_budget_exhausted",
+            "error.exception_class": type(error).__name__,
+        }
+        attempt = ModelGenerationAttempt(
+            attempt=len(self.last_generation_attempts),
+            phase=phase,
+            schema_name=GROUNDED_TOOLS_PROTOCOL,
+            status="failed",
+            latency_ms=latency_ms,
+            exception_class=type(error).__name__,
+            envelope_id=envelope.envelope_id,
+            envelope_projection=envelope.model_boundary_projection(),
+            **self._attempt_role_fields(envelope, physical_settings=actual_settings),
+            transcript=transcript,
+        )
+        self._replace_active_attempt(attempt)
 
 
 def openai_compatible_pydantic_ai_policy_from_environment(
@@ -2982,7 +3067,10 @@ def _accepted_message_history(
             raise ValueError("PydanticAI retry prompt has no rejected response")
         requests.append(message)
         index += 1
-    if rejected_response_count != retry_prompt_count or rejected_response_count > 1:
+    if (
+        rejected_response_count != retry_prompt_count
+        or rejected_response_count > _ACTION_POLICY_MAX_PROTOCOL_RETRIES
+    ):
         raise ValueError("PydanticAI output retry history is incomplete or unbounded")
     requests_tuple = tuple(requests)
     if not any(isinstance(part, UserPromptPart) for message in requests_tuple for part in message.parts):
@@ -3432,6 +3520,14 @@ def _action_policy_physical_settings(
     else:
         settings["tool_choice"] = "auto"
     return settings
+
+
+def _action_policy_protocol_request_limit(output_retry_budget: int) -> int:
+    """Close the SDK request algebra over independent tool and output retries."""
+
+    if not 0 <= output_retry_budget <= _ACTION_POLICY_OUTPUT_RETRY_BUDGET:
+        raise ValueError("ActionPolicy output retry budget is outside its bounded contract")
+    return 1 + _ACTION_POLICY_TOOL_RETRY_BUDGET + output_retry_budget
 
 
 def _serialized_current_pydantic_invocation(

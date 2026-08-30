@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 pytest.importorskip("pydantic_ai")
 
 from pydantic_ai import DeferredToolRequests, ToolDefinition
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -1334,6 +1334,79 @@ def test_historical_tool_name_uses_one_pydantic_retry_against_the_current_catalo
         retained = json.dumps(policy.port.message_history, default=str)
         assert "historical_type_text" not in retained
         assert "Unknown tool name" not in retained
+
+    asyncio.run(scenario())
+
+
+def test_tool_and_output_retries_compose_within_one_bounded_policy_run() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                ("historical_type_text", {"target": "E23", "text": "stale"}),
+                "zero_calls",
+                "first_gui_action",
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("composed-protocol-retries", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:composed-retries", context))
+
+        assert result.failure is None and result.output is not None
+        assert isinstance(result.output.decision, SelectAction)
+        assert scripted.calls == 3
+        assert [attempt.status for attempt in result.attempts] == [
+            "invalid",
+            "invalid",
+            "accepted",
+        ]
+        assert [attempt.output_failure_kind for attempt in result.attempts] == [
+            StructuredOutputFailureKind.JSON_INVALID,
+            StructuredOutputFailureKind.NO_TOOL_CALL,
+            None,
+        ]
+        assert result.diagnostics["policy_model_call_count"] == 3
+        retained = json.dumps(policy.port.message_history, default=str)
+        assert "historical_type_text" not in retained
+        assert "no tool call" not in retained
+
+    asyncio.run(scenario())
+
+
+def test_sdk_request_limit_failure_is_local_invalid_response_not_provider_outage() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel([UsageLimitExceeded("synthetic local request guard")])
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("local-protocol-limit", False)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            await SharedTaskEvaluator().evaluate(task, world),
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:local-protocol-limit", context))
+
+        assert result.output is None and result.failure is not None
+        assert result.failure.kind is ModelFailureKind.INVALID_RESPONSE
+        assert result.failure.retryable is False
+        assert result.failure.attempt_origin is ProviderAttemptOrigin.LOCAL_RUNTIME
+        assert result.failure.reason == "action_policy_protocol_retry_budget_exhausted"
+        assert [attempt.status for attempt in result.attempts] == ["failed"]
+        assert result.attempts[0].transcript["error.code"] == (
+            "action_policy_protocol_retry_budget_exhausted"
+        )
+        assert result.diagnostics["pre_provider_failure"]["phase"] == (
+            "action_policy_protocol_retry_budget"
+        )
 
     asyncio.run(scenario())
 
