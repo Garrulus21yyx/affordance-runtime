@@ -2493,7 +2493,7 @@ def test_sent_unknown_is_committed_once_without_automatic_replay() -> None:
         assert state.last_step is not None
         assert state.last_step.execution_receipts.execution_count == 1
         assert state.last_step.execution_receipts.receipts[0].result.dispatch_status is DispatchStatus.SENT_UNKNOWN
-        assert state.last_step.action_outcome.local_postcondition is LocalPostconditionStatus.UNSATISFIED
+        assert state.last_step.action_outcome.local_postcondition is LocalPostconditionStatus.UNKNOWN
         batch = state.last_step.execution_receipts
         assert batch.completion is ExecutionCompletion.UNKNOWN
         with pytest.raises(ValueError, match="complete execution"):
