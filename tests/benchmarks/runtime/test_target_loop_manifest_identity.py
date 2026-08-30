@@ -126,3 +126,44 @@ def test_webarena_target_case_threads_the_manifest_owners_admission(monkeypatch)
     with pytest.raises(RuntimeError, match="admission capture"):
         case.environment_factory(None)
     assert captured == {"case_ref": case_ref, "admission": admission}
+
+
+def test_webarena_target_case_composes_configured_visual_roles(monkeypatch) -> None:
+    case_ref = WebArenaVerifiedCaseRef(545, 251, 2, ("shopping_admin",), "mutate", "diagnostic")
+    admission = WebArenaVerifiedCaseAdmission("diagnostic-sample", (case_ref,))
+    visual_roles = object()
+    captured = {}
+
+    monkeypatch.setenv("LLM_VISUAL_PROFILE", "configured-visual-provider")
+    monkeypatch.setattr(
+        target_cases,
+        "pydantic_ai_visual_roles_from_environment",
+        lambda environment, *, timeout_s: (
+            captured.update({"profile": environment["LLM_VISUAL_PROFILE"], "timeout_s": timeout_s})
+            or visual_roles
+        ),
+    )
+
+    def open_case(observed_ref, **kwargs):
+        captured["case_ref"] = observed_ref
+        captured["visual_roles"] = kwargs["visual_roles"]
+        raise RuntimeError("stop after visual composition capture")
+
+    monkeypatch.setattr(target_cases, "open_webarena_verified_case", open_case)
+    case = target_cases._webarena_verified_case(
+        case_ref,
+        7,
+        suite_id="webarena-diagnostic",
+        description="generic configured visual case",
+        admission=admission,
+    )
+
+    with pytest.raises(RuntimeError, match="visual composition capture"):
+        case.environment_factory(None)
+
+    assert captured == {
+        "profile": "configured-visual-provider",
+        "timeout_s": target_cases.WA_W1B_MODEL_CALL_TIMEOUT_S,
+        "case_ref": case_ref,
+        "visual_roles": visual_roles,
+    }

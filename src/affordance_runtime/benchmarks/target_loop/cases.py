@@ -58,6 +58,9 @@ from affordance_runtime.evaluation import ProductionActionOutcomeProjector
 from affordance_runtime.evaluation.composition import ProductionTaskEvaluator
 from affordance_runtime.model.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.factory import model_roles_from_environment
+from affordance_runtime.surfaces.visual.role_set import (
+    pydantic_ai_visual_roles_from_environment,
+)
 
 WA_W1B_CASE_TIMEOUT_S = 900.0
 WA_W1B_MAX_TURNS = 100
@@ -133,11 +136,20 @@ def _webarena_verified_case(
     holder: dict[str, object] = {}
 
     def environment_factory(_metrics):
+        visual_roles = (
+            pydantic_ai_visual_roles_from_environment(
+                os.environ,
+                timeout_s=WA_W1B_MODEL_CALL_TIMEOUT_S,
+            )
+            if os.environ.get("LLM_VISUAL_PROFILE", "").strip()
+            else None
+        )
         environment, task, evaluator = open_webarena_verified_case(
             case_ref,
             seed=seed,
             admission=admission,
             max_turns=WA_W1B_MAX_TURNS,
+            visual_roles=visual_roles,
         )
         holder["task"] = task
         holder["evaluator"] = evaluator

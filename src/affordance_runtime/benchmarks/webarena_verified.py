@@ -9,7 +9,7 @@ import math
 import os
 import subprocess
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -87,6 +87,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
 )
+from affordance_runtime.surfaces.visual.role_set import PydanticAIVisualRoleSet
 from affordance_runtime.task import (
     LoopBudget,
     NaturalLanguageTaskRequest,
@@ -790,6 +791,7 @@ class WebArenaVerifiedCaseEnvironment:
     final_delivery_attempted: bool = False
     final_delivery_confirmed: bool = False
     final_response_codec: FinalResponseCodec = WebArenaVerifiedFinalResponseCodec()
+    visual_roles: PydanticAIVisualRoleSet | None = field(default=None, repr=False)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.surface, name)
@@ -827,7 +829,12 @@ class WebArenaVerifiedCaseEnvironment:
         return self.world.is_current(request)
 
     async def close(self) -> None:
-        await self.surface.close()
+        visual_roles, self.visual_roles = self.visual_roles, None
+        try:
+            await self.surface.close()
+        finally:
+            if visual_roles is not None:
+                visual_roles.close()
 
     def current_native_result(self) -> tuple[TaskOutcomeKind, str, tuple[str, ...]]:
         self.native_evaluator_queries += 1
@@ -933,25 +940,59 @@ def open_webarena_verified_case(
     gym_factory: Any | None = None,
     max_turns: int = 100,
     browser_navigation_urls: tuple[str, ...] | None = None,
+    visual_roles: PydanticAIVisualRoleSet | None = None,
 ) -> tuple[WebArenaVerifiedCaseEnvironment, TaskGoal, WebArenaVerifiedNativeEvaluator]:
-    """Open one official case using only public BrowserGym task intake."""
+    """Open one official case and own any explicitly supplied visual roles."""
 
-    if not isinstance(admission, WebArenaVerifiedCaseAdmission):
-        raise TypeError("WebArena-Verified case admission must be typed")
-    admission.require(case_ref)
-    navigation_urls = (
-        _configured_webarena_navigation_urls(os.environ) if browser_navigation_urls is None else browser_navigation_urls
-    )
-    final_response_codec = WebArenaVerifiedFinalResponseCodec()
-    surface = BrowserGymSurfaceAdapter.open(
-        case_ref.gym_id,
-        seed,
-        gym_factory=gym_factory,
-        registration_modules=(WA_REGISTRATION_MODULE,),
-        browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
-        browser_navigation_urls=navigation_urls,
-        task_instruction_transform=final_response_codec.semantic_instruction,
-    )
+    try:
+        if not isinstance(admission, WebArenaVerifiedCaseAdmission):
+            raise TypeError("WebArena-Verified case admission must be typed")
+        admission.require(case_ref)
+        navigation_urls = (
+            _configured_webarena_navigation_urls(os.environ)
+            if browser_navigation_urls is None
+            else browser_navigation_urls
+        )
+        final_response_codec = WebArenaVerifiedFinalResponseCodec()
+    except BaseException:
+        if visual_roles is not None:
+            visual_roles.close()
+        raise
+    try:
+        surface = BrowserGymSurfaceAdapter.open(
+            case_ref.gym_id,
+            seed,
+            gym_factory=gym_factory,
+            registration_modules=(WA_REGISTRATION_MODULE,),
+            browser_action_primitives=BROWSERGYM_BROWSER_GLOBAL_PRIMITIVES,
+            browser_navigation_urls=navigation_urls,
+            visual_region_proposer=(
+                visual_roles.region_proposer if visual_roles is not None else None
+            ),
+            visual_point_grounder=(
+                visual_roles.point_grounder if visual_roles is not None else None
+            ),
+            visual_candidate_disambiguator=(
+                visual_roles.candidate_disambiguator if visual_roles is not None else None
+            ),
+            visual_predicate_classifier=(
+                visual_roles.predicate_classifier if visual_roles is not None else None
+            ),
+            visual_text_reader=(
+                visual_roles.text_reader if visual_roles is not None else None
+            ),
+            visual_spatial_classifier=(
+                visual_roles.spatial_classifier if visual_roles is not None else None
+            ),
+            visual_change_classifier=(
+                visual_roles.change_classifier if visual_roles is not None else None
+            ),
+            task_instruction_transform=final_response_codec.semantic_instruction,
+        )
+    except BaseException:
+        if visual_roles is not None:
+            visual_roles.close()
+        raise
     try:
         intake = ThinTaskIntake().compile(
             NaturalLanguageTaskRequest(
@@ -974,10 +1015,13 @@ def open_webarena_verified_case(
             UnifiedWorldEnvironment((surface,)),
             intake.task,
             final_response_codec=final_response_codec,
+            visual_roles=visual_roles,
         )
         return environment, intake.task, WebArenaVerifiedNativeEvaluator(environment)
     except BaseException:
         surface.gym_environment.close()
+        if visual_roles is not None:
+            visual_roles.close()
         raise
 
 

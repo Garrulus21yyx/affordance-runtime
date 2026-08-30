@@ -75,6 +75,21 @@ class _OneActionPolicy:
         return SelectAction(context.context_id, action.action_id, tool_call_id="call:activate")
 
 
+class _FakeVisualRoles:
+    def __init__(self) -> None:
+        self.region_proposer = object()
+        self.point_grounder = object()
+        self.candidate_disambiguator = object()
+        self.predicate_classifier = object()
+        self.text_reader = object()
+        self.spatial_classifier = object()
+        self.change_classifier = object()
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
 def _dataset(path: Path, *, count: int = 36) -> Path:
     sites = ("shopping", "reddit", "gitlab")
     payload = [
@@ -257,6 +272,38 @@ def test_webarena_intake_separates_semantic_goal_from_upstream_response_envelope
         asyncio.run(environment.close())
 
 
+def test_webarena_case_wires_and_owns_one_explicit_visual_role_set() -> None:
+    semantic_goal = "Inspect the current page using available evidence."
+    codec = WebArenaVerifiedFinalResponseCodec()
+    browsergym = FakeBrowserGym(
+        raw_observation(goal=semantic_goal + codec._upstream_instruction_suffix())
+    )
+    visual_roles = _FakeVisualRoles()
+
+    environment, _task, _evaluator = open_webarena_verified_case(
+        WA_W1_SMOKE_CASES[0],
+        gym_factory=lambda *_args, **_kwargs: browsergym,
+        browser_navigation_urls=("https://map.example.test",),
+        visual_roles=visual_roles,
+    )
+
+    assert environment.surface.visual_region_proposer is visual_roles.region_proposer
+    assert environment.surface.visual_point_grounder is visual_roles.point_grounder
+    assert (
+        environment.surface.visual_candidate_disambiguator
+        is visual_roles.candidate_disambiguator
+    )
+    assert environment.surface.visual_predicate_classifier is visual_roles.predicate_classifier
+    assert environment.surface.visual_text_reader is visual_roles.text_reader
+    assert environment.surface.visual_spatial_classifier is visual_roles.spatial_classifier
+    assert environment.surface.visual_change_classifier is visual_roles.change_classifier
+
+    asyncio.run(environment.close())
+    asyncio.run(environment.close())
+
+    assert visual_roles.close_calls == 1
+
+
 def test_webarena_codec_fails_closed_on_a_recognized_but_changed_response_envelope() -> None:
     pytest.importorskip("webarena_verified")
     codec = WebArenaVerifiedFinalResponseCodec()
@@ -298,6 +345,23 @@ def test_webarena_intake_requires_the_case_owners_explicit_admission() -> None:
         assert task.instruction == semantic_goal
     finally:
         asyncio.run(environment.close())
+
+
+def test_webarena_case_closes_transferred_visual_roles_when_admission_fails() -> None:
+    candidate = WebArenaVerifiedCaseRef(
+        545,
+        251,
+        2,
+        ("shopping_admin",),
+        "mutate",
+        "diagnostic",
+    )
+    visual_roles = _FakeVisualRoles()
+
+    with pytest.raises(ValueError, match="outside the admitted benchmark cohort"):
+        open_webarena_verified_case(candidate, visual_roles=visual_roles)
+
+    assert visual_roles.close_calls == 1
 
 
 def test_webarena_case_admission_is_bounded_unique_and_typed() -> None:
