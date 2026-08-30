@@ -11,6 +11,7 @@ from affordance_runtime.agent.attempt_signature import (
     PublicAttemptSignature,
     public_attempt_signature,
     public_local_result_attempt_signature,
+    public_observation_attempt_signature,
 )
 from affordance_runtime.agent.context.contracts import sanitize_history_arguments
 from affordance_runtime.agent.context.observation_delivery import (
@@ -586,11 +587,17 @@ class EpisodeMonitor:
 
         self.recovery_count = 1
         self.observation_only_streak = 0
+        no_usable_observation = bool(
+            information_delta is not None
+            and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+        )
         signal = _control_stall_signal(
             result,
             self,
             recovery_attempt=1,
-            prohibited_attempt_signature=signature if exact_replay else None,
+            prohibited_attempt_signature=(
+                signature if exact_replay or no_usable_observation else None
+            ),
         )
         return self._recovery_transition(
             (*events, EpisodeMonitorEvent.REPEATED_ACTION),
@@ -973,15 +980,15 @@ def _same_world_attempt_signature(result: StepResult) -> PublicAttemptSignature:
             "destination_id": decision.destination_id,
         }
     elif isinstance(decision, RequestObservation):
-        operation = "request_observation"
-        parameters = {
-            "purpose": decision.purpose.value,
-            "subject_ids": decision.subject_ids,
-            "candidate_ids": decision.candidate_ids,
-            "atomic_query": decision.atomic_query,
-            "predicate": decision.predicate,
-            "max_results": decision.max_results,
-        }
+        return public_observation_attempt_signature(
+            purpose=decision.purpose.value,
+            subject_ids=decision.subject_ids,
+            candidate_ids=decision.candidate_ids,
+            atomic_query=decision.atomic_query,
+            predicate=decision.predicate,
+            max_results=decision.max_results,
+            world=result.before_world,
+        )
     else:
         operation = getattr(getattr(decision, "kind", None), "value", "policy_failure")
         parameters = _bounded_public_attempt(result)

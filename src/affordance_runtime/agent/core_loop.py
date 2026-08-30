@@ -17,6 +17,7 @@ from affordance_runtime.agent.attempt_signature import (
     PublicAttemptSignature,
     public_attempt_signature,
     public_local_result_attempt_signature,
+    public_observation_attempt_signature,
 )
 from affordance_runtime.agent.budgets import StandaloneRunBudget
 from affordance_runtime.agent.context.canonical_world_projection import (
@@ -1357,7 +1358,21 @@ class CoreAgentLoop:
                 )
             case DecisionKind.REQUEST_OBSERVATION:
                 assert isinstance(decision, RequestObservation)
-                result = await self._observe(environment, task, state, decision)
+                rejection = _prohibited_observation_attempt_replay_rejection(
+                    state.recovery_signal,
+                    decision,
+                    state.current_world,
+                )
+                result = (
+                    _same_world_step(
+                        state,
+                        rejection,
+                        RunStatus.RUNNING,
+                        "recovery_repeat_rejected",
+                    )
+                    if rejection is not None
+                    else await self._observe(environment, task, state, decision)
+                )
             case DecisionKind.FIND_CONTROLS:
                 assert isinstance(decision, RequestActionPage)
                 result = self._action_page(task, state, action_space, context, decision)
@@ -2630,6 +2645,31 @@ def _prohibited_local_attempt_replay_rejection(signal, step: StepResult) -> Tool
         context_id=context_id,
         tool_call_id=tool_call_id,
         operation=operation,
+        signature=signature,
+    )
+
+
+def _prohibited_observation_attempt_replay_rejection(
+    signal,
+    decision: RequestObservation,
+    world,
+) -> ToolRejectedResult | None:
+    if signal is None or not signal.prohibited_attempt_signatures:
+        return None
+    signature = public_observation_attempt_signature(
+        purpose=decision.purpose.value,
+        subject_ids=decision.subject_ids,
+        candidate_ids=decision.candidate_ids,
+        atomic_query=decision.atomic_query,
+        predicate=decision.predicate,
+        max_results=decision.max_results,
+        world=world,
+    )
+    return _prohibited_attempt_replay_rejection(
+        signal,
+        context_id=decision.context_id,
+        tool_call_id=decision.tool_call_id,
+        operation="request_evidence",
         signature=signature,
     )
 

@@ -9,6 +9,7 @@ from affordance_runtime.agent import (
     AskUser,
     ReadRegionResult,
     RequestActionPage,
+    RequestObservation,
     RunStatus,
     SearchPageContentResult,
     SelectAction,
@@ -16,6 +17,7 @@ from affordance_runtime.agent import (
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
 from affordance_runtime.agent.context.world_region_index import WorldDeliveryIndex
+from affordance_runtime.agent.core_loop import CoreAgentLoop
 from affordance_runtime.agent.decisions import AbortCategory, ToolRejectedResult
 from affordance_runtime.agent.episode_snapshot import snapshot_episode
 from affordance_runtime.agent.monitor import EpisodeMonitor
@@ -28,6 +30,7 @@ from affordance_runtime.agent.run_control import (
     RunControlKind,
     RunControlOutcomeKind,
 )
+from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.target_loop.case_projection import project_case_result
@@ -67,6 +70,14 @@ from affordance_runtime.world import (
     SurfaceObservation,
     WorldFusion,
     WorldObservation,
+)
+from affordance_runtime.world.observation_needs import ObservationPurpose
+from affordance_runtime.world.observation_outcomes import (
+    ObservationQueryDisposition,
+    ObservationQueryOutcome,
+    ObservationUnknownItem,
+    QueryScopeLocator,
+    VisualUnknownReason,
 )
 
 # Collection-only sentinels for skipped witnesses of the removed compound path.
@@ -1895,6 +1906,93 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
         assert snapshot.latest_control_reason_code == "control_stalled"
         assert snapshot.latest_control_owner == "episode_monitor"
+
+    asyncio.run(scenario())
+
+
+def test_recovery_prohibits_exact_observation_request_before_provider_activation() -> None:
+    @dataclass
+    class ObservationPolicy:
+        turns: int = 0
+
+        async def decide(self, context):
+            self.turns += 1
+            query = "first visible route" if self.turns == 1 else "second visible route"
+            return RequestObservation(
+                context.context_id,
+                f"observation-query:{self.turns}",
+                ObservationPurpose.ENTITY_DISCOVERY,
+                atomic_query=query,
+                max_results=5,
+                tool_call_id=f"call:observation:{self.turns}",
+            )
+
+    class IncompleteEvaluator:
+        async def evaluate(self, task, observation):
+            return TaskEvaluation(
+                task.task_id,
+                observation.observation_id,
+                TaskEvaluationStatus.INCOMPLETE,
+                "visible evidence remains unavailable",
+            )
+
+    observe_calls: list[str] = []
+
+    class CountingObservationLoop(CoreAgentLoop):
+        async def _observe(self, environment, task, state, decision):
+            del environment, task
+            observe_calls.append(decision.atomic_query)
+            return StepResult(
+                decision,
+                state.current_world,
+                state.current_world,
+                state.current_task_evaluation,
+                RunStatus.RUNNING,
+                feedback="observation_unknown",
+                before_public_world=state.canonical_world,
+                after_public_world=state.canonical_world,
+                after_delivery_index=state.delivery_index,
+                observation_outcome=ObservationQueryOutcome(
+                    decision.query_id,
+                    decision.purpose,
+                    ObservationQueryDisposition.UNKNOWN,
+                    unknown_items=(
+                        ObservationUnknownItem(
+                            QueryScopeLocator(),
+                            VisualUnknownReason.TARGET_NOT_VISIBLE,
+                        ),
+                    ),
+                ),
+            )
+
+    async def scenario() -> None:
+        task = TaskGoal(
+            "observation-repeat",
+            "Find one visible result.",
+            risk_profile=RiskProfile.READ_ONLY,
+        )
+        policy = ObservationPolicy()
+        monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+        loop = CountingObservationLoop(
+            AgentDecisionPorts(policy),
+            ProductionActionOutcomeProjector(),
+            IncompleteEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("observation_repeat_regression"),
+            episode_monitor=monitor,
+        )
+        environment = ScriptedEnvironment(initial_observation=_world("observation-repeat", False))
+
+        state = await loop.run(environment, task)
+
+        assert state.status is RunStatus.BLOCKED
+        assert observe_calls == ["first visible route", "second visible route"]
+        assert policy.turns == 4
+        assert environment.capture_calls == 0
+        assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.tool_name == "request_evidence"
+        assert state.last_step.decision.result["dispatch"] == "not_sent"
+        assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
 
     asyncio.run(scenario())
 

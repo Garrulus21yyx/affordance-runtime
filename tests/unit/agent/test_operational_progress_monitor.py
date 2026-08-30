@@ -481,6 +481,7 @@ def test_two_no_usable_perception_results_trigger_one_deliberate_recovery() -> N
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert "not a task answer" in recovery.recovery_signal.human_instruction
+    assert len(recovery.recovery_signal.prohibited_attempt_signatures) == 1
     assert monitor.recovery_count == 1
 
 

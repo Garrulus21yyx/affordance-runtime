@@ -87,6 +87,34 @@ def public_local_result_attempt_signature(
     )
 
 
+def public_observation_attempt_signature(
+    *,
+    purpose: str,
+    subject_ids: tuple[str, ...],
+    candidate_ids: tuple[str, ...],
+    atomic_query: str,
+    predicate: str,
+    max_results: int,
+    world: WorldObservation,
+) -> PublicAttemptSignature:
+    """Identify one current observation request before any provider activation."""
+
+    return public_attempt_signature(
+        "request_observation",
+        "",
+        "",
+        {
+            "purpose": purpose,
+            "subject_ids": subject_ids,
+            "candidate_ids": candidate_ids,
+            "atomic_query": atomic_query,
+            "predicate": predicate,
+            "max_results": max_results,
+        },
+        world,
+    )
+
+
 def _precondition_digest(
     world: WorldObservation,
     target_id: str,
