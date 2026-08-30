@@ -1426,6 +1426,14 @@ def test_final_response_tool_accepts_content_without_world_fact_lineage() -> Non
     assert isinstance(resolution.decision, FinalResponse)
     assert resolution.decision.evidence_refs == ()
 
+    with pytest.raises(GroundedToolResolutionError) as blank:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("submit_final_response", {"content": "   "}),
+            expected_context_id=context.context_id,
+        )
+    assert blank.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+
 
 def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_projection() -> None:
     guidance = (
@@ -1526,6 +1534,14 @@ def test_final_response_codec_contract_rejects_invalid_or_unbounded_schema_at_it
 ) -> None:
     with pytest.raises(ValueError):
         FinalResponseToolContract(FinalResponsePayloadEncoding.JSON, payload_schema)
+
+
+def test_plain_final_response_contract_requires_schema_visible_nonblank_semantics() -> None:
+    with pytest.raises(ValueError, match="nonblank bounded domain"):
+        FinalResponseToolContract(
+            FinalResponsePayloadEncoding.TEXT,
+            {"type": "string", "minLength": 1, "maxLength": 8},
+        )
 
 
 def test_webarena_final_response_catalog_and_binding_share_one_bounded_payload_algebra() -> None:

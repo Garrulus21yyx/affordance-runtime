@@ -20,6 +20,7 @@ from affordance_runtime.world.acquisition import ObservationAcquisition
 FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS = 700
 MAX_PLAIN_TEXT_FINAL_RESPONSE_CHARS = 8_000
 MAX_FINAL_RESPONSE_CHARS = 128 * 1_024
+_NONBLANK_FINAL_RESPONSE_PATTERN = r"[\s\S]*\S[\s\S]*"
 
 
 class FinalResponsePayloadEncoding(StrEnum):
@@ -37,6 +38,7 @@ class FinalResponseToolContract:
             "type": "string",
             "minLength": 1,
             "maxLength": MAX_PLAIN_TEXT_FINAL_RESPONSE_CHARS,
+            "pattern": _NONBLANK_FINAL_RESPONSE_PATTERN,
         }
     )
     contract_id: str = ""
@@ -98,8 +100,14 @@ class FinalResponseToolContract:
 
 def _maximum_text_chars(schema: Mapping[str, object]) -> int:
     maximum = schema.get("maxLength")
-    if type(maximum) is not int:
-        raise ValueError("plain-text final response schema must declare maxLength")
+    minimum = schema.get("minLength")
+    if (
+        type(maximum) is not int
+        or type(minimum) is not int
+        or minimum < 1
+        or schema.get("pattern") != _NONBLANK_FINAL_RESPONSE_PATTERN
+    ):
+        raise ValueError("plain-text final response schema must declare its nonblank bounded domain")
     return maximum
 
 
