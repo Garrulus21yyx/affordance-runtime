@@ -38,7 +38,7 @@ The positive authority contract is now:
 | local UI change and postcondition | `ActionOutcome` projector | hard typed outcome; never implies task completion |
 | exact repetition, verified no-effect, short cycle, and recovery lifecycle | `EpisodeMonitor` | mechanical fact and bounded constraint only |
 | explanation of failure and next semantic action | the single `ActionPolicy` | sole semantic decision authority |
-| exact proven-failed replay admission | Runtime after `ActionSpace` admission | typed zero-dispatch rejection |
+| exact mechanically prohibited replay admission | Runtime at GUI admission or local-result commit | typed zero-dispatch rejection |
 | task completion or impossibility | native `TaskEvaluator` | sole terminal authority |
 | stable historical outcomes and facts | official PydanticAI history plus Harness compaction | historical context, never current recovery state |
 
@@ -54,7 +54,7 @@ TaskGoal
 + active Monitor recovery facts and exact hard constraints
 -> one ActionPolicy call
 -> one normal ToolCall
--> Runtime admission, currentness, binding, risk, and proven-failure replay check
+-> Runtime admission, currentness, binding, risk, and prohibited-replay check
 -> Executor/BrowserGym
 -> fresh World + ExecutionReceipt + ActionOutcome
 -> same-call ToolReturn
@@ -76,12 +76,21 @@ effect.availability/observed_change/local_postcondition/evidence_method/reason/e
 4. the outcome has a real evidence method and the public semantic World did not change; and
 5. the ref-free exact-attempt signature is identical before and after the action.
 
-The exact signature contains the semantic operation, route and relevant source preconditions, ref-free target and
+The exact GUI signature contains the semantic operation, route and relevant source preconditions, ref-free target and
 destination semantics, bounded structural occurrence, and semantic parameters. It follows canonical-to-source entity
 lineage so fused DOM/visual identities share one public attempt. Unrelated page text is excluded; a target state,
 route, relevant source assurance/coverage, destination, parameter, or duplicate-control occurrence change invalidates
-the proof. Repeated results, closed routes, screenshot-only changes, unverified no-effect, and short cycles remain
-advisory Monitor facts and cannot create a Runtime blacklist.
+the proof. Repeated GUI results, closed routes, screenshot-only changes, unverified no-effect, and short cycles remain
+advisory Monitor facts and cannot create a Runtime prohibition.
+
+Deterministic local inspection has a separate exact identity because it has no target or dispatch receipt: public
+World semantic digest + operation + normalized arguments + owner-produced result. The delivery reducer alone may
+label a repeated local result `EXACT_REPLAY`; identical `find_controls` request/result pairs use the same identity.
+That proof says only that another identical local call cannot add information in the current World. A changed World,
+arguments, or result creates a different identity and remains admissible. Monitor adds only the proven exact identity
+to the active epoch; Runtime returns the original call ID as
+`ToolRejectedResult(kind=prohibited_attempt_rejected, dispatch=not_sent)` before the local result is committed. It
+does not parse the task, rank candidates, or judge record inclusion.
 
 Recovery is one Monitor-owned epoch:
 
@@ -90,7 +99,7 @@ inactive
   -- mechanical stall/cycle/no-effect --> active(epoch, evidence_revision=1, bounded constraints)
 active
   -- read/search/find_controls -------> active(same epoch, evidence_revision+1)
-  -- exact replay rejected -----------> active(same epoch, typed zero-dispatch result)
+  -- exact GUI/local replay rejected -> active(same epoch, typed zero-dispatch result)
   -- verified GUI operational result -> inactive
   -- native terminal evaluation ------> inactive
   -- task revision -------------------> new episode
@@ -278,10 +287,12 @@ so Catalog and Binding share it without checking benchmark, environment class, t
 The bounded physical-output algebra also preserves semantic continuity. If a length-truncated response already names
 one current operation, the existing required-only operation recovery completes that operation without reconsidering
 it. If truncation occurs before any operation, the same ActionPolicy's one non-thinking ToolCall retry receives a
-maximum 3,072-character, explicitly incomplete and non-authoritative head/tail checkpoint of its own rejected
+JSON-encoded 2,100-byte, explicitly incomplete and non-authoritative head/tail checkpoint of its own rejected
 reasoning. It is used only inside that physical retry, preserves supported intermediate positives instead of
-restarting classification, and is removed from official history on success, cancellation, or provider failure. No
-Memory Store, semantic parser, second policy, or post-hoc answer repair was added.
+discarding them, and is removed from official history on success, cancellation, or provider failure. Because the
+checkpoint is necessarily incomplete, the retry must finish any interrupted enumeration, classification, or record
+audit against the unchanged fresh context; the physical truncation boundary is never evidence that a result set is
+complete. No Memory Store, semantic parser, second policy, or post-hoc answer repair was added.
 
 The Task21 live sequence falsified each narrower hypothesis. In
 [`run10`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run10/run.json), the first final
@@ -298,19 +309,52 @@ operation; its non-thinking retry again narrowed the answer. Finally,
 set, its bounded same-call checkpoint reached the retry, the retry submitted all four items, and the single native
 evaluator returned `complete / verified_success` after one STOP.
 
+[`run14`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run14/run.json) then falsified
+one stronger checkpoint assumption after the byte-bound implementation itself passed. The deliberate response was
+truncated while its record audit was still in progress; only Dibbins and Anglebert Dinkherhump had become settled
+positives at that physical boundary, and the required retry submitted exactly those two. The full records, current
+World, final tool, request capacity, and native protocol were present. The defect was an internally inconsistent
+ActionPolicy recovery contract: it labeled the checkpoint incomplete and non-authoritative but told the retry to
+continue without restarting classification, allowing an unfinished audit to look complete. `9e5927c3` makes the
+positive transition explicit: retain settled work, finish every interrupted audit from the same fresh context, and
+only then choose one tool. It contains no task, site, record, expected answer, or predicate-specific branch.
+
+[`run15`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run15/run.json) verified that
+the stronger checkpoint no longer submitted its incomplete boundary: it sent no STOP and invoked no native evaluator.
+It then exposed the remaining mechanical owner gap. After page 2 had already been read, the delivery reducer emitted
+`latest_information_delta=exact_replay` for the same `read_region` result, but the recovery signal still carried an
+empty prohibition set. Three deliberate calls could therefore select the same read again until Monitor terminated
+`control_stalled` after nine policy calls. `839ad3a8` closes that general transition for every deterministic local
+result and control-discovery result using the public World/arguments/result identity above; it contains no Task21,
+site, record, answer, predicate, or region-specific rule.
+
+[`run16`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run16/run.json) did not repeat
+a local call and therefore did not enter recovery. It reached all 12 displayed review rows in five policy calls, sent
+one valid native response, and received `verified_terminal_task_failure`. The final ActionPolicy reasoning had the
+complete page-1/page-2 ToolReturns and the generic union/entailment instruction; it explicitly described Catso and
+Michelle Davis as implying the relevant fit constraint, then nevertheless narrowed the payload to the two
+"clearest" records. This is a direct model adherence error inside the sole semantic owner, not a missing ToolReturn,
+candidate ordering, dynamic ToolCatalog, request capacity, replay constraint, or final-response representation gap.
+Runtime has no authoritative task-semantic fact with which to rewrite that set, so no deterministic production branch
+is added. The live cohort remains open for repeated ActionPolicy reliability even though the run15 mechanical owner
+gap is implementation-complete.
+
 Task0 and Task7 also cross their distinct repairs in
 [`Task0 run2`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260830-contract-convergence-run2/run.json) and
 [`Task7 run2`](../evidence/live/w1b-task-7-deepseek-v4-flash-20260830-contract-convergence-run2/run.json), both with
 native `verified_success`; the unchanged Task27 and Task44 controls had already passed. Commits `cf6cb3ab`,
 `58a8e390`, `92d75034`, `1e5ea44a`, `feccf021`, `a7b971ce`, `6cbc63f7`, `12b64dff`, `b9bf0299`, `eb0a65df`,
-`04964995`, `8d039bae`, and `64bc82e7` form the converged causal surface. Production contains no Task ID, site name,
+`04964995`, `8d039bae`, `64bc82e7`, `bb398c71`, `9e5927c3`, and `839ad3a8` form the current causal surface. Production contains no Task ID, site name,
 expected answer, record name, date grammar, selector, fixed action ID, or benchmark vocabulary.
 
-The final fixed-environment repository gate reports `2147 passed, 19 skipped, 1 deselected, 1 warning`. The sole
+The complete recovery prompt is capped at 3,072 encoded bytes, fitting the existing 1,024-token admission safety
+margin under the canonical three-bytes-per-token estimator even for Unicode and escaped control text.
+
+The post-`839ad3a8` fixed-environment repository gate reports `2153 passed, 19 skipped, 1 deselected, 1 warning`. The sole
 deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the
-absent file before product code. The ActionPolicy/provider/candidate convergence set reports `181 passed`; full Ruff,
-`compileall`, negative modified-production scans, and `git diff --check` pass. These results and the five live native
-verdicts close this bounded W1b cohort; they do not claim broad WebArena accuracy or overall benchmark closure.
+absent file before product code. The exact-local-replay owner tests cover Monitor, CoreLoop, `find_controls`, and
+PydanticAI same-call ToolReturn boundaries. Final fresh review and repeated live semantic reliability remain open; no
+closure is claimed from the earlier single passing run.
 
 ### 2026-08-29 tool-contract convergence
 

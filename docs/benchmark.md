@@ -13,7 +13,8 @@ against the repeated action but caused the actual ActionPolicy call to run ordin
 therefore demonstrates reflection capability and a Runtime feedback/ownership break, not a total absence of model
 reflection.
 
-Four primary owner repairs and two fresh-review lifecycle commits implement the bounded causal surface:
+Four primary owner repairs, two fresh-review lifecycle commits, and one held-out replay repair implement the bounded
+causal surface:
 
 - `e479d3d0 Close GUI outcome feedback to action policy`: same-call GUI ToolReturn now separates dispatch receipts
   from `ActionOutcome`, and the existing latest-four ref-free Workspace trajectory enters the ActionPolicy request;
@@ -30,7 +31,10 @@ Four primary owner repairs and two fresh-review lifecycle commits implement the 
   terminal control boundary synchronize the Monitor and `RunState` projection;
 - `8b7014fd Preserve restored recovery without monitor`: an optional-Monitor core restored from a recovery-bearing
   checkpoint preserves that typed projection without interpreting or advancing it, while terminal settlement still
-  clears it explicitly.
+  clears it explicitly;
+- `839ad3a8 Reject exact local recovery replays`: the delivery reducer's exact local call/result proof now enters the
+  same bounded prohibition set, and Runtime returns same-ID typed feedback instead of committing the repeated
+  `read_region`, `search_page_content`, or `find_controls` result.
 
 The positive provider-free gates cover the following invariants:
 
@@ -45,8 +49,10 @@ The positive provider-free gates cover the following invariants:
   and duplicate same-label controls remain distinct but stable across observation rekeying;
 - `unknown`, `sent_unknown`, screenshot-only change, closed route, repeated result, short cycle, or an unverifiable
   no-effect remains advisory and cannot create a hard dispatch prohibition;
-- a proven exact replay produces `ToolRejectedResult(kind=proven_failed_attempt_rejected, dispatch=not_sent)` under
+- a proven exact replay produces `ToolRejectedResult(kind=prohibited_attempt_rejected, dispatch=not_sent)` under
   the provider call's original ID and performs zero additional environment executions;
+- a deterministic local replay is scoped by public World + operation + arguments + result, so a changed World or
+  result remains admissible and no task, site, label, or predicate is interpreted;
 - progressive keyboard actions continue dispatching when each fresh World advances;
 - pause-persistence and user-control refresh, approved confirmation dispatch, task revision, restored terminal,
   before-policy cancellation, and waiting-control cancellation obey one recovery transition algebra;
@@ -196,10 +202,13 @@ not keyed by suite, task, label, or JSON encoding.
 [`run12`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run12/run.json) crossed the
 minimal final tool but still ended native failure: its final deliberate attempt used all 4,096 reasoning tokens before
 one ToolCall, and the non-thinking retry restarted classification and omitted Catso. `8d039bae` repairs the same-call
-owner boundary. A pre-operation truncation now projects at most 3,072 characters from the head and tail of the same
-ActionPolicy's incomplete reasoning into its one forced ToolCall retry, instructs the retry to preserve supported
-intermediate positives, and strips that checkpoint from official history on every outcome. It is a bounded physical
-continuation, not memory, a semantic judge, or a second planner. Prompt v52 also removes duplicate instructions rather
+owner boundary. A pre-operation truncation now projects at most 2,100 JSON-encoded bytes from the head and tail of
+the same ActionPolicy's incomplete reasoning into its one forced ToolCall retry. The retry retains settled positives
+but must finish any interrupted enumeration, classification, or record audit against the same fresh context; a
+physical truncation boundary never completes a result set. The checkpoint is stripped from official history on every outcome. It is a bounded physical
+continuation, not memory, a semantic judge, or a second planner. The complete recovery instruction is bounded to
+3,072 encoded bytes, so it stays within the existing 1,024-token admission safety margin under the canonical
+three-bytes-per-token estimator, including Unicode and escaped controls. Prompt v52 also removes duplicate instructions rather
 than raising the soft request threshold; generated focused-bundle and 84/167/500-control cases prove the editor/submit
 bundle remains admitted and large candidate surfaces remain within the existing soft target.
 
@@ -216,16 +225,47 @@ The accepted reruns are:
   Dinkherhump, Michelle Davis, and Catso, and Runtime performed exactly one STOP/post-STOP capture/native evaluation;
 - Task27 and Task44 remain the unchanged native-success controls from `seq1`.
 
+Task21 [`run14`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run14/run.json) is a
+post-run13 failure witness, not an accepted rerun. Its deliberate response hit the 4,096-token physical limit midway
+through the record audit, and the retry submitted only Dibbins and Anglebert Dinkherhump. It had all complete records,
+the fresh World, the minimal native response tool, zero capacity rejections, and exactly one STOP/native evaluation.
+The remaining defect was the recovery instruction itself: an incomplete/non-authoritative checkpoint was also told
+to continue without restarting classification, so a partial audit could be mistaken for the full set. `9e5927c3`
+defines the generic positive contract—preserve settled positives, complete unfinished semantic work from the same
+context, then emit one tool—with no case vocabulary or Runtime semantic rule.
+
+Task21 [`run15`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run15/run.json) proved
+that contract no longer turns an incomplete checkpoint into a partial final answer: it sent no STOP and invoked no
+native evaluator. The run still ended `blocked / control_stalled` after nine policy calls. Its first repeated page-2
+read already carried `latest_information_delta=exact_replay`, but `prohibited_attempt_signatures` was empty; after an
+intervening local attempt, the same deterministic read could be selected again. That is a Runtime constraint-
+projection gap, not candidate ranking or semantic inclusion. `839ad3a8` gives local read/search/control-discovery
+attempts an exact public World/arguments/result identity, has Monitor merge that proof into the active epoch, and has
+Runtime return same-ID `dispatch=not_sent` feedback on replay. No benchmark identifier, site, region, record, expected
+answer, or task predicate enters production.
+
+Task21 [`run16`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run16/run.json) did not
+repeat a local result, so it did not exercise or evade the new prohibition. In five ordinary policy calls it read all
+12 displayed rows, sent one structurally valid response, crossed exactly one STOP/post-STOP/native evaluation, and
+ended `blocked / verified_terminal_task_failure`. The complete provider input contained the page-1/page-2
+ToolReturns and the existing instruction to include entailed, implicit, and less-clear positives. The model's own
+final reasoning said Catso and Michelle Davis implied the fit constraint, then violated that instruction by submitting
+only Dibbins and Anglebert Dinkherhump as the "clearest" subset. This is ActionPolicy model adherence/variance, not
+candidate ranking, dynamic tool injection, context loss, request capacity, replay admission, or response formatting.
+Because Runtime owns none of the task predicate, positive set, or evaluator answer, it cannot safely rewrite the
+payload or trigger a semantic retry. No case-specific or keyword-based repair is added; repeated live semantic
+reliability remains open.
+
 No production branch contains a task ID, site, label, record, expected answer, date grammar, DOM class, selector,
 fixed ordering, or benchmark keyword. Task0 is not dynamic date-tool injection because the World exposes no stable
 date-format contract to inject. Task21 adds neither a semantic judge nor Runtime predicate evaluation; ActionPolicy
 remains the only semantic owner.
 
-The final fixed-environment suite reports `2147 passed, 19 skipped, 1 deselected, 1 warning` in 115.60 seconds. The
+The post-`839ad3a8` fixed-environment suite reports `2153 passed, 19 skipped, 1 deselected, 1 warning` in 117.56
+seconds. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
-`FileNotFoundError`. The combined ActionPolicy/provider/candidate convergence set reports `181 passed`; full Ruff,
-`compileall`, modified-production negative scans, and `git diff --check` pass. These five cases close the declared
-W1b diagnostic cohort, not broad WebArena accuracy or overall benchmark closure.
+`FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and
+repeated live semantic reliability remain open, so the declared W1b diagnostic cohort is not re-closed.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
