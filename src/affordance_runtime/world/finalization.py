@@ -105,6 +105,7 @@ def _maximum_text_chars(schema: Mapping[str, object]) -> int:
         type(maximum) is not int
         or type(minimum) is not int
         or minimum < 1
+        or maximum > MAX_PLAIN_TEXT_FINAL_RESPONSE_CHARS
         or schema.get("pattern") != _NONBLANK_FINAL_RESPONSE_PATTERN
     ):
         raise ValueError("plain-text final response schema must declare its nonblank bounded domain")

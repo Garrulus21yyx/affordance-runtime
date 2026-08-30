@@ -1548,11 +1548,25 @@ def test_final_response_codec_contract_rejects_invalid_or_unbounded_schema_at_it
         FinalResponseToolContract(FinalResponsePayloadEncoding.JSON, payload_schema)
 
 
-def test_plain_final_response_contract_requires_schema_visible_nonblank_semantics() -> None:
+@pytest.mark.parametrize(
+    "payload_schema",
+    (
+        {"type": "string", "minLength": 1, "maxLength": 8},
+        {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8_001,
+            "pattern": r"[\s\S]*\S[\s\S]*",
+        },
+    ),
+)
+def test_plain_final_response_contract_requires_schema_visible_nonblank_semantics(
+    payload_schema,
+) -> None:
     with pytest.raises(ValueError, match="nonblank bounded domain"):
         FinalResponseToolContract(
             FinalResponsePayloadEncoding.TEXT,
-            {"type": "string", "minLength": 1, "maxLength": 8},
+            payload_schema,
         )
 
 
