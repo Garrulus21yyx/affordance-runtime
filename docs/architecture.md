@@ -331,13 +331,24 @@ site, record, answer, predicate, or region-specific rule.
 [`run16`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run16/run.json) did not repeat
 a local call and therefore did not enter recovery. It reached all 12 displayed review rows in five policy calls, sent
 one valid native response, and received `verified_terminal_task_failure`. The final ActionPolicy reasoning had the
-complete page-1/page-2 ToolReturns and the generic union/entailment instruction; it explicitly described Catso and
-Michelle Davis as implying the relevant fit constraint, then nevertheless narrowed the payload to the two
-"clearest" records. This is a direct model adherence error inside the sole semantic owner, not a missing ToolReturn,
+complete page-1/page-2 ToolReturns and the generic union/entailment instruction. It described Catso's
+product-only-for-small-ears relation and Michelle Davis's adult-fit failure, then reintroduced an explicit-wording/
+"clearest subset" rule forbidden by the prompt and omitted both. This is a direct model adherence error inside the
+sole semantic owner, not a missing ToolReturn,
 candidate ordering, dynamic ToolCatalog, request capacity, replay constraint, or final-response representation gap.
 Runtime has no authoritative task-semantic fact with which to rewrite that set, so no deterministic production branch
 is added. The live cohort remains open for repeated ActionPolicy reliability even though the run15 mechanical owner
 gap is implementation-complete.
+
+The clean-commit [`run17`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run17/run.json)
+repeated that semantic limitation without any recovery or exact local replay. After ten policy calls it submitted
+Dibbins, Anglebert Dinkherhump, and Michelle Davis but omitted Catso, then received one native
+`verified_terminal_task_failure`. Its reasoning again replaced the prompt's explicit relational-entailment rule with
+an unstated requirement that the review literally name ear cups. Runs 16–17 therefore establish an empirical
+DeepSeek v4 Flash ActionPolicy adherence/capability limit for this open semantic boundary, while run13 shows the
+answer is reachable. Changing the configured general policy provider is a legitimate evaluation option; teaching
+Runtime this predicate, adding a second answer judge, or accumulating synonymous prompt examples is not an owner-
+correct repair.
 
 Task0 and Task7 also cross their distinct repairs in
 [`Task0 run2`](../evidence/live/w1b-task-0-deepseek-v4-flash-20260830-contract-convergence-run2/run.json) and
@@ -353,8 +364,8 @@ margin under the canonical three-bytes-per-token estimator even for Unicode and 
 The post-`839ad3a8` fixed-environment repository gate reports `2153 passed, 19 skipped, 1 deselected, 1 warning`. The sole
 deselection is the documented repository-missing archived dashboard trace, whose unmodified test fails opening the
 absent file before product code. The exact-local-replay owner tests cover Monitor, CoreLoop, `find_controls`, and
-PydanticAI same-call ToolReturn boundaries. Final fresh review and repeated live semantic reliability remain open; no
-closure is claimed from the earlier single passing run.
+PydanticAI same-call ToolReturn boundaries; the focused owner set reports `295 passed, 3 skipped`. Final fresh review
+and repeated live semantic reliability remain open; no closure is claimed from the earlier single passing run.
 
 ### 2026-08-29 tool-contract convergence
 

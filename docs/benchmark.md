@@ -248,13 +248,25 @@ Task21 [`run16`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contrac
 repeat a local result, so it did not exercise or evade the new prohibition. In five ordinary policy calls it read all
 12 displayed rows, sent one structurally valid response, crossed exactly one STOP/post-STOP/native evaluation, and
 ended `blocked / verified_terminal_task_failure`. The complete provider input contained the page-1/page-2
-ToolReturns and the existing instruction to include entailed, implicit, and less-clear positives. The model's own
-final reasoning said Catso and Michelle Davis implied the fit constraint, then violated that instruction by submitting
-only Dibbins and Anglebert Dinkherhump as the "clearest" subset. This is ActionPolicy model adherence/variance, not
+ToolReturns and the existing instruction to include entailed, implicit, and less-clear positives. The model described
+Catso's product-only-for-small-ears relation and Michelle Davis's adult-fit failure, then reintroduced an explicit-
+wording/"clearest subset" rule forbidden by the prompt and submitted only Dibbins and Anglebert Dinkherhump. This is
+ActionPolicy model adherence/variance, not
 candidate ranking, dynamic tool injection, context loss, request capacity, replay admission, or response formatting.
 Because Runtime owns none of the task predicate, positive set, or evaluator answer, it cannot safely rewrite the
 payload or trigger a semantic retry. No case-specific or keyword-based repair is added; repeated live semantic
 reliability remains open.
+
+The clean-commit Task21
+[`run17`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run17/run.json) is the second
+post-repair semantic witness. It made ten policy calls, entered no recovery, crossed one STOP/native evaluation, and
+submitted Dibbins, Anglebert Dinkherhump, and Michelle Davis while omitting Catso. Its reasoning again imposed a
+literal-ear-cup wording requirement even though the existing general contract explicitly maps a counterpart-only
+property to the corresponding fit constraint and forbids excluding implicit or less-clear positives. Together,
+runs 16–17 show a current DeepSeek v4 Flash ActionPolicy adherence/capability limit, not a Runtime or tool-contract
+gap. Run13 proves the complete answer remains reachable, but one pass among three post-boundary runs is not a
+reliability claim. A stronger general policy provider may be evaluated separately; Runtime semantic rewriting,
+second-answer judging, and task-example prompt growth remain out of scope.
 
 No production branch contains a task ID, site, label, record, expected answer, date grammar, DOM class, selector,
 fixed ordering, or benchmark keyword. Task0 is not dynamic date-tool injection because the World exposes no stable
@@ -265,7 +277,8 @@ The post-`839ad3a8` fixed-environment suite reports `2153 passed, 19 skipped, 1 
 seconds. The
 sole deselection is the documented repository-missing archived dashboard trace, which fails before product code with
 `FileNotFoundError`. Focused Monitor/CoreLoop/PydanticAI exact-replay witnesses also pass. Final fresh review and
-repeated live semantic reliability remain open, so the declared W1b diagnostic cohort is not re-closed.
+repeated live semantic reliability remain open; the focused owner set reports `295 passed, 3 skipped`. The declared
+W1b diagnostic cohort is not re-closed.
 
 ### 2026-08-29 tool-contract convergence — provider-free verified
 
