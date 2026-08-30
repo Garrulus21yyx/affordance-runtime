@@ -4580,8 +4580,13 @@ def test_deepseek_deliberate_output_retry_records_each_reasoning_response() -> N
 
 def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action() -> None:
     async def scenario() -> None:
+        checkpoint = (
+            "The complete positive set already supported by the current evidence must be preserved. "
+            + ("intermediate reasoning " * 300)
+            + "The next action should use the complete set without narrowing it."
+        )
         truncated = ModelResponse(
-            parts=[ThinkingPart("The stalled route needs a different current action.")],
+            parts=[ThinkingPart(checkpoint)],
             usage=RequestUsage(
                 input_tokens=20,
                 output_tokens=2048,
@@ -4643,13 +4648,25 @@ def test_deepseek_deliberate_length_retries_with_one_nonthinking_required_action
         fallback_prompt = json.dumps(scripted.records[1].messages, default=str)
         assert "action_selection_recovery" in fallback_prompt
         assert "return exactly one complete offered tool call now" in fallback_prompt
+        assert "The complete positive set already supported" in fallback_prompt
+        assert "The next action should use the complete set" in fallback_prompt
+        assert "truncated reasoning omitted" in fallback_prompt
+        checkpoint_payload = next(
+            item
+            for item in scripted.records[1].messages[0].parts[0].content
+            if isinstance(item, str) and "action_selection_recovery" in item
+        )
+        projected = json.loads(checkpoint_payload)["action_selection_recovery"][
+            "incomplete_reasoning_checkpoint"
+        ]
+        assert len(projected) <= pydantic_bridge._ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
             {},
             "recording-call:2",
         )
         official_history = json.dumps(port.message_history, default=str)
-        assert "The stalled route needs a different current action." not in official_history
+        assert "The complete positive set already supported" not in official_history
         assert "action_selection_recovery" not in official_history
 
     asyncio.run(scenario())

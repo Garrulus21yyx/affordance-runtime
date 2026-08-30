@@ -103,6 +103,8 @@ from affordance_runtime.world.public_refs import PublicRefCodec
 _MAX_PROVIDER_RETRIES = 1
 _ACTION_POLICY_TOOL_RETRY_BUDGET = 1
 _ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
+_ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS = 3_072
+_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS = 2_304
 _ACTION_POLICY_MAX_PROTOCOL_RETRIES = (
     _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
 )
@@ -723,6 +725,7 @@ class PydanticAIGroundedDecisionPort:
                 tool_retry_budget: int,
                 output_retry_budget: int,
                 required_tool_name: str = "",
+                reasoning_checkpoint: str = "",
             ):
                 nonlocal transport_retries_remaining
                 persistence_run_id, persistence_capabilities = self._step_persistence_capabilities(agent_name)
@@ -758,7 +761,10 @@ class PydanticAIGroundedDecisionPort:
                         required_tool_name=required_tool_name,
                     )
                 elif force_required_action:
-                    sequence_prompt = _pydantic_decision_recovery_prompt(current_prompt)
+                    sequence_prompt = _pydantic_decision_recovery_prompt(
+                        current_prompt,
+                        reasoning_checkpoint=reasoning_checkpoint,
+                    )
                 current_agent = Agent(
                     self.model,
                     name=agent_name,
@@ -957,6 +963,11 @@ class PydanticAIGroundedDecisionPort:
                     serialized_truncation,
                     offered_names=frozenset(item.name for item in current_envelope.function_tools),
                 )
+                reasoning_checkpoint = (
+                    ""
+                    if required_tool_name
+                    else _truncated_reasoning_checkpoint(serialized_truncation)
+                )
                 try:
                     result, error, captured, _unused = await run_output_sequence(
                         force_required_action=True,
@@ -968,6 +979,7 @@ class PydanticAIGroundedDecisionPort:
                         tool_retry_budget=_ACTION_POLICY_TOOL_RETRY_BUDGET,
                         output_retry_budget=0,
                         required_tool_name=required_tool_name,
+                        reasoning_checkpoint=reasoning_checkpoint,
                     )
                 except (asyncio.CancelledError, Exception):
                     close_dispatched_pending_history()
@@ -2532,8 +2544,10 @@ def _closed_history_after_failed_output(
         if isinstance(message, ModelRequest) and str(getattr(message, "run_id", "") or "") == current_run_id
     )
     pending_identities = tuple((part.tool_name, part.tool_call_id) for part in pending_calls)
-    closing_requests = tuple(
-        message for message in current_requests if any(isinstance(part, ToolReturnPart) for part in message.parts)
+    closing_requests = _without_pydantic_protocol_recovery(
+        tuple(
+            message for message in current_requests if any(isinstance(part, ToolReturnPart) for part in message.parts)
+        )
     )
     returned_identities = tuple(
         (part.tool_name, part.tool_call_id)
@@ -3582,7 +3596,11 @@ def _pydantic_operation_recovery_prompt(
     return [prompt, instruction]
 
 
-def _pydantic_decision_recovery_prompt(prompt: object) -> list[object]:
+def _pydantic_decision_recovery_prompt(
+    prompt: object,
+    *,
+    reasoning_checkpoint: str = "",
+) -> list[object]:
     """Append one decision-only instruction after pre-operation truncation."""
 
     instruction = json.dumps(
@@ -3591,10 +3609,13 @@ def _pydantic_decision_recovery_prompt(prompt: object) -> list[object]:
                 "cause": "previous response was truncated before one complete tool call",
                 "instruction": (
                     "Using the same fresh context and active control constraints, return exactly one complete "
-                    "offered tool call now. Do not repeat analysis, a completed read, or a pagination state already "
-                    "recorded in recent_trajectory. If existing evidence supports the requested output, select the "
-                    "offered final-response tool; otherwise select one materially new action. Add no explanatory text."
+                    "offered tool call now. Continue from the incomplete reasoning checkpoint instead of restarting "
+                    "semantic classification; preserve every supported intermediate positive conclusion and do not "
+                    "narrow its set. Do not repeat analysis, a completed read, or a pagination state already recorded "
+                    "in recent_trajectory. If existing evidence supports the requested output, select the offered "
+                    "final-response tool; otherwise select one materially new action. Add no explanatory text."
                 ),
+                "incomplete_reasoning_checkpoint": reasoning_checkpoint,
             }
         },
         ensure_ascii=False,
@@ -3783,6 +3804,39 @@ def _truncated_current_tool_name(
     if len(names) != 1 or names[0] not in offered_names:
         return ""
     return names[0]
+
+
+def _truncated_reasoning_checkpoint(messages: list[dict[str, object]]) -> str:
+    """Project one bounded, non-authoritative same-call continuation checkpoint."""
+
+    responses = tuple(message for message in messages if message.get("kind") == "response")
+    if not responses:
+        return ""
+    response = responses[-1]
+    if str(response.get("finish_reason") or "").casefold() not in {"length", "max_tokens"}:
+        return ""
+    parts = response.get("parts")
+    parts = parts if isinstance(parts, list) else []
+    reasoning = "\n".join(
+        str(part.get("content") or "").strip()
+        for part in parts
+        if isinstance(part, Mapping)
+        and part.get("part_kind") in {"thinking", "text"}
+        and str(part.get("content") or "").strip()
+    )
+    if len(reasoning) <= _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS:
+        return reasoning
+    omission_marker = "\n[...truncated reasoning omitted...]\n"
+    tail_chars = (
+        _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_CHARS
+        - _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS
+        - len(omission_marker)
+    )
+    return (
+        reasoning[:_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_CHARS]
+        + omission_marker
+        + reasoning[-tail_chars:]
+    )
 
 
 def _structured_output_failure_for_response(
