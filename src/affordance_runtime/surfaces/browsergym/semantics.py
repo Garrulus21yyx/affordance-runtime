@@ -369,6 +369,7 @@ def _normalized_records(
     extra = extra if isinstance(extra, dict) else {}
     physical = _physical_properties(raw)
     by_node_id = {item.node_id: item for item in records if item.node_id}
+    clickable_owners = _dom_clickable_alias_owners(records, extra, by_node_id)
     normalized = []
     for record in records:
         private = physical.get(record.bid)
@@ -388,6 +389,7 @@ def _normalized_records(
             and isinstance(properties, dict)
             and properties.get("clickable") is True
             and (record.role == "generic" or browsergym_role_spec(record.role) is None)
+            and clickable_owners.get(record.bid) is record
         )
         if clickable:
             assert isinstance(properties, dict)
@@ -409,6 +411,92 @@ def _normalized_records(
         else:
             normalized.append(record)
     return tuple(normalized)
+
+
+def _dom_clickable_alias_owners(
+    records: tuple[_AxRecord, ...],
+    extra: dict[str, object],
+    by_node_id: dict[str, _AxRecord],
+) -> dict[str, _AxRecord]:
+    """Choose one AX owner for each lower-authority DOM clickable BID.
+
+    CDP can emit multiple AX records for one DOM element, notably a
+    ``LineBreak`` and its ``InlineTextBox`` child with the same BrowserGym ID.
+    DOM clickability belongs to that one physical element, so normalizing every
+    AX alias would invent multiple semantic controls and make an otherwise
+    valid observation fail as a conflicting BID.  Equivalent aliases collapse
+    to one order-independent outer owner; differing public clickable semantics
+    remain a typed conflict.  A native executable AX record is authoritative
+    and suppresses the lower-authority DOM fallback for the same BID.
+    """
+
+    records_by_bid: dict[str, list[_AxRecord]] = {}
+    for record in records:
+        if record.bid:
+            records_by_bid.setdefault(record.bid, []).append(record)
+
+    owners: dict[str, _AxRecord] = {}
+    for bid, same_bid in records_by_bid.items():
+        properties = extra.get(bid)
+        if not isinstance(properties, dict) or properties.get("clickable") is not True:
+            continue
+        if any(
+            (spec := browsergym_role_spec(record.role)) is not None and spec.executable
+            for record in same_bid
+        ):
+            continue
+        candidates = tuple(
+            record
+            for record in same_bid
+            if record.role == "generic" or browsergym_role_spec(record.role) is None
+        )
+        if not candidates:
+            continue
+        signatures = {
+            _dom_clickable_alias_signature(record, properties, by_node_id)
+            for record in candidates
+        }
+        if len(signatures) != 1:
+            raise BrowserGymSemanticError(
+                BrowserGymSemanticErrorCode.CONFLICTING_BID,
+                f"BID {bid!r} has conflicting DOM-clickable AX aliases",
+            )
+        candidate_node_ids = {record.node_id for record in candidates if record.node_id}
+        outer = tuple(
+            record for record in candidates
+            if not record.parent_id or record.parent_id not in candidate_node_ids
+        )
+        owners[bid] = min(
+            outer or candidates,
+            key=lambda record: (
+                record.node_id,
+                record.parent_id,
+                record.child_ids,
+                record.role,
+                record.name,
+                record.state,
+            ),
+        )
+    return owners
+
+
+def _dom_clickable_alias_signature(
+    record: _AxRecord,
+    properties: dict[str, object],
+    by_node_id: dict[str, _AxRecord],
+) -> tuple[object, ...]:
+    viewport_visibility = properties.get("visibility")
+    viewport_state = (
+        (("viewport.visible", float(viewport_visibility) > 0.0),)
+        if isinstance(viewport_visibility, int | float)
+        and not isinstance(viewport_visibility, bool)
+        else ()
+    )
+    return (
+        "clickable",
+        _descendant_text(record, by_node_id),
+        (*record.state, *viewport_state),
+    )
 
 
 def _dom_properties(raw: dict[str, object]) -> dict[str, object]:

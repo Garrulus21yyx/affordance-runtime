@@ -637,6 +637,55 @@ def test_exact_duplicate_is_merged_and_conflicting_same_bid_fails_typed() -> Non
     assert raised.value.code is BrowserGymSemanticErrorCode.CONFLICTING_BID
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_dom_clickable_ax_aliases_have_one_order_independent_outer_owner(reverse: bool) -> None:
+    outer = ax_node("outer-node", "LineBreak", "\n", child_ids=("inner-node",))
+    inner = ax_node("inner-node", "InlineTextBox", "", parent_id="outer-node")
+    outer["browsergym_id"] = inner["browsergym_id"] = "shared-dom-control"
+    nodes = (inner, outer) if reverse else (outer, inner)
+    raw = raw_observation(*nodes)
+    raw["extra_element_properties"]["shared-dom-control"]["clickable"] = True
+
+    controls = canonicalize_browsergym_controls(raw)
+    projected = _projection(raw)
+
+    assert [(item.private_bid, item.private_node_id, item.role) for item in controls] == [
+        ("shared-dom-control", "outer-node", "clickable")
+    ]
+    assert len(_page_targets(projected.world)) == 1
+    assert {item.semantic_action for item in _page_bindings(projected.world)} == {"activate"}
+
+
+def test_native_executable_ax_record_suppresses_same_bid_dom_clickable_alias() -> None:
+    native = ax_node("native-node", "button", "Save")
+    alias = ax_node("alias-node", "InlineTextBox", "")
+    native["browsergym_id"] = alias["browsergym_id"] = "shared-dom-control"
+    raw = raw_observation(native, alias)
+    raw["extra_element_properties"]["shared-dom-control"]["clickable"] = True
+
+    controls = canonicalize_browsergym_controls(raw)
+
+    assert [(item.private_bid, item.private_node_id, item.role) for item in controls] == [
+        ("shared-dom-control", "native-node", "button")
+    ]
+
+
+def test_conflicting_dom_clickable_ax_aliases_still_fail_typed() -> None:
+    first = ax_node("first-node", "LineBreak", "", child_ids=("first-text",))
+    first_text = ax_node("first-text", "InlineTextBox", "First", parent_id="first-node")
+    second = ax_node("second-node", "LineBreak", "", child_ids=("second-text",))
+    second_text = ax_node("second-text", "InlineTextBox", "Second", parent_id="second-node")
+    for node in (first, first_text, second, second_text):
+        node["browsergym_id"] = "shared-dom-control"
+    raw = raw_observation(first, first_text, second, second_text)
+    raw["extra_element_properties"]["shared-dom-control"]["clickable"] = True
+
+    with pytest.raises(BrowserGymSemanticError) as raised:
+        canonicalize_browsergym_controls(raw)
+
+    assert raised.value.code is BrowserGymSemanticErrorCode.CONFLICTING_BID
+
+
 def test_bidless_controls_are_ignored_without_cross_record_conflict() -> None:
     retained = ax_node("retained", "button", "Retained")
     one = ax_node("missing-one", "button", "Missing one")
