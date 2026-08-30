@@ -3433,6 +3433,40 @@ def test_history_projection_locates_completion_by_exchange_not_reused_call_id() 
     assert projected[-1] == original[-1]
 
 
+def test_history_projection_structurally_degrounds_closed_json_string_arguments() -> None:
+    original = (
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "type_text",
+                    '{"target":"E1","text":"E6"}',
+                    "call:string-args",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "type_text",
+                    {"entered_text": "E6", "target_ref": "E1"},
+                    "call:string-args",
+                )
+            ]
+        ),
+    )
+
+    projected = pydantic_bridge._canonicalize_completed_history(original)
+
+    response = projected[0]
+    request = projected[1]
+    assert isinstance(response, ModelResponse)
+    assert isinstance(request, ModelRequest)
+    assert tuple(part.args for part in response.parts if isinstance(part, ToolCallPart)) == ({"text": "E6"},)
+    assert tuple(part.content for part in request.parts if isinstance(part, ToolReturnPart)) == (
+        {"entered_text": "E6"},
+    )
+
+
 @given(turns=st.integers(min_value=2, max_value=8))
 @settings(max_examples=12)
 def test_history_projection_conserves_pairs_and_semantics_while_degrounding_expired_worlds(

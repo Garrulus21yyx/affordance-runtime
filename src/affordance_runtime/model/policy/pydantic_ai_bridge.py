@@ -2833,7 +2833,12 @@ def _deground_completed_tool_exchanges(
         refs: set[str] = set()
         for part in response.parts:
             if isinstance(part, ToolCallPart):
-                refs.update(history_operational_refs(part.args, include_selectors=True))
+                refs.update(
+                    history_operational_refs(
+                        part.args_as_dict(raise_if_invalid=True),
+                        include_selectors=True,
+                    )
+                )
         for part in returns:
             if isinstance(part, ToolReturnPart):
                 refs.update(history_operational_refs(part.content))
@@ -2851,7 +2856,14 @@ def _deground_completed_tool_exchanges(
             parts: list[object] = []
             for part in message.parts:
                 if isinstance(part, ToolCallPart):
-                    parts.append(replace(part, args=sanitize_history_arguments(part.args)))
+                    parts.append(
+                        replace(
+                            part,
+                            args=sanitize_history_arguments(
+                                part.args_as_dict(raise_if_invalid=True),
+                            ),
+                        )
+                    )
                 elif isinstance(part, (TextPart, ThinkingPart)):
                     content = sanitize_history_prose(
                         str(part.content),

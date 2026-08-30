@@ -10,6 +10,7 @@ from hypothesis import strategies as st
 
 from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldNodeView
 from affordance_runtime.agent.context.contracts import (
+    AgentHistoricalTargetView,
     AgentTurnView,
     history_operational_refs,
     sanitize_history_arguments,
@@ -223,6 +224,28 @@ def test_history_contract_distinguishes_typed_refs_from_ref_shaped_business_valu
     assert "E1" not in prose
     assert "E6" in prose
     assert "R2" in prose
+
+
+def test_recent_trajectory_preserves_ref_shaped_labels_and_business_arguments() -> None:
+    turn = AgentTurnView(
+        "select_action",
+        "type_text",
+        AgentHistoricalTargetView("textbox", "E6", ("Product code R2",)),
+        public_parameters={"text": "F3"},
+        dispatch_status="sent",
+        local_postcondition="satisfied",
+        reason="Entered business code N4",
+    )
+
+    rendered = render_recent_trajectory(AgentWorkspace((turn,)))
+
+    assert rendered[0]["action"]["target"] == {
+        "role": "textbox",
+        "label": "E6",
+        "context": ("Product code R2",),
+    }
+    assert rendered[0]["action"]["arguments"] == {"text": "F3"}
+    assert rendered[0]["result"]["reason"] == "Entered business code N4"
 
 
 def test_recent_trajectory_uses_the_same_model_state_allowlist_as_fresh_world() -> None:
