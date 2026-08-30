@@ -14,9 +14,12 @@ from affordance_runtime.agent.run_state import RunStatus
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.webarena_verified import (
     WA_HARD_SUBSET_SHA256,
+    WA_REVIEWED_CASE_ADMISSION,
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    WebArenaVerifiedCaseAdmission,
+    WebArenaVerifiedCaseRef,
     WebArenaVerifiedFinalResponseCodec,
     _capability_census,
     _private_leak_markers,
@@ -261,6 +264,57 @@ def test_webarena_codec_fails_closed_on_a_recognized_but_changed_response_envelo
 
     with pytest.raises(ValueError, match="pinned codec"):
         codec.semantic_instruction(malformed)
+
+
+def test_webarena_intake_requires_the_case_owners_explicit_admission() -> None:
+    candidate = WebArenaVerifiedCaseRef(
+        545,
+        251,
+        2,
+        ("shopping_admin",),
+        "mutate",
+        "diagnostic",
+    )
+    admission = WebArenaVerifiedCaseAdmission("diagnostic-sample", (candidate,))
+    semantic_goal = "Perform the requested public benchmark task."
+    codec = WebArenaVerifiedFinalResponseCodec()
+    browsergym = FakeBrowserGym(raw_observation(goal=semantic_goal + codec._upstream_instruction_suffix()))
+
+    with pytest.raises(ValueError, match="outside the admitted benchmark cohort"):
+        open_webarena_verified_case(
+            candidate,
+            gym_factory=lambda *_args, **_kwargs: browsergym,
+            browser_navigation_urls=("https://admin.example.test",),
+        )
+
+    environment, task, _evaluator = open_webarena_verified_case(
+        candidate,
+        admission=admission,
+        gym_factory=lambda *_args, **_kwargs: browsergym,
+        browser_navigation_urls=("https://admin.example.test",),
+    )
+    try:
+        assert environment.case_ref == candidate
+        assert task.instruction == semantic_goal
+    finally:
+        asyncio.run(environment.close())
+
+
+def test_webarena_case_admission_is_bounded_unique_and_typed() -> None:
+    candidate = WebArenaVerifiedCaseRef(545, 251, 2, ("shopping_admin",), "mutate", "diagnostic")
+
+    with pytest.raises(ValueError, match="unique"):
+        WebArenaVerifiedCaseAdmission("duplicates", (candidate, candidate))
+    with pytest.raises(ValueError, match="bounded typed"):
+        WebArenaVerifiedCaseAdmission("empty", ())
+    with pytest.raises(ValueError, match="identity"):
+        WebArenaVerifiedCaseAdmission("not admitted", (candidate,))
+
+    assert WA_REVIEWED_CASE_ADMISSION.cases == (
+        *WA_W1_SMOKE_CASES,
+        *WA_W1_HELD_OUT_CASES,
+        *WA_W2_COHORT_CASES,
+    )
 
 
 def test_webarena_final_response_is_stop_payload_not_a_world_requested_output() -> None:

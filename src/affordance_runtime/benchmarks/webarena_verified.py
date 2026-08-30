@@ -263,6 +263,39 @@ class WebArenaVerifiedCaseRef:
         return payload
 
 
+@dataclass(frozen=True)
+class WebArenaVerifiedCaseAdmission:
+    """Immutable benchmark-owner admission for one frozen public case cohort."""
+
+    admission_id: str
+    cases: tuple[WebArenaVerifiedCaseRef, ...]
+
+    def __post_init__(self) -> None:
+        normalized = tuple(self.cases)
+        object.__setattr__(self, "cases", normalized)
+        if (
+            not isinstance(self.admission_id, str)
+            or not self.admission_id
+            or len(self.admission_id) > 96
+            or any(not (character.isalnum() or character in "-_.") for character in self.admission_id)
+        ):
+            raise ValueError("WebArena-Verified admission identity is invalid")
+        if not 1 <= len(normalized) <= 1024 or any(
+            not isinstance(case_ref, WebArenaVerifiedCaseRef) for case_ref in normalized
+        ):
+            raise ValueError("WebArena-Verified admission requires a bounded typed case cohort")
+        case_ids = tuple(
+            (case_ref.intent_template_id, case_ref.task_id, case_ref.revision)
+            for case_ref in normalized
+        )
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("WebArena-Verified admission case identities must be unique")
+
+    def require(self, case_ref: WebArenaVerifiedCaseRef) -> None:
+        if case_ref not in self.cases:
+            raise ValueError("WebArena-Verified case is outside the admitted benchmark cohort")
+
+
 WA_W1_SMOKE_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
     WebArenaVerifiedCaseRef(0, 279, 2, ("shopping_admin",), "smoke", "w1"),
     WebArenaVerifiedCaseRef(7, 79, 2, ("map",), "smoke", "w1"),
@@ -297,6 +330,11 @@ WA_W0_REQUIRED_CASES: tuple[WebArenaVerifiedCaseRef, ...] = (
     *WA_W1_SMOKE_CASES,
     *WA_W1_HELD_OUT_CASES,
     *WA_W2_COHORT_CASES,
+)
+
+WA_REVIEWED_CASE_ADMISSION = WebArenaVerifiedCaseAdmission(
+    "reviewed-w1-w2",
+    WA_W0_REQUIRED_CASES,
 )
 
 _W0_PREFLIGHT_PROGRAM = r"""
@@ -891,14 +929,16 @@ def open_webarena_verified_case(
     case_ref: WebArenaVerifiedCaseRef,
     seed: int = WA_SELECTION_SEED,
     *,
+    admission: WebArenaVerifiedCaseAdmission = WA_REVIEWED_CASE_ADMISSION,
     gym_factory: Any | None = None,
     max_turns: int = 100,
     browser_navigation_urls: tuple[str, ...] | None = None,
 ) -> tuple[WebArenaVerifiedCaseEnvironment, TaskGoal, WebArenaVerifiedNativeEvaluator]:
     """Open one official case using only public BrowserGym task intake."""
 
-    if case_ref not in WA_W0_REQUIRED_CASES:
-        raise ValueError("WebArena-Verified case is outside the reviewed W1/W2 manifest")
+    if not isinstance(admission, WebArenaVerifiedCaseAdmission):
+        raise TypeError("WebArena-Verified case admission must be typed")
+    admission.require(case_ref)
     navigation_urls = (
         _configured_webarena_navigation_urls(os.environ) if browser_navigation_urls is None else browser_navigation_urls
     )

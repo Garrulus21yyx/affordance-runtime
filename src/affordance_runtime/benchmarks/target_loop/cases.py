@@ -46,10 +46,12 @@ from affordance_runtime.benchmarks.target_loop.support import (
     stale_environment,
 )
 from affordance_runtime.benchmarks.webarena_verified import (
+    WA_REVIEWED_CASE_ADMISSION,
     WA_SELECTION_SEED,
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    WebArenaVerifiedCaseAdmission,
     open_webarena_verified_case,
 )
 from affordance_runtime.evaluation import ProductionActionOutcomeProjector
@@ -126,6 +128,7 @@ def _webarena_verified_case(
     *,
     suite_id: str,
     description: str,
+    admission: WebArenaVerifiedCaseAdmission = WA_REVIEWED_CASE_ADMISSION,
 ) -> BenchmarkCase:
     holder: dict[str, object] = {}
 
@@ -133,6 +136,7 @@ def _webarena_verified_case(
         environment, task, evaluator = open_webarena_verified_case(
             case_ref,
             seed=seed,
+            admission=admission,
             max_turns=WA_W1B_MAX_TURNS,
         )
         holder["task"] = task

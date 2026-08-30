@@ -15,6 +15,8 @@ from affordance_runtime.benchmarks.webarena_verified import (
     WA_W1_HELD_OUT_CASES,
     WA_W1_SMOKE_CASES,
     WA_W2_COHORT_CASES,
+    WebArenaVerifiedCaseAdmission,
+    WebArenaVerifiedCaseRef,
 )
 
 
@@ -100,3 +102,27 @@ def test_webarena_verified_w2_manifest_is_the_complete_frozen_cohort() -> None:
         "native_evaluator_count",
     ) for case in manifest.cases)
     assert manifest_digest(manifest) == "e5646d8b5ef39d06d0364dab30f1f02b6528d4b90d14a7f77b15440d54af3b2d"
+
+
+def test_webarena_target_case_threads_the_manifest_owners_admission(monkeypatch) -> None:
+    case_ref = WebArenaVerifiedCaseRef(545, 251, 2, ("shopping_admin",), "mutate", "diagnostic")
+    admission = WebArenaVerifiedCaseAdmission("diagnostic-sample", (case_ref,))
+    captured = {}
+
+    def open_case(observed_ref, **kwargs):
+        captured["case_ref"] = observed_ref
+        captured["admission"] = kwargs["admission"]
+        raise RuntimeError("stop after admission capture")
+
+    monkeypatch.setattr(target_cases, "open_webarena_verified_case", open_case)
+    case = target_cases._webarena_verified_case(
+        case_ref,
+        7,
+        suite_id="webarena-diagnostic",
+        description="generic admitted case",
+        admission=admission,
+    )
+
+    with pytest.raises(RuntimeError, match="admission capture"):
+        case.environment_factory(None)
+    assert captured == {"case_ref": case_ref, "admission": admission}

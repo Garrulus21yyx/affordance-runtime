@@ -1788,6 +1788,16 @@ code may not branch on cohort identity, task text, page wording, selector, fixed
 The already frozen `WA_W2_COHORT_CASES` are exposed unchanged through the formal target-loop suite
 `webarena-verified-w2`; `--case-id` selects one member without constructing an ad-hoc manifest or changing the cohort.
 
+For a separately authorized diagnostic sample, selection and execution admission are distinct typed facts. The
+selection owner freezes public task metadata and a source digest before the first run; the runner then supplies that
+exact bounded `WebArenaVerifiedCaseAdmission`. The reviewed W1/W2 admission remains the default, and a case outside the
+supplied admission fails before BrowserGym reset or any model call. The first 2026-08-30 diagnostic wave under
+`evidence/live/webarena-diagnostic10-deepseek-v4-flash-20260830/wave1` exposed the former conflation: all five cases
+failed in `environment_factory` because intake treated the W1/W2 default list as the complete runtime support set.
+Those zero-call artifacts are environment-admission diagnostics and are excluded from the ten-case result sample.
+The owner repair introduces the typed admission boundary without adding any sampled task ID, site text, selector, or
+expected value to production behavior; the focused WebArena/target-loop gate reports 40 passed.
+
 The first frozen Task267 execution is a failed pre-repair diagnostic:
 [`run1`](../evidence/live/w2-task-267-deepseek-v4-flash-20260826-run1/run.json) recorded 33 policy calls,
 `policy_failure_code=tool_grounding_gap`, zero STOP sends, and zero native evaluator calls. Its final current World had

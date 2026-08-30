@@ -2137,6 +2137,14 @@ The benchmark runner registers the already frozen `WA_W2_COHORT_CASES` as the fo
 This is benchmark composition only: every case reuses the same BrowserGym environment, ActionPolicy, GoalCompiler,
 Runtime, native evaluator, and acceptance metrics as W1b; cohort identity never reaches production Agent behavior.
 
+WebArena case admission is owned separately from environment opening. `WA_REVIEWED_CASE_ADMISSION` remains the
+fail-closed default for the frozen W1/W2 suites. A newly frozen diagnostic or held-out manifest must construct one
+bounded, immutable `WebArenaVerifiedCaseAdmission` and pass it through the target-loop case composition; intake opens
+only a case contained in that exact admission. Admission identity and membership affect benchmark composition only.
+They do not enter `TaskGoal`, World, ActionPolicy, Catalog, Binder, Executor, or evaluator semantics. BrowserGym's
+registered official task identity remains the external environment authority. This supports unseen official cohorts
+without appending task IDs to production logic or weakening the reviewed default.
+
 `TurnPacker` budgets the already-compacted history but does not summarize, edit, or rebuild ToolReturn content.
 Harness removes only a pair-safe expired prefix and produces the one replacement summary. The bridge verifies that the
 unresolved call suffix is unchanged and restores raw history on any summary failure. No dedicated summary model is
