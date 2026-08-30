@@ -91,7 +91,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionCode,
     GroundedToolResolutionError,
 )
-from affordance_runtime.model.policy.perception import DecisionPerceptionProfile
+from affordance_runtime.model.policy.perception import (
+    DecisionPerceptionProfile,
+    ObservationToolExposureProfile,
+)
 from affordance_runtime.model.policy.policy import ModelBackedAgentPolicy
 from affordance_runtime.model.policy.prompt import (
     MODEL_POLICY_EVIDENCE_STATUS,
@@ -114,6 +117,10 @@ from affordance_runtime.model.policy.tool_contracts import ToolCall, ToolSpec
 from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
+    CoverageState,
+    ObservationCapabilities,
+    ObservationOffer,
+    ObservationPurpose,
     ObservationSourceProfile,
     SemanticTarget,
     StateFact,
@@ -5340,6 +5347,89 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
         assert "recording-call:2" not in retained
         assert "R999" not in retained
         assert "representation_recovery" not in retained
+
+    asyncio.run(scenario())
+
+
+def test_length_recovery_executes_a_catalog_request_evidence_one_of_branch() -> None:
+    async def scenario() -> None:
+        arguments = {
+            "purpose": "entity_discovery",
+            "entity_query": "visible controls missing from structure",
+            "max_results": 5,
+        }
+        scripted = ScriptedModel(
+            [
+                ModelResponse(
+                    parts=[
+                        TextPart("Use the current visual evidence operation."),
+                        ToolCallPart(
+                            "request_evidence",
+                            arguments,
+                            "recording-call:truncated-evidence",
+                        ),
+                    ],
+                    usage=RequestUsage(input_tokens=20, output_tokens=1024),
+                    finish_reason="length",
+                    provider_response_id="recording-response:truncated-evidence",
+                ),
+                ("request_evidence", arguments),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=scripted.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            observation_tool_profile=ObservationToolExposureProfile.DYNAMIC_VISUAL,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        base = shared_world("truncated-evidence-union", False)
+        fused = WorldFusion().fuse(
+            (replace(base.sources[0], coverage=CoverageState.TRUNCATED),)
+        )
+        assert fused.observation is not None
+        world = fused.observation
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+            observation_capabilities=ObservationCapabilities(
+                True,
+                True,
+                (
+                    ObservationOffer(
+                        "visual",
+                        "visual",
+                        "weak",
+                        "high",
+                        supported_purposes=(
+                            ObservationPurpose.ENTITY_DISCOVERY,
+                            ObservationPurpose.VISUAL_PROPERTY,
+                            ObservationPurpose.POINT_GROUNDING,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:truncated-evidence-union", context))
+
+        assert result.failure is None and result.output is not None
+        assert result.output.decision.kind.value == "request_observation"
+        assert result.output.decision.purpose is ObservationPurpose.ENTITY_DISCOVERY
+        assert scripted.calls == 2
+        assert scripted.offered_tools[1] == ("request_evidence",)
+        projected = scripted.records[1].function_tools[0].parameters_json_schema
+        assert "oneOf" in projected
+        validate_parameter_schema_contract(projected)
+        validate_value(arguments, projected)
+        assert all("public_intent" not in branch["properties"] for branch in projected["oneOf"])
 
     asyncio.run(scenario())
 
