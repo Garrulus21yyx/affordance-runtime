@@ -78,7 +78,44 @@ def _install_thread_owned_browsergym_playwright() -> None:
         _browsergym_playwright_patch_installed = True
 
 
-_PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
+_PHYSICAL_PROPERTIES_SCRIPT = r"""el => {
+  const classifyColor = raw => {
+    const match = String(raw || '').match(/rgba?\(([^)]+)\)/);
+    if (!match) return null;
+    const values = match[1].split(',').map(value => Number.parseFloat(value.trim()));
+    if (values.length < 3 || values.slice(0, 3).some(value => !Number.isFinite(value))) return null;
+    if (values.length > 3 && values[3] === 0) return null;
+    const [r, g, b] = values.slice(0, 3).map(value => value / 255);
+    const high = Math.max(r, g, b), low = Math.min(r, g, b), delta = high - low;
+    let family = 'gray';
+    if (delta >= 0.04) {
+      let hue = high === r
+        ? 60 * (((g - b) / delta) % 6)
+        : high === g
+          ? 60 * (((b - r) / delta) + 2)
+          : 60 * (((r - g) / delta) + 4);
+      if (hue < 0) hue += 360;
+      family = ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta'][Math.round(hue / 60) % 6];
+    }
+    const linear = value => value <= 0.04045
+      ? value / 12.92
+      : Math.pow((value + 0.055) / 1.055, 2.4);
+    const luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    const tone = luminance < 0.2 ? 'dark' : luminance > 0.65 ? 'light' : 'mid';
+    return {family, tone};
+  };
+  const style = getComputedStyle(el);
+  const backgroundAppearance = classifyColor(style.backgroundColor);
+  const svgFill = el.namespaceURI === 'http://www.w3.org/2000/svg'
+    ? classifyColor(style.fill)
+    : null;
+  const foregroundAppearance = svgFill || classifyColor(style.color);
+  const legacyAppearance = (
+    el.namespaceURI === 'http://www.w3.org/2000/svg' && !backgroundAppearance
+      ? svgFill
+      : backgroundAppearance
+  );
+  return ({
   readonly: ('readOnly' in el) ? Boolean(el.readOnly) : false,
   selected: (() => {
     if (el.classList.contains('selected')) return true;
@@ -97,31 +134,13 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
   // true so the Actor can distinguish an inactive control from an omitted
   // state field and can avoid toggling already-active controls.
   active: el.classList.contains('active'),
-  colorFamily: (() => {
-    const style = getComputedStyle(el);
-    const background = style.backgroundColor;
-    const raw = (
-      el.namespaceURI === 'http://www.w3.org/2000/svg' &&
-      (!background || background === 'transparent' || background === 'rgba(0, 0, 0, 0)')
-        ? style.fill
-        : background
-    );
-    const match = raw.match(/rgba?\(([^)]+)\)/);
-    if (!match) return '';
-    const values = match[1].split(',').map(value => Number.parseFloat(value.trim()));
-    if (values.length < 3 || values.slice(0, 3).some(value => !Number.isFinite(value))) return '';
-    if (values.length > 3 && values[3] === 0) return '';
-    const [r, g, b] = values.slice(0, 3).map(value => value / 255);
-    const high = Math.max(r, g, b), low = Math.min(r, g, b), delta = high - low;
-    if (delta < 0.04) return 'gray';
-    let hue = high === r
-      ? 60 * (((g - b) / delta) % 6)
-      : high === g
-        ? 60 * (((b - r) / delta) + 2)
-        : 60 * (((r - g) / delta) + 4);
-    if (hue < 0) hue += 360;
-    return ['red', 'yellow', 'green', 'cyan', 'blue', 'magenta'][Math.round(hue / 60) % 6];
-  })(),
+  colorFamily: legacyAppearance ? legacyAppearance.family : '',
+  appearance: {
+    foregroundFamily: foregroundAppearance ? foregroundAppearance.family : '',
+    foregroundTone: foregroundAppearance ? foregroundAppearance.tone : '',
+    backgroundFamily: backgroundAppearance ? backgroundAppearance.family : '',
+    backgroundTone: backgroundAppearance ? backgroundAppearance.tone : '',
+  },
   ariaHiddenByAncestor: Boolean(el.closest('[aria-hidden="true"]')),
   labelHint: (() => {
     const explicit = String(el.getAttribute('aria-label') || '').trim();
@@ -251,7 +270,8 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
     ].includes(type)) return true;
     return false;
   })()
-})"""
+  })
+}"""
 
 # BrowserGym already captures the page in one DOM/AX transaction.  Enrich the
 # BIDs from that transaction in one browser-side pass per frame; one Playwright
@@ -866,6 +886,8 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         gesture = gesture if isinstance(gesture, dict) else {}
         spatial = physical.get("spatialHint")
         spatial = spatial if isinstance(spatial, dict) else {}
+        appearance = physical.get("appearance")
+        appearance = appearance if isinstance(appearance, dict) else {}
         properties[bid] = {
             "attached": attached if isinstance(attached, bool) else False,
             "visible": _effective_visibility(
@@ -887,6 +909,26 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             "color_family": (
                 physical.get("colorFamily")
                 if isinstance(physical.get("colorFamily"), str)
+                else ""
+            ),
+            "foreground_color_family": (
+                appearance.get("foregroundFamily")
+                if isinstance(appearance.get("foregroundFamily"), str)
+                else ""
+            ),
+            "foreground_tone": (
+                appearance.get("foregroundTone")
+                if isinstance(appearance.get("foregroundTone"), str)
+                else ""
+            ),
+            "background_color_family": (
+                appearance.get("backgroundFamily")
+                if isinstance(appearance.get("backgroundFamily"), str)
+                else ""
+            ),
+            "background_tone": (
+                appearance.get("backgroundTone")
+                if isinstance(appearance.get("backgroundTone"), str)
                 else ""
             ),
             "editable": editable if isinstance(editable, bool) else None,

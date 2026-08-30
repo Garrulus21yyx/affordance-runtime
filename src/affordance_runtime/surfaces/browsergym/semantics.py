@@ -1060,6 +1060,24 @@ def _canonical_control(
                 color if color in {"red", "yellow", "green", "cyan", "blue", "magenta", "gray"} else "other",
             )
         )
+    if isinstance(physical, dict):
+        for field_name, state_name, admitted in (
+            (
+                "foreground_color_family",
+                "appearance.foreground_color_family",
+                {"red", "yellow", "green", "cyan", "blue", "magenta", "gray"},
+            ),
+            (
+                "background_color_family",
+                "appearance.background_color_family",
+                {"red", "yellow", "green", "cyan", "blue", "magenta", "gray"},
+            ),
+            ("foreground_tone", "appearance.foreground_tone", {"dark", "mid", "light"}),
+            ("background_tone", "appearance.background_tone", {"dark", "mid", "light"}),
+        ):
+            value = physical.get(field_name)
+            if isinstance(value, str) and value in admitted:
+                public_state.append((state_name, value))
     if spec.role in {"draggable", "drop_target"}:
         bbox = _private_bbox(physical)
         if bbox is not None:

@@ -67,6 +67,33 @@ def test_compact_world_drops_projection_scaffolding_but_not_public_semantics() -
     assert "active[F1]=false" in rendered
 
 
+def test_compact_world_preserves_stable_appearance_primitives_only() -> None:
+    snapshot = _snapshot(
+        (
+            ActorWorldNodeView(
+                "E1",
+                "clickable",
+                "★",
+                {
+                    "appearance.color_family": "other",
+                    "appearance.foreground_color_family": "yellow",
+                    "appearance.foreground_tone": "mid",
+                    "appearance.background_color_family": "gray",
+                    "appearance.background_tone": "light",
+                },
+            ),
+        )
+    )
+
+    rendered = render_compact_actor_world(snapshot, _grounding(), include_images=False)
+
+    assert "appearance.color_family" not in rendered.text
+    assert 'appearance.foreground_color_family="yellow"' in rendered.text
+    assert 'appearance.foreground_tone="mid"' in rendered.text
+    assert 'appearance.background_color_family="gray"' in rendered.text
+    assert 'appearance.background_tone="light"' in rendered.text
+
+
 def test_compact_world_preserves_link_destination_without_extending_ref_lifetime() -> None:
     destination = "https://forum.example/movies/42?view=full#reviews"
     node = ActorWorldNodeView(

@@ -43,6 +43,14 @@ _MAX_ITEMS = 12
 _MAX_DEPTH = 3
 _MAX_STRING = 240
 _DROPPED_MODEL_STATE_PREFIXES = ("appearance.",)
+_PUBLIC_MODEL_APPEARANCE_STATE_FIELDS = frozenset(
+    {
+        "appearance.foreground_color_family",
+        "appearance.foreground_tone",
+        "appearance.background_color_family",
+        "appearance.background_tone",
+    }
+)
 _DROPPED_MODEL_STATE_FIELDS = {
     "grid_coordinate_confidence",
     "grid_membership",
@@ -191,7 +199,10 @@ def project_model_state(
             continue
         if key in _DROPPED_MODEL_STATE_FIELDS:
             continue
-        if any(key.startswith(prefix) for prefix in _DROPPED_MODEL_STATE_PREFIXES):
+        if (
+            any(key.startswith(prefix) for prefix in _DROPPED_MODEL_STATE_PREFIXES)
+            and key not in _PUBLIC_MODEL_APPEARANCE_STATE_FIELDS
+        ):
             continue
         if key == "viewport.visible" and value is True:
             continue

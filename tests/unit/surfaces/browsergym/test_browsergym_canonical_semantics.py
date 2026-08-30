@@ -301,6 +301,32 @@ def test_physical_capture_preserves_false_for_an_absent_active_class() -> None:
     assert dict(control.public_state)["active"] is False
 
 
+def test_computed_foreground_and_background_appearance_are_public_semantics() -> None:
+    script = browsergym_backend._PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
+    assert "foregroundFamily" in script
+    assert "backgroundFamily" in script
+    assert "luminance" in script
+    raw = raw_observation(ax_node("rating-mark", "generic", "★"))
+    raw["extra_element_properties"]["rating-mark"]["clickable"] = True
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["rating-mark"].update(
+        {
+            "foreground_color_family": "yellow",
+            "foreground_tone": "mid",
+            "background_color_family": "gray",
+            "background_tone": "light",
+        }
+    )
+
+    control = canonical_control_for_bid(raw, "rating-mark")
+
+    assert control is not None
+    state = dict(control.public_state)
+    assert state["appearance.foreground_color_family"] == "yellow"
+    assert state["appearance.foreground_tone"] == "mid"
+    assert state["appearance.background_color_family"] == "gray"
+    assert state["appearance.background_tone"] == "light"
+
+
 def test_physical_capture_requires_explicit_html_drag_evidence() -> None:
     script = browsergym_backend._PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
 
