@@ -122,7 +122,7 @@ def test_fill_empty_or_different_to_desired_is_changed_and_satisfied() -> None:
         assert "obs:after" in evaluation.evidence_refs[0]
 
 
-def test_fill_exact_echo_is_satisfied_but_unequal_text_echo_remains_unknown() -> None:
+def test_fill_exact_echo_is_satisfied_and_unchanged_mismatch_is_unsatisfied() -> None:
     desired_before = _world("obs:before", "type_text", "desired")
     desired_after = _world("obs:after", "type_text", "desired")
     assert _evaluate(
@@ -138,7 +138,7 @@ def test_fill_exact_echo_is_satisfied_but_unequal_text_echo_remains_unknown() ->
         wrong_before, wrong_after, "type_text", "desired",
     )
     assert wrong.observed_change is ObservedChange.UNCHANGED
-    assert wrong.local_postcondition is LocalPostconditionStatus.UNKNOWN
+    assert wrong.local_postcondition is LocalPostconditionStatus.UNSATISFIED
 
 
 def test_fill_uncertain_or_conflicting_post_state_is_unknown() -> None:
@@ -205,7 +205,7 @@ def test_changed_to_unrequested_value_is_unknown_and_receipt_cannot_promote_it()
     observed=st.text(max_size=40),
 )
 @settings(max_examples=24)
-def test_unequal_text_echo_never_becomes_a_hard_local_failure(
+def test_unchanged_complete_text_mismatch_is_a_hard_local_failure(
     requested: str,
     observed: str,
 ) -> None:
@@ -215,7 +215,7 @@ def test_unequal_text_echo_never_becomes_a_hard_local_failure(
 
     evaluation = _evaluate(before, after, "type_text", requested)
 
-    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNSATISFIED
 
 
 def test_truncated_value_prefix_cannot_prove_exact_text_satisfaction() -> None:

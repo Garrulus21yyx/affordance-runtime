@@ -192,7 +192,8 @@ causal distribution is:
 Commit 1bbd2a0c fixes the shared AX/DOM alias owner without task labels. Commits 4ec89550 and 3630fac3 close the
 working-evidence chain generically: completed history is semantic-only and ref-free, the single unresolved provider
 frontier remains exact, current-World ActivitySummary facts reach the sole ActionPolicy, adapter truncation is an
-explicit public fact, and an unequal text echo cannot be promoted to a hard application failure. Prompt v53 tells the
+explicit public fact, and one changed unequal text echo cannot be promoted to a hard application failure. A complete
+unchanged mismatch remains UNSATISFIED and eligible for exact-replay prevention. Prompt v53 tells the
 same ActionPolicy to consume immediate ToolReturn refs before another local tool, select structural versus visual
 evidence by the unresolved property, verify task-defining comparisons from the requested source, and avoid retyping
 only to force an accessibility-value echo. Runtime still does not rank business candidates or rewrite answers.

@@ -254,10 +254,11 @@ The resulting positive contract is implemented by 4ec89550, 3630fac3, and a7cf4d
 1. Surface adapters must state value loss honestly. semantic.value.truncated=true is now a surface-neutral public
    predicate. An exact fresh value with no incompleteness marker may prove text satisfaction; a truncated prefix may
    not.
-2. Text entry separates mechanical effect from semantic acceptance. Exact complete echo proves SATISFIED; unequal
-   text echo remains UNKNOWN, because a normalizing field or composite editor may expose a different accessibility
-   value. A closed option domain still produces UNSATISFIED on a verified mismatch. Dispatch receipt, observed
-   change, local postcondition, and native task result remain four independent facts.
+2. Text entry separates mechanical effect from semantic acceptance. Exact complete echo proves SATISFIED; a changed
+   unequal echo remains UNKNOWN, because a normalizing field or composite editor may expose a different accessibility
+   value. A complete unchanged mismatch and a closed-option mismatch remain UNSATISFIED, so exact proven replays can
+   still be rejected. Dispatch receipt, observed change, local postcondition, and native task result remain four
+   independent facts.
 3. PydanticAI history retains the semantic content and call/result identity of completed exchanges, but strips every
    closed E/N/F/R handle. Only the single unresolved frontier remains exact. The immediate same-call ToolReturn and
    its current DeliveryManifest may authorize its returned refs for the next ActionPolicy delivery; a later history

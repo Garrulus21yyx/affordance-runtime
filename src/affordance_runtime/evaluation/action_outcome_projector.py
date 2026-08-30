@@ -63,17 +63,6 @@ class ProductionActionOutcomeProjector:
             return _evaluation(request, before, after, public_world_delta=public_world_delta)
         after_value, evidence_ref, value_complete = current
         before_value = _single_value(before, request.intent.target_id)
-        if value_complete and after_value == requested:
-            postcondition = LocalPostconditionStatus.SATISFIED
-        elif not value_complete or definition.parameter_contract is ParameterContractKind.TEXT:
-            # A text control may expose a normalized value or only the active
-            # input window of a composite editor.  Fresh inequality is still
-            # useful observed state, but it cannot prove that the surrounding
-            # application rejected the text effect.  Closed option domains do
-            # not have that ambiguity and retain a hard UNSATISFIED result.
-            postcondition = LocalPostconditionStatus.UNKNOWN
-        else:
-            postcondition = LocalPostconditionStatus.UNSATISFIED
         effect = (
             ObservedChange.UNKNOWN
             if before_value is _MISSING
@@ -85,6 +74,21 @@ class ProductionActionOutcomeProjector:
             )
             else ObservedChange.UNCHANGED
         )
+        if value_complete and after_value == requested:
+            postcondition = LocalPostconditionStatus.SATISFIED
+        elif not value_complete or (
+            definition.parameter_contract is ParameterContractKind.TEXT
+            and effect is not ObservedChange.UNCHANGED
+        ):
+            # A text control may expose a normalized value or only the active
+            # input window of a composite editor.  Fresh inequality is still
+            # useful observed state, but it cannot prove that the surrounding
+            # application rejected the text effect.  Closed option domains do
+            # not have that ambiguity.  A complete unchanged text mismatch is
+            # also a hard local failure and keeps exact replay prevention.
+            postcondition = LocalPostconditionStatus.UNKNOWN
+        else:
+            postcondition = LocalPostconditionStatus.UNSATISFIED
         return _evaluation(
             request,
             before,
