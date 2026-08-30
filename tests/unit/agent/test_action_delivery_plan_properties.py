@@ -147,7 +147,10 @@ def test_explicit_query_result_is_one_hard_admitted_capability_set(
     monkeypatch: pytest.MonkeyPatch,
     count: int,
 ) -> None:
-    query = _obligation(DeliveryObligationKind.EXPLICIT_QUERY, count, 0)
+    query = replace(
+        _obligation(DeliveryObligationKind.EXPLICIT_QUERY, count, 0),
+        required_record_count=count,
+    )
     base = _obligation(DeliveryObligationKind.BASE_ACTIONS, 2, 1)
     plan = ActionDeliveryPlan(
         "actions:test",
@@ -274,8 +277,14 @@ def test_depth_round_packer_obeys_exact_fit_and_one_unit_under(
 def test_structural_focus_and_task_ranked_head_fail_closed_if_hard_capacity_cannot_fit_both(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    interaction = _obligation(DeliveryObligationKind.INTERACTION, 2, 0)
-    base = _obligation(DeliveryObligationKind.BASE_ACTIONS, 2, 1)
+    interaction = replace(
+        _obligation(DeliveryObligationKind.INTERACTION, 2, 0),
+        required_record_count=1,
+    )
+    base = replace(
+        _obligation(DeliveryObligationKind.BASE_ACTIONS, 2, 1),
+        required_record_count=1,
+    )
     plan = ActionDeliveryPlan(
         "actions:test",
         "world:test",
