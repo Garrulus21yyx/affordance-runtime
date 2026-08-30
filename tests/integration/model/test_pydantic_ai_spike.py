@@ -34,6 +34,7 @@ import affordance_runtime.model.policy.pydantic_ai_bridge as pydantic_bridge
 import affordance_runtime.model.policy.request_admission as request_admission_module
 import affordance_runtime.model.policy.turn_packer as turn_packer_module
 from affordance_runtime.actions import ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
+from affordance_runtime.actions.schema_validation import validate_value
 from affordance_runtime.agent import RunStatus
 from affordance_runtime.agent.context import ContextBuilder
 from affordance_runtime.agent.context.action_candidate_projection import (
@@ -4707,6 +4708,14 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
             ("list_regions",),
             ("list_regions",),
         ]
+        for record in scripted.records[1:]:
+            schema = record.function_tools[0].parameters_json_schema
+            assert tuple(schema["properties"]) == ()
+            assert tuple(schema["required"]) == ()
+            prompt_text = json.dumps(record.messages, default=str)
+            assert "representation_recovery" in prompt_text
+            assert "selected_operation" in prompt_text
+            assert "list_regions" in prompt_text
         retry_text = json.dumps(scripted.records[2].messages[-1], default=str)
         assert "Unknown tool name" in retry_text
         assert "list_regions" in retry_text
@@ -4715,6 +4724,40 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
         assert "R999" not in retained
 
     asyncio.run(scenario())
+
+
+def test_required_parameter_projection_is_a_valid_sublanguage_of_the_catalog_schema() -> None:
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "record": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "identity": {"type": "string", "minLength": 1},
+                    "annotation": {"type": "string"},
+                },
+                "required": ["identity"],
+            },
+            "optional_explanation": {"type": "string"},
+        },
+        "required": ["record"],
+    }
+
+    projected = pydantic_bridge._required_parameter_projection(schema)
+    minimal = {"record": {"identity": "record-1"}}
+
+    assert tuple(projected["properties"]) == ("record",)
+    assert tuple(projected["required"]) == ("record",)
+    assert "optional_explanation" in schema["properties"]
+    validate_value(minimal, projected)
+    validate_value(minimal, schema)
+    with pytest.raises(ValueError, match="unknown semantic parameters"):
+        validate_value(
+            {**minimal, "optional_explanation": "not part of recovery"},
+            projected,
+        )
 
 
 @pytest.mark.parametrize(

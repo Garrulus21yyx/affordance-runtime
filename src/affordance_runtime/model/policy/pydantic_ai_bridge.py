@@ -727,17 +727,35 @@ class PydanticAIGroundedDecisionPort:
                 nonlocal transport_retries_remaining
                 persistence_run_id, persistence_capabilities = self._step_persistence_capabilities(agent_name)
                 sequence_toolset = current_toolset
+                sequence_prompt = current_prompt
                 if required_tool_name:
-                    required_tool_defs = [item for item in current_toolset.tool_defs if item.name == required_tool_name]
-                    if len(required_tool_defs) != 1:
+                    required_specs = [
+                        item for item in current_envelope.function_tools if item.name == required_tool_name
+                    ]
+                    if len(required_specs) != 1:
                         raise ValueError("truncated operation anchor is not in the current toolset")
+                    required_spec = required_specs[0]
                     # Representation recovery may complete arguments, but it
                     # cannot reopen semantic operation selection. Expose the
-                    # one already-selected current operation as the complete
+                    # one already-selected current operation and its
+                    # required-only valid sublanguage as the complete
                     # physical tool surface for this bounded retry.
                     sequence_toolset = ExternalToolset(
-                        required_tool_defs,
+                        [
+                            ToolDefinition(
+                                name=required_spec.name,
+                                description=required_spec.description,
+                                parameters_json_schema=_required_parameter_projection(
+                                    required_spec.parameters_json_schema
+                                ),
+                                strict=required_spec.strict,
+                            )
+                        ],
                         id=current_toolset.id,
+                    )
+                    sequence_prompt = _pydantic_operation_recovery_prompt(
+                        current_prompt,
+                        required_tool_name=required_tool_name,
                     )
                 current_agent = Agent(
                     self.model,
@@ -801,7 +819,7 @@ class PydanticAIGroundedDecisionPort:
                     with capture_run_messages() as current_messages:
                         try:
                             return await current_agent.run(
-                                current_prompt,
+                                sequence_prompt,
                                 toolsets=[sequence_toolset],
                                 usage=RunUsage(),
                                 usage_limits=UsageLimits(request_limit=protocol_request_limit),
@@ -3513,6 +3531,53 @@ def _pydantic_model_boundary_codec(
             )
         deferred_results = deferred_tool_results_type(calls=calls)
     return envelope.instructions[0], prompt, toolset, message_history, deferred_results
+
+
+def _required_parameter_projection(schema: Mapping[str, object]) -> dict[str, object]:
+    """Project one object tool schema to its required, still-valid sublanguage."""
+
+    if schema.get("type") != "object":
+        raise ValueError("ActionPolicy tool schema must be an object")
+    properties = schema.get("properties")
+    required = schema.get("required", ())
+    if not isinstance(properties, Mapping) or not isinstance(required, list | tuple):
+        raise ValueError("ActionPolicy tool schema has an invalid object shape")
+    required_names = tuple(str(name) for name in required)
+    if len(required_names) != len(set(required_names)) or any(name not in properties for name in required_names):
+        raise ValueError("ActionPolicy tool schema has invalid required properties")
+    projected = dict(schema)
+    projected["properties"] = {
+        name: to_json_compatible(properties[name])
+        for name in required_names
+    }
+    projected["required"] = list(required_names)
+    projected["additionalProperties"] = False
+    return projected
+
+
+def _pydantic_operation_recovery_prompt(
+    prompt: object,
+    *,
+    required_tool_name: str,
+) -> list[object]:
+    """Append one representation-only instruction after a truncated call."""
+
+    instruction = json.dumps(
+        {
+            "representation_recovery": {
+                "selected_operation": required_tool_name,
+                "instruction": (
+                    "Return exactly one complete call to the selected operation using only required schema fields "
+                    "and concise values. Do not reconsider the operation or add optional explanatory material."
+                ),
+            }
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    if isinstance(prompt, list):
+        return [*prompt, instruction]
+    return [prompt, instruction]
 
 
 def _attempt_token_delta(
