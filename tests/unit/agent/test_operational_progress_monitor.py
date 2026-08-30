@@ -67,6 +67,7 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import AcquisitionOrigin, SemanticTarget, StateFact
 from affordance_runtime.world.observation_needs import ObservationPurpose
 from affordance_runtime.world.observation_outcomes import (
+    InputLocator,
     ObservationObservedItem,
     ObservationQueryDisposition,
     ObservationQueryOutcome,
@@ -545,6 +546,74 @@ def test_new_observation_fact_closes_local_perception_recovery() -> None:
     assert resolved.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert resolved.recovery_signal is None
+
+
+def test_point_grounding_route_is_new_information_without_a_new_fact() -> None:
+    before = replace(_world("observation:point-before"), bindings=())
+    after = _world("observation:point-after")
+    decision = RequestObservation(
+        "context:test",
+        "observation-query:point",
+        ObservationPurpose.POINT_GROUNDING,
+        candidate_ids=("go",),
+        atomic_query="the visible Go control",
+        tool_call_id="call:point",
+    )
+    step = StepResult(
+        decision,
+        before,
+        after,
+        _evaluation(after),
+        feedback="observation_acquired",
+        observation_outcome=ObservationQueryOutcome(
+            decision.query_id,
+            decision.purpose,
+            ObservationQueryDisposition.OBSERVED,
+            observed_items=(
+                ObservationObservedItem(InputLocator((0,)), ("go",)),
+            ),
+        ),
+    )
+
+    transition = ObservationDeliveryStore().reduce(step, step_index=1)
+
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
+    assert transition.information_delta.new_information_count == 1
+
+
+def test_existing_point_grounding_route_is_not_new_information() -> None:
+    before = _world("observation:point-existing-before")
+    after = _world("observation:point-existing-after")
+    decision = RequestObservation(
+        "context:test",
+        "observation-query:point-existing",
+        ObservationPurpose.POINT_GROUNDING,
+        candidate_ids=("go",),
+        atomic_query="the visible Go control",
+        tool_call_id="call:point-existing",
+    )
+    step = StepResult(
+        decision,
+        before,
+        after,
+        _evaluation(after),
+        feedback="observation_acquired",
+        observation_outcome=ObservationQueryOutcome(
+            decision.query_id,
+            decision.purpose,
+            ObservationQueryDisposition.OBSERVED,
+            observed_items=(
+                ObservationObservedItem(InputLocator((0,)), ("go",)),
+            ),
+        ),
+    )
+
+    transition = ObservationDeliveryStore().reduce(step, step_index=1)
+
+    assert transition.information_delta is not None
+    assert transition.information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION
+    assert transition.information_delta.new_information_count == 0
 
 
 def test_control_discovery_recovery_is_not_cleared_by_a_different_query() -> None:

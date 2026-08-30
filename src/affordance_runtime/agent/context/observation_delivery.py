@@ -21,8 +21,11 @@ from affordance_runtime.agent.runtime_failure import RuntimeFailure
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import CoverageState, WorldObservation
 from affordance_runtime.world.observation_outcomes import (
+    InputLocator,
     ObservationQueryDisposition,
     ObservationQueryOutcome,
+    QueryScopeLocator,
+    ResultLocator,
 )
 from affordance_runtime.world.public_semantic_digest import target_semantics
 
@@ -349,9 +352,28 @@ def _observation_result_receipt(
         "purpose": outcome.purpose.value,
         "status": outcome.disposition.value,
         "facts": item_digests,
-        "unknown_reasons": tuple(item.reason.value for item in outcome.unknown_items),
+        "observed_locators": tuple(
+            _observation_locator(item.locator) for item in outcome.observed_items
+        ),
+        "unknown": tuple(
+            {
+                "locator": _observation_locator(item.locator),
+                "reason": item.reason.value,
+            }
+            for item in outcome.unknown_items
+        ),
         "failure_reason": outcome.failure_reason.value if outcome.failure_reason is not None else "",
     }
+
+
+def _observation_locator(locator: object) -> Mapping[str, object]:
+    if isinstance(locator, InputLocator):
+        return {"kind": locator.kind, "input_indices": locator.input_indices}
+    if isinstance(locator, ResultLocator):
+        return {"kind": locator.kind, "result_index": locator.result_index}
+    if isinstance(locator, QueryScopeLocator):
+        return {"kind": locator.kind}
+    raise TypeError("observation outcome locator must be typed")
 
 
 def _observation_fact_digests(
@@ -364,12 +386,22 @@ def _observation_fact_digests(
         for item in world.targets
     }
     facts = {item.fact_id: item for item in world.facts}
+    operations = _target_operations(world)
     atoms: list[object] = []
     for observed in outcome.observed_items:
         atoms.extend(
             ("subject", target_semantics(targets[subject], bases))
             for subject in observed.subject_ids
             if subject in targets
+        )
+        atoms.extend(
+            (
+                "actions",
+                target_semantics(targets[subject], bases),
+                operations[subject],
+            )
+            for subject in observed.subject_ids
+            if subject in targets and subject in operations
         )
         for evidence_ref in observed.evidence_refs:
             fact = facts.get(evidence_ref)
@@ -406,7 +438,22 @@ def _world_information_digests(world: WorldObservation) -> tuple[str, ...]:
         for fact in world.facts
         if fact.subject_id in targets
     )
+    atoms.extend(
+        ("actions", target_semantics(targets[subject], bases), actions)
+        for subject, actions in _target_operations(world).items()
+        if subject in targets
+    )
     return tuple(dict.fromkeys(_public_digest(item) for item in atoms))
+
+
+def _target_operations(world: WorldObservation) -> Mapping[str, tuple[str, ...]]:
+    operations: dict[str, set[str]] = {}
+    for binding in world.bindings:
+        operations.setdefault(binding.target_id, set()).add(binding.semantic_action)
+    return {
+        subject: tuple(sorted(values))
+        for subject, values in operations.items()
+    }
 
 
 def _public_digest(value: object) -> str:
