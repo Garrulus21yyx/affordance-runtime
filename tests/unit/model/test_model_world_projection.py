@@ -204,6 +204,17 @@ def test_task_view_contains_only_evaluator_supported_facts() -> None:
         if fact.field == "verified"
     )
     assert matching[0].evidence_ref == verified.fact_ref
+    delivery = build_model_turn_delivery(context, include_images=False)
+    sections = GroundedPolicyContextBinder._public_context_sections(  # noqa: SLF001 - projection owner gate
+        context,
+        False,
+        delivery,
+    )
+    assert sections["public"]["task"]["formal_evaluation"]["evidence"] == (
+        {"evidence_ref": verified.fact_ref, "field": "verified", "value": True},
+    )
+    assert "formal_evaluation" not in sections["task_plan"]["task"]
+    assert "formal_evaluation" not in GroundedPolicyContextBinder.public_task_plan(context)["task"]
     assert not hasattr(context, "budgets")
 
 

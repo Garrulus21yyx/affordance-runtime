@@ -574,7 +574,7 @@ class PydanticAIGroundedDecisionPort:
         current_revision: int,
         revised_revision: int,
     ) -> None:
-        """Keep one closed official history while changing only task revision."""
+        """Start one empty official history at an admitted task revision."""
 
         if revised_revision != current_revision + 1:
             raise ValueError("model history revision must be consecutive")
@@ -585,13 +585,12 @@ class PydanticAIGroundedDecisionPort:
             raise ValueError("model history identity is unavailable")
         if _pending_tool_parts_from_history(self.message_history):
             raise ValueError("model history contains an unclosed tool call")
-        from pydantic_ai.messages import ModelMessagesTypeAdapter
-
-        canonical_history = _canonicalize_settled_history(self.message_history)
-        encoded = ModelMessagesTypeAdapter.dump_json(list(canonical_history))
-        ModelMessagesTypeAdapter.validate_json(encoded)
-        if canonical_history != self.message_history:
-            object.__setattr__(self, "message_history", canonical_history)
+        # A revision invalidates the old GoalPlan.  This boundary owns only
+        # identity, not the newly compiled TaskGoal/GoalPlan, so it cannot
+        # truthfully migrate or synthesize the next task anchor.  The next
+        # fresh ActionPolicy turn establishes that anchor from AgentContext.
+        object.__setattr__(self, "message_history", ())
+        object.__setattr__(self, "last_step_run_id", "")
         object.__setattr__(
             self,
             "active_task_identity",
@@ -2721,6 +2720,9 @@ def _normalize_pydantic_history_for_current_task(
 
     from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
 
+    task = task_plan.get("task")
+    if not isinstance(task, Mapping) or "formal_evaluation" in task:
+        raise ValueError("task anchor must contain revision-stable TaskGoal facts only")
     anchor_text = json.dumps(task_plan, ensure_ascii=False, separators=(",", ":"))
     normalized = list(messages)
     anchor_index = next(

@@ -893,6 +893,22 @@ def test_settled_checkpoint_removes_old_world_refs_and_media_but_keeps_task_anch
     assert not any(part.get("part_kind") == "binary" for message in checkpoint["messages"] for part in message["parts"])
 
 
+def test_task_anchor_rejects_fresh_formal_evaluation_evidence() -> None:
+    with pytest.raises(ValueError, match="revision-stable TaskGoal"):
+        pydantic_bridge._normalize_pydantic_history_for_current_task(
+            (ModelRequest(parts=[UserPromptPart('{"observation":"fresh"}')]),),
+            task_plan={
+                "task": {
+                    "instruction": "Inspect status",
+                    "formal_evaluation": {
+                        "evidence": ({"evidence_ref": "F1", "field": "ready", "value": True},),
+                    },
+                },
+                "goal_plan": {"items": ()},
+            },
+        )
+
+
 def test_pydantic_ai_checkpoint_history_uses_settled_step_persistence_reference(
     tmp_path,
 ) -> None:
@@ -1013,7 +1029,7 @@ def test_pydantic_ai_checkpoint_history_rejects_unclosed_tool_call() -> None:
         policy.export_checkpoint_history()
 
 
-def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> None:
+def test_pydantic_ai_checkpoint_history_starts_empty_at_one_revised_task() -> None:
     policy = _policy(ScriptedModel(["first_gui_action"]).build())
     history = (
         ModelRequest(parts=[UserPromptPart("current task")]),
@@ -1025,6 +1041,7 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
     )
     object.__setattr__(policy.port, "message_history", history)
     object.__setattr__(policy.port, "active_task_identity", ("task:checkpoint", 3))
+    object.__setattr__(policy.port, "last_step_run_id", "old-revision-run")
 
     policy.rebind_checkpoint_history(
         task_id="task:checkpoint",
@@ -1032,14 +1049,11 @@ def test_pydantic_ai_checkpoint_history_rebinds_only_one_closed_revision() -> No
         revised_revision=4,
     )
 
-    assert policy.port.message_history != history
-    closed_call = policy.port.message_history[0]
-    assert isinstance(closed_call, ModelResponse)
-    assert tuple(part.args for part in closed_call.parts if isinstance(part, ToolCallPart)) == ({},)
-    assert policy.export_checkpoint_history()["active_task_identity"] == [
-        "task:checkpoint",
-        4,
-    ]
+    assert policy.port.message_history == ()
+    assert policy.port.last_step_run_id == ""
+    checkpoint = policy.export_checkpoint_history()
+    assert checkpoint["messages"] == []
+    assert checkpoint["active_task_identity"] == ["task:checkpoint", 4]
     with pytest.raises(ValueError, match="consecutive"):
         policy.rebind_checkpoint_history(
             task_id="task:checkpoint",

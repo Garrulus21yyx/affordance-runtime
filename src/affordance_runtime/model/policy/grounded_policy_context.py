@@ -82,6 +82,7 @@ class GroundedPolicyContextBinder:
         if bool(delivery.media) != include_images:
             raise ValueError("model turn delivery image selection is inconsistent")
         task = _task(context)
+        stable_task = _task_goal(context)
         view = delivery.view
         observation = view.text
         public: dict[str, object] = {
@@ -109,7 +110,7 @@ class GroundedPolicyContextBinder:
             current_turn["control_feedback"] = control_feedback
         return {
             "public": public,
-            "task_plan": {"task": task, "goal_plan": public["goal_plan"]},
+            "task_plan": {"task": stable_task, "goal_plan": public["goal_plan"]},
             "actor_world": {"observation": observation},
             "current_turn": current_turn,
             "history": {"control_feedback": context.control_feedback},
@@ -121,7 +122,7 @@ class GroundedPolicyContextBinder:
     def public_task_plan(context: AgentContext) -> dict[str, object]:
         """Return the one task/plan anchor reused across model turns."""
 
-        return {"task": _task(context), "goal_plan": _goal_plan(context)}
+        return {"task": _task_goal(context), "goal_plan": _goal_plan(context)}
 
     def model_turn_delivery(
         self,
@@ -148,9 +149,11 @@ class GroundedPolicyContextBinder:
         return include_images
 
 
-def _task(context: AgentContext) -> dict[str, object]:
+def _task_goal(context: AgentContext) -> dict[str, object]:
+    """Project revision-stable TaskGoal facts for the persistent anchor."""
+
     task = context.task
-    result: dict[str, object] = {
+    return {
         "instruction": task.instruction,
         "constraints": _section(task.constraints),
         "allowed_effects": _section(task.allowed_effects),
@@ -179,6 +182,13 @@ def _task(context: AgentContext) -> dict[str, object]:
             },
         ),
     }
+
+
+def _task(context: AgentContext) -> dict[str, object]:
+    """Project TaskGoal plus the fresh evaluator result for this model turn."""
+
+    task = context.task
+    result = _task_goal(context)
     evaluation = {
         "status": str(task.evaluation.status),
         "criteria": tuple(

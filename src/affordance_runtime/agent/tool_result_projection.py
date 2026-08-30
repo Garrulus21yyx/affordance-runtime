@@ -438,7 +438,6 @@ def _committed_tool_return_ephemeral_paths(
         return (
             ("matches", "*", "target_ref"),
             ("matches", "*", "destination_refs"),
-            ("matches", "*", "verbs"),
         )
     if isinstance(decision, InteractionRequest):
         return (("request_id",), ("field_ids",), ("option_ids",))

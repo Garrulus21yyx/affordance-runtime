@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
@@ -14,12 +13,13 @@ from affordance_runtime.immutable import freeze_json
 from affordance_runtime.task.contracts import RiskProfile
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
-_LEGACY_EXPIRED_REF = re.compile(r"<expired-ref-[1-9][0-9]*>", re.IGNORECASE)
 HISTORY_ARGUMENT_PATHS_METADATA_KEY = "affordance_runtime.history.argument_paths.v1"
 HISTORY_RETURN_PATHS_METADATA_KEY = "affordance_runtime.history.return_paths.v1"
 HISTORY_CANONICAL_METADATA_KEY = "affordance_runtime.history.canonical.v1"
+
+
 def sanitize_history_value(value: object) -> object:
-    """Preserve producer-owned semantics while removing legacy tombstones.
+    """Preserve producer-owned semantics in one canonical immutable shape.
 
     This function is deliberately not an authority detector.  A mapping key
     such as ``target_ref`` can be legitimate business data, just as ``E6`` can
@@ -28,7 +28,7 @@ def sanitize_history_value(value: object) -> object:
     semantic projection at the producer boundary.
     """
 
-    return _sanitize_legacy_value(value)
+    return _canonical_history_value(value)
 
 
 def sanitize_history_arguments(
@@ -39,7 +39,7 @@ def sanitize_history_arguments(
     """Project one call/result using paths declared by its owning producer."""
 
     stripped = _strip_history_paths(value, tuple(tuple(path) for path in ephemeral_paths))
-    return {} if stripped is _DROP_HISTORY_VALUE else _sanitize_legacy_value(stripped)
+    return {} if stripped is _DROP_HISTORY_VALUE else _canonical_history_value(stripped)
 
 
 def history_operational_refs(
@@ -76,7 +76,7 @@ def history_operational_refs(
 def sanitize_history_prose(value: str) -> str:
     """Preserve semantic prose; free text never carries ref authority."""
 
-    return _LEGACY_EXPIRED_REF.sub("", value).strip()
+    return value
 
 
 _DROP_HISTORY_VALUE = object()
@@ -128,17 +128,11 @@ def _history_path_values(
     return tuple(found)
 
 
-def _sanitize_legacy_value(value: object) -> object:
-    if isinstance(value, str):
-        return _LEGACY_EXPIRED_REF.sub("", value)
+def _canonical_history_value(value: object) -> object:
     if isinstance(value, Mapping):
-        return {
-            _LEGACY_EXPIRED_REF.sub("", str(key)): _sanitize_legacy_value(item)
-            for key, item in value.items()
-            if _LEGACY_EXPIRED_REF.sub("", str(key))
-        }
+        return {str(key): _canonical_history_value(item) for key, item in value.items()}
     if isinstance(value, tuple | list):
-        return tuple(_sanitize_legacy_value(item) for item in value)
+        return tuple(_canonical_history_value(item) for item in value)
     return value
 
 

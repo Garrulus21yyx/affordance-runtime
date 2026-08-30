@@ -231,6 +231,19 @@ def test_history_contract_distinguishes_typed_refs_from_ref_shaped_business_valu
     assert "R2" in prose
 
 
+def test_history_contract_preserves_tombstone_shaped_business_semantics() -> None:
+    semantic = {
+        "<expired-ref-1>": {
+            "text": "SKU <expired-ref-2>",
+            "nested": ("literal <expired-ref-3>",),
+        }
+    }
+
+    assert sanitize_history_value(semantic) == semantic
+    assert sanitize_history_arguments(semantic) == semantic
+    assert sanitize_history_prose("  SKU <expired-ref-4>  ") == "  SKU <expired-ref-4>  "
+
+
 @given(
     key=st.sampled_from(("target_ref", "subject_ref", "region_ref", "cursor", "verbs")),
     value=st.text(min_size=1, max_size=24),

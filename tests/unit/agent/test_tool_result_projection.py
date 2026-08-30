@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 
 from affordance_runtime.actions import ActionBinder, ActionSpaceBuilder
+from affordance_runtime.actions.paging import ActionDiscoveryMatch, ActionDiscoveryResult
 from affordance_runtime.agent.context import ContextBuilder
+from affordance_runtime.agent.context.contracts import (
+    HISTORY_RETURN_PATHS_METADATA_KEY,
+    sanitize_history_arguments,
+)
 from affordance_runtime.agent.decisions import (
     Abort,
     ReadRegionResult,
@@ -18,6 +23,7 @@ from affordance_runtime.agent.interactions import legacy_interaction_request
 from affordance_runtime.agent.run_state import StepResult
 from affordance_runtime.agent.tool_result_projection import (
     committed_tool_call_id,
+    project_committed_tool_metadata,
     project_committed_tool_return,
 )
 from affordance_runtime.evaluation import (
@@ -187,6 +193,42 @@ def test_scope_unknown_projects_no_ref_or_executable_grounding() -> None:
     assert projected["unknown_items"] == ({"locator": {"kind": "query_scope"}, "reason": "target_not_visible"},)
     assert "target_ref" not in repr(projected)
     assert "executable_grounding" not in projected
+
+
+def test_discovery_settlement_expires_routes_but_preserves_per_match_operations() -> None:
+    world = _world("tool-result-discovery", False)
+    decision = RequestActionPage("context:fixture", "settings", tool_call_id="call:discovery")
+    result = ActionDiscoveryResult(
+        (
+            ActionDiscoveryMatch("E1", "Settings", "button", "activate", match_kinds=("exact",)),
+            ActionDiscoveryMatch("E2", "Settings", "button", "press_key", match_kinds=("role",)),
+        ),
+        "settings",
+        "complete",
+        "complete",
+    )
+    step = StepResult(
+        decision,
+        world,
+        world,
+        _evaluation(world.observation_id),
+        feedback="action_page_ready",
+        action_page_result=result,
+    )
+
+    immediate = project_committed_tool_return(step)
+    metadata = project_committed_tool_metadata(step)
+    settled = sanitize_history_arguments(
+        immediate,
+        ephemeral_paths=metadata[HISTORY_RETURN_PATHS_METADATA_KEY],
+    )
+
+    assert tuple(item["target_ref"] for item in immediate["matches"]) == ("E1", "E2")
+    assert settled["matches"] == (
+        {"label": "Settings", "role": "button", "verbs": ("activate",), "match_kinds": ("exact",)},
+        {"label": "Settings", "role": "button", "verbs": ("press_key",), "match_kinds": ("role",)},
+    )
+    assert "target_ref" not in repr(settled)
 
 
 @pytest.mark.parametrize(
