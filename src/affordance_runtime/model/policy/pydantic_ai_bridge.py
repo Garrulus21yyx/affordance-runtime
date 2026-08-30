@@ -2771,8 +2771,8 @@ def _project_expired_history(
     TurnPacker supplies exactly one fresh World.  Closed exchanges retain their
     ToolCall/ToolReturn identity and semantic values, but their observation-local
     refs are removed after the exchange closes.  Only the unresolved response
-    remains exact so every visible operational ref belongs to the next delivery
-    that can authorize it.  A completed response may also drop private
+    remains exact solely for provider call/result pairing; its prior arguments
+    are not current authorization.  A completed response may also drop private
     ThinkingPart only when the same response already carries a public conclusion.
     Harness remains the only semantic compactor.
     """
