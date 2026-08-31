@@ -74,6 +74,12 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--tool-choice", choices=("auto", "required"), default="auto")
+    parser.add_argument(
+        "--turn-selection",
+        choices=("first", "last"),
+        default="first",
+        help="select the first or last deliberate control-stall turn in each trace",
+    )
     return parser.parse_args()
 
 
@@ -233,7 +239,12 @@ def _append_atomic_instruction(messages: Sequence[ModelMessage]) -> tuple[ModelM
     raise ValueError("recorded recovery context has no ModelRequest")
 
 
-def _load_contexts(trace_root: Path, *, limit: int) -> tuple[FrozenRecoveryContext, ...]:
+def _load_contexts(
+    trace_root: Path,
+    *,
+    limit: int,
+    turn_selection: str = "first",
+) -> tuple[FrozenRecoveryContext, ...]:
     contexts: list[FrozenRecoveryContext] = []
     for trace_path in sorted(trace_root.glob("*/trace.jsonl")):
         selected: FrozenRecoveryContext | None = None
@@ -243,6 +254,7 @@ def _load_contexts(trace_root: Path, *, limit: int) -> tuple[FrozenRecoveryConte
                 event = json.loads(line)
                 if event.get("event") != "model_turn":
                     continue
+                selected_this_turn = False
                 attempts = event.get("generation_attempts")
                 if not isinstance(attempts, list):
                     continue
@@ -281,8 +293,9 @@ def _load_contexts(trace_root: Path, *, limit: int) -> tuple[FrozenRecoveryConte
                             None,
                         ),
                     )
+                    selected_this_turn = True
                     break
-                if selected is not None:
+                if selected_this_turn and turn_selection == "first":
                     break
                 current_decision = _decision_call(event.get("decision"))
                 if current_decision is not None:
@@ -397,7 +410,11 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("concurrency must be within [1, 16]")
     if args.limit < 0:
         raise ValueError("limit must be non-negative")
-    contexts = _load_contexts(args.trace_root, limit=args.limit)
+    contexts = _load_contexts(
+        args.trace_root,
+        limit=args.limit,
+        turn_selection=args.turn_selection,
+    )
     models = {}
     for arm in args.arms:
         model_name, _thinking = _ARM_SPECS[arm]
@@ -524,6 +541,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             "tool_choice": args.tool_choice,
             "reasoning_effort_when_enabled": "high",
             "repeats": args.repeats,
+            "turn_selection": args.turn_selection,
         },
         "contexts": [
             {
