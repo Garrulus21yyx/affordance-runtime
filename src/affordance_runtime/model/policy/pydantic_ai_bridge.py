@@ -189,6 +189,10 @@ class ConfiguredPydanticAIModel:
     endpoint_host: str
     supports_multimodal: bool
 
+    def __post_init__(self) -> None:
+        if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
+            raise ValueError("PydanticAI model identity is required")
+
 
 @dataclass(frozen=True)
 class _ProviderFailureDetail:
@@ -272,6 +276,7 @@ class PydanticAIGroundedDecisionPort:
     model_id: str
     endpoint_host: str
     supports_multimodal: bool
+    deliberate_model_config: ConfiguredPydanticAIModel | None = field(default=None, repr=False)
     step_store: StepStore | None = field(default=None, repr=False)
     step_conversation_id: str = field(default="", repr=False)
     tracer_provider: object | None = field(default=None, repr=False)
@@ -311,10 +316,18 @@ class PydanticAIGroundedDecisionPort:
     last_history_compaction_error: str = field(default="", init=False, compare=False)
     last_model_delivery: ModelTurnDelivery | None = field(default=None, init=False, compare=False, repr=False)
     last_step_run_id: str = field(default="", init=False, compare=False, repr=False)
+    last_selected_model_id: str = field(default="", init=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.provider_id.strip() or not self.model_id.strip() or not self.endpoint_host.strip():
             raise ValueError("PydanticAI model identity is required")
+        deliberate = self.deliberate_model_config
+        if deliberate is not None and (
+            deliberate.provider_id != self.provider_id
+            or deliberate.endpoint_host != self.endpoint_host
+            or deliberate.supports_multimodal != self.supports_multimodal
+        ):
+            raise ValueError("deliberate ActionPolicy model must share provider, endpoint, and media capability")
         if not 0 < self.transport_timeout_s <= 300:
             raise ValueError("PydanticAI transport timeout must be in (0, 300]")
         if self.policy_timeout_s is not None and not 1 < self.policy_timeout_s <= 300:
@@ -628,12 +641,19 @@ class PydanticAIGroundedDecisionPort:
 
     @property
     def compatibility_key(self) -> str:
+        deliberate_route = (
+            (f"deliberate={self.deliberate_model_config.model_id}",)
+            if self.deliberate_model_config is not None
+            and self.deliberate_model_config.model_id != self.model_id
+            else ()
+        )
         return ":".join(
             (
                 GROUNDED_TOOLS_PROTOCOL,
                 "pydantic-ai",
                 self.provider_id,
                 self.model_id,
+                *deliberate_route,
                 self.endpoint_host,
                 self.perception_profile.value,
             )
@@ -675,6 +695,8 @@ class PydanticAIGroundedDecisionPort:
         object.__setattr__(self, "active_task_identity", task_identity)
         call_profile = self.reasoning_policy.select(request.agent_context)
         object.__setattr__(self, "last_call_profile", call_profile)
+        invocation_model = self._model_for_call_profile(call_profile)
+        object.__setattr__(self, "last_selected_model_id", invocation_model.model_id)
         try:
             from pydantic_ai import (
                 Agent,
@@ -794,7 +816,7 @@ class PydanticAIGroundedDecisionPort:
                         complete_retry=complete_retry,
                     )
                 current_agent = Agent(
-                    self.model,
+                    invocation_model.model,
                     name=agent_name,
                     instructions=current_instructions,
                     output_type=[str, DeferredToolRequests],
@@ -1099,9 +1121,9 @@ class PydanticAIGroundedDecisionPort:
                     request,
                 )
         identity = CanonicalProviderIdentity(
-            self.provider_id,
-            self.model_id,
-            self.endpoint_host,
+            invocation_model.provider_id,
+            invocation_model.model_id,
+            invocation_model.endpoint_host,
             self.perception_profile.value,
         )
 
@@ -1115,7 +1137,7 @@ class PydanticAIGroundedDecisionPort:
                 binder=self.envelope_binder,
                 identity=identity,
                 call_profile=call_profile,
-                supports_multimodal=self.supports_multimodal,
+                supports_multimodal=invocation_model.supports_multimodal,
                 perception_profile=self.perception_profile,
                 observation_tool_profile=self.observation_tool_profile,
                 interaction_tool_profile=self.interaction_tool_profile,
@@ -1454,8 +1476,8 @@ class PydanticAIGroundedDecisionPort:
             and item.transcript.get("error.code") == ProviderFailureCode.RATE_LIMITED.value
         )
         metadata = ModelMetadata(
-            provider_id=self.provider_id,
-            model_id=self.model_id,
+            provider_id=invocation_model.provider_id,
+            model_id=invocation_model.model_id,
             endpoint_class="openai-compatible",
             prompt_version=self.envelope_binder.context_binder.prompt_version(request.agent_context),
             schema_version=GROUNDED_TOOLS_PROTOCOL,
@@ -1467,7 +1489,7 @@ class PydanticAIGroundedDecisionPort:
             transient_retry_count=max(0, self.last_provider_retry_count - rate_limit_retries),
             grounding_profile_version=GROUNDED_TOOLS_PROTOCOL,
             perception_profile=self.perception_profile.value,
-            endpoint_host=self.endpoint_host,
+            endpoint_host=invocation_model.endpoint_host,
         )
         if accepted_exchange is None:
             return self._invocation_failure(
@@ -1535,6 +1557,20 @@ class PydanticAIGroundedDecisionPort:
             lineage["envelope_ids"] = tuple(item.envelope_id for item in self.last_admitted_envelopes)
         return lineage
 
+    def _model_for_call_profile(
+        self,
+        profile: ActionPolicyCallProfile,
+    ) -> ConfiguredPydanticAIModel:
+        if profile.phase is ActionPolicyInvocationPhase.DELIBERATE and self.deliberate_model_config is not None:
+            return self.deliberate_model_config
+        return ConfiguredPydanticAIModel(
+            self.model,
+            self.provider_id,
+            self.model_id,
+            self.endpoint_host,
+            self.supports_multimodal,
+        )
+
     def _diagnostics(self) -> Mapping[str, object]:
         return {
             "interaction_protocol": GROUNDED_TOOLS_PROTOCOL,
@@ -1558,6 +1594,7 @@ class PydanticAIGroundedDecisionPort:
             "history_compaction_error": self.last_history_compaction_error,
             "reasoning_phase": (self.last_call_profile.phase.value if self.last_call_profile else ""),
             "reasoning_trigger": (self.last_call_profile.trigger.value if self.last_call_profile else ""),
+            "selected_policy_model_id": self.last_selected_model_id,
             **request_breakdown_diagnostics(
                 self.last_request_breakdowns,
                 provider_reported_prompt_tokens=sum(item.prompt_tokens for item in self.last_generation_attempts),
@@ -1767,9 +1804,9 @@ class PydanticAIGroundedDecisionPort:
         actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
-            "llm.system": self.provider_id,
-            "llm.model_name": self.model_id,
-            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.system": envelope.identity.provider_id,
+            "llm.model_name": envelope.identity.model_id,
+            "llm.configured_endpoint_host": envelope.identity.endpoint_host,
             "canonical_provider_envelope": envelope.model_boundary_projection(),
             "envelope_id": envelope.envelope_id,
             "llm.model_settings": to_json_compatible(actual_settings),
@@ -1830,9 +1867,9 @@ class PydanticAIGroundedDecisionPort:
         final_content_tokens = max(0, attempt_completion_tokens - reasoning_tokens)
         transcript = {
             "openinference.span.kind": "LLM",
-            "llm.system": self.provider_id,
-            "llm.model_name": self.model_id,
-            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.system": envelope.identity.provider_id,
+            "llm.model_name": envelope.identity.model_id,
+            "llm.configured_endpoint_host": envelope.identity.endpoint_host,
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.actual_messages": requests,
             "llm.output_messages": responses,
@@ -1940,9 +1977,9 @@ class PydanticAIGroundedDecisionPort:
                 response_settings = _action_policy_physical_settings(envelope, require_action=True)
             transcript = {
                 "openinference.span.kind": "LLM",
-                "llm.system": self.provider_id,
-                "llm.model_name": self.model_id,
-                "llm.configured_endpoint_host": self.endpoint_host,
+                "llm.system": envelope.identity.provider_id,
+                "llm.model_name": envelope.identity.model_id,
+                "llm.configured_endpoint_host": envelope.identity.endpoint_host,
                 "llm.input_messages": envelope.model_boundary_projection()["messages"],
                 "llm.actual_messages": messages[:response_index],
                 "llm.output_messages": [response],
@@ -2014,9 +2051,9 @@ class PydanticAIGroundedDecisionPort:
         actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
-            "llm.system": self.provider_id,
-            "llm.model_name": self.model_id,
-            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.system": envelope.identity.provider_id,
+            "llm.model_name": envelope.identity.model_id,
+            "llm.configured_endpoint_host": envelope.identity.endpoint_host,
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(envelope.function_tools),
@@ -2052,9 +2089,9 @@ class PydanticAIGroundedDecisionPort:
         actual_settings = dict(physical_settings or envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
-            "llm.system": self.provider_id,
-            "llm.model_name": self.model_id,
-            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.system": envelope.identity.provider_id,
+            "llm.model_name": envelope.identity.model_id,
+            "llm.configured_endpoint_host": envelope.identity.endpoint_host,
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(envelope.function_tools),
@@ -2138,9 +2175,9 @@ class PydanticAIGroundedDecisionPort:
         actual_settings = dict(envelope.model_settings)
         transcript = {
             "openinference.span.kind": "LLM",
-            "llm.system": self.provider_id,
-            "llm.model_name": self.model_id,
-            "llm.configured_endpoint_host": self.endpoint_host,
+            "llm.system": envelope.identity.provider_id,
+            "llm.model_name": envelope.identity.model_id,
+            "llm.configured_endpoint_host": envelope.identity.endpoint_host,
             "llm.input_messages": envelope.model_boundary_projection()["messages"],
             "llm.output_messages": [],
             "llm.tools": _tool_transcript(envelope.function_tools),
@@ -2181,6 +2218,18 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         raise ValueError("PydanticAI policy timeout must be in (1, 300]")
     env = os.environ if environment is None else environment
     configured = pydantic_ai_model_from_environment(env, call_timeout_s=call_timeout_s)
+    deliberate_model_id = env.get("LLM_ACTION_POLICY_DELIBERATE_MODEL", "").strip()
+    if deliberate_model_id and configured.provider_id != "deepseek":
+        raise ValueError("LLM_ACTION_POLICY_DELIBERATE_MODEL currently requires the deepseek profile")
+    deliberate_model_config = (
+        pydantic_ai_model_from_environment(
+            env,
+            call_timeout_s=call_timeout_s,
+            model_override=deliberate_model_id,
+        )
+        if deliberate_model_id
+        else None
+    )
     selected_perception = DecisionPerceptionProfile(
         perception_profile or env.get("LLM_DECISION_PERCEPTION", DecisionPerceptionProfile.TEXT_ONLY.value)
     )
@@ -2205,6 +2254,7 @@ def openai_compatible_pydantic_ai_policy_from_environment(
         model_id=configured.model_id,
         endpoint_host=configured.endpoint_host,
         supports_multimodal=configured.supports_multimodal,
+        deliberate_model_config=deliberate_model_config,
         step_store=step_store,
         step_conversation_id=conversation_id,
         perception_profile=selected_perception,
@@ -2246,6 +2296,7 @@ def pydantic_ai_model_from_environment(
     environment: Mapping[str, str] | None = None,
     *,
     call_timeout_s: float = 90.0,
+    model_override: str = "",
 ) -> ConfiguredPydanticAIModel:
     """Build the one supported PydanticAI provider model configuration."""
 
@@ -2282,7 +2333,7 @@ def pydantic_ai_model_from_environment(
         if profile == "local"
         else _required(env, f"{prefix}_BASE_URL")
     )
-    model_id = (
+    model_id = model_override.strip() or (
         (env.get("LLM_LOCAL_MODEL_ID") or env.get("LLM_LOCAL_MODEL") or "qwen2.5:7b").strip()
         if profile == "local"
         else _required(env, f"{prefix}_MODEL")

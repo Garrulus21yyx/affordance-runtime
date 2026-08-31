@@ -368,6 +368,36 @@ variant on Task780 instead of rereading the current product region. Other cases 
 pre-repair World gaps. This is directional evidence to run the complete ActionPolicy on Pro next; it is not native
 success evidence and does not authorize dynamic Flash/Pro routing.
 
+### 2026-08-31 diagnostic10b outcome/efficiency classification and phase-routing gate
+
+The ten-case diagnostic baseline has five native completes and five non-completes, but the non-completes have
+different owners:
+
+| Task | Official result | Calls / recovery / wall time | Causal classification |
+|---:|---|---:|---|
+| 42 | native failure | 5 / 1 / 73 s | correct entities, but explanatory counts were appended to exact result strings |
+| 157 | complete | 9 / 0 / 71 s | correct navigation followed by six unnecessary region reads |
+| 307 | watchdog timeout | 44 / 20 / 909 s | readable autocomplete label had no executable route in the pre-repair World |
+| 388 | Monitor blocked | 17 / 3 / 198 s | repeated page-2 inspection after conflicting/overlapping review evidence |
+| 520 | complete | 2 / 0 / 20 s | clean path |
+| 566 | watchdog timeout | 77 / 19 / 915 s | route detour plus Monaco active-line proxy made complete input look incomplete |
+| 730 | complete | 7 / 0 / 56 s | bounded path |
+| 739 | complete | 20 / 0 / 232 s | genuine multi-site route with several redundant navigation/read calls |
+| 780 | watchdog timeout | 18 / 3 / 913 s | pre-repair 9,600-target World construction exhausted most wall time |
+| 801 | complete | 71 / 22 / 611 s | severe route-search/reverification overhead despite eventual success |
+
+The timeout label therefore does not identify one model defect: Task307/566/780 contain direct World/ActionSpace
+owner failures, while Task388 and Task801 are the cleaner route-convergence and efficiency probes. The sequential
+live order is Task388 first, Task801 second, then the three World-confounded timeouts after the first comparison is
+understood.
+
+The phase-routing implementation keeps ordinary calls on `deepseek-v4-flash` and leases
+`deepseek-v4-pro` only for the existing deliberate phase. It does not alter prompts, Monitor transitions, Runtime
+admission, native history, or Harness compaction. Five routing-specific tests and the broader 253-test
+policy/provider gate pass. A real factory-level wire probe accepted one Flash ordinary call and one Pro deliberate
+call with accurate envelope/transcript/model metadata. This is implementation evidence, not a rerun score; the
+Task388/Task801 live results remain pending.
+
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
 The follow-up diagnosis separates three generic contract gaps, one falsified Surface hypothesis, and model-owned route

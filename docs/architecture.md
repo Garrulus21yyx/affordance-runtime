@@ -446,6 +446,29 @@ The offline result therefore supports `deepseek-v4-pro + thinking disabled + req
 candidate, not a production switch and not phase-specific model routing. These frozen pre-repair contexts cannot
 prove post-action World progress or native task success; only a held-out live run can do so.
 
+### 2026-08-31 DeepSeek phase model lease — implemented, live-open
+
+The next bounded experiment keeps one ActionPolicy and one official PydanticAI history while separating model cost by
+the already-owned reasoning phase. `ordinary` calls use `LLM_DEEPSEEK_MODEL`; an optional
+`LLM_ACTION_POLICY_DELIBERATE_MODEL` is leased only when the existing `ActionPolicyReasoningPolicy` selects
+`deliberate`, including an active Monitor recovery epoch or the existing collection-evidence review boundary. The
+selected model is fixed for the complete semantic invocation, including provider/output/representation repair, and
+the next ordinary call returns to the ordinary model after recovery closes. Harness compaction remains its existing
+separate role on the ordinary configured model.
+
+The model lease is owned by the ActionPolicy provider port, not Monitor or Runtime. It does not add a planner,
+reviewer, progress state, fallback, prompt branch, or second history. The deliberate override currently fails closed
+outside the DeepSeek profile; provider, endpoint, and media capability must match so one conversation contract remains
+valid. Canonical envelope identity, per-attempt transcript, final model metadata, diagnostics, and compatibility key
+all identify the model actually used. A Pro provider failure is reported as that invocation's typed failure and is
+not silently retried on Flash.
+
+The focused policy/provider gate reports 253 passing tests. A real two-call wire probe with the production factory
+accepted exactly one ordinary ToolCall on `deepseek-v4-flash` and exactly one deliberate ToolCall on
+`deepseek-v4-pro`; both used the existing thinking-disabled required-tool physical contract. This proves routing and
+observability only. Task success and recovery efficiency remain open for the sequential Task388/Task801 live
+comparison before any default recommendation.
+
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
 The post-diagnostic repair keeps the same single inference/control chain. It adds no perception ledger, progress

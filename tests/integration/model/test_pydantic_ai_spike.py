@@ -105,6 +105,7 @@ from affordance_runtime.model.policy.provider_call_normalizer import (
     ToolCallReconciliationStatus,
 )
 from affordance_runtime.model.policy.pydantic_ai_bridge import (
+    ConfiguredPydanticAIModel,
     PydanticAIGroundedDecisionPort,
     pydantic_ai_model_from_environment,
     zhipu_pydantic_ai_policy_from_environment,
@@ -4913,6 +4914,153 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
     asyncio.run(scenario())
 
 
+def test_action_policy_leases_configured_model_by_reasoning_phase() -> None:
+    async def scenario() -> None:
+        ordinary_model = ScriptedModel(
+            [
+                _atomic_tool_response("list_regions", {}, "call:ordinary"),
+                _atomic_tool_response("list_regions", {}, "call:ordinary-after-recovery"),
+            ]
+        )
+        deliberate_model = ScriptedModel([_atomic_tool_response("list_regions", {}, "call:deliberate")])
+        port = PydanticAIGroundedDecisionPort(
+            model=ordinary_model.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            deliberate_model_config=ConfiguredPydanticAIModel(
+                deliberate_model.build(),
+                "deepseek",
+                "deepseek-v4-pro",
+                "api.deepseek.com",
+                False,
+            ),
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("phase-model-lease", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        base_context = ContextBuilder().build(
+            task,
+            world,
+            ActionSpaceBuilder().build(task, world),
+            evaluation,
+        )
+
+        ordinary = await port.generate(ModelDecisionRequest("request:model-route:ordinary", base_context))
+        assert ordinary.output is not None
+        committed = StepResult(
+            ordinary.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="provider_free_committed_action",
+        )
+        recovery_context = replace(
+            base_context,
+            last_step=committed,
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "route:model-lease",
+                "recovery_attempt": 1,
+            },
+        )
+        deliberate = await port.generate(
+            ModelDecisionRequest(
+                "request:model-route:deliberate",
+                recovery_context,
+                last_step=committed,
+            )
+        )
+        assert deliberate.output is not None
+        recovered_step = StepResult(
+            deliberate.output.decision,
+            world,
+            world,
+            evaluation,
+            feedback="provider_free_recovery_closed",
+        )
+        after_recovery = await port.generate(
+            ModelDecisionRequest(
+                "request:model-route:ordinary-after-recovery",
+                replace(base_context, last_step=recovered_step),
+                last_step=recovered_step,
+            )
+        )
+
+        assert after_recovery.output is not None
+        assert ordinary_model.calls == 2
+        assert deliberate_model.calls == 1
+        assert ordinary.output.metadata.model_id == "deepseek-v4-flash"
+        assert deliberate.output.metadata.model_id == "deepseek-v4-pro"
+        assert after_recovery.output.metadata.model_id == "deepseek-v4-flash"
+        assert ordinary.attempts[0].transcript["llm.model_name"] == "deepseek-v4-flash"
+        assert deliberate.attempts[0].transcript["llm.model_name"] == "deepseek-v4-pro"
+        assert deliberate.diagnostics["selected_policy_model_id"] == "deepseek-v4-pro"
+
+    asyncio.run(scenario())
+
+
+def test_deliberate_output_retry_keeps_one_model_lease() -> None:
+    async def scenario() -> None:
+        ordinary_model = ScriptedModel([])
+        deliberate_model = ScriptedModel(
+            [
+                ModelResponse(parts=[TextPart("A different route is required.")]),
+                _atomic_tool_response("list_regions", {}, "call:deliberate-retry"),
+            ]
+        )
+        port = PydanticAIGroundedDecisionPort(
+            model=ordinary_model.build(),
+            provider_id="deepseek",
+            model_id="deepseek-v4-flash",
+            endpoint_host="api.deepseek.com",
+            supports_multimodal=False,
+            deliberate_model_config=ConfiguredPydanticAIModel(
+                deliberate_model.build(),
+                "deepseek",
+                "deepseek-v4-pro",
+                "api.deepseek.com",
+                False,
+            ),
+            perception_profile=DecisionPerceptionProfile.TEXT_ONLY,
+            transport_timeout_s=4.0,
+        )
+        task = shared_task()
+        world = shared_world("deliberate-model-retry-lease", False)
+        evaluation = await SharedTaskEvaluator().evaluate(task, world)
+        context = replace(
+            ContextBuilder().build(
+                task,
+                world,
+                ActionSpaceBuilder().build(task, world),
+                evaluation,
+            ),
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "route:model-retry-lease",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await port.generate(ModelDecisionRequest("request:model-route:retry", context))
+
+        assert result.output is not None
+        assert ordinary_model.calls == 0
+        assert deliberate_model.calls == 2
+        assert [attempt.phase for attempt in result.attempts] == [
+            "deliberate",
+            "deliberate_complete_retry",
+        ]
+        assert {attempt.transcript["llm.model_name"] for attempt in result.attempts} == {
+            "deepseek-v4-pro"
+        }
+
+    asyncio.run(scenario())
+
+
 def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_boundary() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
@@ -7227,6 +7375,7 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
     assert isinstance(selected.port, PydanticAIGroundedDecisionPort)
     assert selected.port.provider_id == "deepseek"
     assert selected.port.model_id == "deepseek-v4-flash"
+    assert "deliberate=" not in selected.port.compatibility_key
     assert selected.port.supports_multimodal is False
     assert selected.port.transport_timeout_s == 2.0
     assert selected.port.policy_timeout_s == 5.0
@@ -7269,6 +7418,44 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
                 "LLM_ACTIVE_PROFILE": "deepseek",
                 "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
                 "LLM_ACTION_POLICY_WIRE_CAPABILITY": "json_single_command",
+            },
+            call_timeout_s=5.0,
+        )
+
+
+def test_deepseek_factory_configures_deliberate_model_without_changing_ordinary_model() -> None:
+    selected = model_policy_from_environment(
+        {
+            "LLM_ACTIVE_PROFILE": "deepseek",
+            "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+            "LLM_DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+            "LLM_DEEPSEEK_API_KEY": "fixture-secret",
+            "LLM_DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_ACTION_POLICY_DELIBERATE_MODEL": "deepseek-v4-pro",
+            "LLM_DECISION_PERCEPTION": "text-only.v1",
+        },
+        call_timeout_s=5.0,
+    )
+
+    assert selected.port.model_id == "deepseek-v4-flash"
+    assert selected.port.deliberate_model_config is not None
+    assert selected.port.deliberate_model_config.provider_id == "deepseek"
+    assert selected.port.deliberate_model_config.model_id == "deepseek-v4-pro"
+    assert selected.port.deliberate_model_config.endpoint_host == "api.deepseek.com"
+    assert selected.port.deliberate_model_config.model.settings == selected.port.model.settings
+    assert "deliberate=deepseek-v4-pro" in selected.port.compatibility_key
+
+
+def test_deliberate_model_override_fails_closed_outside_deepseek_profile() -> None:
+    with pytest.raises(ValueError, match="currently requires the deepseek profile"):
+        model_policy_from_environment(
+            {
+                "LLM_ACTIVE_PROFILE": "mistral",
+                "LLM_PROFILE_FALLBACK_TO_LOCAL": "false",
+                "LLM_MISTRAL_BASE_URL": "https://mistral.invalid/v1",
+                "LLM_MISTRAL_API_KEY": "fixture-secret",
+                "LLM_MISTRAL_MODEL": "mistral-small",
+                "LLM_ACTION_POLICY_DELIBERATE_MODEL": "deepseek-v4-pro",
             },
             call_timeout_s=5.0,
         )
