@@ -498,7 +498,7 @@ def _paginated_collection_world(
     return result.observation
 
 
-def test_read_region_distinguishes_local_completion_from_web_collection_continuation() -> None:
+def test_sibling_paginator_without_collection_owner_remains_unknown() -> None:
     world = _paginated_collection_world()
     task = TaskGoal(
         "paginated-collection",
@@ -517,7 +517,11 @@ def test_read_region_distinguishes_local_completion_from_web_collection_continua
         for region in context.region_index.regions
         if region.role == "list" and region.repeated_item_roots
     )
-    assert collection.collection_navigation == (("pagination:next", "next"),)
+    assert collection.collection_navigation == ()
+    assert any(
+        option.target_id == "pagination:next" and option.operation == "activate"
+        for option in context.complete_actions
+    )
 
     _, catalog = catalog_for(context)
     call = ToolCall(
@@ -534,45 +538,8 @@ def test_read_region_distinguishes_local_completion_from_web_collection_continua
 
     assert result["has_more"] is False
     assert result["result_page"] == "1/1"
-    assert result["collection_coverage"] == "open"
-    assert len(result["collection_continuations"]) == 1
-    continuation = result["collection_continuations"][0]
-    assert continuation["relation"] == "next"
-    assert continuation["label"] == "Weiter"
-    assert continuation["verbs"] == ("activate",)
-    assert result["executable_grounding"] == "attached_to_returned_readable_targets"
-
-    step = StepResult(
-        resolved.decision,
-        world,
-        world,
-        _evaluation(task, world.observation_id),
-        feedback="local_tool_result",
-    )
-    next_delivery = build_model_turn_delivery(
-        context,
-        include_images=False,
-        committed_step=step,
-        pending_tool_call_id="call:collection-read",
-        pending_tool_name="read_region",
-    )
-    next_catalog = compile_grounded_tool_catalog(
-        context,
-        GroundedToolPhase.ACTION_SELECTION,
-        next_delivery,
-    )
-    activated = resolve_catalog_call(
-        next_catalog,
-        ToolCall("activate", {"target": continuation["target_ref"]}, "call:continue"),
-        expected_context_id=context.context_id,
-    )
-
-    assert continuation["target_ref"] in next_delivery.manifest.executable_refs
-    assert isinstance(activated.decision, SelectAction)
-    selected = next(
-        item for item in context.complete_actions if item.action_id == activated.decision.action_id
-    )
-    assert selected.target_id == "pagination:next"
+    assert result["collection_coverage"] == "unknown"
+    assert result["collection_continuations"] == ()
 
 
 def test_collection_region_owns_its_embedded_current_paginator() -> None:

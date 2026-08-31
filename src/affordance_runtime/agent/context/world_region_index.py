@@ -1113,13 +1113,15 @@ def _associate_collection_navigation(
     regions: tuple[WorldRegion, ...],
     observation: WorldObservation,
 ) -> tuple[WorldRegion, ...]:
-    """Attach typed paginator controls to their nearest structural collection.
+    """Attach only paginator controls whose collection ownership is proven.
 
     Surface adapters own the normalized ``pagination_relation`` fact.  This
-    index owns the functional-region partition, so it is the only layer that
-    can relate a sibling paginator to a repeated list/table without guessing
-    from task vocabulary.  Ambiguous or document-only relationships remain
-    unassociated and therefore fail closed as unknown collection coverage.
+    index owns the functional-region partition and may prove ownership when a
+    repeated collection embeds its paginator. A sibling ``next`` relation does
+    not identify which collection it paginates, even if only one collection is
+    visible. Until Surface evidence carries an explicit collection owner, every
+    sibling relation remains an ordinary ActionSpace route and collection
+    coverage fails closed as unknown.
     """
 
     targets = {item.target_id: item for item in observation.targets}
@@ -1137,7 +1139,6 @@ def _associate_collection_navigation(
     if not pagination_by_region:
         return regions
 
-    regions_by_key = {item.key: item for item in regions}
     assigned: dict[str, list[tuple[str, str]]] = defaultdict(list)
     canonical = {
         (item.source_observation_id, item.source_target_id): item.canonical_target_id
@@ -1145,8 +1146,6 @@ def _associate_collection_navigation(
     }
     for source in observation.sources:
         nodes = {item.structure_id: item for item in source.structure}
-        parents = _parents(nodes)
-        directly_owned: set[str] = set()
         for region in regions:
             navigation = pagination_by_region.get(region.key, ())
             if region.source_id != source.observation_id or not navigation or not region.repeated_item_roots:
@@ -1169,46 +1168,6 @@ def _associate_collection_navigation(
             # unique structural-owner pass below instead of claiming itself.
             if len(record_roots) >= 2:
                 assigned[region.key].extend(navigation)
-                directly_owned.add(region.key)
-        paginators = tuple(
-            regions_by_key[key]
-            for key in pagination_by_region
-            if regions_by_key[key].source_id == source.observation_id
-            and key not in directly_owned
-            # A standard rel proves link direction, not collection ownership.
-            # Sibling association additionally requires a structural paginator
-            # list; navigation/workflow regions remain ordinary ActionSpace
-            # routes unless Surface evidence places them inside the collection.
-            and regions_by_key[key].role == "list"
-        )
-        collections = tuple(
-            region
-            for region in regions
-            if region.source_id == source.observation_id
-            and region.repeated_item_roots
-            and (region.key not in pagination_by_region or region.key in directly_owned)
-        )
-        for paginator in paginators:
-            scored = tuple(
-                (score, collection)
-                for collection in collections
-                if (
-                    score := _collection_paginator_distance(
-                        collection.root_structure_id,
-                        paginator.root_structure_id,
-                        nodes,
-                        parents,
-                    )
-                )
-                is not None
-            )
-            if not scored:
-                continue
-            best_score = min(score for score, _collection in scored)
-            owners = tuple(collection for score, collection in scored if score == best_score)
-            if len(owners) != 1:
-                continue
-            assigned[owners[0].key].extend(pagination_by_region[paginator.key])
 
     return tuple(
         replace(
@@ -1234,40 +1193,6 @@ def _structure_contains_any_target(
         if target_id in target_ids:
             return True
     return False
-
-
-def _collection_paginator_distance(
-    collection_root: str,
-    paginator_root: str,
-    nodes: Mapping[str, object],
-    parents: Mapping[str, str],
-) -> int | None:
-    collection_ancestors = _ancestor_distances(collection_root, parents)
-    paginator_ancestors = _ancestor_distances(paginator_root, parents)
-    common = set(collection_ancestors) & set(paginator_ancestors)
-    # A document/main/navigation/region boundary can contain many unrelated
-    # collections and workflows. Only a local neutral wrapper can prove this
-    # sibling relationship without a Surface-owned collection identifier.
-    structural_common = tuple(
-        structure_id
-        for structure_id in common
-        if str(getattr(nodes.get(structure_id), "role", "")).casefold() in {"generic", "group"}
-    )
-    if not structural_common:
-        return None
-    return min(
-        collection_ancestors[structure_id] + paginator_ancestors[structure_id]
-        for structure_id in structural_common
-    )
-
-
-def _ancestor_distances(structure_id: str, parents: Mapping[str, str]) -> dict[str, int]:
-    result: dict[str, int] = {}
-    current = structure_id
-    while current and current not in result:
-        result[current] = len(result)
-        current = parents.get(current, "")
-    return result
 
 
 def _document_lineage(observation: WorldObservation) -> str:
