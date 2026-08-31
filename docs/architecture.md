@@ -466,8 +466,31 @@ not silently retried on Flash.
 The focused policy/provider gate reports 253 passing tests. A real two-call wire probe with the production factory
 accepted exactly one ordinary ToolCall on `deepseek-v4-flash` and exactly one deliberate ToolCall on
 `deepseek-v4-pro`; both used the existing thinking-disabled required-tool physical contract. This proves routing and
-observability only. Task success and recovery efficiency remain open for the sequential Task388/Task801 live
-comparison before any default recommendation.
+observability only.
+
+Two post-implementation retrieval runs show why the lease must remain optional rather than become the default
+efficiency claim. [Task388](../evidence/live/webarena-phase-route-deepseek-flash-pro-20260831-8138df72/task388-r2/run.json)
+reached native `complete` with the exact two names, but required 44 policy calls, 12 Monitor-recovery calls, 23
+executions, 312 seconds, and 1,109,125 tokens. Its 17 Pro turns comprised 11 `control_stall`, five
+`evidence_review`, and one `operational_stall` trigger. The first complete page-2 read already coexisted with the
+needed page-1 evidence, yet both models continued page switching and rereading before the final Pro evidence review
+submitted. The old Flash witness blocked after 17 calls; Pro increased task-success capability but made this sample
+slower and about 4.4x more expensive ($0.156 versus $0.036 provider-reported cost).
+
+[Task307](../evidence/live/webarena-phase-route-deepseek-flash-pro-20260831-8138df72/task307/run.json) also reached
+native `complete` with `[5]`, improving the old timeout from 44 calls / 20 recovery calls / 909 seconds to 24 / 7 /
+227 seconds. This is a combined post-World-repair result, not an isolated model effect: the current World exposed a
+usable autocomplete path, while Pro eventually selected the direct filtered commits URL after several remaining
+no-effect dropdown attempts. Provider-reported cost was $0.142 versus the old Flash timeout's $0.123.
+
+The causal conclusion is bounded. Phase routing works mechanically and can raise the solve ceiling, but model tier is
+not the missing progress authority. Repeated closed collection reads currently reacquire an `evidence_review` lease
+without requiring a new collection fact, and page switches whose large public World digest changes can close one
+recovery epoch even when they do not materially reduce the task's missing evidence. The next efficiency repair must
+qualify the existing evidence-review/recovery transitions with owner-produced novelty and coverage facts; it must not
+add another planner, progress store, or semantic Monitor. Task801 was not rerun because the prior mutation already
+left `/groups/crew` in the shared GitLab state, so it cannot provide a clean comparison without an explicit
+environment reset.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 

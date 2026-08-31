@@ -395,8 +395,24 @@ The phase-routing implementation keeps ordinary calls on `deepseek-v4-flash` and
 `deepseek-v4-pro` only for the existing deliberate phase. It does not alter prompts, Monitor transitions, Runtime
 admission, native history, or Harness compaction. Five routing-specific tests and the broader 253-test
 policy/provider gate pass. A real factory-level wire probe accepted one Flash ordinary call and one Pro deliberate
-call with accurate envelope/transcript/model metadata. This is implementation evidence, not a rerun score; the
-Task388/Task801 live results remain pending.
+call with accurate envelope/transcript/model metadata.
+
+The first two valid post-implementation retrieval runs both completed, with mixed efficiency:
+
+| Task | Baseline | Flash/Pro phase lease | Interpretation |
+|---:|---|---|---|
+| 388 | blocked; 17 calls / 3 recovery / 198 s / 355,504 tokens / $0.036 | complete; 44 / 12 / 312 s / 1,109,125 / $0.156 | exact answer recovered, but repeated page switching and evidence review made efficiency much worse |
+| 307 | timeout; 44 / 20 / 909 s / 1,123,662 / $0.123 | complete; 24 / 7 / 227 s / 621,048 / $0.142 | current World repair plus Pro's eventual filtered-URL route closed the task; model-only attribution is invalid |
+
+Task388's final response was exactly `Evelyn Kurver, N Randall`; Task307's was exactly `[5]`. Task388 used 27 Flash
+and 17 Pro turns; the Pro turns split into 11 control-stall recoveries, five collection evidence reviews, and one
+operational-stall recovery. Task307 used 16 Flash and eight Pro turns. These runs falsify “turn on Pro at a wall and
+efficiency is solved”: Pro can improve semantic choices and completion, but the existing evidence-review trigger and
+page novelty/coverage lifecycle still allow costly self-verification. Task801 is presently inadmissible for a clean
+rerun because the shared GitLab already contains the previously created `crew` group; no destructive reset was
+performed. The zero-policy-call Task388 r1 is separately environment-invalid because Playwright Chromium revision
+1117 was missing; after installing the fixed interpreter's official browser, r2 executed normally and is the only
+Task388 comparison above.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
