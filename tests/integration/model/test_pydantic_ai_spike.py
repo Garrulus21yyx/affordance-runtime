@@ -282,26 +282,6 @@ def _progress_text(
     )
 
 
-def _atomic_recovery_text(
-    *,
-    previous_effect: str = "unchanged",
-    failure_cause: str = "The previous route produced no useful effect.",
-    next_route: str = "Use one materially different current action route.",
-    expected_effect: str = "The fresh World should expose new task evidence.",
-) -> str:
-    return json.dumps(
-        {
-            "recovery_decision": {
-                "previous_effect": previous_effect,
-                "failure_cause": failure_cause,
-                "next_route": next_route,
-                "expected_effect": expected_effect,
-            }
-        },
-        separators=(",", ":"),
-    )
-
-
 def _atomic_tool_response(
     tool_name: str,
     arguments: dict[str, object],
@@ -310,10 +290,7 @@ def _atomic_tool_response(
     finish_reason: str = "stop",
 ) -> ModelResponse:
     return ModelResponse(
-        parts=[
-            TextPart(_atomic_recovery_text()),
-            ToolCallPart(tool_name, arguments, call_id),
-        ],
+        parts=[ToolCallPart(tool_name, arguments, call_id)],
         finish_reason=finish_reason,
         provider_response_id=f"response:{call_id}",
     )
@@ -432,7 +409,7 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
                     "finish_reason": "tool_calls",
                     "message": {
                         "role": "assistant",
-                        "content": _atomic_recovery_text(),
+                        "content": "",
                         "tool_calls": [
                             {
                                 "id": "deepseek-call:2",
@@ -534,7 +511,7 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
                     "finish_reason": "tool_calls",
                     "message": {
                         "role": "assistant",
-                        "content": _atomic_recovery_text(),
+                        "content": "",
                         "tool_calls": [
                             {
                                 "id": "deepseek-call:length-fallback",
@@ -1247,8 +1224,8 @@ def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> Non
             [
                 "first_gui_action",
                 "first_gui_action",
-                "atomic_first_gui_action",
-                "atomic_first_gui_action",
+                "first_gui_action",
+                "first_gui_action",
             ]
         )
         policy = _policy(scripted.build())
@@ -4889,7 +4866,7 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
 
 def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["atomic_first_gui_action", "atomic_first_gui_action"])
+        scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("recovery", False)
@@ -4938,7 +4915,7 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
 
 def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_boundary() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["atomic_first_gui_action"])
+        scripted = ScriptedModel(["first_gui_action"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("collection-evidence-boundary", False)
@@ -4989,7 +4966,7 @@ def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_b
 
 def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel(["atomic_first_gui_action", "atomic_first_gui_action"])
+        scripted = ScriptedModel(["first_gui_action", "first_gui_action"])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("later-recovery", False)
@@ -5043,13 +5020,12 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
     asyncio.run(scenario())
 
 
-def test_deepseek_atomic_recovery_attempt_records_bounded_decision_content() -> None:
+def test_deepseek_atomic_recovery_records_one_complete_action_without_hidden_reasoning() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
                 ModelResponse(
                     parts=[
-                        TextPart(_atomic_recovery_text()),
                         ToolCallPart("list_regions", {}, "recording-call:deliberate"),
                     ],
                     usage=RequestUsage(
@@ -5122,7 +5098,6 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
                 ),
                 ModelResponse(
                     parts=[
-                        TextPart(_atomic_recovery_text()),
                         ToolCallPart("list_regions", {}, "recording-call:deliberate-retry"),
                     ],
                     usage=RequestUsage(
@@ -5307,64 +5282,58 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         official_history = json.dumps(port.message_history, default=str)
         assert "The complete positive set already supported" not in official_history
         assert "atomic_recovery_decision" not in official_history
-        assert "recovery_decision" in official_history
 
     asyncio.run(scenario())
 
 
 @given(
-    previous_effect=st.sampled_from(tuple(sorted(pydantic_bridge._ATOMIC_RECOVERY_EFFECTS))),
-    failure_cause=st.text(alphabet=st.characters(whitelist_categories=("L", "N")), min_size=1, max_size=40),
-    next_route=st.text(alphabet=st.characters(whitelist_categories=("L", "N")), min_size=1, max_size=40),
-    expected_effect=st.text(alphabet=st.characters(whitelist_categories=("L", "N")), min_size=1, max_size=40),
+    narration=st.lists(st.text(min_size=0, max_size=40), min_size=0, max_size=3),
+    complete_retry=st.booleans(),
 )
 @settings(max_examples=100, deadline=None)
-def test_atomic_recovery_decision_and_prompt_obey_the_bounded_contract(
-    previous_effect: str,
-    failure_cause: str,
-    next_route: str,
-    expected_effect: str,
+def test_atomic_recovery_action_and_prompt_obey_the_bounded_contract(
+    narration: list[str],
+    complete_retry: bool,
 ) -> None:
-    content = _atomic_recovery_text(
-        previous_effect=previous_effect,
-        failure_cause=failure_cause,
-        next_route=next_route,
-        expected_effect=expected_effect,
-    )
     messages = [
         {
             "kind": "response",
             "finish_reason": "stop",
             "parts": [
-                {"part_kind": "text", "content": content},
+                *({"part_kind": "text", "content": value} for value in narration),
                 {"part_kind": "tool-call", "tool_name": "list_regions", "args": {}},
             ],
         }
     ]
 
-    assert pydantic_bridge._atomic_recovery_decision_error(messages) == ""
-    assert len(content.encode("utf-8")) <= pydantic_bridge._ATOMIC_RECOVERY_DECISION_MAX_BYTES
-    recovery_prompt = pydantic_bridge._pydantic_atomic_recovery_prompt([], complete_retry=False)[-1]
+    assert pydantic_bridge._atomic_recovery_action_error(messages) == ""
+    recovery_prompt = pydantic_bridge._pydantic_atomic_recovery_prompt(
+        [],
+        complete_retry=complete_retry,
+    )[-1]
     assert len(recovery_prompt.encode("utf-8")) <= pydantic_bridge._ATOMIC_RECOVERY_PROMPT_MAX_BYTES
+    assert json.loads(recovery_prompt)["atomic_recovery_decision"]["retry"] is complete_retry
 
 
-def test_atomic_recovery_decision_rejects_oversized_or_incomplete_content() -> None:
-    oversized = _atomic_recovery_text(failure_cause="x" * 241)
-    incomplete = json.dumps({"recovery_decision": {"previous_effect": "unchanged"}})
+def test_atomic_recovery_action_requires_exactly_one_physical_response_and_tool_call() -> None:
+    no_tool = [{"kind": "response", "parts": [{"part_kind": "text", "content": "unfinished"}]}]
+    two_tools = [
+        {
+            "kind": "response",
+            "parts": [
+                {"part_kind": "tool-call", "tool_name": "list_regions", "args": {}},
+                {"part_kind": "tool-call", "tool_name": "abort", "args": {}},
+            ],
+        }
+    ]
+    two_responses = [
+        {"kind": "response", "parts": [{"part_kind": "tool-call", "tool_name": "list_regions"}]},
+        {"kind": "response", "parts": [{"part_kind": "tool-call", "tool_name": "abort"}]},
+    ]
 
-    def messages(content: str) -> list[dict[str, object]]:
-        return [
-            {
-                "kind": "response",
-                "parts": [
-                    {"part_kind": "text", "content": content},
-                    {"part_kind": "tool-call", "tool_name": "list_regions", "args": {}},
-                ],
-            }
-        ]
-
-    assert pydantic_bridge._atomic_recovery_decision_error(messages(oversized)) == "failure_cause"
-    assert pydantic_bridge._atomic_recovery_decision_error(messages(incomplete)) == "decision_fields"
+    assert pydantic_bridge._atomic_recovery_action_error(no_tool) == "tool_call_count"
+    assert pydantic_bridge._atomic_recovery_action_error(two_tools) == "tool_call_count"
+    assert pydantic_bridge._atomic_recovery_action_error(two_responses) == "response_count"
 
 
 def test_length_recovery_preserves_the_single_current_operation_exposed_before_truncation() -> None:
@@ -5889,7 +5858,7 @@ def test_logical_action_turn_generated_conserves_world_catalog_and_history(
                 finish_reason="stop",
                 provider_response_id=f"recording-response:{first_output}",
             )
-        decisions = [rejected, "atomic_first_gui_action"]
+        decisions = [rejected, "first_gui_action"]
         if pending_result:
             decisions.insert(0, ("list_regions", {}))
         scripted = ScriptedModel(decisions)
@@ -7181,6 +7150,7 @@ def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
     assert isinstance(policy.port, PydanticAIGroundedDecisionPort)
     assert policy.port.provider_id == profile
     assert policy.port.model_id == model_id
+    assert "thinking" not in policy.port.model.settings
 
 
 def test_strategy_review_signal_goes_directly_to_one_deliberate_action_policy_call() -> None:

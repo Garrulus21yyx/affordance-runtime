@@ -112,18 +112,6 @@ _MAX_PROVIDER_RETRIES = 1
 _ACTION_POLICY_TOOL_RETRY_BUDGET = 1
 _ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
 _ATOMIC_RECOVERY_PROMPT_MAX_BYTES = 3_072
-_ATOMIC_RECOVERY_DECISION_MAX_BYTES = 1_200
-_ATOMIC_RECOVERY_TEXT_MAX_CHARS = 240
-_ATOMIC_RECOVERY_EFFECTS = frozenset(
-    {
-        "satisfied",
-        "changed",
-        "unchanged",
-        "unknown",
-        "not_sent",
-        "no_usable_information",
-    }
-)
 _ACTION_POLICY_MAX_PROTOCOL_RETRIES = _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
@@ -922,7 +910,7 @@ class PydanticAIGroundedDecisionPort:
                             can_retry_complete,
                         )
                     if atomic_recovery:
-                        atomic_error = _atomic_recovery_decision_error(serialized)
+                        atomic_error = _atomic_recovery_action_error(serialized)
                         if atomic_error:
                             can_retry_atomic = allow_complete_retry and response_count == 1
                             latest = self.last_generation_attempts[-1]
@@ -2313,11 +2301,12 @@ def pydantic_ai_model_from_environment(
     model_settings = {
         "max_tokens": _HISTORY_COMPACTION_MAX_OUTPUT_TOKENS,
         "temperature": 0.0,
-        # Compaction and ordinary ActionPolicy calls default to non-thinking.
-        # The canonical per-call envelope overrides this only for a deliberate
-        # recovery invocation.
-        "thinking": False,
     }
+    if profile in {"zhipu", "aliyun", "deepseek"}:
+        # Only transports with an explicit thinking-control contract receive
+        # this extension. OpenAI-compatible Gemini/Mistral endpoints reject
+        # unknown provider-specific request fields.
+        model_settings["thinking"] = False
     if profile == "deepseek":
         model = OpenAIChatModel(
             model_id,
@@ -3911,21 +3900,12 @@ def _pydantic_atomic_recovery_prompt(
             "atomic_recovery_decision": {
                 "retry": complete_retry,
                 "instruction": (
-                    "Return one assistant response containing exactly one compact JSON text part matching the "
-                    "decision schema and exactly one complete offered tool call. The JSON is a bounded decision "
-                    "summary, not hidden chain-of-thought or a second plan. Use the same fresh World, exact recent "
-                    "outcomes, stable summary, and active recovery facts. Choose a materially new route when the "
-                    "previous route has no effect; submit when evidence is sufficient; stop re-checking a closed "
-                    "coverage scope. Do not repeat an exact failed attempt."
+                    "Audit the same fresh World, exact recent outcomes, stable summary, and active recovery facts, "
+                    "then return exactly one complete offered ToolCall and no explanatory text. That ToolCall is "
+                    "the entire bounded recovery decision; do not create a second plan. Choose a materially new "
+                    "route when the previous route had no effect; submit when evidence is sufficient; stop "
+                    "re-checking a closed coverage scope. Do not repeat an exact failed attempt."
                 ),
-                "decision_schema": {
-                    "recovery_decision": {
-                        "previous_effect": sorted(_ATOMIC_RECOVERY_EFFECTS),
-                        "failure_cause": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
-                        "next_route": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
-                        "expected_effect": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
-                    }
-                },
             }
         },
         ensure_ascii=False,
@@ -4035,7 +4015,10 @@ def _action_policy_physical_settings(
         # Recovery therefore externalizes one bounded decision summary beside
         # the required ToolCall instead of opening an unbounded hidden-thinking
         # channel.  The semantic envelope and fresh World remain unchanged.
-        settings["thinking"] = False
+        if envelope.identity.provider_id in {"zhipu", "aliyun", "deepseek"}:
+            settings["thinking"] = False
+        else:
+            settings.pop("thinking", None)
         settings["tool_choice"] = "required"
     else:
         settings["tool_choice"] = "auto"
@@ -4087,8 +4070,8 @@ def _captured_output_failure(
     )
 
 
-def _atomic_recovery_decision_error(messages: list[dict[str, object]]) -> str:
-    """Validate the bounded assessment paired with one recovery ToolCall."""
+def _atomic_recovery_action_error(messages: list[dict[str, object]]) -> str:
+    """Validate that one physical response fixed exactly one current action."""
 
     responses = tuple(message for message in messages if message.get("kind") == "response")
     if len(responses) != 1:
@@ -4096,46 +4079,8 @@ def _atomic_recovery_decision_error(messages: list[dict[str, object]]) -> str:
     parts = responses[0].get("parts")
     if not isinstance(parts, list):
         return "parts"
-    text_parts = tuple(
-        part
-        for part in parts
-        if isinstance(part, Mapping)
-        and part.get("part_kind") == "text"
-        and isinstance(part.get("content"), str)
-        and str(part["content"]).strip()
-    )
     tool_parts = tuple(part for part in parts if isinstance(part, Mapping) and part.get("part_kind") == "tool-call")
-    unsupported = tuple(
-        part for part in parts if not isinstance(part, Mapping) or part.get("part_kind") not in {"text", "tool-call"}
-    )
-    if len(text_parts) != 1 or len(tool_parts) != 1 or unsupported:
-        return "atomic_parts"
-    text = str(text_parts[0]["content"]).strip()
-    if len(text.encode("utf-8")) > _ATOMIC_RECOVERY_DECISION_MAX_BYTES:
-        return "decision_capacity"
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return "decision_json"
-    if not isinstance(payload, Mapping) or set(payload) != {"recovery_decision"}:
-        return "decision_root"
-    decision = payload["recovery_decision"]
-    required = {"previous_effect", "failure_cause", "next_route", "expected_effect"}
-    if not isinstance(decision, Mapping) or set(decision) != required:
-        return "decision_fields"
-    previous_effect = decision["previous_effect"]
-    if previous_effect not in _ATOMIC_RECOVERY_EFFECTS:
-        return "previous_effect"
-    for field_name in ("failure_cause", "next_route", "expected_effect"):
-        value = decision[field_name]
-        if (
-            not isinstance(value, str)
-            or not value.strip()
-            or value != value.strip()
-            or len(value) > _ATOMIC_RECOVERY_TEXT_MAX_CHARS
-        ):
-            return field_name
-    return ""
+    return "" if len(tool_parts) == 1 else "tool_call_count"
 
 
 def _truncated_current_tool_name(

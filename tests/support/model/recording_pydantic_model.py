@@ -243,7 +243,6 @@ class RecordingPydanticModel:
                 )
             if isinstance(scripted, str) and scripted in {
                 "first_gui_action",
-                "atomic_first_gui_action",
                 "first_gui_action_invalid_extra",
                 "multiple_gui_actions",
                 "multiple_distinct_gui_actions",
@@ -282,24 +281,7 @@ class RecordingPydanticModel:
             call_id = self.last_gui_call_id if scripted == "repeat_last_gui_call" else f"recording-call:{ordinal}"
             if scripted != "repeat_last_gui_call":
                 self.last_gui_call_id = call_id
-            parts = []
-            if scripted == "atomic_first_gui_action":
-                parts.append(
-                    TextPart(
-                        json.dumps(
-                            {
-                                "recovery_decision": {
-                                    "previous_effect": "unchanged",
-                                    "failure_cause": "The previous route produced no useful effect.",
-                                    "next_route": "Use one different current action route.",
-                                    "expected_effect": "The fresh World should expose new task evidence.",
-                                }
-                            },
-                            separators=(",", ":"),
-                        )
-                    )
-                )
-            parts.append(ToolCallPart(name, arguments, tool_call_id=call_id))
+            parts = [ToolCallPart(name, arguments, tool_call_id=call_id)]
             if scripted == "multiple_gui_actions":
                 parts.append(ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}:second"))
             elif scripted == "multiple_distinct_gui_actions":
