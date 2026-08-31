@@ -194,6 +194,7 @@ def test_webarena_final_response_codec_delegates_to_pinned_upstream_model() -> N
     assert "MUTATE: Use when creating, updating, or deleting data or state" in guidance
     assert "NAVIGATE: Use when navigating or browsing to show a specific page or location" in guidance
     assert "never goal_plan or allowed effects" in guidance
+    assert "RETRIEVE values: exact requested values only; no explanatory annotations" in guidance
     assert len(guidance) <= FINAL_RESPONSE_MODEL_GUIDANCE_MAX_CHARS
 
 

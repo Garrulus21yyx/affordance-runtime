@@ -601,7 +601,8 @@ class WebArenaVerifiedFinalResponseCodec:
             f"JSON FinalAgentResponse. task_type is overall work: {objective_rules}. "
             "Derive it from task, never goal_plan or allowed effects. "
             f"status={'|'.join(status_values)}. NAVIGATE/MUTATE: retrieved_data=null. "
-            "SUCCESS: error_details=null. Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
+            "SUCCESS: error_details=null. RETRIEVE values: exact requested values only; no explanatory annotations. "
+            "Empty RETRIEVE: NOT_FOUND_ERROR and retrieved_data=null."
         )
 
     @property
