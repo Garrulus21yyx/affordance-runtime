@@ -414,6 +414,17 @@ performed. The zero-policy-call Task388 r1 is separately environment-invalid bec
 1117 was missing; after installing the fixed interpreter's official browser, r2 executed normally and is the only
 Task388 comparison above.
 
+Commit `9cf7c51a` repairs the provider-free progress conversion exposed by Task388. It does not suppress the AJAX
+World delta: structural change remains authoritative fresh state. Instead, a local no-information recovery survives
+GUI reveal/navigation until a typed local delivery actually adds a new semantic record, and the GUI route already
+tried inside that epoch becomes an exact zero-dispatch constraint. Collection `evidence_review` is now leased only
+when the latest `read_region` extended the existing `ObservationDeliveryStore` inventory; overlapping or replayed
+records cannot buy another review merely because the local read cursor is closed. A cross-World AJAX witness proves
+one dispatch followed by pre-dispatch rejection of its exact replay even though an unrelated DOM row changes the
+World. The affected set reports `258 passed, 3 skipped`; the complete fixed-interpreter gate reports
+`2244 passed, 19 skipped, 1 deselected, 1 warning` in 107.17 seconds. Task388 remains live-open: these gates prove the
+owner algebra, not the resulting policy-call count or semantic adherence on the site.
+
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
 The follow-up diagnosis separates three generic contract gaps, one falsified Surface hypothesis, and model-owned route

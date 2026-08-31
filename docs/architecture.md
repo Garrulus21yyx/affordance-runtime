@@ -484,13 +484,28 @@ usable autocomplete path, while Pro eventually selected the direct filtered comm
 no-effect dropdown attempts. Provider-reported cost was $0.142 versus the old Flash timeout's $0.123.
 
 The causal conclusion is bounded. Phase routing works mechanically and can raise the solve ceiling, but model tier is
-not the missing progress authority. Repeated closed collection reads currently reacquire an `evidence_review` lease
-without requiring a new collection fact, and page switches whose large public World digest changes can close one
-recovery epoch even when they do not materially reduce the task's missing evidence. The next efficiency repair must
-qualify the existing evidence-review/recovery transitions with owner-produced novelty and coverage facts; it must not
-add another planner, progress store, or semantic Monitor. Task801 was not rerun because the prior mutation already
-left `/groups/crew` in the shared GitLab state, so it cannot provide a clean comparison without an explicit
-environment reset.
+not the missing progress authority. Task388 exposed a conversion defect rather than false World capture: an AJAX
+replacement genuinely changed hundreds of public targets/facts, while the following collection delivery contained no
+record absent from completed history. `PublicWorldDelta` must retain the structural change; only
+`ObservationDeliveryStore` owns whether it is new collection information. Also, `read_region.has_more=false` closes
+that tool's local payload cursor, not the site's global pagination, so it cannot by itself prove collection closure.
+
+Commit `9cf7c51a` closes the provider-free lifecycle gap without adding another planner, progress store, or semantic
+Monitor. A closed collection read receives the bounded `evidence_review` lease only when its owner-produced
+`InformationDelta` is `NEW_INFORMATION`. A local read/search/perception recovery remains active across a causally
+changed GUI reveal/navigation action; that action's exact ref-free signature is unavailable for replay during the
+same epoch. Only a subsequent typed local delivery with new information, native terminal evaluation, or termination
+closes that local information recovery. GUI-origin strategy/effect recovery retains its existing lifecycle; the
+closed-route producer now records its sent dispatch origin explicitly.
+
+The cross-World integration witness changes the public World by adding an unrelated DOM row while returning the same
+collection record. It proves that the first Page-2 route is dispatched once, the structural World remains fresh, the
+information recovery remains active, and an exact second Page-2 attempt is rejected before dispatch. The affected
+owner/consumer set reports `258 passed, 3 skipped`; the fixed-interpreter repository gate reports
+`2244 passed, 19 skipped, 1 deselected, 1 warning` in 107.17 seconds. This is provider-free contract evidence, not a
+Task388 efficiency rescore; the live convergence status remains open until the case is rerun. Task801 was not rerun
+because the prior mutation already left `/groups/crew` in the shared GitLab state, so it cannot provide a clean
+comparison without an explicit environment reset.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
