@@ -464,16 +464,16 @@ earlier Task388 live-open statement for this bounded case, not the separate Task
 The independent fresh-context review then found two provider-free pagination P2s without invalidating the r9 native
 result. A plain workflow link `<a class="next">` could be mislabeled as pagination, and a typed current paginator
 embedded in the same list region as its records could be omitted from that collection. Commit `b8b6f2fe` requires
-standard `rel=next|prev` or a structurally proven pagination group before class tokens gain pagination authority; it
-also assigns an embedded paginator to its own repeated collection before running the existing unique sibling-owner
-join. Ordinary links and the complete ActionSpace are unchanged, and ambiguous ownership remains `unknown`. The
-first re-review found one further ownership distinction: a standard `rel=next` in an unrelated workflow proves link
-direction but not membership in the page's only record list. Commit `d72c783b` requires a sibling paginator list and
-one local neutral structural owner; broad `main/navigation/region` ancestry cannot establish the join. The unrelated
-route stays in the complete ActionSpace while the collection remains `unknown`. The final directly affected set
-reports `276 passed, 3 skipped, 1 deselected`; the full fixed-interpreter suite reports
-`2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.65 seconds. This provider-free follow-up has not been given a
-second live Task388 run and does not alter the accepted r9 attestation.
+standard `rel=next|prev` or a structurally proven pagination group before class tokens gain pagination authority, and
+assigns an embedded paginator to its own repeated collection. Ordinary links and the complete ActionSpace are
+unchanged. The first re-review then showed that a standard `rel=next` proves direction but not ownership: even the
+`d72c783b` restriction to a sibling paginator list under one local neutral structural owner could falsely join two
+unrelated sibling lists. Commit `7206d5a3` removes the unowned sibling join entirely. A same-region embedded
+paginator can make its collection `open`; every sibling route stays in the complete ActionSpace, but collection
+coverage remains `unknown` without explicit Surface-owned collection identity. No distance, label, site, or task
+heuristic replaces it. The final directly affected set reports `276 passed, 3 skipped, 1 deselected`; the full
+fixed-interpreter suite reports `2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.31 seconds. This
+provider-free follow-up has not been given a second live Task388 run and does not alter the accepted r9 attestation.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
