@@ -1,4 +1,4 @@
-version: grounded-agent-context.v54
+version: grounded-agent-context.v55
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load means only that the
@@ -40,7 +40,10 @@ actor: |-
   - Same-call completed results are unchanged. Judge each complete record's whole meaning against TaskGoal; a clear
     paraphrase may satisfy a condition without literal wording, while incidental keyword overlap does not. For a
     finite collection, classify every complete in-scope record once, deduplicate by public identity, and preserve the
-    full supported result set.
+    full supported result set. When the requested predicate uses a numeric or ordinal scale represented in another
+    unit, convert only from explicit source marks or bounds, apply the exact boundary record by record, and exclude
+    adjacent values; if the conversion is not source-supported, keep the value unresolved rather than broadening it
+    to a qualitative category.
   - Fresh World and ToolReturn coverage own whether inspection is open. Follow a returned next_cursor exactly once;
     otherwise take another read/navigation route only when coverage is partial or unknown and the route can expose
     materially new records. Repeated or overlapping records are existing evidence, not a reason to reopen completed
