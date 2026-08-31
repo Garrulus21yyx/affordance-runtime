@@ -60,14 +60,14 @@ class ActionPolicyReasoningPolicy:
                 ActionPolicyInvocationPhase.DELIBERATE,
                 trigger,
                 self.deliberate_max_tokens,
-                "disabled",
+                "enabled",
             )
         if _at_collection_evidence_boundary(context.last_step):
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.DELIBERATE,
                 ActionPolicyInvocationTrigger.EVIDENCE_REVIEW,
                 min(self.deliberate_max_tokens, _EVIDENCE_REVIEW_MAX_TOKENS),
-                "disabled",
+                "enabled",
             )
         return ActionPolicyCallProfile(
             ActionPolicyInvocationPhase.ORDINARY,
@@ -114,8 +114,5 @@ def _at_collection_evidence_boundary(last_step: object | None) -> bool:
         and isinstance(scope, Mapping)
         and str(scope.get("role", "")).casefold() in _COLLECTION_SCOPE_ROLES
         and isinstance(items, tuple | list)
-        and any(
-            isinstance(item, Mapping) and item.get("kind") in {"complete_item", "partial_item"}
-            for item in items
-        )
+        and any(isinstance(item, Mapping) and item.get("kind") in {"complete_item", "partial_item"} for item in items)
     )
