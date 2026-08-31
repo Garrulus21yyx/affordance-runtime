@@ -372,9 +372,17 @@ def _paginated_collection_world(
     ambiguous: bool = False,
     embedded: bool = False,
     unrelated_navigation: bool = False,
+    record_count: int = 2,
+    record_local_next_index: int | None = None,
 ):
     source_id = "source:paginated-collection"
-    rows = ("record:one", "record:two")
+    if record_count < 2:
+        raise ValueError("paginated collection fixture requires repeated records")
+    if record_local_next_index is not None and not 0 <= record_local_next_index < record_count:
+        raise ValueError("record-local next index is outside the fixture")
+    if embedded and record_local_next_index is not None:
+        raise ValueError("next route cannot be both standalone and record-local")
+    rows = tuple(f"record:{index}" for index in range(record_count))
     other_rows = ("other:one", "other:two") if ambiguous else ()
     next_target = SemanticTarget(
         "pagination:next",
@@ -408,7 +416,7 @@ def _paginated_collection_world(
             child_structure_ids=(
                 "records",
                 *(("other-records",) if ambiguous else ()),
-                *(() if embedded else ("pages",)),
+                *(() if embedded or record_local_next_index is not None else ("pages",)),
             ),
         ),
         ObservationStructureNode(
@@ -424,6 +432,7 @@ def _paginated_collection_world(
                 "listitem",
                 f"Record {index}",
                 parent_structure_id="records",
+                child_structure_ids=("next",) if record_local_next_index == index - 1 else (),
                 semantic_target_id=row,
             )
             for index, row in enumerate(rows, 1)
@@ -453,7 +462,7 @@ def _paginated_collection_world(
         ),
         *(
             ()
-            if embedded
+            if embedded or record_local_next_index is not None
             else (
                 ObservationStructureNode(
                     "pages",
@@ -464,19 +473,29 @@ def _paginated_collection_world(
                 ),
             )
         ),
-        ObservationStructureNode(
-            "next-item",
-            "listitem",
-            "",
-            parent_structure_id="records" if embedded else "pages",
-            child_structure_ids=("next",),
+        *(
+            ()
+            if record_local_next_index is not None
+            else (
+                ObservationStructureNode(
+                    "next-item",
+                    "listitem",
+                    "",
+                    parent_structure_id="records" if embedded else "pages",
+                    child_structure_ids=("next",),
+                ),
+            )
         ),
         ObservationStructureNode(
             "next",
             "link",
             "Weiter",
             {"pagination_relation": "next", "pagination_current": False},
-            parent_structure_id="next-item",
+            parent_structure_id=(
+                rows[record_local_next_index]
+                if record_local_next_index is not None
+                else "next-item"
+            ),
             semantic_target_id=next_target.target_id,
         ),
     )
@@ -602,6 +621,53 @@ def test_collection_region_owns_its_embedded_current_paginator() -> None:
         expected_context_id=context.context_id,
     )
     assert isinstance(activated.decision, SelectAction)
+
+
+@given(record_count=st.integers(min_value=3, max_value=8), data=st.data())
+def test_record_local_next_relation_never_claims_collection_ownership(
+    record_count: int,
+    data: st.DataObject,
+) -> None:
+    record_index = data.draw(st.integers(min_value=0, max_value=record_count - 1))
+    world = _paginated_collection_world(
+        record_count=record_count,
+        record_local_next_index=record_index,
+    )
+    task = TaskGoal(
+        "record-local-next-route",
+        "Inspect the records",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        _evaluation(task, world.observation_id),
+    )
+    collection = next(
+        region
+        for region in context.region_index.regions
+        if region.role == "list" and region.repeated_item_roots
+    )
+
+    assert collection.collection_navigation == ()
+    assert any(
+        option.target_id == "pagination:next" and option.operation == "activate"
+        for option in context.complete_actions
+    )
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=context.canonical_world.region_refs[collection.key],
+    )
+    assert isinstance(outcome, Opened)
+    assert outcome.collection_coverage == "unknown"
+    assert outcome.collection_continuations == ()
 
 
 def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:

@@ -1151,23 +1151,33 @@ def _associate_collection_navigation(
             if region.source_id != source.observation_id or not navigation or not region.repeated_item_roots:
                 continue
             pagination_targets = {target_id for target_id, _relation in navigation}
-            record_roots = tuple(
-                root_id
-                for root_id in region.repeated_item_roots
-                if not _structure_contains_any_target(
+            targets_by_root = {
+                root_id: _structure_target_ids(
                     root_id,
-                    pagination_targets,
                     nodes,
                     source.observation_id,
                     canonical,
                 )
+                for root_id in region.repeated_item_roots
+            }
+            paginator_roots = {
+                root_id
+                for root_id, root_targets in targets_by_root.items()
+                if root_targets and root_targets <= pagination_targets
+            }
+            record_roots = tuple(
+                root_id for root_id in region.repeated_item_roots if root_id not in paginator_roots
             )
-            # Two non-paginator item roots prove that this is a repeated
-            # collection which embeds its paginator. A paginator-only list (or
-            # an ambiguous one-record shape) retains its ordinary ActionSpace
-            # routes but cannot claim collection ownership.
-            if len(record_roots) >= 2:
-                assigned[region.key].extend(navigation)
+            owned_targets = set().union(*(targets_by_root[root_id] for root_id in paginator_roots))
+            owned_navigation = tuple(
+                item for item in navigation if item[0] in owned_targets
+            )
+            # Collection ownership requires an independent paginator-only item
+            # beside at least two record items. A direction-bearing link inside
+            # a record remains an ordinary ActionSpace route: it may describe
+            # article/workflow navigation rather than collection pagination.
+            if len(record_roots) >= 2 and owned_navigation:
+                assigned[region.key].extend(owned_navigation)
 
     return tuple(
         replace(
@@ -1180,19 +1190,19 @@ def _associate_collection_navigation(
     )
 
 
-def _structure_contains_any_target(
+def _structure_target_ids(
     root_id: str,
-    target_ids: set[str],
     nodes: Mapping[str, object],
     source_id: str,
     canonical: Mapping[tuple[str, str], str],
-) -> bool:
+) -> frozenset[str]:
+    target_ids: set[str] = set()
     for structure_id in _walk_ids(root_id, nodes):
         source_target_id = str(getattr(nodes[structure_id], "semantic_target_id", ""))
         target_id = canonical.get((source_id, source_target_id), source_target_id)
-        if target_id in target_ids:
-            return True
-    return False
+        if target_id:
+            target_ids.add(target_id)
+    return frozenset(target_ids)
 
 
 def _document_lineage(observation: WorldObservation) -> str:
