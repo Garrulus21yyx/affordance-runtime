@@ -172,9 +172,16 @@ class ActionReranker:
             label_tokens = tokens(label)
             path_text = " ".join(path)
             path_tokens = tokens(path_text)
+            # Exact target identity is available only when the caller asked a
+            # bounded control query.  A task instruction is broad semantic
+            # context: a control label appearing in it may be a value to read,
+            # a condition, or an output rather than the next control to use.
+            # Keep ordinary lexical/path relevance below, but do not let the
+            # automatic preview turn task wording into an implicit subgoal.
             exact_label = bool(
                 label
-                and (label == explicit_query or (label in intent and label_tokens and label_tokens <= intent_tokens))
+                and explicit_query
+                and _bounded_phrase_match(label, explicit_query)
             )
             if exact_label:
                 score += 8.0

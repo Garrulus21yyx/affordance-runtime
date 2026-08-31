@@ -538,3 +538,53 @@ def test_action_reranker_does_not_fuzzy_match_a_full_task_instruction(monkeypatc
     )
 
     assert len(ranked) == len(options)
+
+
+def test_task_value_does_not_become_an_exact_control_query() -> None:
+    options = (_option(0), _option(1))
+    labels = {
+        "target:00": "2 stars",
+        "target:01": "Page 1",
+    }
+    states = {
+        "target:00": {"viewport.visible": False},
+        "target:01": {"viewport.visible": True},
+    }
+
+    automatic = ActionReranker().rank(
+        options,
+        labels=labels,
+        states=states,
+        instruction="Who gave 1 or 2 stars for phone cases",
+    )
+    explicit = ActionReranker().rank(
+        options,
+        labels=labels,
+        states=states,
+        query="2 stars",
+    )
+
+    offscreen = next(item for item in automatic if item.target_id == "target:00")
+    assert "exact_label" not in offscreen.reasons
+    assert "lexical_match" in offscreen.reasons
+    assert explicit[0].target_id == "target:00"
+    assert "exact_label" in explicit[0].reasons
+
+
+@given(st.from_regex(r"[A-Za-z][A-Za-z0-9 ]{1,30}", fullmatch=True))
+def test_only_explicit_queries_can_claim_exact_label_relevance(label: str) -> None:
+    option = _option(0)
+
+    automatic = ActionReranker().rank(
+        (option,),
+        labels={option.target_id: label},
+        instruction=f"Return the value associated with {label}",
+    )
+    explicit = ActionReranker().rank(
+        (option,),
+        labels={option.target_id: label},
+        query=f"use {label} control",
+    )
+
+    assert "exact_label" not in automatic[0].reasons
+    assert "exact_label" in explicit[0].reasons
