@@ -675,6 +675,13 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     ))
                     if len(destination) > MAX_LINK_DESTINATION_TEXT:
                         state.append(("semantic.link.destination.truncated", True))
+                    relation = _dom_pagination_relation(decoded)
+                    if relation:
+                        state.append(("pagination_relation", relation))
+                        state.append((
+                            "pagination_current",
+                            decoded.get("aria-current", "").casefold() == "page",
+                        ))
             for name in sorted(_DOM_SCALAR_ATTRIBUTES):
                 value = " ".join(decoded.get(name, "").split())
                 if value:
@@ -698,6 +705,24 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     f"BID {bid!r} has conflicting DOM semantic evidence",
                 )
     return result
+
+
+def _dom_pagination_relation(attributes: dict[str, str]) -> str:
+    """Normalize explicit HTML pagination markers without reading task text.
+
+    ``rel=next|prev`` is the platform contract.  The ``next``/``previous`` and
+    ``page`` class tokens are the same structural conventions already
+    supported by the DOM adapter.  A destination is required by the caller,
+    so decorative classes cannot create an executable continuation.
+    """
+
+    relations = set(attributes.get("rel", "").casefold().split())
+    classes = set(attributes.get("class", "").casefold().split())
+    if "next" in relations or "next" in classes:
+        return "next"
+    if relations & {"prev", "previous"} or classes & {"prev", "previous"}:
+        return "previous"
+    return "page" if "page" in classes else ""
 
 
 def _dom_document_base_url(

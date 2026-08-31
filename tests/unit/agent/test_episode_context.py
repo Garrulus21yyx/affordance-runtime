@@ -433,6 +433,10 @@ def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body(
             "result_page": "1/3",
             "source_coverage": "complete",
             "region_membership": "complete",
+            "collection_coverage": "open",
+            "collection_continuations": (
+                {"relation": "next", "target_ref": "E8", "verbs": ("activate",)},
+            ),
             "scope": {
                 "role": "main",
                 "heading": "Results",
@@ -453,8 +457,11 @@ def test_read_region_workspace_keeps_ref_free_scope_without_copying_result_body(
     }
     assert projected.semantic_summary["has_more"] is True
     assert projected.semantic_summary["result_page"] == "1/3"
+    assert projected.semantic_summary["collection_coverage"] == "open"
+    assert projected.semantic_summary["collection_continuation_count"] == 1
     assert "private body" not in encoded
     assert "R7" not in encoded
+    assert "E8" not in encoded
     assert "opaque" not in encoded
 
 

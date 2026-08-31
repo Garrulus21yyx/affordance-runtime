@@ -185,6 +185,25 @@ def test_link_destination_is_current_read_only_semantics_not_a_binding() -> None
     assert all("https://forum.example/movies/42" not in repr(binding.payload) for binding in bindings)
 
 
+def test_browsergym_normalizes_explicit_link_pagination_without_task_text() -> None:
+    raw = raw_observation(
+        ax_node("next-page", "link", "Weiter"),
+        ax_node("ordinary", "button", "Advance workflow"),
+        url="https://forum.example/catalog?page=1",
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("a", "next-page", {"href": "?page=2", "class": "action next"}),
+        ("button", "ordinary", {"class": "next"}),
+    )
+
+    analysis = analyze_browsergym_semantics(raw)
+    by_bid = {item.private_bid: item for item in analysis.controls}
+
+    assert dict(by_bid["next-page"].public_state)["pagination_relation"] == "next"
+    assert dict(by_bid["next-page"].public_state)["pagination_current"] is False
+    assert "pagination_relation" not in dict(by_bid["ordinary"].public_state)
+
+
 @pytest.mark.parametrize("href", ("javascript:alert(1)", "mailto:user@example.com", "data:text/plain,x"))
 def test_non_http_link_destinations_remain_private(href: str) -> None:
     raw = raw_observation(

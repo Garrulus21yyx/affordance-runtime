@@ -7,7 +7,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -127,6 +127,7 @@ class WorldRegion:
     source_coverage: str = ""
     region_membership: str = "complete"
     scope_path: tuple[str, ...] = ()
+    collection_navigation: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -148,6 +149,16 @@ class WorldRegion:
             if len(values) != len(set(values)):
                 raise ValueError(f"delivery region {name} must be unique")
             object.__setattr__(self, name, values)
+        navigation = tuple(self.collection_navigation)
+        if len(navigation) != len(set(navigation)) or any(
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or not all(isinstance(value, str) and value.strip() for value in item)
+            or item[1] not in {"next", "previous", "page"}
+            for item in navigation
+        ):
+            raise ValueError("delivery region collection navigation is invalid")
+        object.__setattr__(self, "collection_navigation", navigation)
         counts = dict(self.counts)
         if any(type(value) is not int or value < 0 for value in counts.values()):
             raise ValueError("delivery region counts must be non-negative integers")
@@ -290,7 +301,10 @@ class WorldDeliveryIndex:
         previous_index: "WorldDeliveryIndex | None" = None,
     ) -> "WorldDeliveryIndex":
         seeds = _functional_partition(observation, action_options, limits)
-        regions = _materialize_regions(observation, seeds)
+        regions = _associate_collection_navigation(
+            _materialize_regions(observation, seeds),
+            observation,
+        )
         target_keys = {target_id: region.key for region in regions for target_id in region.member_target_ids}
         fact_keys = {fact_id: region.key for region in regions for fact_id in region.member_fact_ids}
         action_keys = {action_id: region.key for region in regions for action_id in region.member_action_ids}
@@ -1093,6 +1107,116 @@ def _materialize_regions(observation: WorldObservation, seeds: tuple[_RegionSeed
             )
         )
     return tuple(regions)
+
+
+def _associate_collection_navigation(
+    regions: tuple[WorldRegion, ...],
+    observation: WorldObservation,
+) -> tuple[WorldRegion, ...]:
+    """Attach typed paginator controls to their nearest structural collection.
+
+    Surface adapters own the normalized ``pagination_relation`` fact.  This
+    index owns the functional-region partition, so it is the only layer that
+    can relate a sibling paginator to a repeated list/table without guessing
+    from task vocabulary.  Ambiguous or document-only relationships remain
+    unassociated and therefore fail closed as unknown collection coverage.
+    """
+
+    targets = {item.target_id: item for item in observation.targets}
+    pagination_by_region: dict[str, tuple[tuple[str, str], ...]] = {}
+    for region in regions:
+        navigation = tuple(
+            (target_id, relation)
+            for target_id in region.member_target_ids
+            if (target := targets.get(target_id)) is not None
+            and isinstance((relation := target.state.get("pagination_relation")), str)
+            and relation in {"next", "previous", "page"}
+        )
+        if navigation:
+            pagination_by_region[region.key] = navigation
+    if not pagination_by_region:
+        return regions
+
+    regions_by_key = {item.key: item for item in regions}
+    assigned: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for source in observation.sources:
+        nodes = {item.structure_id: item for item in source.structure}
+        parents = _parents(nodes)
+        paginators = tuple(
+            regions_by_key[key]
+            for key in pagination_by_region
+            if regions_by_key[key].source_id == source.observation_id
+        )
+        collections = tuple(
+            region
+            for region in regions
+            if region.source_id == source.observation_id
+            and region.repeated_item_roots
+            and region.key not in pagination_by_region
+        )
+        for paginator in paginators:
+            scored = tuple(
+                (score, collection)
+                for collection in collections
+                if (
+                    score := _collection_paginator_distance(
+                        collection.root_structure_id,
+                        paginator.root_structure_id,
+                        nodes,
+                        parents,
+                    )
+                )
+                is not None
+            )
+            if not scored:
+                continue
+            best_score = min(score for score, _collection in scored)
+            owners = tuple(collection for score, collection in scored if score == best_score)
+            if len(owners) != 1:
+                continue
+            assigned[owners[0].key].extend(pagination_by_region[paginator.key])
+
+    return tuple(
+        replace(
+            region,
+            collection_navigation=tuple(dict.fromkeys(assigned[region.key])),
+        )
+        if assigned.get(region.key)
+        else region
+        for region in regions
+    )
+
+
+def _collection_paginator_distance(
+    collection_root: str,
+    paginator_root: str,
+    nodes: Mapping[str, object],
+    parents: Mapping[str, str],
+) -> int | None:
+    collection_ancestors = _ancestor_distances(collection_root, parents)
+    paginator_ancestors = _ancestor_distances(paginator_root, parents)
+    common = set(collection_ancestors) & set(paginator_ancestors)
+    structural_common = tuple(
+        structure_id
+        for structure_id in common
+        if str(getattr(nodes.get(structure_id), "role", "")).casefold()
+        not in {"document", "webarea", "rootwebarea"}
+    )
+    if not structural_common:
+        return None
+    return min(
+        collection_ancestors[structure_id] + paginator_ancestors[structure_id]
+        for structure_id in structural_common
+    )
+
+
+def _ancestor_distances(structure_id: str, parents: Mapping[str, str]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    current = structure_id
+    while current and current not in result:
+        result[current] = len(result)
+        current = parents.get(current, "")
+    return result
 
 
 def _document_lineage(observation: WorldObservation) -> str:

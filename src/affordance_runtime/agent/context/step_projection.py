@@ -243,9 +243,13 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
             "result_page",
             "source_coverage",
             "region_membership",
+            "collection_coverage",
         ):
             if name in decision.result:
                 summary[name] = project_public_value(decision.result[name])
+        continuations = decision.result.get("collection_continuations")
+        if isinstance(continuations, tuple | list):
+            summary["collection_continuation_count"] = len(continuations)
         return summary
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content), "public_intent": _bounded(decision.public_intent)}

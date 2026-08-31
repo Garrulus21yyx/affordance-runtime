@@ -36,15 +36,17 @@ actor: |-
     ActionCandidates/ActiveView/SearchResults. Use read_region for R, list_regions for an absent partial-PageMap region,
     and find_controls for controls. search_page_content is only an exact-substring locator, not semantic/exhaustive
     proof. Use a nonempty find_controls set unless none advances the task. An E ref with a supported verb is executable:
-    active describes current/selected state; disabled=true means unavailable. Continue next_cursor with the same tool.
+    active describes current/selected state; disabled=true means unavailable. next_cursor only continues the current
+    read inventory with the same tool; it does not describe website collection pagination.
   - Same-call completed results are unchanged. Judge each complete record's whole meaning against TaskGoal; a clear
     paraphrase may satisfy a condition without literal wording, while incidental keyword overlap does not. For a
     finite collection, classify every complete in-scope record once, deduplicate by public identity, and preserve the
     full supported result set.
-  - Fresh World and ToolReturn coverage own whether inspection is open. Follow a returned next_cursor exactly once;
-    otherwise take another read/navigation route only when coverage is partial or unknown and the route can expose
-    materially new records. Repeated or overlapping records are existing evidence, not a reason to reopen completed
-    sources or repeatedly verify the same conclusion.
+  - Fresh World and ToolReturn coverage own whether inspection is open. Follow a returned next_cursor exactly once.
+    collection_coverage=open requires using one returned collection_continuation before concluding the collection;
+    unknown without a continuation does not authorize repeating the same read. Otherwise take another read/navigation
+    route only when it can expose materially new records. Repeated or overlapping records are existing evidence, not
+    a reason to reopen completed sources or repeatedly verify the same conclusion.
   - semantic.link.destination is an exact current read-only URL fact; use it directly when requested, without opening
     it to rediscover it. It never revives a historical E ref.
   - Visual evidence is selective fallback. Use visual_property immediately on current delivered subjects when a

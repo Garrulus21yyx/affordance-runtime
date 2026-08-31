@@ -224,9 +224,18 @@ class Opened:
     region_membership: str = "complete"
     result_page: str = "1/1"
     scope: Mapping[str, object] = field(default_factory=dict)
+    collection_coverage: str = "not_applicable"
+    collection_continuations: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scope", freeze_json(dict(self.scope)))
+        if self.collection_coverage not in {"not_applicable", "open", "unknown"}:
+            raise ValueError("collection coverage is invalid")
+        object.__setattr__(
+            self,
+            "collection_continuations",
+            tuple(freeze_json(dict(item)) for item in self.collection_continuations),
+        )
 
 
 @dataclass(frozen=True)
@@ -709,6 +718,12 @@ def inspect_actor_world(
                 grounding,
                 verbs_by_ref,
             )
+            collection_coverage, collection_continuations = _region_collection_read_contract(
+                region,
+                observation,
+                grounding,
+                verbs_by_ref,
+            )
             cursor_fingerprint = _world_read_cursor_fingerprint(
                 observation.observation_id,
                 action,
@@ -726,6 +741,8 @@ def inspect_actor_world(
                 source_coverage=region.source_coverage,
                 region_membership=region.region_membership,
                 scope=_region_read_scope(region),
+                collection_coverage=collection_coverage,
+                collection_continuations=collection_continuations,
             )
         if action == "find":
             if not query.strip():
@@ -811,6 +828,13 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
                     "scope": outcome.scope,
                 }
             )
+            if outcome.collection_coverage != "not_applicable":
+                result.update(
+                    {
+                        "collection_coverage": outcome.collection_coverage,
+                        "collection_continuations": outcome.collection_continuations,
+                    }
+                )
         return _with_world_read_metadata(result)
     if isinstance(outcome, Matches):
         return _with_world_read_metadata(
@@ -883,6 +907,13 @@ def inspect_outcome_ephemeral_paths(
         for prefix in (("items", "*"), ("items", "*", "content", "*")):
             paths.update((*prefix, field_name) for field_name in _INSPECT_RECORD_EPHEMERAL_FIELDS)
             paths.add((*prefix, "source_context", "region_ref"))
+    if isinstance(outcome, Opened):
+        paths.update(
+            {
+                ("collection_continuations", "*", "target_ref"),
+                ("collection_continuations", "*", "verbs"),
+            }
+        )
     if isinstance(outcome, InvalidRegion):
         paths.add(("region_ref",))
     if isinstance(outcome, StaleContext):
@@ -950,6 +981,10 @@ def inspect_result_grounding(
             if isinstance(content, tuple | list):
                 for child in content:
                     add_record(child)
+    continuations = value.get("collection_continuations", ())
+    if isinstance(continuations, tuple | list):
+        for continuation in continuations:
+            add_record(continuation)
     return tuple(sorted(refs)), tuple(sorted(routes))
 
 
@@ -2096,6 +2131,8 @@ def _page_region_items(
     source_coverage: str,
     region_membership: str,
     scope: Mapping[str, object],
+    collection_coverage: str,
+    collection_continuations: tuple[Mapping[str, object], ...],
 ) -> Opened | CapacityExceeded:
     """Pack stable public records against the final serialized result size."""
 
@@ -2113,6 +2150,8 @@ def _page_region_items(
             region_membership,
             _region_result_page(offset, candidate_end, len(items)),
             scope,
+            collection_coverage,
+            collection_continuations,
         )
         if _inspect_outcome_bytes(outcome) <= hard_limit:
             page.append(items[index])
@@ -2127,6 +2166,8 @@ def _page_region_items(
                 region_membership,
                 _region_result_page(offset, index, len(items)),
                 scope,
+                collection_coverage,
+                collection_continuations,
             )
             if _inspect_outcome_bytes(admitted) <= hard_limit:
                 return admitted
@@ -2139,6 +2180,8 @@ def _page_region_items(
             region_membership,
             _region_result_page(offset, candidate_end, len(items)),
             scope,
+            collection_coverage,
+            collection_continuations,
         )
         if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
             page.append(bounded)
@@ -2153,6 +2196,8 @@ def _page_region_items(
         region_membership,
         _region_result_page(offset, index, len(items)),
         scope,
+        collection_coverage,
+        collection_continuations,
     )
 
 
@@ -2228,6 +2273,50 @@ def _region_read_scope(region: WorldRegion) -> Mapping[str, object]:
     if region.scope_path:
         scope["context"] = region.scope_path
     return scope
+
+
+def _region_collection_read_contract(
+    region: WorldRegion,
+    observation: WorldObservation,
+    grounding: AgentGroundingIndexView,
+    verbs_by_ref: Mapping[str, tuple[str, ...]],
+) -> tuple[str, tuple[Mapping[str, object], ...]]:
+    """Project collection coverage separately from local read pagination.
+
+    ``next_cursor`` only pages the records already present in this fresh
+    region.  A web collection remains open only when the SurfaceAdapter and
+    region index prove a sibling ``next`` control and that control is still an
+    executable route in the same World.  Missing or ambiguous navigation is
+    unknown, never silently closed.
+    """
+
+    if not region.repeated_item_roots:
+        return "not_applicable", ()
+    targets = {item.target_id: item for item in observation.targets}
+    continuations: list[Mapping[str, object]] = []
+    for target_id, relation in region.collection_navigation:
+        if relation != "next":
+            continue
+        target = targets.get(target_id)
+        target_ref = grounding.target_refs.get(target_id, "")
+        verbs = verbs_by_ref.get(target_ref, ())
+        if (
+            target is None
+            or not PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE)
+            or "activate" not in verbs
+        ):
+            continue
+        continuations.append(
+            freeze_json(
+                {
+                    "relation": relation,
+                    "label": target.label,
+                    "target_ref": target_ref,
+                    "verbs": verbs,
+                }
+            )
+        )
+    return ("open" if continuations else "unknown"), tuple(continuations)
 
 
 def _decode_read_cursor(cursor: str, total: int, fingerprint: str) -> int:

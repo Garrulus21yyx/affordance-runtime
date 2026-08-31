@@ -140,6 +140,30 @@ def test_inspect_result_history_contract_preserves_ref_shaped_semantics_only() -
     assert "R5" in json.dumps(projected)
     assert all(token not in json.dumps(projected) for token in ("R1", "E1"))
 
+    opened = Opened(
+        ({"kind": "complete_item", "content": ({"text": "record"},)},),
+        scope={"role": "list"},
+        collection_coverage="open",
+        collection_continuations=(
+            {
+                "relation": "next",
+                "label": "E6",
+                "target_ref": "E2",
+                "verbs": ("activate",),
+            },
+        ),
+    )
+    opened_public = inspect_outcome_public(opened)
+    opened_history = sanitize_history_arguments(
+        opened_public,
+        ephemeral_paths=inspect_outcome_ephemeral_paths(opened, opened_public),
+    )
+
+    assert opened_history["collection_coverage"] == "open"
+    assert opened_history["collection_continuations"] == ({"relation": "next", "label": "E6"},)
+    assert "E2" not in json.dumps(opened_history)
+    assert "E6" in json.dumps(opened_history)
+
     stale = StaleContext("observation:old", "observation:fresh")
     stale_public = inspect_outcome_public(stale)
     assert sanitize_history_arguments(
@@ -341,6 +365,236 @@ def _functional_world(*, rows: int = 3):
     result = WorldFusion().fuse((source,))
     assert result.observation is not None
     return result.observation
+
+
+def _paginated_collection_world(*, ambiguous: bool = False):
+    source_id = "source:paginated-collection"
+    rows = ("record:one", "record:two")
+    other_rows = ("other:one", "other:two") if ambiguous else ()
+    next_target = SemanticTarget(
+        "pagination:next",
+        "link",
+        "Weiter",
+        {
+            "pagination_relation": "next",
+            "pagination_current": False,
+            "semantic.link.destination": "https://example.test/records?page=2",
+        },
+    )
+    targets = (
+        *(
+            SemanticTarget(row, "StaticText", f"Record {index}")
+            for index, row in enumerate((*rows, *other_rows), 1)
+        ),
+        next_target,
+    )
+    nodes = (
+        ObservationStructureNode(
+            "root",
+            "document",
+            "Records",
+            child_structure_ids=("section",),
+        ),
+        ObservationStructureNode(
+            "section",
+            "generic",
+            "Current results",
+            parent_structure_id="root",
+            child_structure_ids=("records", *(("other-records",) if ambiguous else ()), "pages"),
+        ),
+        ObservationStructureNode(
+            "records",
+            "list",
+            "Records",
+            parent_structure_id="section",
+            child_structure_ids=rows,
+        ),
+        *(
+            ObservationStructureNode(
+                row,
+                "listitem",
+                f"Record {index}",
+                parent_structure_id="records",
+                semantic_target_id=row,
+            )
+            for index, row in enumerate(rows, 1)
+        ),
+        *(
+            (
+                ObservationStructureNode(
+                    "other-records",
+                    "list",
+                    "Other records",
+                    parent_structure_id="section",
+                    child_structure_ids=other_rows,
+                ),
+                *(
+                    ObservationStructureNode(
+                        row,
+                        "listitem",
+                        f"Other record {index}",
+                        parent_structure_id="other-records",
+                        semantic_target_id=row,
+                    )
+                    for index, row in enumerate(other_rows, 1)
+                ),
+            )
+            if ambiguous
+            else ()
+        ),
+        ObservationStructureNode(
+            "pages",
+            "list",
+            "Pages",
+            parent_structure_id="section",
+            child_structure_ids=("next-item",),
+        ),
+        ObservationStructureNode(
+            "next-item",
+            "listitem",
+            "",
+            parent_structure_id="pages",
+            child_structure_ids=("next",),
+        ),
+        ObservationStructureNode(
+            "next",
+            "link",
+            "Weiter",
+            {"pagination_relation": "next", "pagination_current": False},
+            parent_structure_id="next-item",
+            semantic_target_id=next_target.target_id,
+        ),
+    )
+    result = WorldFusion().fuse(
+        (
+            SurfaceObservation(
+                source_id,
+                "browser",
+                f"revision:{source_id}",
+                ObservationSourceProfile.dom(),
+                targets,
+                bindings=(_activate_binding(source_id, next_target),),
+                structure=nodes,
+                structure_total_count=len(nodes),
+            ),
+        )
+    )
+    assert result.observation is not None
+    return result.observation
+
+
+def test_read_region_distinguishes_local_completion_from_web_collection_continuation() -> None:
+    world = _paginated_collection_world()
+    task = TaskGoal(
+        "paginated-collection",
+        "Inspect every record",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        _evaluation(task, world.observation_id),
+    )
+    collection = next(
+        region
+        for region in context.region_index.regions
+        if region.role == "list" and region.repeated_item_roots
+    )
+    assert collection.collection_navigation == (("pagination:next", "next"),)
+
+    _, catalog = catalog_for(context)
+    call = ToolCall(
+        "read_region",
+        {"region_ref": context.canonical_world.region_refs[collection.key]},
+        "call:collection-read",
+    )
+    resolved = resolve_catalog_call(
+        catalog,
+        call,
+        expected_context_id=context.context_id,
+    )
+    result = resolved.decision.result
+
+    assert result["has_more"] is False
+    assert result["result_page"] == "1/1"
+    assert result["collection_coverage"] == "open"
+    assert len(result["collection_continuations"]) == 1
+    continuation = result["collection_continuations"][0]
+    assert continuation["relation"] == "next"
+    assert continuation["label"] == "Weiter"
+    assert continuation["verbs"] == ("activate",)
+    assert result["executable_grounding"] == "attached_to_returned_readable_targets"
+
+    step = StepResult(
+        resolved.decision,
+        world,
+        world,
+        _evaluation(task, world.observation_id),
+        feedback="local_tool_result",
+    )
+    next_delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        committed_step=step,
+        pending_tool_call_id="call:collection-read",
+        pending_tool_name="read_region",
+    )
+    next_catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        next_delivery,
+    )
+    activated = resolve_catalog_call(
+        next_catalog,
+        ToolCall("activate", {"target": continuation["target_ref"]}, "call:continue"),
+        expected_context_id=context.context_id,
+    )
+
+    assert continuation["target_ref"] in next_delivery.manifest.executable_refs
+    assert isinstance(activated.decision, SelectAction)
+    selected = next(
+        item for item in context.complete_actions if item.action_id == activated.decision.action_id
+    )
+    assert selected.target_id == "pagination:next"
+
+
+def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:
+    world = _paginated_collection_world(ambiguous=True)
+    task = TaskGoal(
+        "ambiguous-pagination",
+        "Inspect the requested records",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        _evaluation(task, world.observation_id),
+    )
+    collections = tuple(
+        region
+        for region in context.region_index.regions
+        if region.role == "list" and region.repeated_item_roots
+    )
+
+    assert len(collections) == 2
+    assert all(not region.collection_navigation for region in collections)
+    for region in collections:
+        outcome = inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            canonical_world=context.canonical_world,
+            observation=world,
+            action="read_region",
+            region_ref=context.canonical_world.region_refs[region.key],
+        )
+        assert isinstance(outcome, Opened)
+        assert outcome.collection_coverage == "unknown"
+        assert outcome.collection_continuations == ()
 
 
 def _many_region_world(*, count: int = 16, suffix: str = "current"):

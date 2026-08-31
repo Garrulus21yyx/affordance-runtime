@@ -146,6 +146,9 @@ def test_action_prompt_requires_fresh_reassessment_and_bounded_collection_audit(
     assert "full supported result set" in system
     assert "Fresh World and ToolReturn coverage own" in system
     assert "Follow a returned next_cursor exactly once" in system
+    assert "next_cursor only continues the current" in system
+    assert "collection_coverage=open requires using one returned collection_continuation" in system
+    assert "unknown without a continuation does not authorize repeating" in system
     assert "materially new records" in system
     assert "Repeated or overlapping records are existing evidence" in system
     assert "which requested output remains unsupported" in system
