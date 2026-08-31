@@ -425,6 +425,40 @@ World. The affected set reports `258 passed, 3 skipped`; the complete fixed-inte
 `2244 passed, 19 skipped, 1 deselected, 1 warning` in 107.17 seconds. Task388 remains live-open: these gates prove the
 owner algebra, not the resulting policy-call count or semantic adherence on the site.
 
+### 2026-08-31 Task388 collection/candidate convergence — native accepted
+
+Commit `1c33a8e6` first exposed site-level pagination as typed collection coverage and continuations in the same
+fresh-World/read contract. The authorized
+[`task388-r8`](../evidence/live/webarena-collection-coverage-20260831-1c33a8e6/task388-r8/run.json) used the resulting
+Next route and found the two correct reviewers, but ended native `blocked`: 21 policy calls, six recovery calls, nine
+executions, and 721,622 complete request tokens. Its trace isolated two independent boundary defects.
+
+First, the selected `2 stars` control was current and executable but offscreen (`viewport.visible=false`), not
+physically hidden. The complete ActionSpace was therefore correct to retain it. The ranking defect was that broad
+TaskGoal/GoalPlan prose could grant the same `exact_label` boost as an explicit control query. Commit `e706e0f6`
+restricts that exact relation to the existing bounded query input while retaining ordinary task-level lexical/path
+relevance. No viewport-first rule, task label, rating rule, candidate filter, second planner, or new progress state
+was added. The reranker remains non-authoritative compression; currentness and executable availability remain hard,
+and the existing Monitor/ActionPolicy loop corrects legal but ineffective choices.
+
+Second, r8 submitted `Evelyn Kurver (2 stars)` and `N Randall (2 stars)` even though the task requested names. Commit
+`5ebcb58f` adds the generic exact-value requirement to the WebArena RETRIEVE codec guidance. This is a response-owner
+representation rule, not Runtime answer parsing.
+
+The clean
+[`task388-r9`](../evidence/live/webarena-candidate-convergence-20260831-5ebcb58f/task388-r9/run.json), seed 7 at
+product SHA `5ebcb58f`, ended `done`; the official native evaluator returned `verified_success`, and harness
+acceptance is true. It submitted exactly `Evelyn Kurver` and `N Randall`, used 19 policy calls (15 ordinary, four
+recovery), eight executions, 585,864 complete request tokens, and 65.57 seconds of model latency. It followed the
+typed Next route and never selected the `2 stars` control. It did make one unnecessary Page-1 navigation before
+submitting, but did not reread the collection. The result therefore verifies the bounded owner repairs and reduces
+r8's calls/recovery/executions/tokens; it does not establish zero redundant actions or aggregate benchmark closure.
+
+At product SHA `5ebcb58f`, the focused cross-layer gate reports `526 passed, 3 skipped, 1 deselected` in 15.67
+seconds. The complete fixed-interpreter suite reports `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67
+seconds. The sole deselection is the documented repository-missing archived dashboard trace. This supersedes the
+earlier Task388 live-open statement for this bounded case, not the separate Task801 or ten-case efficiency status.
+
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
 The follow-up diagnosis separates three generic contract gaps, one falsified Surface hypothesis, and model-owned route

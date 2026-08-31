@@ -507,6 +507,53 @@ Task388 efficiency rescore; the live convergence status remains open until the c
 because the prior mutation already left `/groups/crew` in the shared GitLab state, so it cannot provide a clean
 comparison without an explicit environment reset.
 
+### 2026-08-31 collection coverage and candidate-relevance convergence — live verified, bounded
+
+Commit `1c33a8e6` makes site pagination a typed World fact without adding a progress ledger. BrowserGym associates
+current paginator controls with their collection and projects the current page, known total, continuations, and
+`open | closed | unknown` coverage. `read_region` returns those owner-produced facts alongside the exact collection
+records. They are current-World scope metadata: record bodies remain in the same-call ToolReturn/native history,
+cross-World novelty remains in `ObservationDeliveryStore`, and the single ActionPolicy still decides whether another
+route is materially useful.
+
+The first live Task388 run on that repair exposed a separate ranking error. The `2 stars` control was not a hidden or
+unexecutable element: before the Reviews panel opened it had no binding, but after the panel opened it had a current
+binding and `viewport.visible=false`, meaning offscreen rather than CSS-hidden. Playwright could legally scroll it
+into view. The violated contract was in `ActionReranker`: it concatenated the complete TaskGoal/GoalPlan into broad
+semantic intent, then gave a control label occurring anywhere in that prose the same `exact_label` boost as an
+explicit bounded `find_controls` query. In “Who gave 1 or 2 stars...”, an output condition therefore became an
+implicit control-selection instruction.
+
+Commit `e706e0f6` reserves `exact_label` for an explicit action query. Task text continues to provide ordinary
+lexical/path relevance, so automatic ordering remains a lossy, best-effort token-compression preview rather than a
+semantic oracle. It does not assume that the correct action is visible, near the viewport, first in source order, or
+most salient. Every current executable route remains in the complete paged ActionSpace; physical
+attached/visible/enabled availability and current binding remain the hard SurfaceAdapter/Runtime contract. A wrong
+but legal selection may still execute. `ActionOutcome`, `EpisodeMonitor`, the same deliberate ActionPolicy, and exact
+replay admission remain the one correction loop; Runtime does not compare `public_intent` with the chosen control.
+
+The same failed run found the correct reviewers but submitted explanatory strings such as
+`Evelyn Kurver (2 stars)`. Commit `5ebcb58f` keeps that representation rule at the environment codec: WebArena's
+bounded final-response guidance now says that RETRIEVE outputs contain the exact requested values without explanatory
+annotations. CoreLoop and Runtime still do not parse or rewrite answers.
+
+The clean live rerun
+[`task388-r9`](../evidence/live/webarena-candidate-convergence-20260831-5ebcb58f/task388-r9/run.json) at product SHA
+`5ebcb58f` reached native `verified_success` with the exact response
+`["Evelyn Kurver", "N Randall"]`. It used 19 policy calls (15 ordinary, four recovery), eight executions, 585,864
+complete request tokens, and 65.57 seconds of model latency. The preceding
+[`task388-r8`](../evidence/live/webarena-collection-coverage-20260831-1c33a8e6/task388-r8/run.json) was blocked after
+21 policy calls, six recovery calls, nine executions, and 721,622 complete request tokens; it selected `2 stars` and
+submitted annotated values. The rerun followed the typed Next route and did not select the rating control. It still
+made one redundant Page-1 navigation before submission, without rereading the reviews. This is evidence of bounded
+improvement and official task success, not a claim that heuristic ranking or policy efficiency is perfect.
+
+At product SHA `5ebcb58f`, the affected cross-layer gate reports `526 passed, 3 skipped, 1 deselected`; the full fixed
+BrowserGym-interpreter suite reports `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67 seconds. The sole
+deselection remains the repository-missing archived dashboard trace. These gates cover the explicit-query boundary,
+offscreen executable preservation, candidate/Catalog delivery, pagination coverage, Monitor/recovery, and the
+WebArena response codec; they do not turn a one-case live result into aggregate benchmark closure.
+
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
 The post-diagnostic repair keeps the same single inference/control chain. It adds no perception ledger, progress
