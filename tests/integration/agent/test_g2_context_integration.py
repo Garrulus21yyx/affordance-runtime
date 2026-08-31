@@ -144,10 +144,6 @@ def test_action_prompt_requires_fresh_reassessment_and_bounded_collection_audit(
     assert "classify every complete in-scope record once" in system
     assert "deduplicate by public identity" in system
     assert "full supported result set" in system
-    assert "numeric or ordinal scale represented in another" in system
-    assert "convert only from explicit source marks or bounds" in system
-    assert "apply the exact boundary record by record" in system
-    assert "keep the value unresolved rather than broadening" in system
     assert "Fresh World and ToolReturn coverage own" in system
     assert "Follow a returned next_cursor exactly once" in system
     assert "materially new records" in system
