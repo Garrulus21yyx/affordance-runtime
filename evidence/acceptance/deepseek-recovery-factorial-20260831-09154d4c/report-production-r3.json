@@ -1,0 +1,1852 @@
+{
+  "schema_version": "deepseek-recovery-replay.v2",
+  "created_at": "2026-08-31T11:10:30.911729+00:00",
+  "source_commit": "09154d4c",
+  "trace_root": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces",
+  "contract": {
+    "dispatch": false,
+    "same_recorded_context_for_all_arms": true,
+    "atomic_recovery_instruction": true,
+    "max_tokens": 4096,
+    "tool_choice": "required",
+    "reasoning_effort_when_enabled": "high",
+    "repeats": 3
+  },
+  "contexts": [
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "task_instruction": "How many commits did Nic Chan make on April 7th 2022 in the current repository?",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-307/trace.jsonl",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "prior_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "Nic Chan",
+          "public_intent": ""
+        }
+      },
+      "original_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "Search searchbox"
+        }
+      },
+      "tool_count": 14
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "task_instruction": "Who gave 1 or 2 stars for phone cases from EYZUTAK",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-388/trace.jsonl",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "prior_call": {
+        "tool_name": "read_region",
+        "arguments": {
+          "region_ref": "R10"
+        }
+      },
+      "original_call": {
+        "tool_name": "goto",
+        "arguments": {
+          "public_intent": "Open page 2 of product reviews",
+          "url": "http://localhost:7770/review/product/listAjax/id/38560/?p=2"
+        }
+      },
+      "tool_count": 18
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "task_instruction": "Get the top 2 search term(s) in my store",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-42/trace.jsonl",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "prior_call": {
+        "tool_name": "read_region",
+        "arguments": {
+          "region_ref": "R8"
+        }
+      },
+      "original_call": {
+        "tool_name": "submit_final_response",
+        "arguments": {
+          "response": {
+            "task_type": "RETRIEVE",
+            "status": "SUCCESS",
+            "error_details": null,
+            "retrieved_data": [
+              "hollister (19 uses)",
+              "Joust Bag (4 uses)"
+            ]
+          }
+        }
+      },
+      "tool_count": 18
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "task_instruction": "Create a private repository named Do it myself with a README file containing links to the 8 most active DIY posts from the DIY forum. Use the Web IDE to create the README. Structure it with the repository name as the main heading, \"Most Active DIY Threads\" as a subheading, and a bulleted list of the posts as markdown links (using their titles as link text) in the same order they appear on the forum. Commit to the default branch.",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-566/trace.jsonl",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "prior_call": {
+        "tool_name": "read_region",
+        "arguments": {
+          "region_ref": "R10"
+        }
+      },
+      "original_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "sort by"
+        }
+      },
+      "tool_count": 20
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "task_instruction": "Increase the price of white Ingrid Running with size L and above by $17",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-780/trace.jsonl",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "prior_call": {
+        "tool_name": "search_page_content",
+        "arguments": {
+          "query": "WJ04"
+        }
+      },
+      "original_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "Filters"
+        }
+      },
+      "tool_count": 17
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "task_instruction": "create a new group \"crew\" with members ASWATFZLLC, patrickhlauke, westurner, linkmatrix",
+      "trace_path": "evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/traces/webarena-diagnostic10b-all10-task-801/trace.jsonl",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "prior_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "group name field",
+          "public_intent": ""
+        }
+      },
+      "original_call": {
+        "tool_name": "find_controls",
+        "arguments": {
+          "query": "group url path text input"
+        }
+      },
+      "tool_count": 11
+    }
+  ],
+  "summary": {
+    "F0": {
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "calls": 18,
+      "accepted": 18,
+      "provider_errors": 0,
+      "length_truncations": 0,
+      "multiple_tool_calls": 0,
+      "exact_replays": 0,
+      "matches_original_recovery_call": 0,
+      "operation_changes": 18,
+      "responses_with_final_text": 0,
+      "mean_latency_ms": 1456.235,
+      "mean_reasoning_chars": 0.0,
+      "mean_output_tokens": 50.944,
+      "mean_reasoning_tokens": 0.0,
+      "tool_call_count_errors": 0,
+      "zero_tool_calls": 0
+    },
+    "P0": {
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "calls": 18,
+      "accepted": 18,
+      "provider_errors": 0,
+      "length_truncations": 0,
+      "multiple_tool_calls": 0,
+      "exact_replays": 0,
+      "matches_original_recovery_call": 3,
+      "operation_changes": 15,
+      "responses_with_final_text": 0,
+      "mean_latency_ms": 1764.825,
+      "mean_reasoning_chars": 0.0,
+      "mean_output_tokens": 47.167,
+      "mean_reasoning_tokens": 0.0,
+      "tool_call_count_errors": 0,
+      "zero_tool_calls": 0
+    }
+  },
+  "results": [
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1658.494,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 2041.554,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1566.123,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1997.477,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1675.619,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-307",
+      "sequence": 38,
+      "context_id": "context:90d7ba750e515a16acfbde8eac8d733de62f47fed1d263231bc034b470297390",
+      "source_digest": "sha256:fe473704c21ad717177868c4cb399ecefcad91aa4d4e97beddd40d37340faea5",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1995.0,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R13"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18665,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18560,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18560,
+          "prompt_cache_miss_tokens": 105
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1338.133,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "Evelyn Kurver",
+                "N Randall"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 75,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1787.949,
+      "tool_calls": [
+        {
+          "tool_name": "goto",
+          "arguments": {
+            "url": "http://localhost:7770/review/product/listAjax/id/38560/?p=2"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": true,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 54,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1859.111,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "Evelyn Kurver",
+                "N Randall"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 75,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1901.922,
+      "tool_calls": [
+        {
+          "tool_name": "goto",
+          "arguments": {
+            "url": "http://localhost:7770/review/product/listAjax/id/38560/?p=2"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": true,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 54,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1436.785,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "Evelyn Kurver",
+                "N Randall"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 75,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-388",
+      "sequence": 34,
+      "context_id": "context:109c256de859b07e17c68d2a6e774e01c5c0ee682c84a8c1569f14476a4bdd8b",
+      "source_digest": "sha256:bfec94b5d9742f6ad46619a9e938634708e7cf1558239032fddce15b8226a027",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 2066.788,
+      "tool_calls": [
+        {
+          "tool_name": "goto",
+          "arguments": {
+            "url": "http://localhost:7770/review/product/listAjax/id/38560/?p=2"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": true,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 18854,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 18816,
+        "output_tokens": 54,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 18816,
+          "prompt_cache_miss_tokens": 38
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1384.658,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 74,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1777.501,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 69,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1460.001,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 74,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1867.803,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 69,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1635.1,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 74,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-42",
+      "sequence": 15,
+      "context_id": "context:33a5f826d1007b470320555e91bed36932654692c6cbd9b1123df19478d8f9ba",
+      "source_digest": "sha256:c01c2bb8ae78edcfb689a7228dac485beaec5476b195697909522d6e291f7728",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1886.502,
+      "tool_calls": [
+        {
+          "tool_name": "submit_final_response",
+          "arguments": {
+            "response": {
+              "task_type": "RETRIEVE",
+              "status": "SUCCESS",
+              "retrieved_data": [
+                "hollister",
+                "Joust Bag"
+              ],
+              "error_details": null
+            }
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 13390,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 13312,
+        "output_tokens": 69,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 13312,
+          "prompt_cache_miss_tokens": 78
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1470.301,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29184,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29184,
+          "prompt_cache_miss_tokens": 131
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1953.114,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29184,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29184,
+          "prompt_cache_miss_tokens": 131
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1342.44,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29312,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29312,
+          "prompt_cache_miss_tokens": 3
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1801.531,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29184,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29184,
+          "prompt_cache_miss_tokens": 131
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1454.851,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments most active"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29312,
+        "output_tokens": 41,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29312,
+          "prompt_cache_miss_tokens": 3
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-566",
+      "sequence": 30,
+      "context_id": "context:dc22226ed58515c8dcbf0da842c395a48e02440cf4207c125c074d255c6490f2",
+      "source_digest": "sha256:b79d892e909365a5b0050934fed224231e9db550716f3f8e6dbed4a7b08b4d8c",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1578.2,
+      "tool_calls": [
+        {
+          "tool_name": "find_controls",
+          "arguments": {
+            "query": "sort by comments"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 29315,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 29184,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 29184,
+          "prompt_cache_miss_tokens": 131
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1278.536,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R10"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1749.366,
+      "tool_calls": [
+        {
+          "tool_name": "search_page_content",
+          "arguments": {
+            "query": "Ingrid Running Jacket-XL"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": false,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 43,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1445.814,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R10"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1407.871,
+      "tool_calls": [
+        {
+          "tool_name": "search_page_content",
+          "arguments": {
+            "query": "Ingrid Running Jacket-XL"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": false,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 43,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1232.455,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R10"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-780",
+      "sequence": 20,
+      "context_id": "context:e25fb66d24ca9ca476a7fa23ecd6b0930110b77ac73708f9ffbe9b987c7b18dc",
+      "source_digest": "sha256:e59b2c3a01cdcbbe5e02edd0d4687c1913910704632a48dd70ac5733bd462281",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1696.139,
+      "tool_calls": [
+        {
+          "tool_name": "search_page_content",
+          "arguments": {
+            "query": "Ingrid Running Jacket-XL"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": false,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 19194,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 19072,
+        "output_tokens": 43,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 19072,
+          "prompt_cache_miss_tokens": 122
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "F0",
+      "repetition": 1,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1354.295,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "P0",
+      "repetition": 1,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1403.493,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "F0",
+      "repetition": 2,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1256.621,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "P0",
+      "repetition": 2,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1693.839,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "F0",
+      "repetition": 3,
+      "model": "deepseek-v4-flash",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1362.9,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    },
+    {
+      "case_id": "webarena-diagnostic10b-all10-task-801",
+      "sequence": 21,
+      "context_id": "context:49bbb753bde4c6ca7477e3dd68165a6690cd4a27d1c0cb6bf04b849a5019cb85",
+      "source_digest": "sha256:3902444cfab977ef3785315fb1b2a4f70140b97d996b1f77997ba2c1021bb67d",
+      "arm": "P0",
+      "repetition": 3,
+      "model": "deepseek-v4-pro",
+      "thinking": "disabled",
+      "status": "accepted",
+      "finish_reason": "tool_call",
+      "latency_ms": 1160.799,
+      "tool_calls": [
+        {
+          "tool_name": "read_region",
+          "arguments": {
+            "region_ref": "R9"
+          }
+        }
+      ],
+      "schema_error": "",
+      "exact_replay": false,
+      "matches_original_recovery_call": false,
+      "operation_changed": true,
+      "arguments_changed": true,
+      "reasoning_chars": 0,
+      "final_text_chars": 0,
+      "final_text_preview": "",
+      "usage": {
+        "input_tokens": 8927,
+        "cache_write_tokens": 0,
+        "cache_read_tokens": 8832,
+        "output_tokens": 39,
+        "input_audio_tokens": 0,
+        "cache_audio_read_tokens": 0,
+        "output_audio_tokens": 0,
+        "details": {
+          "prompt_cache_hit_tokens": 8832,
+          "prompt_cache_miss_tokens": 95
+        },
+        "cost": null
+      },
+      "tool_call_count": 1
+    }
+  ]
+}

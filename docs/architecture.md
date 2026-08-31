@@ -401,17 +401,50 @@ transport retry, exact replay, and dynamic `oneOf|anyOf` representation paths sh
 
 A real capability probe on the final contract produced one accepted DeepSeek v4 Flash `SelectAction` in one physical
 request (semantic thinking requested, physical hidden thinking disabled). The current convergence and held-out-live
-scope is explicitly limited to `LLM_ACTIVE_PROFILE=deepseek` with
-`LLM_DEEPSEEK_MODEL=deepseek-v4-flash`; no other provider is a candidate in this phase. This is a benchmark/profile
-boundary rather than Runtime branching: the policy port remains provider-neutral, while every qualifying run must
-pin and record the DeepSeek profile. Benchmark route quality remains live-open until those held-out runs show fewer
-repeated routes and successful recovery-to-different-action transitions.
+provider scope is explicitly limited to `LLM_ACTIVE_PROFILE=deepseek`; Flash remains the implementation baseline and
+V4 Pro is the only model-tier candidate. This is a benchmark/profile boundary rather than Runtime branching: the
+policy port remains provider-neutral, while every qualifying run must pin and record its exact DeepSeek model.
+Benchmark route quality remains live-open until held-out runs show fewer repeated routes and successful
+recovery-to-different-action transitions.
 
 The final fixed-interpreter repository gate for this implementation reports
 `2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented
 repository-missing archived dashboard trace and fails before product code. The focused World/BrowserGym gate reports
 158 passed; the focused policy/Monitor/runtime/provider gate reports 218 passed. These gates prove the bounded owner
 contracts above, not post-repair live task quality.
+
+### 2026-08-31 DeepSeek frozen-recovery factorial — offline directional evidence
+
+[`report-r3.json`](../evidence/acceptance/deepseek-recovery-factorial-20260831-09154d4c/report-r3.json) replays the
+first recorded `control_stall` ActionPolicy request from six diagnostic10b cases three times. The full recorded
+messages, fresh World, Monitor facts, dynamic Catalog, 4,096-token cap, and current atomic-recovery instruction are
+identical across arms; no ToolCall is bound or dispatched. The controlled model/reasoning factorial uses
+`tool_choice=auto` for every arm because thinking-enabled DeepSeek and production `required` do not expose the same
+physical constraint:
+
+| Arm | Accepted atomic calls | Mean latency | Mean output tokens | Main protocol failures |
+|---|---:|---:|---:|---|
+| Flash / thinking off | 17 / 18 | 3.15 s | 319 | one multiple-call response |
+| Flash / thinking high | 9 / 18 | 11.83 s | 1,469 | seven multiple-call responses, one truncation, one unknown tool |
+| Pro / thinking off | 18 / 18 | 5.78 s | 395 | none |
+| Pro / thinking high | 13 / 18 | 19.54 s | 1,349 | two multiple-call responses, one truncation, two missing-argument calls |
+
+Thus exposed high-effort reasoning is net-negative for the current bounded one-action contract: it adds about
+1,274--1,370 reasoning tokens and 3.8x/3.4x latency while reducing atomic validity. This measures behavior, not the
+quality of returned chain-of-thought.
+
+[`report-production-r3.json`](../evidence/acceptance/deepseek-recovery-factorial-20260831-09154d4c/report-production-r3.json)
+then holds the real recovery wire fixed at `thinking=disabled`, `tool_choice=required`. Flash and Pro are both 18/18
+valid with no truncation, multiple call, final text, provider failure, or exact immediate replay. Flash averages
+1.46 seconds / 51 output tokens; Pro averages 1.76 seconds / 47 output tokens. The paired decisions provide
+directional semantic evidence for Pro: on Task388 Flash submits after page 1 despite an explicit page-2 route and
+partial review coverage in all three repetitions, whereas Pro opens page 2 in all three; on Task780 Pro directly
+searches the still-missing XL variant while Flash rereads the product region. Task42 is an equal correct submission;
+the other contexts are ties or are dominated by the pre-repair missing-route/World defects.
+
+The offline result therefore supports `deepseek-v4-pro + thinking disabled + required ToolCall` as the next whole-run
+candidate, not a production switch and not phase-specific model routing. These frozen pre-repair contexts cannot
+prove post-action World progress or native task success; only a held-out live run can do so.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 

@@ -330,17 +330,43 @@ semantic Monitor, visual fallback, task vocabulary, or benchmark branch was adde
 
 Focused gates report 158 World/BrowserGym tests and 218 policy/Monitor/runtime/provider tests. A real final-contract
 probe returned one accepted DeepSeek v4 Flash `SelectAction` in 1.54 seconds with one physical request. The current
-post-repair cohort is limited to `LLM_ACTIVE_PROFILE=deepseek` and
-`LLM_DEEPSEEK_MODEL=deepseek-v4-flash`; no cross-provider A/B is in scope. Runtime remains provider-neutral, but a run
-without those explicit recorded values is not qualifying evidence for this phase. These implementation and
-capability results do not change the diagnostic10b task outcomes. Post-repair held-out execution must still measure
-success, policy calls, recovery-to-new-route latency, exact replay, no-effect dispatches, and closed-coverage
-reinspection.
+post-repair cohort is limited to `LLM_ACTIVE_PROFILE=deepseek`; Flash is the baseline and V4 Pro is the only current
+model-tier candidate. No cross-provider A/B is in scope. Runtime remains provider-neutral, but a run without explicit
+recorded provider and model values is not qualifying evidence for this phase. These implementation and capability
+results do not change the diagnostic10b task outcomes. Post-repair held-out execution must still measure success,
+policy calls, recovery-to-new-route latency, exact replay, no-effect dispatches, and closed-coverage reinspection.
 
 The final fixed-interpreter repository gate reports
 `2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented
 repository-missing archived dashboard trace and fails before product code. Full Ruff and `git diff --check` pass.
 This is implementation evidence only; the post-repair live cohort remains deliberately unscored.
+
+### 2026-08-31 DeepSeek frozen-recovery replay — offline only
+
+The provider-free gate is followed by a DeepSeek-only paired replay over six first-`control_stall` contexts from the
+frozen diagnostic10b traces. Each condition receives the same recorded history, fresh World, Monitor facts, current
+Catalog, atomic instruction, and 4,096-token cap; returned calls are never dispatched. Three repetitions per context
+produce 18 calls per arm.
+
+The controlled `tool_choice=auto` factorial in
+[`report-r3.json`](../evidence/acceptance/deepseek-recovery-factorial-20260831-09154d4c/report-r3.json) reports:
+
+- Flash/off: 17/18 atomic-valid, 3.15 s and 319 output tokens on average;
+- Flash/high: 9/18 atomic-valid, 11.83 s and 1,469 output tokens;
+- Pro/off: 18/18 atomic-valid, 5.78 s and 395 output tokens;
+- Pro/high: 13/18 atomic-valid, 19.54 s and 1,349 output tokens.
+
+Thinking-high failures are concrete output-contract failures: multiple calls, truncation, one unknown Flash tool,
+and two Pro calls missing required arguments. It is not selected for the next live configuration.
+
+The exact production-wire replay in
+[`report-production-r3.json`](../evidence/acceptance/deepseek-recovery-factorial-20260831-09154d4c/report-production-r3.json)
+uses `thinking=disabled + tool_choice=required`. Both Flash and Pro are 18/18 valid and zero-replay; Flash averages
+1.46 seconds, Pro 1.76 seconds. Pro makes the clearly coverage-consistent choice on Task388 in all three repeats
+(open page 2), while Flash prematurely submits the two page-1 names in all three. Pro also targets the missing XL
+variant on Task780 instead of rereading the current product region. Other cases are equal, unresolved, or rely on
+pre-repair World gaps. This is directional evidence to run the complete ActionPolicy on Pro next; it is not native
+success evidence and does not authorize dynamic Flash/Pro routing.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
