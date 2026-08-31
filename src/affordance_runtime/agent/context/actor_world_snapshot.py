@@ -14,6 +14,8 @@ from affordance_runtime.agent.context.world_projection import ModelTargetView, M
 from affordance_runtime.immutable import freeze_json
 from affordance_runtime.world.contracts import (
     EntityAllocation,
+    SemanticShapeKind,
+    SemanticShapeStatus,
     SourceEntityEndpoint,
     WorldObservation,
 )
@@ -815,36 +817,34 @@ def _retain_complete_structure_groups(
     remaining_nodes: int,
     remaining_bytes: int | None,
 ):
-    """Pack structural scaffolding and repeated semantic siblings atomically."""
+    """Pack scaffolding and source-declared semantic units atomically."""
 
     ordered_ids = {item.structure_id for item in ordered}
-    repeated_roots: set[str] = set()
-    for parent in ordered:
-        children = [by_id[item] for item in parent.child_structure_ids if item in ordered_ids]
-        by_signature: dict[tuple[object, ...], list[object]] = defaultdict(list)
-        for child in children:
-            by_signature[_structure_signature(child)].append(child)
-        for siblings in by_signature.values():
-            if len(siblings) >= 2:
-                repeated_roots.update(item.structure_id for item in siblings)
-
-    # Nested repeated controls remain part of their outer repeated card/row.
-    repeated_roots = {
+    semantic_roots = {
+        item.structure_id
+        for item in ordered
+        if item.semantic_shape.status is SemanticShapeStatus.RESOLVED
+        and item.semantic_shape.kind in {SemanticShapeKind.RECORD, SemanticShapeKind.CONTROL_GROUP}
+    }
+    semantic_roots = {
         root
-        for root in repeated_roots
-        if not any(ancestor in repeated_roots for ancestor in _structure_ancestors(root, by_id))
+        for root in semantic_roots
+        if not any(ancestor in semantic_roots for ancestor in _structure_ancestors(root, by_id))
     }
     descendants_by_root = {
-        root: _structure_descendants(root, by_id) & ordered_ids for root in repeated_roots
+        root: _structure_descendants(root, by_id) & ordered_ids for root in semantic_roots
     }
     grouped_ids = set().union(*descendants_by_root.values()) if descendants_by_root else set()
-    units = [tuple(item for item in ordered if item.structure_id not in grouped_ids)]
-    units.extend(
-        tuple(item for item in ordered if item.structure_id in descendants_by_root[root])
-        for root in sorted(repeated_roots, key=lambda item: next(
-            index for index, node in enumerate(ordered) if node.structure_id == item
-        ))
-    )
+    units: list[tuple[object, ...]] = []
+    for item in ordered:
+        if item.structure_id in semantic_roots:
+            units.append(tuple(
+                candidate
+                for candidate in ordered
+                if candidate.structure_id in descendants_by_root[item.structure_id]
+            ))
+        elif item.structure_id not in grouped_ids:
+            units.append((item,))
     retained: list[object] = []
     used_bytes = 0
     for unit in units:
@@ -857,15 +857,21 @@ def _retain_complete_structure_groups(
             continue
         retained.extend(unit)
         used_bytes += unit_bytes
+    retained_ids = {item.structure_id for item in retained}
+    changed = True
+    while changed:
+        orphan_scaffolds = {
+            item.structure_id
+            for item in retained
+            if not item.semantic_target_id
+            and any(child in ordered_ids for child in item.child_structure_ids)
+            and not any(child in retained_ids for child in item.child_structure_ids)
+        }
+        changed = bool(orphan_scaffolds)
+        if changed:
+            retained = [item for item in retained if item.structure_id not in orphan_scaffolds]
+            retained_ids.difference_update(orphan_scaffolds)
     return tuple(retained)
-
-
-def _structure_signature(item) -> tuple[object, ...]:
-    state = dict(item.state)
-    classes = state.get("semantic.dom.attribute.class_tokens", ())
-    if isinstance(classes, list | tuple):
-        classes = tuple(classes)
-    return item.role, state.get("semantic.dom.tag", ""), classes
 
 
 def _structure_ancestors(structure_id: str, by_id) -> tuple[str, ...]:

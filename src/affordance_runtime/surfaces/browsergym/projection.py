@@ -46,6 +46,7 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
 )
+from affordance_runtime.surfaces.semantic_shape import explicit_role_semantic_shape
 from affordance_runtime.world import (
     MAX_OBSERVATION_GROUNDING_REGIONS,
     CoverageState,
@@ -58,6 +59,8 @@ from affordance_runtime.world import (
     ObservationSourceProfile,
     ObservationStructureNode,
     SemanticInventorySummary,
+    SemanticShape,
+    SemanticShapeKind,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
@@ -70,6 +73,22 @@ from affordance_runtime.world.regular_lattice import (
 
 MAX_INVENTORY_FACTS = 4_096
 MAX_STRUCTURE_NODES = 2_048
+
+def _source_semantic_shape(
+    structure_node,
+    *,
+    retained_private_ids: frozenset[str],
+    has_semantic_target: bool,
+) -> SemanticShape:
+    """Classify only explicit source structure; never infer from repetition or page content."""
+
+    complete = all(child in retained_private_ids for child in structure_node.private_child_ids)
+    return explicit_role_semantic_shape(
+        structure_node.role,
+        has_children=bool(structure_node.private_child_ids),
+        has_semantic_target=has_semantic_target,
+        complete=complete,
+    )
 
 
 @dataclass(frozen=True)
@@ -156,6 +175,7 @@ def project_browsergym_observation(
         )
         for structure_node in retained_structure
     }
+    retained_private_ids = frozenset(structure_ids)
     derived_structure_children: dict[str, list[str]] = {}
     for structure_node in retained_structure:
         if structure_node.private_parent_id in structure_ids:
@@ -181,6 +201,11 @@ def project_browsergym_observation(
             bool(
                 structure_node.private_parent_id
                 and structure_node.private_parent_id not in structure_ids
+            ),
+            _source_semantic_shape(
+                structure_node,
+                retained_private_ids=retained_private_ids,
+                has_semantic_target=structure_node.private_node_id in target_ids,
             ),
         )
         for structure_node in retained_structure
@@ -411,6 +436,7 @@ def _viewport_subject(
         (),
         target_id,
         False,
+        SemanticShape.resolved(SemanticShapeKind.ATOM),
     )
     schema = INTERACTION_CAPABILITY_REGISTRY.parameter_schema("scroll")
     binding_id = f"binding:{observation_id}:viewport:scroll"
@@ -530,6 +556,7 @@ def _browser_context_subject(
         (),
         target_id,
         False,
+        SemanticShape.resolved(SemanticShapeKind.ATOM),
     )
     # Titles are semantic display metadata supplied by BrowserGym, not binding
     # identity. A dynamic title change must not make a browser-global action stale.
@@ -684,6 +711,7 @@ def _focused_context_subject(
         (),
         target_id,
         False,
+        SemanticShape.resolved(SemanticShapeKind.ATOM),
     )
     fingerprint = _public_fingerprint(
         ("focused_context", target.label, tuple(sorted(state.items())), child_ids)

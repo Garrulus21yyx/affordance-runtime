@@ -44,6 +44,7 @@ from affordance_runtime.model.policy.grounded_tool_compiler import GroundedToolC
 from affordance_runtime.model.policy.grounded_tool_contracts import (
     MAX_GROUNDED_TOOL_COUNT,
     GroundedActionResolution,
+    GroundedToolBinding,
     GroundedToolCatalog,
     GroundedToolPhase,
     GroundedToolResolutionCode,
@@ -73,6 +74,26 @@ class GroundedLocalToolName(StrEnum):
     ASK_USER = "ask_user"
     WAIT = "wait"
     ABORT = "abort"
+
+
+_RECOVERY_BASIS_FIELD = "recovery_basis"
+
+
+@dataclass(frozen=True)
+class _RecoveryBasisBinding:
+    """Remove the model-visible decision basis before private action binding."""
+
+    tool_name: str
+    delegate: GroundedToolBinding
+
+    def resolve(self, arguments, context_id: str, tool_call_id: str):
+        _validate_recovery_basis(self.tool_name, arguments.get(_RECOVERY_BASIS_FIELD))
+        clean_arguments = {
+            str(name): value
+            for name, value in arguments.items()
+            if name != _RECOVERY_BASIS_FIELD
+        }
+        return self.delegate.resolve(clean_arguments, context_id, tool_call_id)
 
 
 @dataclass(frozen=True)
@@ -443,6 +464,8 @@ def compile_grounded_tool_catalog(
     delivery: ModelTurnDelivery,
     observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
     interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY,
+    *,
+    require_recovery_basis: bool = False,
 ) -> GroundedToolCatalog:
     if phase is not GroundedToolPhase.ACTION_SELECTION:
         raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
@@ -851,10 +874,13 @@ def compile_grounded_tool_catalog(
             ),
         )
     )
+    registrations = tuple(registered)
+    if require_recovery_basis:
+        registrations = tuple(_with_recovery_basis(item) for item in registrations)
     return _catalog_from_registrations(
         context,
         delivery,
-        tuple(registered),
+        registrations,
         observation_tool_profile=observation_tool_profile,
         interaction_tool_profile=interaction_tool_profile,
     )
@@ -911,6 +937,8 @@ def compile_grounded_action_catalog(
     delivery: ModelTurnDelivery,
     observation_tool_profile: ObservationToolExposureProfile = ObservationToolExposureProfile.COMPATIBILITY,
     interaction_tool_profile: InteractionToolExposureProfile = InteractionToolExposureProfile.COMPATIBILITY,
+    *,
+    require_recovery_basis: bool = False,
 ) -> GroundedToolCatalog:
     return compile_grounded_tool_catalog(
         context,
@@ -918,12 +946,124 @@ def compile_grounded_action_catalog(
         delivery,
         observation_tool_profile,
         interaction_tool_profile,
+        require_recovery_basis=require_recovery_basis,
     )
 
 
 def _final_response_description(guidance: str) -> str:
     base = "Submit the complete final answer supported in the current agent context for native evaluation."
     return base if not guidance else f"{base} Output contract: {guidance}"
+
+
+def _with_recovery_basis(tool: RegisteredGroundedTool) -> RegisteredGroundedTool:
+    """Publish one typed, call-local recovery decision without changing execution args."""
+
+    schema = _add_required_root_property(
+        tool.spec.input_schema,
+        _RECOVERY_BASIS_FIELD,
+        _recovery_basis_schema(tool.spec.name),
+    )
+    return RegisteredGroundedTool(
+        ToolSpec(
+            tool.spec.name,
+            tool.spec.description,
+            schema,
+            ephemeral_argument_paths=tool.spec.ephemeral_argument_paths,
+        ),
+        _RecoveryBasisBinding(tool.spec.name, tool.binding),
+    )
+
+
+def _add_required_root_property(
+    schema: Mapping[str, object],
+    name: str,
+    property_schema: Mapping[str, object],
+) -> Mapping[str, object]:
+    """Add one field to every legal root-object branch of a public schema."""
+
+    mutable = to_json_compatible(schema)
+    if not isinstance(mutable, dict):
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    variant_keys = tuple(key for key in ("oneOf", "anyOf") if isinstance(mutable.get(key), list))
+    if variant_keys:
+        for key in variant_keys:
+            variants = mutable[key]
+            mutable[key] = [
+                _add_required_root_property(variant, name, property_schema)
+                if isinstance(variant, Mapping)
+                else variant
+                for variant in variants
+            ]
+        return mutable
+    if mutable.get("type") != "object" or mutable.get("additionalProperties", False) is not False:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    properties = mutable.get("properties")
+    required = mutable.get("required", [])
+    if not isinstance(properties, dict) or not isinstance(required, list) or name in properties:
+        raise GroundedToolResolutionError(GroundedToolResolutionCode.CATALOG_INVALID)
+    properties[name] = to_json_compatible(property_schema)
+    mutable["required"] = [*required, name]
+    return mutable
+
+
+def _recovery_basis_schema(tool_name: str) -> Mapping[str, object]:
+    """Closed relation between current task evidence and the selected operation."""
+
+    terminal_submit = tool_name == GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value
+    terminal_abort = tool_name == GroundedLocalToolName.ABORT.value
+    decisions = (
+        ["submit_supported", "stop_route_exhausted"]
+        if terminal_submit
+        else ["stop_route_exhausted"]
+        if terminal_abort
+        else ["continue_incomplete", "change_incomplete", "change_contradicted"]
+    )
+    properties: dict[str, object] = {
+        "decision": {"type": "string", "enum": decisions},
+        "remaining_gap": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240,
+        },
+    }
+    required = ["decision"]
+    if not terminal_submit:
+        required.append("remaining_gap")
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
+
+
+def _validate_recovery_basis(tool_name: str, value: object) -> None:
+    """Enforce the closed evidence/route/tool relation before any private binding."""
+
+    if not isinstance(value, Mapping):
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.RECOVERY_CONTRACT_VIOLATION,
+            "recovery_basis must be an object",
+        )
+    decision = str(value.get("decision", ""))
+    remaining_gap = str(value.get("remaining_gap", "")).strip()
+    if tool_name == GroundedLocalToolName.SUBMIT_FINAL_RESPONSE.value:
+        valid = (decision == "submit_supported" and not remaining_gap) or (
+            decision == "stop_route_exhausted" and bool(remaining_gap)
+        )
+    elif tool_name == GroundedLocalToolName.ABORT.value:
+        valid = decision == "stop_route_exhausted" and bool(remaining_gap)
+    else:
+        valid = decision in {
+            "continue_incomplete",
+            "change_incomplete",
+            "change_contradicted",
+        } and bool(remaining_gap)
+    if not valid:
+        raise GroundedToolResolutionError(
+            GroundedToolResolutionCode.RECOVERY_CONTRACT_VIOLATION,
+            "decision, remaining_gap, and selected tool are inconsistent",
+        )
 
 
 def resolve_grounded_tool_call(

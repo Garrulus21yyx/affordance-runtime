@@ -38,6 +38,72 @@ class CoverageState(StrEnum):
     STALE = "stale"
 
 
+class SemanticShapeKind(StrEnum):
+    """Closed public topology algebra; labels and domain content remain open."""
+
+    REGION = "region"
+    COLLECTION = "collection"
+    RECORD = "record"
+    CONTROL_GROUP = "control_group"
+    ATOM = "atom"
+
+
+class SemanticShapeStatus(StrEnum):
+    RESOLVED = "resolved"
+    UNKNOWN = "unknown"
+
+
+class SemanticShapeCompleteness(StrEnum):
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class SemanticShape:
+    """Typed source claim about one structural node's compositional meaning."""
+
+    status: SemanticShapeStatus
+    kind: SemanticShapeKind | None = None
+    completeness: SemanticShapeCompleteness = SemanticShapeCompleteness.UNKNOWN
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, SemanticShapeStatus):
+            raise TypeError("semantic shape status must be typed")
+        if not isinstance(self.completeness, SemanticShapeCompleteness):
+            raise TypeError("semantic shape completeness must be typed")
+        if self.status is SemanticShapeStatus.RESOLVED:
+            if not isinstance(self.kind, SemanticShapeKind):
+                raise ValueError("resolved semantic shape requires a typed kind")
+            if self.completeness is SemanticShapeCompleteness.UNKNOWN:
+                raise ValueError("resolved semantic shape requires known completeness")
+        elif self.kind is not None or not self.reason.strip():
+            raise ValueError("unknown semantic shape requires no kind and a reason")
+
+    @classmethod
+    def resolved(
+        cls,
+        kind: SemanticShapeKind,
+        *,
+        complete: bool = True,
+    ) -> "SemanticShape":
+        return cls(
+            SemanticShapeStatus.RESOLVED,
+            kind,
+            SemanticShapeCompleteness.COMPLETE if complete else SemanticShapeCompleteness.INCOMPLETE,
+        )
+
+    @classmethod
+    def unknown(cls, reason: str, *, incomplete: bool = False) -> "SemanticShape":
+        return cls(
+            SemanticShapeStatus.UNKNOWN,
+            None,
+            SemanticShapeCompleteness.INCOMPLETE if incomplete else SemanticShapeCompleteness.UNKNOWN,
+            reason,
+        )
+
+
 class EntityAlignmentDisposition(StrEnum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
@@ -438,6 +504,9 @@ class ObservationStructureNode:
     child_structure_ids: tuple[str, ...] = ()
     semantic_target_id: str = ""
     parent_outside_structure: bool = False
+    semantic_shape: SemanticShape = field(
+        default_factory=lambda: SemanticShape.unknown("source_shape_unclassified")
+    )
 
     def __post_init__(self) -> None:
         if not self.structure_id.strip() or not self.role.strip():
@@ -446,6 +515,36 @@ class ObservationStructureNode:
         object.__setattr__(self, "child_structure_ids", tuple(self.child_structure_ids))
         if len(set(self.child_structure_ids)) != len(self.child_structure_ids):
             raise ValueError("observation structure children must be unique")
+        if not isinstance(self.semantic_shape, SemanticShape):
+            raise TypeError("observation structure semantic shape must be typed")
+
+
+@dataclass(frozen=True)
+class CanonicalSemanticNode:
+    """One World-owned topology node with source lineage and canonical identity links."""
+
+    structure_id: str
+    source_observation_id: str
+    source_structure_id: str
+    role: str
+    label: str
+    state: dict[str, Any] = field(default_factory=dict)
+    parent_structure_id: str = ""
+    child_structure_ids: tuple[str, ...] = ()
+    semantic_target_id: str = ""
+    semantic_shape: SemanticShape = field(
+        default_factory=lambda: SemanticShape.unknown("source_shape_unclassified")
+    )
+
+    def __post_init__(self) -> None:
+        if not all((self.structure_id.strip(), self.source_observation_id.strip(), self.source_structure_id.strip(), self.role.strip())):
+            raise ValueError("canonical semantic node requires topology and source identity")
+        object.__setattr__(self, "state", freeze_json(self.state))
+        object.__setattr__(self, "child_structure_ids", tuple(self.child_structure_ids))
+        if len(set(self.child_structure_ids)) != len(self.child_structure_ids):
+            raise ValueError("canonical semantic node children must be unique")
+        if not isinstance(self.semantic_shape, SemanticShape):
+            raise TypeError("canonical semantic node shape must be typed")
 
 
 @dataclass(frozen=True)
@@ -673,6 +772,7 @@ class WorldObservation:
     entity_alignment_decisions: tuple[EntityAlignmentDecision, ...] = ()
     entity_source_links: tuple[EntitySourceLink, ...] = ()
     media: tuple[CanonicalObservationMedia, ...] = ()
+    semantic_topology: tuple[CanonicalSemanticNode, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip():
@@ -699,6 +799,7 @@ class WorldObservation:
         decisions = tuple(self.entity_alignment_decisions)
         links = tuple(self.entity_source_links)
         media = tuple(self.media)
+        topology = tuple(self.semantic_topology)
         if any(not isinstance(item, SourceObservationManifest) for item in manifests):
             raise TypeError("world source manifest must be typed")
         if len({item.source_observation_id for item in manifests}) != len(manifests):
@@ -708,6 +809,26 @@ class WorldObservation:
             raise ValueError("world source observation IDs must be unique")
         if source_ids != {item.source_observation_id for item in manifests}:
             raise ValueError("world source manifest must cover exactly the retained sources")
+        if any(not isinstance(item, CanonicalSemanticNode) for item in topology):
+            raise TypeError("world semantic topology must be typed")
+        topology_ids = {item.structure_id for item in topology}
+        if len(topology_ids) != len(topology):
+            raise ValueError("world semantic topology identities must be unique")
+        if any(
+            item.source_observation_id not in source_ids
+            or (item.semantic_target_id and item.semantic_target_id not in target_ids)
+            or (item.parent_structure_id and item.parent_structure_id not in topology_ids)
+            or any(child not in topology_ids for child in item.child_structure_ids)
+            for item in topology
+        ):
+            raise ValueError("world semantic topology must be closed over retained sources and targets")
+        topology_by_id = {item.structure_id: item for item in topology}
+        if any(
+            topology_by_id[child].parent_structure_id != item.structure_id
+            for item in topology
+            for child in item.child_structure_ids
+        ):
+            raise ValueError("world semantic topology parent and child relations must agree")
         manifests_by_id = {item.source_observation_id: item for item in manifests}
         if any(
             manifests_by_id[source.observation_id]
@@ -862,6 +983,7 @@ class WorldObservation:
         object.__setattr__(self, "entity_alignment_decisions", decisions)
         object.__setattr__(self, "entity_source_links", links)
         object.__setattr__(self, "media", media)
+        object.__setattr__(self, "semantic_topology", topology)
         _validate_derived_target_states(
             self.targets,
             self.facts,

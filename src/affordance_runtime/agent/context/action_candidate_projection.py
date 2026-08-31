@@ -569,19 +569,19 @@ def build_action_delivery_plan(
             str(key).casefold().rsplit(".", 1)[-1] in _STATEFUL_INTERACTION_STATES for key in option.target_state
         )
 
-    non_repeated_region_keys = {region.key for region in region_index.regions if not region.repeated_item_roots}
+    non_collection_region_keys = {region.key for region in region_index.regions if not region.semantic_unit_roots}
     value_control_regions = {
         target_context.primary_region_key
         for option in complete_actions
         if is_direct_value_option(option)
         for target_context in (region_index.target_contexts.get(option.target_id),)
-        if target_context is not None and target_context.primary_region_key in non_repeated_region_keys
+        if target_context is not None and target_context.primary_region_key in non_collection_region_keys
     }
     focused_containers = {
         target_context.primary_region_key
         for target_id, target_context in region_index.target_contexts.items()
         if target_context.focused
-        and target_context.primary_region_key in non_repeated_region_keys
+        and target_context.primary_region_key in non_collection_region_keys
         and target_context.container_kind
         in {
             FunctionalContainerKind.DIALOG,

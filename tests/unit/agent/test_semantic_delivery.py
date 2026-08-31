@@ -63,16 +63,42 @@ from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
     ObservationSourceProfile,
-    ObservationStructureNode,
+    SemanticShape,
+    SemanticShapeKind,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world import (
+    ObservationStructureNode as _ObservationStructureNode,
+)
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 from tests.support.agent.core_loop_support import _task, _world
 from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
+
+
+def ObservationStructureNode(*args, **kwargs):
+    """Source-fixture constructor: declare explicit topology instead of relying on delivery inference."""
+
+    role = str(args[1] if len(args) > 1 else kwargs["role"]).casefold()
+    kind = (
+        SemanticShapeKind.COLLECTION
+        if role in {"feed", "grid", "list", "table", "tree"}
+        else SemanticShapeKind.RECORD
+        if role in {"article", "listitem", "row", "treeitem"}
+        else SemanticShapeKind.CONTROL_GROUP
+        if role in {"listbox", "menu", "menubar", "radiogroup", "tablist", "toolbar"}
+        else SemanticShapeKind.REGION
+        if role in {
+            "alertdialog", "application", "complementary", "dialog", "document", "form",
+            "main", "navigation", "region", "rootwebarea", "search", "webarea",
+        }
+        else SemanticShapeKind.ATOM
+    )
+    kwargs.setdefault("semantic_shape", SemanticShape.resolved(kind))
+    return _ObservationStructureNode(*args, **kwargs)
 
 
 def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
@@ -82,6 +108,11 @@ def _evaluation(task: TaskGoal, observation_id: str) -> TaskEvaluation:
         TaskEvaluationStatus.INCOMPLETE,
         "semantic delivery fixture",
     )
+
+
+def _source_structure_ids(world, topology_ids: tuple[str, ...]) -> tuple[str, ...]:
+    by_id = {item.structure_id: item.source_structure_id for item in world.semantic_topology}
+    return tuple(by_id[item] for item in topology_ids)
 
 
 def test_store_routes_future_readonly_tool_by_typed_result_not_operation_name() -> None:
@@ -597,7 +628,9 @@ def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:
     collections = tuple(
         region
         for region in context.region_index.regions
-        if region.role == "list" and region.repeated_item_roots
+        if region.role == "list"
+        and region.repeated_item_roots
+        and region.heading in {"Records", "Other records"}
     )
 
     assert len(collections) == 2
@@ -1020,7 +1053,7 @@ def test_functional_partition_uses_landmarks_headings_lists_and_merges_empty_ico
     assert any(item.heading == "Featured" or "Featured" in item.direct_labels for item in index.regions)
     assert not any(item.root_structure_id in {"empty", "icon"} for item in index.regions)
     repeated = next(item for item in index.regions if item.role == "list")
-    assert repeated.repeated_item_roots == ("row:0", "row:1", "row:2")
+    assert _source_structure_ids(world, repeated.semantic_unit_roots) == ("row:0", "row:1", "row:2")
     assert set(index.target_region_keys) == {item.target_id for item in world.targets}
 
 
@@ -1186,7 +1219,7 @@ def test_search_returns_the_smallest_complete_repeated_item_not_a_leaf_snippet()
     match = outcome.items[0]
     assert match["kind"] == "complete_item"
     texts = tuple(item["text"] for item in match["content"])
-    assert texts == ("Compact fit\nThe ear cups are small for me.\nReview by Dibbins",)
+    assert texts == ("Compact fit", "The ear cups are small for me.", "Review by Dibbins")
     assert "Review by Morgan" not in texts
 
 
@@ -1393,9 +1426,12 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
 
     assert len(tables) == 1
     table = tables[0]
-    assert table.repeated_item_roots == tuple(f"body:row:{index}" for index in range(5))
+    assert _source_structure_ids(world, table.semantic_unit_roots) == (
+        "header:row",
+        *(f"body:row:{index}" for index in range(5)),
+    )
     assert not any(item.role in {"rowgroup", "row", "listitem"} for item in context.region_index.regions)
-    assert set(table.member_structure_ids) >= {"table", "table:head", "table:body"}
+    assert set(_source_structure_ids(world, table.member_structure_ids)) >= {"table", "table:head", "table:body"}
     assert table.source_coverage == "partial"
     assert table.region_membership == "complete"
     assert table.scope_path == ("Dashboard", "Bestsellers summary")
@@ -1421,12 +1457,12 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
         "context": list(table.scope_path),
     }
     assert inspect_outcome_public(outcome)["scope"] is outcome.scope
-    schema_labels = {item["label"] for item in outcome.items if item.get("kind") == "schema_member"}
-    rows = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
-    assert schema_labels >= {"Product", "Price", "Quantity"}
+    records = tuple(item for item in outcome.items if item.get("kind") == "complete_item")
+    header, *rows = records
+    assert tuple(item["text"] for item in header["content"]) == ("Product", "Price", "Quantity")
     assert len(rows) == 5
-    assert all(len(item["content"]) == 1 for item in rows)
-    assert rows[0]["content"][0]["text"].splitlines() == ["Product 0", "$19.00", "1"]
+    assert all(len(item["content"]) == 3 for item in rows)
+    assert tuple(item["text"] for item in rows[0]["content"]) == ("Product 0", "$19.00", "1")
 
     view = render_compact_actor_world(
         context.actor_world,

@@ -30,6 +30,7 @@ from affordance_runtime.surfaces.dom.interaction_profile import (
     DOM_BROWSER_GLOBAL_PRIMITIVES,
     DOM_INTERACTION_CAPABILITIES,
 )
+from affordance_runtime.surfaces.semantic_shape import explicit_role_semantic_shape
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.world.acquisition import (
     ObservationOffer,
@@ -441,6 +442,11 @@ def _dom_structure(
             {"active_layer": True},
             parent_structure_id=controls_id,
             child_structure_ids=tuple(structure_id for structure_id, _target in members),
+            semantic_shape=explicit_role_semantic_shape(
+                role,
+                has_children=bool(members),
+                has_semantic_target=False,
+            ),
         )
         for index, ((role, label), members) in enumerate(layer_groups.items())
     )
@@ -465,6 +471,11 @@ def _dom_structure(
             parent_structure_id=controls_id,
             child_structure_ids=tuple(live_layer_members[target.target_id]),
             semantic_target_id=target.target_id,
+            semantic_shape=explicit_role_semantic_shape(
+                target.role,
+                has_children=bool(live_layer_members[target.target_id]),
+                has_semantic_target=True,
+            ),
         )
         for target in layer_targets
     )
@@ -475,6 +486,11 @@ def _dom_structure(
             "document",
             "Current page",
             child_structure_ids=root_children,
+            semantic_shape=explicit_role_semantic_shape(
+                "document",
+                has_children=bool(root_children),
+                has_semantic_target=False,
+            ),
         ),
         ObservationStructureNode(
             controls_id,
@@ -486,6 +502,11 @@ def _dom_structure(
                 *(item.structure_id for item in live_layer_nodes),
                 *(item.structure_id for item in layer_nodes),
             ),
+            semantic_shape=explicit_role_semantic_shape(
+                "region",
+                has_children=True,
+                has_semantic_target=False,
+            ),
         ),
         *(
             ObservationStructureNode(
@@ -494,6 +515,11 @@ def _dom_structure(
                 target.label,
                 parent_structure_id=layer_parent_by_control.get(structure_id, controls_id),
                 semantic_target_id=target.target_id,
+                semantic_shape=explicit_role_semantic_shape(
+                    target.role,
+                    has_children=False,
+                    has_semantic_target=True,
+                ),
             )
             for structure_id, target in zip(control_node_ids, controls, strict=True)
         ),
@@ -507,6 +533,11 @@ def _dom_structure(
                     "Visible page text",
                     parent_structure_id=root_id,
                     child_structure_ids=readable_node_ids,
+                    semantic_shape=explicit_role_semantic_shape(
+                        "region",
+                        has_children=bool(readable_node_ids),
+                        has_semantic_target=False,
+                    ),
                 ),
                 *(
                     ObservationStructureNode(
@@ -515,6 +546,11 @@ def _dom_structure(
                         target.label,
                         parent_structure_id=readable_id,
                         semantic_target_id=target.target_id,
+                        semantic_shape=explicit_role_semantic_shape(
+                            target.role,
+                            has_children=False,
+                            has_semantic_target=True,
+                        ),
                     )
                     for structure_id, target in zip(
                         readable_node_ids,

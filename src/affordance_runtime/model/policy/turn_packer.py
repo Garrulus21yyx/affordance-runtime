@@ -20,7 +20,7 @@ from affordance_runtime.model.policy.perception import (
     InteractionToolExposureProfile,
     ObservationToolExposureProfile,
 )
-from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile
+from affordance_runtime.model.policy.reasoning_policy import ActionPolicyCallProfile, ActionPolicyInvocationPhase
 from affordance_runtime.model.policy.request_admission import (
     AdmittedProviderEnvelope,
     InvalidProviderEnvelope,
@@ -274,6 +274,7 @@ class TurnPacker:
             delivery,
             observation_tool_profile,
             interaction_tool_profile,
+            require_recovery_basis=call_profile.phase is ActionPolicyInvocationPhase.DELIBERATE,
         )
         envelope = binder.bind(
             request,

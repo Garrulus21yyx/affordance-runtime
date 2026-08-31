@@ -302,6 +302,29 @@ def _atomic_tool_response(
     )
 
 
+def _recovery_tool_response(
+    tool_name: str,
+    arguments: dict[str, object],
+    call_id: str,
+    *,
+    finish_reason: str = "stop",
+    decision: str = "change_contradicted",
+    remaining_gap: str = "The previous route did not produce the required task evidence.",
+) -> ModelResponse:
+    return _atomic_tool_response(
+        tool_name,
+        {
+            **arguments,
+            "recovery_basis": {
+                "decision": decision,
+                **({"remaining_gap": remaining_gap} if remaining_gap else {}),
+            },
+        },
+        call_id,
+        finish_reason=finish_reason,
+    )
+
+
 def _policy(model) -> ModelBackedAgentPolicy:
     port = PydanticAIGroundedDecisionPort(
         model=model,
@@ -420,7 +443,17 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
                             {
                                 "id": "deepseek-call:2",
                                 "type": "function",
-                                "function": {"name": "list_regions", "arguments": "{}"},
+                                    "function": {
+                                        "name": "list_regions",
+                                        "arguments": json.dumps(
+                                            {
+                                                "recovery_basis": {
+                                                    "decision": "change_contradicted",
+                                                    "remaining_gap": "The previous route did not produce evidence.",
+                                                }
+                                            }
+                                        ),
+                                    },
                             }
                         ],
                     },
@@ -522,7 +555,17 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
                             {
                                 "id": "deepseek-call:length-fallback",
                                 "type": "function",
-                                "function": {"name": "list_regions", "arguments": "{}"},
+                                    "function": {
+                                        "name": "list_regions",
+                                        "arguments": json.dumps(
+                                            {
+                                                "recovery_basis": {
+                                                    "decision": "change_contradicted",
+                                                    "remaining_gap": "The previous route did not produce evidence.",
+                                                }
+                                            }
+                                        ),
+                                    },
                             }
                         ],
                     },
@@ -1285,15 +1328,17 @@ def test_runtime_rejection_closes_exact_local_replay_as_same_call_tool_return() 
             [
                 repeated,
                 repeated,
-                _atomic_tool_response(
+                _recovery_tool_response(
                     "search_page_content",
                     {"query": "Shared state"},
                     "recording-call:3",
                 ),
-                _atomic_tool_response(
+                _recovery_tool_response(
                     "abort",
                     {"reason": "local replay rejection observed", "category": "user_request"},
                     "recording-call:4",
+                    decision="stop_route_exhausted",
+                    remaining_gap="The exact local route is prohibited and no supported route remains.",
                 ),
             ]
         )
@@ -1353,11 +1398,13 @@ def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() 
             [
                 "first_gui_action",
                 "first_gui_action",
-                _atomic_tool_response("list_regions", {}, "recording-call:3"),
-                _atomic_tool_response(
+                _recovery_tool_response("list_regions", {}, "recording-call:3"),
+                _recovery_tool_response(
                     "abort",
                     {"reason": "stop after recovery inspection", "category": "user_request"},
                     "recording-call:4",
+                    decision="stop_route_exhausted",
+                    remaining_gap="No safe route remains after inspecting the current World.",
                 ),
             ]
         )
@@ -1664,7 +1711,7 @@ def test_provider_bridge_does_not_own_recovery_replay_admission() -> None:
         repeated_call_id = "recording-call:prohibited-read"
         scripted = ScriptedModel(
             [
-                _atomic_tool_response("list_regions", {}, repeated_call_id),
+                _recovery_tool_response("list_regions", {}, repeated_call_id),
             ]
         )
         policy = _policy(scripted.build())
@@ -4927,7 +4974,7 @@ def test_action_policy_leases_configured_model_by_reasoning_phase() -> None:
                 _atomic_tool_response("list_regions", {}, "call:ordinary-after-recovery"),
             ]
         )
-        deliberate_model = ScriptedModel([_atomic_tool_response("list_regions", {}, "call:deliberate")])
+        deliberate_model = ScriptedModel([_recovery_tool_response("list_regions", {}, "call:deliberate")])
         port = PydanticAIGroundedDecisionPort(
             model=ordinary_model.build(),
             provider_id="deepseek",
@@ -5014,7 +5061,7 @@ def test_deliberate_output_retry_keeps_one_model_lease() -> None:
         deliberate_model = ScriptedModel(
             [
                 ModelResponse(parts=[TextPart("A different route is required.")]),
-                _atomic_tool_response("list_regions", {}, "call:deliberate-retry"),
+                _recovery_tool_response("list_regions", {}, "call:deliberate-retry"),
             ]
         )
         port = PydanticAIGroundedDecisionPort(
@@ -5193,13 +5240,22 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
     asyncio.run(scenario())
 
 
-def test_deepseek_atomic_recovery_records_one_complete_action_without_hidden_reasoning() -> None:
+def test_deepseek_atomic_recovery_records_typed_basis_without_hidden_reasoning() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
                 ModelResponse(
                     parts=[
-                        ToolCallPart("list_regions", {}, "recording-call:deliberate"),
+                        ToolCallPart(
+                            "list_regions",
+                            {
+                                "recovery_basis": {
+                                    "decision": "change_contradicted",
+                                    "remaining_gap": "The previous route did not reveal the required control.",
+                                }
+                            },
+                            "recording-call:deliberate",
+                        ),
                     ],
                     usage=RequestUsage(
                         input_tokens=20,
@@ -5249,6 +5305,10 @@ def test_deepseek_atomic_recovery_records_one_complete_action_without_hidden_rea
         assert attempt.transcript["llm.output.reasoning_content_present"] is False
         assert attempt.transcript["llm.token_count.reasoning"] == 0
         assert attempt.transcript["llm.token_count.final_content"] == 8
+        official_history = ModelMessagesTypeAdapter.dump_json(list(port.message_history)).decode()
+        assert '"recovery_basis"' in official_history
+        assert '"decision":"change_contradicted"' in official_history
+        assert not hasattr(result.output.decision, "recovery_basis")
 
     asyncio.run(scenario())
 
@@ -5271,7 +5331,16 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
                 ),
                 ModelResponse(
                     parts=[
-                        ToolCallPart("list_regions", {}, "recording-call:deliberate-retry"),
+                        ToolCallPart(
+                            "list_regions",
+                            {
+                                "recovery_basis": {
+                                    "decision": "change_contradicted",
+                                    "remaining_gap": "The previous route did not reveal the required control.",
+                                }
+                            },
+                            "recording-call:deliberate-retry",
+                        ),
                     ],
                     usage=RequestUsage(
                         input_tokens=24,
@@ -5328,6 +5397,50 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
             False,
             False,
         ]
+
+    asyncio.run(scenario())
+
+
+def test_recovery_call_without_basis_fails_closed_after_one_boundary_repair() -> None:
+    async def scenario() -> None:
+        scripted = ScriptedModel(
+            [
+                _atomic_tool_response("list_regions", {}, "recording-call:basis-missing"),
+                _recovery_tool_response("list_regions", {}, "recording-call:basis-repaired"),
+            ]
+        )
+        policy = _policy(scripted.build())
+        task = shared_task()
+        world = shared_world("recovery-basis-repair", False)
+        context = replace(
+            ContextBuilder().build(
+                task,
+                world,
+                ActionSpaceBuilder().build(task, world),
+                await SharedTaskEvaluator().evaluate(task, world),
+            ),
+            control_feedback={
+                "kind": "control_stall",
+                "stable_signature": "recovery:basis:repair",
+                "recovery_attempt": 1,
+            },
+        )
+
+        result = await policy.port.generate(ModelDecisionRequest("request:recovery-basis-repair", context))
+
+        assert result.failure is None and result.output is not None
+        assert [attempt.phase for attempt in result.attempts] == [
+            "deliberate",
+            "representation_repair",
+        ]
+        assert isinstance(result.output.decision, ToolRejectedResult)
+        assert result.output.decision.result["kind"] == "invalid_tool_arguments"
+        assert result.output.decision.result["dispatch"] == "not_sent"
+        assert result.diagnostics["tool_resolution_code"] == "accepted"
+        official_history = ModelMessagesTypeAdapter.dump_json(list(policy.port.message_history)).decode()
+        assert "recording-call:basis-missing" in official_history
+        assert '"recovery_basis"' not in official_history
+        assert result.output.decision.tool_call_id == "recording-call:basis-missing"
 
     asyncio.run(scenario())
 
@@ -5389,7 +5502,7 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         scripted = ScriptedModel(
             [
                 truncated,
-                _atomic_tool_response("list_regions", {}, "recording-call:2"),
+                _recovery_tool_response("list_regions", {}, "recording-call:2"),
             ]
         )
         port = PydanticAIGroundedDecisionPort(
@@ -5449,7 +5562,12 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         assert len(recovery_prompt.encode("utf-8")) <= pydantic_bridge._ATOMIC_RECOVERY_PROMPT_MAX_BYTES
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
-            {},
+            {
+                "recovery_basis": {
+                    "decision": "change_contradicted",
+                    "remaining_gap": "The previous route did not produce the required task evidence.",
+                }
+            },
             "recording-call:2",
         )
         official_history = json.dumps(port.message_history, default=str)
@@ -5907,7 +6025,7 @@ def test_pending_tool_return_is_delivered_once_when_atomic_recovery_retry_succee
             [
                 ("list_regions", {}),
                 truncated,
-                _atomic_tool_response("list_regions", {}, "recording-call:3"),
+                _recovery_tool_response("list_regions", {}, "recording-call:3"),
             ]
         )
         port = PydanticAIGroundedDecisionPort(
@@ -5962,7 +6080,12 @@ def test_pending_tool_return_is_delivered_once_when_atomic_recovery_retry_succee
         assert [attempt.thinking_effective for attempt in second.attempts] == ["disabled", "disabled"]
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
-            {},
+            {
+                "recovery_basis": {
+                    "decision": "change_contradicted",
+                    "remaining_gap": "The previous route did not produce the required task evidence.",
+                }
+            },
             "recording-call:3",
         )
         # OpenAI-compatible requests are stateless: both physical requests
@@ -6195,10 +6318,12 @@ def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> N
             [
                 ("ask_user", {}),
                 ("ask_user", {"question": "Which value?", "requested_fields": ["value"]}),
-                _atomic_tool_response(
+                _recovery_tool_response(
                     "ask_user",
                     {"question": "Which value?", "requested_fields": ["value"]},
                     "recording-call:3",
+                    decision="continue_incomplete",
+                    remaining_gap="The task requires a value only the user can provide.",
                 ),
             ]
         )
@@ -6486,7 +6611,7 @@ def test_webarena_contradictory_final_response_becomes_recoverable_same_call_rej
                     },
                 ),
                 ("list_regions", {}),
-                _atomic_tool_response("list_regions", {}, "recording-call:3"),
+                _recovery_tool_response("list_regions", {}, "recording-call:3"),
             ]
         )
         policy = _policy(scripted.build())
@@ -7328,7 +7453,7 @@ def test_openai_compatible_profiles_use_the_single_pydantic_ai_policy(
 
 def test_strategy_review_signal_goes_directly_to_one_deliberate_action_policy_call() -> None:
     async def scenario() -> None:
-        scripted = ScriptedModel([_atomic_tool_response("list_regions", {}, "recording-call:1")])
+        scripted = ScriptedModel([_recovery_tool_response("list_regions", {}, "recording-call:1")])
         policy = _policy(scripted.build())
         task = shared_task()
         world = shared_world("direct-deliberate-recovery", False)

@@ -3951,11 +3951,12 @@ def _pydantic_atomic_recovery_prompt(
             "atomic_recovery_decision": {
                 "retry": complete_retry,
                 "instruction": (
-                    "Audit the same fresh World, exact recent outcomes, stable summary, and active recovery facts, "
-                    "then return exactly one complete offered ToolCall and no explanatory text. That ToolCall is "
-                    "the entire bounded recovery decision; do not create a second plan. Choose a materially new "
-                    "route when the previous route had no effect; submit when evidence is sufficient; stop "
-                    "re-checking a closed coverage scope. Do not repeat an exact failed attempt."
+                    "Return exactly one complete offered ToolCall and no explanatory text. Fill its required "
+                    "recovery_basis from the same fresh World, exact recent outcomes, stable Harness summary, "
+                    "and active recovery facts. Its decision atom couples supported evidence to submission, "
+                    "exhausted routes to stopping, and unresolved or contradicted evidence to continued or changed action. "
+                    "The ToolCall is the entire bounded recovery decision; do not create a second plan or repeat "
+                    "an exact failed attempt."
                 ),
             }
         },

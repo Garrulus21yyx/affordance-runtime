@@ -10,18 +10,36 @@ from affordance_runtime.agent.context.actor_world_snapshot import (
 from affordance_runtime.agent.context.budgets import ContextProjectionBudget
 from affordance_runtime.agent.context.grounding_projection import GroundingProjection
 from affordance_runtime.agent.context.world_projection import project_model_world as _project_model_world
+from affordance_runtime.surfaces.semantic_shape import explicit_role_semantic_shape
 from affordance_runtime.world import (
     EntityAlignmentBasis,
     EntityAlignmentProposal,
     ObservationSourceProfile,
-    ObservationStructureNode,
     SemanticTarget,
     SourceEntityEndpoint,
     StateFact,
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world import (
+    ObservationStructureNode as _ObservationStructureNode,
+)
 from tests.support.canonical_world import canonical_world
+
+
+def ObservationStructureNode(*args, **kwargs):
+    role = str(args[1] if len(args) > 1 else kwargs["role"])
+    child_ids = args[5] if len(args) > 5 else kwargs.get("child_structure_ids", ())
+    target_id = args[6] if len(args) > 6 else kwargs.get("semantic_target_id", "")
+    kwargs.setdefault(
+        "semantic_shape",
+        explicit_role_semantic_shape(
+            role,
+            has_children=bool(child_ids),
+            has_semantic_target=bool(target_id),
+        ),
+    )
+    return _ObservationStructureNode(*args, **kwargs)
 
 
 def project_model_world(observation, budget, *args, **kwargs):

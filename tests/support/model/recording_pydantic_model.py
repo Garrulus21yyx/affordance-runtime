@@ -428,7 +428,10 @@ def _select_current_tool_call(
             observation,
         )
         if match is not None:
-            return tool.name, {"target": match.group(1)}
+            arguments = _schema_example(tool.parameters_json_schema)
+            assert isinstance(arguments, dict)
+            arguments["target"] = match.group(1)
+            return tool.name, arguments
     raise AssertionError("actual PydanticAI request offered no current target-bearing route")
 
 

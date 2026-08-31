@@ -90,13 +90,39 @@ from affordance_runtime.model.policy.turn_packer import TurnPacker
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     ObservationSourceProfile,
-    ObservationStructureNode,
+    SemanticShape,
+    SemanticShapeKind,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world import (
+    ObservationStructureNode as _ObservationStructureNode,
+)
 from tests.support.canonical_world import canonical_world
+
+
+def ObservationStructureNode(*args, **kwargs):
+    """Declare source topology in hand-built fixtures."""
+
+    role = str(args[1] if len(args) > 1 else kwargs["role"]).casefold()
+    kind = (
+        SemanticShapeKind.COLLECTION
+        if role in {"feed", "grid", "list", "table", "tree"}
+        else SemanticShapeKind.RECORD
+        if role in {"article", "listitem", "row", "treeitem"}
+        else SemanticShapeKind.CONTROL_GROUP
+        if role in {"listbox", "menu", "menubar", "radiogroup", "tablist", "toolbar"}
+        else SemanticShapeKind.REGION
+        if role in {
+            "alertdialog", "application", "complementary", "dialog", "document", "form",
+            "main", "navigation", "region", "rootwebarea", "search", "webarea",
+        }
+        else SemanticShapeKind.ATOM
+    )
+    kwargs.setdefault("semantic_shape", SemanticShape.resolved(kind))
+    return _ObservationStructureNode(*args, **kwargs)
 
 _IDENTITY = CanonicalProviderIdentity("fixture", "recording", "fixture.invalid", "text_only")
 _PROFILE = ActionPolicyCallProfile(
@@ -1802,6 +1828,16 @@ def test_focused_field_recalls_same_container_sibling_routes_without_mandatory_f
             )
             for source in world.sources
         ),
+        semantic_topology=tuple(
+            replace(
+                node,
+                role="form",
+                semantic_shape=SemanticShape.resolved(SemanticShapeKind.REGION),
+            )
+            if node.source_structure_id == "auxiliary"
+            else node
+            for node in world.semantic_topology
+        ),
         targets=tuple(
             replace(
                 target,
@@ -1845,6 +1881,16 @@ def test_active_interaction_bundle_is_a_required_prefix_with_other_focused_contr
                 ),
             )
             for source in world.sources
+        ),
+        semantic_topology=tuple(
+            replace(
+                node,
+                role="form",
+                semantic_shape=SemanticShape.resolved(SemanticShapeKind.REGION),
+            )
+            if node.source_structure_id == "auxiliary"
+            else node
+            for node in world.semantic_topology
         ),
         targets=tuple(
             replace(

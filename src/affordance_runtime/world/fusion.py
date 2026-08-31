@@ -12,6 +12,7 @@ from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import (
     ActionBinding,
     CanonicalObservationMedia,
+    CanonicalSemanticNode,
     EntityAlignmentDecision,
     EntityAlignmentDisposition,
     EntityAlignmentProposal,
@@ -209,6 +210,7 @@ class WorldFusion:
             )
             for source in ordered_sources
         )
+        semantic_topology = _canonical_semantic_topology(ordered_sources, plan.mapping)
         world = WorldObservation(
             observation_id=world_id,
             targets=tuple(targets),
@@ -223,8 +225,51 @@ class WorldFusion:
             entity_alignment_decisions=plan.decisions,
             entity_source_links=plan.links,
             media=canonical_media,
+            semantic_topology=semantic_topology,
         )
         return WorldFusionResult(FusionStatus.FUSED, world, "world_fused")
+
+
+def _canonical_semantic_topology(
+    sources: tuple[SurfaceObservation, ...],
+    mapping: dict[SourceEntityEndpoint, str],
+) -> tuple[CanonicalSemanticNode, ...]:
+    """Project source-owned structure claims into one World-owned public topology."""
+
+    topology_ids = {
+        (source.observation_id, node.structure_id): "topology:" + _digest(
+            source.observation_id,
+            node.structure_id,
+        )
+        for source in sources
+        for node in source.structure
+    }
+    return tuple(
+        CanonicalSemanticNode(
+            structure_id=topology_ids[(source.observation_id, node.structure_id)],
+            source_observation_id=source.observation_id,
+            source_structure_id=node.structure_id,
+            role=node.role,
+            label=node.label,
+            state=dict(node.state),
+            parent_structure_id=topology_ids.get(
+                (source.observation_id, node.parent_structure_id),
+                "",
+            ),
+            child_structure_ids=tuple(
+                topology_ids[(source.observation_id, child)]
+                for child in node.child_structure_ids
+            ),
+            semantic_target_id=(
+                mapping[SourceEntityEndpoint(source.observation_id, node.semantic_target_id)]
+                if node.semantic_target_id
+                else ""
+            ),
+            semantic_shape=node.semantic_shape,
+        )
+        for source in sources
+        for node in source.structure
+    )
 
 
 def _source_domain_error(sources: tuple[SurfaceObservation, ...]) -> str:

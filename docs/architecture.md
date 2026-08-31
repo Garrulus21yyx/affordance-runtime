@@ -38,6 +38,7 @@ The positive authority contract is now:
 | local UI change and postcondition | `ActionOutcome` projector | hard typed outcome; never implies task completion |
 | exact repetition, verified no-effect, short cycle, and recovery lifecycle | `EpisodeMonitor` | mechanical fact and bounded constraint only |
 | explanation of failure and next semantic action | the single `ActionPolicy` | sole semantic decision authority |
+| recovery decision basis | recovery-phase ToolCatalog schema plus the same `ActionPolicy` ToolCall | call-local typed decision; retained in official history, never separate state |
 | exact mechanically prohibited replay admission | Runtime at GUI admission or local-result commit | typed zero-dispatch rejection |
 | task completion or impossibility | native `TaskEvaluator` | sole terminal authority |
 | stable historical outcomes and facts | official PydanticAI history plus Harness compaction | historical context, never current recovery state |
@@ -55,7 +56,7 @@ TaskGoal
 + Harness summary of stable completed outcomes/facts/failed strategies
 + active Monitor recovery facts and exact hard constraints
 -> one ActionPolicy call
--> one normal ToolCall
+-> one ToolCall (recovery calls also carry one typed decision atom and one bounded remaining gap)
 -> Runtime admission, currentness, binding, risk, and prohibited-replay check
 -> Executor/BrowserGym
 -> fresh World + ExecutionReceipt + ActionOutcome
@@ -135,7 +136,9 @@ recovery epoch is restored into the supported optional-Monitor core composition 
 projection is preserved fail-closed until revision or terminal settlement; that fallback neither interprets nor
 advances the lifecycle.
 
-While the recovery epoch is active, every ActionPolicy call uses the existing deliberate profile. A diagnostic read
+While the recovery epoch is active, every ActionPolicy call uses the existing phase historically named the
+`deliberate` profile. That name now means only recovery routing and output budget; it does not claim that a provider
+enabled hidden reasoning. A diagnostic read
 does not consume a one-shot reasoning token or downgrade the following call. Independently, when an owner-produced
 `read_region` result contains collection records, has no local `next_cursor`, and carries valid source/membership
 coverage, `ActionPolicyReasoningPolicy` leases the same ActionPolicy one bounded 2,048-token deliberate call. That
@@ -145,6 +148,23 @@ deliberate budget. `StrategyRevision`, its provider schema, prompt field, trace 
 state have been removed. Monitor still cannot name a business control or route; it supplies only typed evidence,
 attempted modes, lifecycle identity, and any exactly proved prohibited attempt. Runtime still cannot choose the
 alternative action.
+
+Recovery acceptance is no longer defined as merely receiving one syntactically complete ToolCall. For the recovery
+phase, ToolCatalog derives a sibling catalog in which every currently offered tool requires one compact
+`recovery_basis`. Its closed decision atoms are `continue_incomplete`, `change_incomplete`,
+`change_contradicted`, `submit_supported`, and `stop_route_exhausted`; each tool exposes only the atoms consistent
+with being nonterminal, submitting, or stopping. Every non-supported atom also carries one bounded
+`remaining_gap`. ToolCatalog validates the final decision/tool/gap relation, removes `recovery_basis` at its public
+schema/private-binding boundary, and delegates the unchanged business arguments to the existing Binder or local
+handler. Missing or inconsistent basis cannot dispatch; the existing one-shot boundary repair may run, after which
+the call fails closed as a typed same-call rejection.
+
+The accepted provider ToolCall, including `recovery_basis`, remains in official PydanticAI history and is therefore
+compressed by the existing Harness path. No recovery digest, progress record, mutable plan, reflector call, second
+history, or second action loop is introduced. The basis is an observable decision contract, not a second completion
+proof: fresh World remains current truth and native `TaskEvaluator` remains terminal authority. Whether the model's
+bounded semantic choice improves held-out route convergence remains a live benchmark question rather than an
+architectural closure claim.
 
 This is the thin inference-time design supported by the primary-source comparison below, rechecked on 2026-08-30.
 These papers and reference implementations are research evidence about responsibility placement, not claims of
@@ -3314,3 +3334,31 @@ The PydanticAI integration file passes `110` tests; the complete fixed-environme
 GoalCompiler remains a once-per-task/revision advisory compiler. Its prompt now preserves genuinely dependent stages
 in a multi-stage information task instead of collapsing them into one vague item; no mutable milestone status or
 per-step planner was added.
+
+## World semantic topology convergence (implementation, live gate open)
+
+The source-to-World boundary now owns a small closed compositional algebra: `Region | Collection | Record |
+ControlGroup | Atom`. `SemanticShape` is either a resolved kind with `complete|incomplete` coverage or a typed
+`unknown(reason)`. BrowserGym and DOM use one shared explicit-role conversion at their SurfaceAdapter boundaries;
+BrowserGym additionally derives completeness from retained AX subtree closure. Neither adapter uses repeated counts,
+task text, site labels, selectors, or benchmark identities. Unclassifiable containers remain unknown and retain their
+source subtree.
+
+`WorldFusion` projects every retained source node into `WorldObservation.semantic_topology`, rewrites source-local
+target links and parent/child links to canonical current identities, and retains source observation/structure lineage.
+This topology is the public compositional authority. Delivery regions consume it directly. The former downstream
+`_repeated_item_roots` role/count inference has been removed; region indexing admits only source-declared `Record`
+and `ControlGroup` roots as indivisible semantic units.
+
+Actor snapshot capacity packing and `read_region`/`find` serialize a whole semantic unit. Records retain ordered fields; control groups expose all
+members, selected members, member count, and a typed known/incomplete value status. Pagination occurs between units.
+If a single unit exceeds the byte gate, delivery may trim leaf strings and mark the unit partial, but it conserves
+the complete member skeleton; if that still cannot fit, it returns `CapacityExceeded` rather than slicing the unit
+across pages. Thus detail may be lossy while record/group membership and ordering remain lossless.
+
+Generic integration witnesses cover multi-field table rows, radio-group value normalization, unknown shape
+preservation, canonical fusion lineage, and an 80-field oversized record whose skeleton survives bounding. Task142
+and Task113 remain live benchmark witnesses, not production branches. Live WebArena acceptance remains open and
+requires separate authorization. The complete fixed-environment provider-free suite passes `2264 passed, 19 skipped,
+1 deselected, 1 warning`; the deselection is the previously documented absent archived dashboard trace. Ruff and
+`git diff --check` pass.

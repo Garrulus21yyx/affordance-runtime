@@ -2,6 +2,35 @@
 
 ## Current status
 
+### 2026-08-31 recovery-decision contract — provider-free implementation, live-open
+
+The ten-case [`diagnostic10c` cohort](../evidence/live/webarena-diagnostic10c-deepseek-flash-pro-20260831-bb0cbe83/all10-run3/summary.json)
+completed 10/10 executions but passed only Tasks 416, 735, and 375. The shared
+failure is downstream of Monitor: Monitor detected repeated/no-effect routes and Runtime rejected some exact replays,
+but the recovery phase still sent DeepSeek `thinking=false`, `tool_choice=required`, and accepted one ToolCall without
+requiring an observable reassessment. Switching Flash to Pro therefore changed the model route but not the recovery
+decision contract. Task735's eventual success after 29 policy calls and eight recoveries is further evidence that the
+old contract did not reliably converge.
+
+The owner-level implementation now leaves ordinary turns unchanged and strengthens only the recovery ToolCatalog.
+Every recovery ToolCall must contain one compact, typed `recovery_basis`: a closed decision atom coupling whole-task
+support with continue/change/submit/stop, plus one bounded `remaining_gap` unless the task is supported for
+submission. ToolCatalog validates that relation and strips the basis before the existing binding/execution path;
+official PydanticAI history retains it for the existing Harness compactor. Missing basis receives the existing single
+boundary-repair opportunity and otherwise becomes a typed same-call, zero-dispatch rejection. No prompt example,
+task/site selector, progress memory, second policy call, reflector, semantic Monitor, or Runtime answer rule was
+added.
+
+Provider-free evidence currently proves schema isolation between ordinary and recovery calls; terminal/nonterminal
+decision consistency; no leakage into executable action parameters; retention in official PydanticAI history; and
+bounded failure/repair behavior. This is not live closure. A separately authorized held-out cohort must show fewer
+recovery-to-new-route calls, fewer no-effect actions and reinspection loops, and no regression in native success before
+the recovery mechanism can be called converged.
+
+Task142 and Task113 remain independent upstream World-contract gaps. Task142 needs row-aligned table records and
+Task113 needs grouped control-value normalization at the SurfaceAdapter/World owner boundary; this recovery change
+does not reinterpret either downstream.
+
 ### 2026-08-30 recovery-owner convergence — provider-free verified, live-open
 
 Task554
@@ -2879,3 +2908,13 @@ ToolCall/ToolReturn pair and pending suffix. A second regression removes a local
 migrates the formerly flattened legacy form. The complete PydanticAI integration file reports `110 passed`. A fresh
 provider-free suite reports `2087 passed, 19 skipped, 1 deselected, 1 warning`, with only the documented absent
 archived trace deselected. A fresh live rerun is blocked until provider quota is available.
+
+The diagnostic10c Task142 and Task113 failures reopen the World-delivery invariant independently of recovery:
+table records were flattened into unrelated name/price/quantity atoms, and rating controls were flattened into
+unrelated booleans. The implementation now treats those runs as witnesses of one compositional-authority defect.
+BrowserGym source projection declares closed semantic shapes, WorldFusion owns their canonical topology, and delivery
+paginates only between whole `Record` or `ControlGroup` units. Provider-free gates include generic table, radio-group,
+unknown-shape, lineage, and skeleton-conservation cases. No Task ID, page label, or site-specific branch was added.
+Fresh held-out/live Task142 and Task113 acceptance is still pending separate benchmark authorization; implementation
+completion is not live closure. The complete fixed-environment provider-free suite reports `2264 passed, 19 skipped,
+1 deselected, 1 warning`; the deselection remains the known absent archived dashboard trace.

@@ -31,7 +31,11 @@ from affordance_runtime.agent.context.world_region_index import (
 from affordance_runtime.agent.public_values import is_public_scalar
 from affordance_runtime.evaluation.evidence import WorldEvidenceIndex
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.contracts import WorldObservation
+from affordance_runtime.world.contracts import (
+    SemanticShapeCompleteness,
+    SemanticShapeKind,
+    WorldObservation,
+)
 from affordance_runtime.world.page_cursor import decode_cursor, encode_cursor
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
@@ -718,7 +722,7 @@ def inspect_actor_world(
                 grounding,
                 verbs_by_ref,
             )
-            collection_coverage = "unknown" if region.repeated_item_roots else "not_applicable"
+            collection_coverage = "unknown" if region.semantic_unit_roots else "not_applicable"
             cursor_fingerprint = _world_read_cursor_fingerprint(
                 observation.observation_id,
                 action,
@@ -1060,7 +1064,7 @@ def _render_node(node, verbs, manifest, *, depth: int, parent_label: str) -> lis
 def _render_world_region(
     region, region_ref, delivered, grounding, verbs, manifest, *, observation: WorldObservation | None = None
 ) -> list[str]:
-    if region.repeated_item_roots and observation is not None and not _region_has_current_salience(region, observation):
+    if region.semantic_unit_roots and observation is not None and not _region_has_current_salience(region, observation):
         return [
             f"  region [{region_ref}] kind={_value(region.role)} exact=true",
             f"    repeated_siblings compacted=true recovery=read_region({region_ref})",
@@ -1101,9 +1105,14 @@ def _region_actor_refs(region, delivered, observation) -> frozenset[str]:
     )
     if document is None:
         return frozenset()
-    nodes = {item.structure_id: item for item in source.structure}
+    source_topology = tuple(
+        item
+        for item in observation.semantic_topology
+        if item.source_observation_id == source.observation_id
+    )
+    nodes = {item.structure_id: item for item in source_topology}
     roots = tuple(
-        item for item in source.structure if not item.parent_structure_id or item.parent_structure_id not in nodes
+        item for item in source_topology if not item.parent_structure_id or item.parent_structure_id not in nodes
     )
     actor_ref_by_structure: dict[str, str] = {}
 
@@ -1462,23 +1471,18 @@ def _action_structural_context(target_id: str, region, observation) -> tuple[tup
     if region.heading.strip() and region.heading.strip() not in path:
         path.insert(0, region.heading.strip())
 
-    source = next(
-        (item for item in observation.sources if item.observation_id == region.source_id),
-        None,
-    )
-    if source is not None:
-        canonical = {
-            (item.source_observation_id, item.source_target_id): item.canonical_target_id
-            for item in observation.entity_source_links
-        }
-        local_nodes = tuple(item for item in source.structure if item.structure_id in region.member_structure_ids)
+    if any(item.source_observation_id == region.source_id for item in observation.semantic_topology):
+        local_nodes = tuple(
+            item
+            for item in observation.semantic_topology
+            if item.source_observation_id == region.source_id
+            and item.structure_id in region.member_structure_ids
+        )
         target_offset = next(
             (
                 offset
                 for offset, item in enumerate(local_nodes)
-                if item.semantic_target_id
-                and canonical.get((source.observation_id, item.semantic_target_id), item.semantic_target_id)
-                == target_id
+                if item.semantic_target_id == target_id
             ),
             len(local_nodes),
         )
@@ -1514,7 +1518,7 @@ def _action_structural_context(target_id: str, region, observation) -> tuple[tup
 
 
 def _bounded_region(region: WorldRegion, limits: DeliveryLimits) -> bool:
-    if region.repeated_item_roots and len(region.repeated_item_roots) > limits.repeated_items:
+    if region.semantic_unit_roots and len(region.semantic_unit_roots) > limits.repeated_items:
         return False
     token_limit = (
         limits.top_navigation_tokens
@@ -1664,7 +1668,7 @@ def _find_matches(
     matches: list[Mapping[str, object]] = []
     repeated_target_ids: set[str] = set()
     for region in index.regions:
-        grouped, grouped_target_ids = _repeated_item_records(
+        grouped, grouped_target_ids = _semantic_unit_records(
             region,
             canonical_world,
             observation,
@@ -1805,7 +1809,7 @@ def _region_items(
     verbs_by_ref,
 ) -> tuple[Mapping[str, object], ...]:
     targets = {item.target_id: item for item in observation.targets}
-    grouped, repeated_target_ids = _repeated_item_records(
+    grouped, repeated_target_ids = _semantic_unit_records(
         region,
         canonical_world,
         observation,
@@ -1843,70 +1847,82 @@ def _region_items(
     return tuple(items)
 
 
-def _repeated_item_records(
+def _semantic_unit_records(
     region,
     canonical_world,
     observation,
     grounding,
     verbs_by_ref,
 ) -> tuple[tuple[Mapping[str, object], ...], set[str]]:
-    if not region.repeated_item_roots:
-        return (), set()
-    source = next(
-        (item for item in observation.sources if item.observation_id == region.source_id),
-        None,
-    )
-    if source is None:
+    if not region.semantic_unit_roots:
         return (), set()
     targets = {item.target_id: item for item in observation.targets}
-    nodes = {item.structure_id: item for item in source.structure}
-    canonical = {
-        item.source_target_id: item.canonical_target_id
-        for item in observation.entity_source_links
-        if item.source_observation_id == source.observation_id
+    nodes = {
+        item.structure_id: item
+        for item in observation.semantic_topology
+        if item.source_observation_id == region.source_id
     }
     region_ref = canonical_world.region_refs[region.key]
     grouped: list[Mapping[str, object]] = []
     repeated_target_ids: set[str] = set()
-    for root_id in region.repeated_item_roots:
+    for root_id in region.semantic_unit_roots:
         if root_id not in nodes:
             continue
         target_ids = tuple(
             dict.fromkeys(
-                canonical.get(nodes[item_id].semantic_target_id, "")
+                nodes[item_id].semantic_target_id
                 for item_id in _walk_structure_ids(root_id, nodes)
-                if nodes[item_id].semantic_target_id and canonical.get(nodes[item_id].semantic_target_id, "") in targets
+                if nodes[item_id].semantic_target_id in targets
             )
         )
         repeated_target_ids.update(target_ids)
-        content = _compact_repeated_content(
-            tuple(
-                compact
-                for target_id in target_ids
-                if (
-                    compact := _compact_repeated_target(
-                        targets[target_id],
-                        grounding,
-                        verbs_by_ref,
-                    )
+        content = tuple(
+            compact
+            for target_id in target_ids
+            if (
+                compact := _compact_repeated_target(
+                    targets[target_id],
+                    grounding,
+                    verbs_by_ref,
                 )
-                is not None
             )
+            is not None
+        )
+        root = nodes[root_id]
+        shape = root.semantic_shape.kind
+        partial = (
+            root.semantic_shape.completeness is not SemanticShapeCompleteness.COMPLETE
+            or any(targets[target_id].state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True for target_id in target_ids)
         )
         record: dict[str, object] = {
             "kind": (
                 "partial_item"
-                if any(targets[target_id].state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True for target_id in target_ids)
+                if partial
                 else "complete_item"
             ),
             "region_ref": region_ref,
-            "role": nodes[root_id].role,
+            "shape": shape.value if shape is not None else "unknown",
+            "role": root.role,
             "content": content,
         }
         if record["kind"] == "partial_item":
             record["content_truncated"] = True
-        if nodes[root_id].label:
-            record["label"] = nodes[root_id].label
+        if root.label:
+            record["label"] = root.label
+        if shape is SemanticShapeKind.RECORD:
+            record["field_count"] = len(content)
+        elif shape is SemanticShapeKind.CONTROL_GROUP:
+            selected = tuple(
+                item
+                for item in content
+                if isinstance(item.get("state"), Mapping)
+                and any(item["state"].get(key) is True for key in ("checked", "selected", "active"))
+            )
+            record["member_count"] = len(content)
+            record["selected_members"] = tuple(
+                str(item.get("text", "")) for item in selected if item.get("text")
+            )
+            record["value_status"] = "known" if not partial else "incomplete"
         grouped.append(record)
     return tuple(grouped), repeated_target_ids
 
@@ -2077,7 +2093,10 @@ def _walk_structure_ids(root_id, nodes):
 def _bounded_tool_record(item: Mapping[str, object]) -> Mapping[str, object]:
     """Bound one owner-produced ToolReturn item without a reassembly protocol."""
 
-    bounded, truncated = _bounded_tool_value(item)
+    if item.get("shape") in {SemanticShapeKind.RECORD.value, SemanticShapeKind.CONTROL_GROUP.value}:
+        bounded, truncated = _bounded_semantic_tool_value(item)
+    else:
+        bounded, truncated = _bounded_tool_value(item)
     if not isinstance(bounded, Mapping):
         raise TypeError("tool record must remain an object")
     result = dict(bounded)
@@ -2086,6 +2105,36 @@ def _bounded_tool_record(item: Mapping[str, object]) -> Mapping[str, object]:
             result["kind"] = "partial_item"
         result["content_truncated"] = True
     return result
+
+
+def _bounded_semantic_tool_value(value, *, depth: int = 0):
+    """Trim leaf detail while conserving every Record/ControlGroup skeleton member."""
+
+    if isinstance(value, str):
+        if len(value) <= _TOOL_RESULT_TEXT_MAX_CHARS:
+            return value, False
+        return value[: _TOOL_RESULT_TEXT_MAX_CHARS - 1] + "…", True
+    if value is None or isinstance(value, bool | int | float):
+        return value, False
+    if depth >= _TOOL_RESULT_MAX_DEPTH:
+        return "[TRUNCATED]", True
+    if isinstance(value, Mapping):
+        result: dict[str, object] = {}
+        truncated = False
+        for key, item in value.items():
+            bounded, item_truncated = _bounded_semantic_tool_value(item, depth=depth + 1)
+            result[str(key)[:240]] = bounded
+            truncated = truncated or item_truncated
+        return result, truncated
+    if isinstance(value, tuple | list):
+        result = []
+        truncated = False
+        for item in value:
+            bounded, item_truncated = _bounded_semantic_tool_value(item, depth=depth + 1)
+            result.append(bounded)
+            truncated = truncated or item_truncated
+        return tuple(result), truncated
+    return _bounded_semantic_tool_value(str(value), depth=depth)
 
 
 def _bounded_tool_value(value, *, depth: int = 0):

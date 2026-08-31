@@ -144,9 +144,11 @@ def public_page_semantics(observation: WorldObservation) -> dict[str, object]:
         (
             node.role.casefold(),
             node.label.strip(),
+            node.semantic_shape.status.value,
+            node.semantic_shape.kind.value if node.semantic_shape.kind is not None else "",
+            node.semantic_shape.completeness.value,
         )
-        for source in observation.sources
-        for node in source.structure
+        for node in observation.semantic_topology
         if node.role.casefold() in _PAGE_STRUCTURE_ROLES and node.label.strip()
     )
     routes = sorted(

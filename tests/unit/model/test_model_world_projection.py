@@ -23,21 +23,41 @@ from affordance_runtime.evaluation import (
 from affordance_runtime.model.policy.grounded_policy_context import GroundedPolicyContextBinder
 from affordance_runtime.model.policy.tool_contracts import ToolCall
 from affordance_runtime.schema_digest import schema_digest
+from affordance_runtime.surfaces.semantic_shape import explicit_role_semantic_shape
 from affordance_runtime.task import TaskGoal
 from affordance_runtime.world import (
     CoverageState,
     ObservationConflict,
     ObservationSourceProfile,
-    ObservationStructureNode,
     SemanticTarget,
     StateFact,
     SurfaceObservation,
     WorldFusion,
 )
+from affordance_runtime.world import (
+    ObservationStructureNode as _ObservationStructureNode,
+)
 from tests.support.action_contracts import verification_kwargs
 from tests.support.canonical_world import canonical_world
 from tests.support.model_delivery import catalog_for, resolve_catalog_call
 from tests.support.world import fused_world
+
+
+def ObservationStructureNode(*args, **kwargs):
+    """Declare topology for hand-built source fixtures."""
+
+    role = str(args[1] if len(args) > 1 else kwargs["role"])
+    child_ids = args[5] if len(args) > 5 else kwargs.get("child_structure_ids", ())
+    target_id = args[6] if len(args) > 6 else kwargs.get("semantic_target_id", "")
+    kwargs.setdefault(
+        "semantic_shape",
+        explicit_role_semantic_shape(
+            role,
+            has_children=bool(child_ids),
+            has_semantic_target=bool(target_id),
+        ),
+    )
+    return _ObservationStructureNode(*args, **kwargs)
 
 
 def project_model_world(observation, budget, *args, **kwargs):

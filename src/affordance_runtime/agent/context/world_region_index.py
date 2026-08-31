@@ -12,7 +12,12 @@ from enum import StrEnum
 from types import MappingProxyType
 
 from affordance_runtime.immutable import freeze_json, to_json_compatible
-from affordance_runtime.world.contracts import CoverageState, WorldObservation
+from affordance_runtime.world.contracts import (
+    CoverageState,
+    SemanticShapeKind,
+    SemanticShapeStatus,
+    WorldObservation,
+)
 
 
 @dataclass(frozen=True)
@@ -69,8 +74,6 @@ _BOUNDARY_ROLES = frozenset(
         "rootwebarea",
     }
 )
-_REPEATED_ITEM_ROLES = frozenset({"article", "card", "listitem", "row", "treeitem"})
-_ATOMIC_CONTAINER_ROLES = frozenset({"grid", "list", "table"})
 _HEADING_ROLES = frozenset({"heading"})
 _ALNUM = re.compile(r"[^\W_]", re.UNICODE)
 
@@ -122,7 +125,7 @@ class WorldRegion:
     member_structure_ids: tuple[str, ...] = ()
     member_action_ids: tuple[str, ...] = ()
     direct_labels: tuple[str, ...] = ()
-    repeated_item_roots: tuple[str, ...] = ()
+    semantic_unit_roots: tuple[str, ...] = ()
     state_badges: Mapping[str, object] = field(default_factory=dict)
     source_coverage: str = ""
     region_membership: str = "complete"
@@ -141,7 +144,7 @@ class WorldRegion:
             "member_fact_ids",
             "member_action_ids",
             "direct_labels",
-            "repeated_item_roots",
+            "semantic_unit_roots",
             "scope_path",
         ):
             values = tuple(getattr(self, name))
@@ -161,6 +164,12 @@ class WorldRegion:
         if self.region_membership not in {"complete", "partial"}:
             raise ValueError("delivery region membership is invalid")
         object.__setattr__(self, "source_coverage", source_coverage)
+
+    @property
+    def repeated_item_roots(self) -> tuple[str, ...]:
+        """Compatibility read; units now come from source-declared topology."""
+
+        return self.semantic_unit_roots
 
 
 @dataclass(frozen=True)
@@ -362,7 +371,7 @@ class _RegionSeed:
     heading: str
     role: str
     direct_labels: tuple[str, ...]
-    repeated_item_roots: tuple[str, ...]
+    semantic_unit_roots: tuple[str, ...]
     counts: Mapping[str, int]
     state_badges: Mapping[str, object]
     coverage: str
@@ -375,8 +384,9 @@ def _functional_partition(
     limits: DeliveryLimits,
 ) -> tuple[_RegionSeed, ...]:
     canonical = {
-        (item.source_observation_id, item.source_target_id): item.canonical_target_id
-        for item in observation.entity_source_links
+        (item.source_observation_id, item.semantic_target_id): item.semantic_target_id
+        for item in observation.semantic_topology
+        if item.semantic_target_id
     }
     target_by_id = {item.target_id: item for item in observation.targets}
     source_for_target: dict[str, str] = {}
@@ -384,13 +394,21 @@ def _functional_partition(
     seeds: list[dict[str, object]] = []
     structure_region: dict[tuple[str, str], int] = {}
 
+    topology_by_source = {
+        source.observation_id: tuple(
+            item for item in observation.semantic_topology
+            if item.source_observation_id == source.observation_id
+        )
+        for source in observation.sources
+    }
     for source in observation.sources:
-        nodes = {item.structure_id: item for item in source.structure}
+        source_topology = topology_by_source[source.observation_id]
+        nodes = {item.structure_id: item for item in source_topology}
         if not nodes:
             continue
-        source_order = _source_order_map(source.structure)
+        source_order = _source_order_map(source_topology)
         parents = _parents(nodes)
-        roots = tuple(item.structure_id for item in source.structure if not parents.get(item.structure_id))
+        roots = tuple(item.structure_id for item in source_topology if not parents.get(item.structure_id))
         candidates = _candidate_boundaries(nodes, roots, limits)
         # Icon-only/empty boundaries are representation fragments; omitting the
         # boundary merges their descendants into the nearest meaningful owner.
@@ -421,7 +439,7 @@ def _functional_partition(
             root = nodes[root_id]
             heading = _exact_heading(root_id, member_structures, nodes, target_by_id, canonical, source.observation_id)
             direct_labels = _direct_labels(root_id, nodes)
-            repeated_roots = _repeated_item_roots(root_id, member_structures, nodes, source_order)
+            repeated_roots = _semantic_unit_roots(root_id, member_structures, nodes, source_order)
             state_badges = _state_badges(member_targets, target_by_id)
             seed_index = len(seeds)
             scope_path = _scope_path(root_id, nodes, parents)
@@ -436,7 +454,7 @@ def _functional_partition(
                     "heading": heading,
                     "role": _region_kind(_functional_role(root)),
                     "direct_labels": direct_labels,
-                    "repeated_item_roots": repeated_roots,
+                    "semantic_unit_roots": repeated_roots,
                     "state_badges": state_badges,
                     "coverage": _coverage(source.coverage, len(source.structure), source.structure_total_count),
                     "scope_path": scope_path,
@@ -465,7 +483,7 @@ def _functional_partition(
                 "heading": "Current page",
                 "role": "document",
                 "direct_labels": (),
-                "repeated_item_roots": (),
+                "semantic_unit_roots": (),
                 "state_badges": {},
                 "coverage": world_coverage,
                 "scope_path": ("Current page",),
@@ -540,7 +558,11 @@ def _functional_partition(
             (item for item in observation.sources if item.observation_id == seed["source_id"]),
             None,
         )
-        structures_by_id = {item.structure_id: item for item in source.structure} if source is not None else {}
+        structures_by_id = {
+            item.structure_id: item
+            for item in observation.semantic_topology
+            if source is not None and item.source_observation_id == source.observation_id
+        }
         estimated_tokens = _estimate_tokens(
             " ".join(
                 (
@@ -574,13 +596,13 @@ def _functional_partition(
                 str(seed["heading"]),
                 str(seed["role"]),
                 tuple(seed["direct_labels"]),  # type: ignore[arg-type]
-                tuple(seed["repeated_item_roots"]),  # type: ignore[arg-type]
+                tuple(seed["semantic_unit_roots"]),  # type: ignore[arg-type]
                 {
                     "structures": len(structures),
                     "targets": len(targets),
                     "facts": len(facts),
                     "actions": len(actions),
-                    "items": len(tuple(seed["repeated_item_roots"])),  # type: ignore[arg-type]
+                    "items": len(tuple(seed["semantic_unit_roots"])),  # type: ignore[arg-type]
                     "estimated_tokens": estimated_tokens,
                     "filter_controls": len(filter_targets),
                 },
@@ -631,16 +653,15 @@ def _target_functional_paths(
 def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits) -> set[str]:
     candidates = set(roots)
     for item in nodes.values():
-        role = _functional_role(item)
-        if role in _BOUNDARY_ROLES:
+        shape_kind = item.semantic_shape.kind if item.semantic_shape.status is SemanticShapeStatus.RESOLVED else None
+        if shape_kind in {
+            SemanticShapeKind.REGION,
+            SemanticShapeKind.COLLECTION,
+            SemanticShapeKind.CONTROL_GROUP,
+        }:
             candidates.add(item.structure_id)
         children = tuple(nodes[child] for child in item.child_structure_ids if child in nodes)
         if any(child.role.casefold() in _HEADING_ROLES for child in children):
-            candidates.add(item.structure_id)
-        repeated = defaultdict(int)
-        for child in children:
-            repeated[child.role.casefold()] += 1
-        if any(role in _REPEATED_ITEM_ROLES and count >= 2 for role, count in repeated.items()):
             candidates.add(item.structure_id)
     for root_id in tuple(candidates):
         root = nodes[root_id]
@@ -653,9 +674,7 @@ def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits)
             for child_id in root.child_structure_ids:
                 if child_id in nodes and _meaningful_text(nodes[child_id].label):
                     candidates.add(child_id)
-    # A table/grid/list owns its structural schema and repeated items as one
-    # semantic region. Descendant rowgroups/rows/listitems and incidental
-    # heading boundaries cannot become orphan top-level sibling regions.
+    # A source-resolved collection/control group owns its semantic units.
     parents = _parents(nodes)
     return {item for item in candidates if not _has_atomic_container_ancestor(item, nodes, parents)}
 
@@ -666,7 +685,11 @@ def _has_atomic_container_ancestor(structure_id: str, nodes, parents: Mapping[st
     while current and current not in seen:
         seen.add(current)
         node = nodes.get(current)
-        if node is not None and node.role.casefold() in _ATOMIC_CONTAINER_ROLES:
+        if (
+            node is not None
+            and node.semantic_shape.status is SemanticShapeStatus.RESOLVED
+            and node.semantic_shape.kind in {SemanticShapeKind.COLLECTION, SemanticShapeKind.CONTROL_GROUP}
+        ):
             return True
         current = parents.get(current, "")
     return False
@@ -805,29 +828,43 @@ def _scope_label(value: object) -> str:
     return label[:160]
 
 
-def _repeated_item_roots(root_id, member_ids, nodes, source_order: Mapping[str, int]) -> tuple[str, ...]:
-    root = nodes[root_id]
-    direct = tuple(
+def _semantic_unit_roots(root_id, member_ids, nodes, source_order: Mapping[str, int]) -> tuple[str, ...]:
+    """Return source-declared indivisible delivery units; never infer them from repetition."""
+
+    member_set = set(member_ids)
+    candidates = {
         item
-        for item in root.child_structure_ids
-        if item in nodes and item in member_ids and nodes[item].role.casefold() in _REPEATED_ITEM_ROLES
+        for item in member_ids
+        if item in nodes
+        and nodes[item].semantic_shape.status is SemanticShapeStatus.RESOLVED
+        and nodes[item].semantic_shape.kind in {SemanticShapeKind.RECORD, SemanticShapeKind.CONTROL_GROUP}
+    }
+    root = nodes[root_id]
+    if (
+        root.semantic_shape.status is SemanticShapeStatus.RESOLVED
+        and root.semantic_shape.kind is SemanticShapeKind.CONTROL_GROUP
+    ):
+        candidates.add(root_id)
+    parents = _parents(nodes)
+    topmost = tuple(
+        item
+        for item in candidates
+        if not any(
+            ancestor in candidates
+            for ancestor in _ancestor_ids(item, parents)
+            if ancestor in member_set
+        )
     )
-    if len(direct) >= 2:
-        return direct
-    if root.role.casefold() in _ATOMIC_CONTAINER_ROLES:
-        groups: list[tuple[str, ...]] = []
-        for container_id in member_ids:
-            container = nodes[container_id]
-            repeated = tuple(
-                child
-                for child in container.child_structure_ids
-                if (child in nodes and child in member_ids and nodes[child].role.casefold() in _REPEATED_ITEM_ROLES)
-            )
-            if len(repeated) >= 2:
-                groups.append(repeated)
-        if groups:
-            return max(groups, key=lambda items: (len(items), -source_order[items[0]]))
-    return ()
+    return tuple(sorted(topmost, key=source_order.__getitem__))
+
+
+def _ancestor_ids(structure_id: str, parents: Mapping[str, str]) -> tuple[str, ...]:
+    result: list[str] = []
+    current = parents.get(structure_id, "")
+    while current and current not in result:
+        result.append(current)
+        current = parents.get(current, "")
+    return tuple(result)
 
 
 def _state_badges(target_ids: tuple[str, ...], targets) -> Mapping[str, object]:
@@ -1085,7 +1122,7 @@ def _materialize_regions(observation: WorldObservation, seeds: tuple[_RegionSeed
                 member_structure_ids=seed.member_structure_ids,
                 member_action_ids=seed.member_action_ids,
                 direct_labels=seed.direct_labels,
-                repeated_item_roots=seed.repeated_item_roots,
+                semantic_unit_roots=seed.semantic_unit_roots,
                 state_badges=seed.state_badges,
                 source_coverage=seed.coverage,
                 region_membership="complete",
