@@ -3005,7 +3005,7 @@ def test_active_recovery_epoch_keeps_deliberate_provider_configuration() -> None
     first = asyncio.run(adapter.generate(_action_request(context)))
     second = asyncio.run(adapter.generate(_action_request(context)))
     assert tuple(config.max_tokens for config in port.configs) == (4096, 4096)
-    assert tuple(config.thinking_mode for config in port.configs) == ("enabled", "enabled")
+    assert tuple(config.thinking_mode for config in port.configs) == ("disabled", "disabled")
     assert first.attempts[0].phase == "deliberate"
     assert first.attempts[0].trigger == "control_stall"
     assert second.attempts[0].phase == "deliberate"

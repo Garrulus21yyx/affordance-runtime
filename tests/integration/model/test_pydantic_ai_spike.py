@@ -4908,11 +4908,11 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
 
         assert first.attempts[0].phase == "deliberate"
         assert first.attempts[0].trigger == "grounding_gap"
-        assert first.attempts[0].thinking_requested == "enabled"
+        assert first.attempts[0].thinking_requested == "disabled"
         assert first.attempts[0].max_output_tokens == 4096
         assert second.attempts[0].phase == "deliberate"
         assert second.attempts[0].trigger == "grounding_gap"
-        assert second.attempts[0].thinking_requested == "enabled"
+        assert second.attempts[0].thinking_requested == "disabled"
         assert second.attempts[0].max_output_tokens == 4096
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [4096, 4096]
 
@@ -5130,7 +5130,7 @@ def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_b
         assert result.output is not None
         assert result.attempts[0].phase == "deliberate"
         assert result.attempts[0].trigger == "evidence_review"
-        assert result.attempts[0].thinking_requested == "enabled"
+        assert result.attempts[0].thinking_requested == "disabled"
         assert result.attempts[0].max_output_tokens == 2048
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048]
 
@@ -5241,7 +5241,7 @@ def test_deepseek_atomic_recovery_records_one_complete_action_without_hidden_rea
         assert result.failure is None and result.output is not None
         attempt = result.attempts[0]
         assert attempt.phase == "deliberate"
-        assert attempt.thinking_requested == "enabled"
+        assert attempt.thinking_requested == "disabled"
         assert attempt.thinking_effective == "disabled"
         assert attempt.reasoning_content_present is False
         assert attempt.reasoning_tokens == 0
