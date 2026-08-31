@@ -469,11 +469,15 @@ assigns an embedded paginator to its own repeated collection. Ordinary links and
 unchanged. The first re-review then showed that a standard `rel=next` proves direction but not ownership: even the
 `d72c783b` restriction to a sibling paginator list under one local neutral structural owner could falsely join two
 unrelated sibling lists. Commit `7206d5a3` removes the unowned sibling join entirely. A same-region embedded
-paginator can make its collection `open`; every sibling route stays in the complete ActionSpace, but collection
-coverage remains `unknown` without explicit Surface-owned collection identity. No distance, label, site, or task
-heuristic replaces it. The final directly affected set reports `276 passed, 3 skipped, 1 deselected`; the full
-fixed-interpreter suite reports `2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.31 seconds. This
-provider-free follow-up has not been given a second live Task388 run and does not alter the accepted r9 attestation.
+paginator-only item can make its collection `open`; every sibling route stays in the complete ActionSpace, but
+collection coverage remains `unknown` without explicit Surface-owned collection identity. Final fresh review then
+showed that a record-local `rel=next` (for example, article continuation) is direction evidence but not a paginator
+item. Commit `5fb14fe6` requires the independent repeated item's target subtree to contain only typed pagination
+targets beside at least two record items. A generated 3–8 record property proves that placing the route in any record
+keeps coverage `unknown` while retaining its activate route. No distance, label, site, or task heuristic replaces the
+owner proof. The owner-related set reports `148 passed, 1 deselected`; the full fixed-interpreter suite reports
+`2255 passed, 19 skipped, 1 deselected, 1 warning` in 109.00 seconds. This provider-free follow-up has not been given
+a second live Task388 run and does not alter the accepted r9 attestation.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
