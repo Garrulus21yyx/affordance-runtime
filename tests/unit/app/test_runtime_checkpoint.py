@@ -21,6 +21,7 @@ from affordance_runtime.agent.context.observation_delivery import (
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.recovery import (
     EpisodeMonitorRecommendation,
+    RecoveryClosureCondition,
     RecoveryKind,
     RecoverySignal,
 )
@@ -121,6 +122,7 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
         RecoveryKind.EFFECT_STALL,
         "effect_stall:sha256:" + "d" * 64,
         {"dispatch": "sent", "observed_change": "unchanged"},
+        closure_condition=RecoveryClosureCondition.NEW_INFORMATION,
         attempted_modes=("activate", "read_region"),
         prohibited_attempt_signatures=(prohibited,),
         recovery_attempt=2,
@@ -131,6 +133,23 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
     restored = _restore_recovery_signal(_recovery_signal_payload(signal))
 
     assert restored == signal
+
+
+def test_legacy_recovery_without_closure_condition_restores_bounded_operational_default() -> None:
+    signal = RecoverySignal(
+        RecoveryKind.CONTROL_STALL,
+        "control_stall:legacy-closure",
+        {"origin_dispatch": "not_sent"},
+        attempted_modes=("read_region",),
+    )
+    payload = _recovery_signal_payload(signal)
+    assert payload is not None
+    payload.pop("closure_condition")
+
+    restored = _restore_recovery_signal(payload)
+
+    assert restored is not None
+    assert restored.closure_condition is RecoveryClosureCondition.OPERATIONAL_EFFECT
 
 
 @pytest.mark.asyncio

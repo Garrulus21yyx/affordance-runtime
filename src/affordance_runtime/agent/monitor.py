@@ -34,6 +34,7 @@ from affordance_runtime.agent.recovery import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
     EpisodeMonitorTransition,
+    RecoveryClosureCondition,
     RecoveryKind,
     RecoveryLifecycleTransition,
     RecoverySignal,
@@ -163,11 +164,9 @@ class EpisodeMonitor:
         )[-_MAX_PROHIBITED_ATTEMPTS:]
         signal = replace(
             active,
-            kind=candidate.kind,
             observed_evidence=evidence,
             attempted_modes=attempted_modes,
             prohibited_attempt_signatures=prohibited,
-            human_instruction=candidate.human_instruction or active.human_instruction,
             recovery_attempt=candidate.recovery_attempt,
             evidence_revision=active.evidence_revision + 1,
         )
@@ -217,7 +216,7 @@ class EpisodeMonitor:
             evidence["latest_information_delta"] = information_delta.kind.value
         attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, _attempted_mode(result))))
         prohibited = active.prohibited_attempt_signatures
-        if _recovery_origin_is_information_stall(active) and _gui_dispatched(result):
+        if _recovery_waits_for_new_information(active) and _gui_dispatched(result):
             gui_signature = _gui_attempt_signature(result)
             if gui_signature is not None:
                 # A GUI route selected during a local no-information epoch gets
@@ -385,7 +384,7 @@ class EpisodeMonitor:
             self.latest_attempt_signature = gui_signature
             self.same_attempt_streak = 1
             self.active_gui_cycle_digest = ""
-            if _recovery_origin_is_information_stall(self.active_recovery):
+            if _recovery_waits_for_new_information(self.active_recovery):
                 # Structural/visual change proves that the GUI action took
                 # effect, not that an observation route produced new task
                 # evidence.  Carry the local recovery through the reveal or
@@ -400,7 +399,7 @@ class EpisodeMonitor:
             if (
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-                and _recovery_origin_is_local(self.active_recovery)
+                and _recovery_waits_for_new_information(self.active_recovery)
             ):
                 self.observation_only_streak = 0
                 self.recovery_count = 0
@@ -703,21 +702,10 @@ def _dispatch_status(result: StepResult) -> str:
     return DispatchStatus.NOT_SENT.value
 
 
-def _recovery_origin_is_local(signal: RecoverySignal) -> bool:
-    """Only same-call local information can resolve a local observation stall."""
+def _recovery_waits_for_new_information(signal: RecoverySignal) -> bool:
+    """Use the epoch's immutable typed closure contract, never mutable evidence."""
 
-    return signal.observed_evidence.get("origin_dispatch") == DispatchStatus.NOT_SENT.value
-
-
-def _recovery_origin_is_information_stall(signal: RecoverySignal) -> bool:
-    """Whether a non-dispatched acquisition attempt still awaits typed information."""
-
-    attempt = signal.observed_evidence.get("attempt")
-    return bool(
-        _recovery_origin_is_local(signal)
-        and isinstance(attempt, Mapping)
-        and attempt.get("operation") in _INFORMATION_ACQUISITION_OPERATIONS
-    )
+    return signal.closure_condition is RecoveryClosureCondition.NEW_INFORMATION
 
 
 def _control_stall_signal(
@@ -749,6 +737,12 @@ def _control_stall_signal(
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
         },
+        closure_condition=(
+            RecoveryClosureCondition.NEW_INFORMATION
+            if _attempted_mode(result) in _INFORMATION_ACQUISITION_OPERATIONS
+            and _dispatch_status(result) == DispatchStatus.NOT_SENT.value
+            else RecoveryClosureCondition.OPERATIONAL_EFFECT
+        ),
         attempted_modes=(_attempted_mode(result),),
         prohibited_attempt_signatures=(
             (prohibited_attempt_signature,) if prohibited_attempt_signature is not None else ()

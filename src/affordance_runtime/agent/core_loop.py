@@ -2565,6 +2565,7 @@ def _recovery_feedback(signal) -> dict[str, object]:
         return {}
     return {
         "kind": signal.kind.value,
+        "closure_condition": signal.closure_condition.value,
         "epoch_id": signal.epoch_id,
         "evidence_revision": signal.evidence_revision,
         "stable_signature": signal.stable_signature,

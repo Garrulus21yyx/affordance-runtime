@@ -44,6 +44,7 @@ from affordance_runtime.agent.profile import AgentLoopProfile
 from affordance_runtime.agent.recovery import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
+    RecoveryClosureCondition,
     RecoveryKind,
     RecoveryLifecycleTransition,
 )
@@ -1777,6 +1778,7 @@ def test_causal_changed_gui_attempt_cannot_close_local_information_recovery() ->
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recovery_signal is not None
+    assert second_recovery.recovery_signal.closure_condition is RecoveryClosureCondition.NEW_INFORMATION
     assert second_recovery.recovery_signal.recovery_attempt == 1
     assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
@@ -1790,6 +1792,36 @@ def test_causal_changed_gui_attempt_cannot_close_local_information_recovery() ->
     assert monitor.latest_attempt_signature is not None
     assert monitor.latest_attempt_signature.operation == "activate"
     assert monitor.same_attempt_streak == 1
+
+
+def test_incidental_rejection_cannot_retype_an_information_recovery_epoch() -> None:
+    first = _world("observation:information-origin")
+    changed_once = _world("observation:information-route-1", route="/reviews?page=2")
+    changed_twice = _world("observation:information-route-2", route="/reviews?page=2&view=all")
+    monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
+    monitor.start_episode(first, _evaluation(first))
+    recovery = _evaluate(monitor, _local_step(first, query="reviews"))
+
+    first_route = _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(first, changed_once)),
+    )
+    rejected = _evaluate(monitor, _tool_rejected_step(changed_once))
+    second_route = _evaluate(
+        monitor,
+        _with_projected_outcome(_dispatched_step(changed_once, changed_twice)),
+    )
+
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.closure_condition is RecoveryClosureCondition.NEW_INFORMATION
+    assert first_route.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert rejected.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert second_route.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert second_route.recovery_signal is not None
+    assert second_route.recovery_signal.epoch_id == recovery.recovery_signal.epoch_id
+    assert second_route.recovery_signal.kind is recovery.recovery_signal.kind
+    assert second_route.recovery_signal.human_instruction == recovery.recovery_signal.human_instruction
+    assert second_route.recovery_signal.closure_condition is RecoveryClosureCondition.NEW_INFORMATION
 
 
 def test_monitor_never_overrides_native_terminal_evaluation() -> None:

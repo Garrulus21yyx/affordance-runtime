@@ -48,6 +48,13 @@ class RecoveryKind(StrEnum):
     CAPABILITY_GAP = "capability_gap"
 
 
+class RecoveryClosureCondition(StrEnum):
+    """Name the fact that may close one Monitor-owned recovery epoch."""
+
+    OPERATIONAL_EFFECT = "operational_effect"
+    NEW_INFORMATION = "new_information"
+
+
 @dataclass(frozen=True)
 class RecoverySignal:
     kind: RecoveryKind
@@ -59,10 +66,17 @@ class RecoverySignal:
     recovery_attempt: int = 1
     epoch_id: str = ""
     evidence_revision: int = 1
+    closure_condition: RecoveryClosureCondition = RecoveryClosureCondition.OPERATIONAL_EFFECT
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, RecoveryKind):
             object.__setattr__(self, "kind", RecoveryKind(self.kind))
+        if not isinstance(self.closure_condition, RecoveryClosureCondition):
+            object.__setattr__(
+                self,
+                "closure_condition",
+                RecoveryClosureCondition(self.closure_condition),
+            )
         if not self.stable_signature.strip() or len(self.stable_signature) > 1_000:
             raise ValueError("recovery signature must be bounded")
         if not self.epoch_id:
