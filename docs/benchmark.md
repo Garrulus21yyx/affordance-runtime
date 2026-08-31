@@ -467,9 +467,13 @@ embedded in the same list region as its records could be omitted from that colle
 standard `rel=next|prev` or a structurally proven pagination group before class tokens gain pagination authority; it
 also assigns an embedded paginator to its own repeated collection before running the existing unique sibling-owner
 join. Ordinary links and the complete ActionSpace are unchanged, and ambiguous ownership remains `unknown`. The
-directly affected set reports `275 passed, 3 skipped, 1 deselected`; the full fixed-interpreter suite reports
-`2253 passed, 19 skipped, 1 deselected, 1 warning` in 105.85 seconds. This provider-free follow-up has not been given
-a second live Task388 run and does not alter the accepted r9 attestation.
+first re-review found one further ownership distinction: a standard `rel=next` in an unrelated workflow proves link
+direction but not membership in the page's only record list. Commit `d72c783b` requires a sibling paginator list and
+one local neutral structural owner; broad `main/navigation/region` ancestry cannot establish the join. The unrelated
+route stays in the complete ActionSpace while the collection remains `unknown`. The final directly affected set
+reports `276 passed, 3 skipped, 1 deselected`; the full fixed-interpreter suite reports
+`2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.65 seconds. This provider-free follow-up has not been given a
+second live Task388 run and does not alter the accepted r9 attestation.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 

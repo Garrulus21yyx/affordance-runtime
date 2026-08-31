@@ -526,6 +526,12 @@ wizard/carousel-style `next` link remains an ordinary ActionSpace route. The reg
 embedded paginator to its own proven repeated collection, then applies the existing unique-nearest-owner rule only to
 paginator-only regions; ambiguous shapes still return `unknown`.
 
+The first re-review then separated link direction from collection ownership. Even standards-valid `rel=next` does
+not prove that a workflow/navigation route belongs to the page's only record list. Commit `d72c783b` therefore limits
+the sibling join to a paginator list under the same local neutral structural owner. A `main`, `navigation`, `region`,
+or other broad semantic boundary is not ownership evidence. Unrelated routes remain executable in the complete
+ActionSpace but cannot make a collection `open`; absent stronger Surface evidence, its coverage remains `unknown`.
+
 The first live Task388 run on that repair exposed a separate ranking error. The `2 stars` control was not a hidden or
 unexecutable element: before the Reviews panel opened it had no binding, but after the panel opened it had a current
 binding and `viewport.visible=false`, meaning offscreen rather than CSS-hidden. Playwright could legally scroll it
@@ -560,12 +566,13 @@ improvement and official task success, not a claim that heuristic ranking or pol
 
 At the live product SHA `5ebcb58f`, the affected cross-layer gate reported `526 passed, 3 skipped, 1 deselected`; the
 full fixed BrowserGym-interpreter suite reported `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67 seconds.
-After the fresh-review pagination repair, product SHA `b8b6f2fe` reports `275 passed, 3 skipped, 1 deselected` across
-the directly affected owner/consumer set and `2253 passed, 19 skipped, 1 deselected, 1 warning` across the full suite
-in 105.85 seconds. The sole deselection remains the repository-missing archived dashboard trace. These gates cover
-the explicit-query boundary, offscreen executable preservation, candidate/Catalog delivery, structurally proven
-pagination ownership, Monitor/recovery, and the WebArena response codec; they do not turn a one-case live result into
-aggregate benchmark closure.
+After both fresh-review pagination repairs, product SHA `d72c783b` reports
+`276 passed, 3 skipped, 1 deselected` across the directly affected owner/consumer set and
+`2254 passed, 19 skipped, 1 deselected, 1 warning` across the full suite in 110.65 seconds. The sole deselection
+remains the repository-missing archived dashboard trace. These gates cover the explicit-query boundary, offscreen
+executable preservation, candidate/Catalog delivery, structurally proven pagination relation and ownership,
+Monitor/recovery, and the WebArena response codec; they do not turn a one-case live result into aggregate benchmark
+closure.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
