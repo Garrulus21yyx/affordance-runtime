@@ -1164,8 +1164,8 @@ def _associate_collection_navigation(
             )
             # Two non-paginator item roots prove that this is a repeated
             # collection which embeds its paginator. A paginator-only list (or
-            # an ambiguous one-record shape) remains available for the nearest
-            # unique structural-owner pass below instead of claiming itself.
+            # an ambiguous one-record shape) retains its ordinary ActionSpace
+            # routes but cannot claim collection ownership.
             if len(record_roots) >= 2:
                 assigned[region.key].extend(navigation)
 
