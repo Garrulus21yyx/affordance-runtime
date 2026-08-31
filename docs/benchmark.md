@@ -329,13 +329,13 @@ exact failed replay; the native evaluator alone terminates. No `current_activity
 semantic Monitor, visual fallback, task vocabulary, or benchmark branch was added.
 
 Focused gates report 158 World/BrowserGym tests and 218 policy/Monitor/runtime/provider tests. A real final-contract
-probe returned one accepted DeepSeek v4 Flash `SelectAction` in 1.54 seconds with one physical request. The configured
-`glm-5.2` credential currently fails authentication, Zhipu was rate-limited, and Gemini/Mistral rejected the full
-dynamic-catalog request despite accepting minimal direct tool probes. Therefore no provider is hard-coded or silently
-promoted. GLM-5.2 is the preferred stronger-policy A/B candidate once it passes the same wire gate; DeepSeek is the
-only verified current option. These implementation and capability results do not change the diagnostic10b task
-outcomes. Post-repair held-out execution must still measure success, policy calls, recovery-to-new-route latency,
-exact replay, no-effect dispatches, and closed-coverage reinspection.
+probe returned one accepted DeepSeek v4 Flash `SelectAction` in 1.54 seconds with one physical request. The current
+post-repair cohort is limited to `LLM_ACTIVE_PROFILE=deepseek` and
+`LLM_DEEPSEEK_MODEL=deepseek-v4-flash`; no cross-provider A/B is in scope. Runtime remains provider-neutral, but a run
+without those explicit recorded values is not qualifying evidence for this phase. These implementation and
+capability results do not change the diagnostic10b task outcomes. Post-repair held-out execution must still measure
+success, policy calls, recovery-to-new-route latency, exact replay, no-effect dispatches, and closed-coverage
+reinspection.
 
 The final fixed-interpreter repository gate reports
 `2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented

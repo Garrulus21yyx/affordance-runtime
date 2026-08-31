@@ -400,13 +400,12 @@ verified operational change closes the applicable recovery lifecycle. Provider, 
 transport retry, exact replay, and dynamic `oneOf|anyOf` representation paths share this algebra.
 
 A real capability probe on the final contract produced one accepted DeepSeek v4 Flash `SelectAction` in one physical
-request (semantic thinking requested, physical hidden thinking disabled). The configured Aliyun `glm-5.2` credential
-currently fails authentication, Zhipu `glm-4.7-flash` was rate-limited, and the configured Gemini/Mistral dynamic
-catalog requests were rejected even though minimal direct tool probes succeeded; those provider/catalog-adapter
-combinations are not silently declared supported. Provider choice remains configuration, not Runtime logic. GLM-5.2
-is the first stronger-policy candidate once its credential passes this exact gate; DeepSeek remains the only locally
-verified current recovery wire. Benchmark route quality remains live-open until held-out runs show fewer repeated
-routes and successful recovery-to-different-action transitions.
+request (semantic thinking requested, physical hidden thinking disabled). The current convergence and held-out-live
+scope is explicitly limited to `LLM_ACTIVE_PROFILE=deepseek` with
+`LLM_DEEPSEEK_MODEL=deepseek-v4-flash`; no other provider is a candidate in this phase. This is a benchmark/profile
+boundary rather than Runtime branching: the policy port remains provider-neutral, while every qualifying run must
+pin and record the DeepSeek profile. Benchmark route quality remains live-open until those held-out runs show fewer
+repeated routes and successful recovery-to-different-action transitions.
 
 The final fixed-interpreter repository gate for this implementation reports
 `2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented
