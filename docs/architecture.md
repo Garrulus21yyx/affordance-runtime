@@ -509,12 +509,22 @@ comparison without an explicit environment reset.
 
 ### 2026-08-31 collection coverage and candidate-relevance convergence — live verified, bounded
 
-Commit `1c33a8e6` makes site pagination a typed World fact without adding a progress ledger. BrowserGym associates
-current paginator controls with their collection and projects the current page, known total, continuations, and
-`open | closed | unknown` coverage. `read_region` returns those owner-produced facts alongside the exact collection
-records. They are current-World scope metadata: record bodies remain in the same-call ToolReturn/native history,
-cross-World novelty remains in `ObservationDeliveryStore`, and the single ActionPolicy still decides whether another
-route is materially useful.
+Commit `1c33a8e6` makes a bounded subset of site pagination a typed World fact without adding a progress ledger.
+BrowserGym projects an explicitly supported relation/current marker on a current link, and the region index associates
+a proven current executable continuation with one repeated collection. `read_region` returns
+`collection_coverage=open` plus that continuation when the proof exists; otherwise a repeated collection is
+`unknown`, never silently closed. It does not claim a page number, total page count, or terminal coverage without
+Surface evidence. These are current-World scope facts: record bodies remain in the same-call ToolReturn/native
+history, cross-World novelty remains in `ObservationDeliveryStore`, and the single ActionPolicy still decides whether
+another route is materially useful.
+
+Fresh review found two gaps in that positive contract. A generic `<a class="next">` could be mislabeled as pagination
+without a pagination owner, and a paginator embedded in the same list region as its repeated records was excluded
+from association. Commit `b8b6f2fe` closes both at the existing owners. Standard HTML `rel=next|prev` remains direct
+evidence; class-based relations require one structural pagination list or a coherent multi-link page group, so a
+wizard/carousel-style `next` link remains an ordinary ActionSpace route. The region index now first assigns an
+embedded paginator to its own proven repeated collection, then applies the existing unique-nearest-owner rule only to
+paginator-only regions; ambiguous shapes still return `unknown`.
 
 The first live Task388 run on that repair exposed a separate ranking error. The `2 stars` control was not a hidden or
 unexecutable element: before the Reviews panel opened it had no binding, but after the panel opened it had a current
@@ -548,11 +558,14 @@ submitted annotated values. The rerun followed the typed Next route and did not 
 made one redundant Page-1 navigation before submission, without rereading the reviews. This is evidence of bounded
 improvement and official task success, not a claim that heuristic ranking or policy efficiency is perfect.
 
-At product SHA `5ebcb58f`, the affected cross-layer gate reports `526 passed, 3 skipped, 1 deselected`; the full fixed
-BrowserGym-interpreter suite reports `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67 seconds. The sole
-deselection remains the repository-missing archived dashboard trace. These gates cover the explicit-query boundary,
-offscreen executable preservation, candidate/Catalog delivery, pagination coverage, Monitor/recovery, and the
-WebArena response codec; they do not turn a one-case live result into aggregate benchmark closure.
+At the live product SHA `5ebcb58f`, the affected cross-layer gate reported `526 passed, 3 skipped, 1 deselected`; the
+full fixed BrowserGym-interpreter suite reported `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67 seconds.
+After the fresh-review pagination repair, product SHA `b8b6f2fe` reports `275 passed, 3 skipped, 1 deselected` across
+the directly affected owner/consumer set and `2253 passed, 19 skipped, 1 deselected, 1 warning` across the full suite
+in 105.85 seconds. The sole deselection remains the repository-missing archived dashboard trace. These gates cover
+the explicit-query boundary, offscreen executable preservation, candidate/Catalog delivery, structurally proven
+pagination ownership, Monitor/recovery, and the WebArena response codec; they do not turn a one-case live result into
+aggregate benchmark closure.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 

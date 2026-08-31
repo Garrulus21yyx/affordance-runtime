@@ -428,7 +428,9 @@ owner algebra, not the resulting policy-call count or semantic adherence on the 
 ### 2026-08-31 Task388 collection/candidate convergence — native accepted
 
 Commit `1c33a8e6` first exposed site-level pagination as typed collection coverage and continuations in the same
-fresh-World/read contract. The authorized
+fresh-World/read contract. `open` means that one current executable continuation is structurally proven; otherwise a
+repeated collection remains `unknown`. The implementation does not claim closed coverage, current page number, or a
+known total without Surface evidence. The authorized
 [`task388-r8`](../evidence/live/webarena-collection-coverage-20260831-1c33a8e6/task388-r8/run.json) used the resulting
 Next route and found the two correct reviewers, but ended native `blocked`: 21 policy calls, six recovery calls, nine
 executions, and 721,622 complete request tokens. Its trace isolated two independent boundary defects.
@@ -458,6 +460,16 @@ At product SHA `5ebcb58f`, the focused cross-layer gate reports `526 passed, 3 s
 seconds. The complete fixed-interpreter suite reports `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67
 seconds. The sole deselection is the documented repository-missing archived dashboard trace. This supersedes the
 earlier Task388 live-open statement for this bounded case, not the separate Task801 or ten-case efficiency status.
+
+The independent fresh-context review then found two provider-free pagination P2s without invalidating the r9 native
+result. A plain workflow link `<a class="next">` could be mislabeled as pagination, and a typed current paginator
+embedded in the same list region as its records could be omitted from that collection. Commit `b8b6f2fe` requires
+standard `rel=next|prev` or a structurally proven pagination group before class tokens gain pagination authority; it
+also assigns an embedded paginator to its own repeated collection before running the existing unique sibling-owner
+join. Ordinary links and the complete ActionSpace are unchanged, and ambiguous ownership remains `unknown`. The
+directly affected set reports `275 passed, 3 skipped, 1 deselected`; the full fixed-interpreter suite reports
+`2253 passed, 19 skipped, 1 deselected, 1 warning` in 105.85 seconds. This provider-free follow-up has not been given
+a second live Task388 run and does not alter the accepted r9 attestation.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
