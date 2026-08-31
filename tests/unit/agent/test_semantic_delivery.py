@@ -367,7 +367,12 @@ def _functional_world(*, rows: int = 3):
     return result.observation
 
 
-def _paginated_collection_world(*, ambiguous: bool = False, embedded: bool = False):
+def _paginated_collection_world(
+    *,
+    ambiguous: bool = False,
+    embedded: bool = False,
+    unrelated_navigation: bool = False,
+):
     source_id = "source:paginated-collection"
     rows = ("record:one", "record:two")
     other_rows = ("other:one", "other:two") if ambiguous else ()
@@ -397,7 +402,7 @@ def _paginated_collection_world(*, ambiguous: bool = False, embedded: bool = Fal
         ),
         ObservationStructureNode(
             "section",
-            "generic",
+            "main" if unrelated_navigation else "generic",
             "Current results",
             parent_structure_id="root",
             child_structure_ids=(
@@ -452,8 +457,8 @@ def _paginated_collection_world(*, ambiguous: bool = False, embedded: bool = Fal
             else (
                 ObservationStructureNode(
                     "pages",
-                    "list",
-                    "Pages",
+                    "navigation" if unrelated_navigation else "list",
+                    "Setup workflow" if unrelated_navigation else "Pages",
                     parent_structure_id="section",
                     child_structure_ids=("next-item",),
                 ),
@@ -667,6 +672,46 @@ def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:
         assert isinstance(outcome, Opened)
         assert outcome.collection_coverage == "unknown"
         assert outcome.collection_continuations == ()
+
+
+def test_unrelated_navigation_next_cannot_claim_the_only_collection() -> None:
+    world = _paginated_collection_world(unrelated_navigation=True)
+    task = TaskGoal(
+        "unrelated-next-route",
+        "Inspect the records",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        _evaluation(task, world.observation_id),
+    )
+    collection = next(
+        region
+        for region in context.region_index.regions
+        if region.role == "list" and region.repeated_item_roots
+    )
+
+    assert collection.collection_navigation == ()
+    assert any(
+        option.target_id == "pagination:next" and option.operation == "activate"
+        for option in context.complete_actions
+    )
+
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=context.canonical_world.region_refs[collection.key],
+    )
+    assert isinstance(outcome, Opened)
+    assert outcome.collection_coverage == "unknown"
+    assert outcome.collection_continuations == ()
 
 
 def _many_region_world(*, count: int = 16, suffix: str = "current"):

@@ -1175,6 +1175,11 @@ def _associate_collection_navigation(
             for key in pagination_by_region
             if regions_by_key[key].source_id == source.observation_id
             and key not in directly_owned
+            # A standard rel proves link direction, not collection ownership.
+            # Sibling association additionally requires a structural paginator
+            # list; navigation/workflow regions remain ordinary ActionSpace
+            # routes unless Surface evidence places them inside the collection.
+            and regions_by_key[key].role == "list"
         )
         collections = tuple(
             region
@@ -1240,11 +1245,13 @@ def _collection_paginator_distance(
     collection_ancestors = _ancestor_distances(collection_root, parents)
     paginator_ancestors = _ancestor_distances(paginator_root, parents)
     common = set(collection_ancestors) & set(paginator_ancestors)
+    # A document/main/navigation/region boundary can contain many unrelated
+    # collections and workflows. Only a local neutral wrapper can prove this
+    # sibling relationship without a Surface-owned collection identifier.
     structural_common = tuple(
         structure_id
         for structure_id in common
-        if str(getattr(nodes.get(structure_id), "role", "")).casefold()
-        not in {"document", "webarea", "rootwebarea"}
+        if str(getattr(nodes.get(structure_id), "role", "")).casefold() in {"generic", "group"}
     )
     if not structural_common:
         return None
