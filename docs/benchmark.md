@@ -27,9 +27,11 @@ bounded failure/repair behavior. This is not live closure. A separately authoriz
 recovery-to-new-route calls, fewer no-effect actions and reinspection loops, and no regression in native success before
 the recovery mechanism can be called converged.
 
-Task142 and Task113 remain independent upstream World-contract gaps. Task142 needs row-aligned table records and
-Task113 needs grouped control-value normalization at the SurfaceAdapter/World owner boundary; this recovery change
-does not reinterpret either downstream.
+Task142 and Task113 are independent upstream World-contract witnesses. The provider-free World follow-up now verifies
+row-aligned table records across one-unit delivery pages and normalizes native same-name HTML radios at the
+SurfaceAdapter/World owner boundary. Task113's identical star labels use the authored radio value; if that value is
+absent, the group remains typed `incomplete`. This recovery change does not reinterpret either downstream, and fresh
+live acceptance remains open.
 
 ### 2026-09-01 semantic-unit delivery continuation — provider-free implementation, live-open
 
@@ -54,6 +56,15 @@ The complete fixed-interpreter provider-free gate reports `2269 passed, 19 skipp
 sole deselection is the repository-missing archived dashboard trace already documented below. Ruff and
 `git diff --check` pass. Repository-wide mypy remains red on its pre-existing baseline; the new cursor/delivery code
 adds no remaining mypy diagnostic.
+
+The 2026-09-01 native-control follow-up adds no provider dependency. Generic BrowserGym fixtures verify explicit
+`radiogroup`, implicit `form owner + name` groups, separation of equal names owned by different forms, authored
+selected values, and fail-closed identical-label groups without values. The renderer consumes the source-owned group
+status instead of deriving value completeness from structure completeness. The legacy repeated-item compatibility
+alias and limit name are removed after consumer migration. The focused World/BrowserGym/conformance gate reports
+`441 passed`; the topology/delivery subset reports `150 passed, 1 deselected`, where the deselection is the previously
+documented missing archived dashboard trace. The complete fixed-interpreter provider-free suite reports
+`2273 passed, 19 skipped, 1 deselected, 1 warning`. Ruff and `git diff --check` pass. No live benchmark was run.
 
 ### 2026-08-30 recovery-owner convergence — provider-free verified, live-open
 

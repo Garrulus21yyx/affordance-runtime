@@ -569,7 +569,7 @@ def test_sibling_paginator_without_collection_owner_remains_unknown() -> None:
     collection = next(
         region
         for region in context.region_index.regions
-        if region.role == "list" and region.repeated_item_roots
+        if region.role == "list" and region.semantic_unit_roots
     )
     assert any(
         option.target_id == "pagination:next" and option.operation == "activate"
@@ -612,7 +612,7 @@ def test_embedded_pagination_relation_without_owner_remains_unknown() -> None:
     collection = next(
         region
         for region in context.region_index.regions
-        if region.role == "list" and region.repeated_item_roots
+        if region.role == "list" and region.semantic_unit_roots
     )
 
     assert any(
@@ -652,7 +652,7 @@ def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:
         region
         for region in context.region_index.regions
         if region.role == "list"
-        and region.repeated_item_roots
+        and region.semantic_unit_roots
         and region.heading in {"Records", "Other records"}
     )
 
@@ -689,7 +689,7 @@ def test_unrelated_navigation_next_cannot_claim_the_only_collection() -> None:
     collection = next(
         region
         for region in context.region_index.regions
-        if region.role == "list" and region.repeated_item_roots
+        if region.role == "list" and region.semantic_unit_roots
     )
 
     assert any(
@@ -1604,7 +1604,7 @@ def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action(
         item
         for item in context.region_index.regions
         if item.role == "table"
-        and item.repeated_item_roots
+        and item.semantic_unit_roots
         and any("bestsellers" in scope.casefold() for scope in item.scope_path)
     )
     opened = inspect_actor_world(

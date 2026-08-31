@@ -12,6 +12,7 @@ from affordance_runtime.surfaces.browsergym.entity_identity import BrowserGymEnt
 from affordance_runtime.task import TaskGoal
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     ax_node,
+    dom_snapshot,
     raw_observation,
     reset_task_state,
 )
@@ -132,6 +133,31 @@ def test_browsergym_table_rows_are_delivered_as_indivisible_records() -> None:
         ("Pen", "$3.00", "1"),
     )
 
+    cursor = ""
+    paged_records = []
+    while True:
+        page = inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            canonical_world=context.canonical_world,
+            observation=world,
+            action="read_region",
+            region_ref=context.canonical_world.region_refs[region.key],
+            cursor=cursor,
+            page_size=1,
+        )
+        assert isinstance(page, Opened)
+        assert len(page.items) == 1
+        paged_records.extend(item for item in page.items if item.get("shape") == "record")
+        if page.continuation is None:
+            break
+        cursor = page.continuation.cursor
+    assert tuple(tuple(field["text"] for field in item["content"]) for item in paged_records) == (
+        ("Notebook", "$12.50", "2"),
+        ("Pen", "$3.00", "1"),
+    )
+
 
 def test_browsergym_control_group_delivers_one_normalized_group_value() -> None:
     projection = project_browsergym_observation(
@@ -169,8 +195,118 @@ def test_browsergym_control_group_delivers_one_normalized_group_value() -> None:
     assert isinstance(outcome, Opened)
     group = next(item for item in outcome.items if item.get("shape") == "control_group")
     assert group["member_count"] == 2
-    assert group["selected_members"] == ("5 stars",)
     assert group["value_status"] == "known"
+    assert group["selected_value"] == "5 stars"
+
+
+def test_browsergym_native_same_name_radios_form_one_control_group_with_authored_value() -> None:
+    raw = raw_observation(
+        ax_node("review", "group", "Review", child_ids=("star-5", "star-4", "star-3")),
+        ax_node("star-5", "radio", "★", parent_id="review", properties=(("checked", False),)),
+        ax_node("star-4", "radio", "★", parent_id="review", properties=(("checked", False),)),
+        ax_node("star-3", "radio", "★", parent_id="review", properties=(("checked", True),)),
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("input", "star-5", {"type": "radio", "name": "ratings[4]", "value": "5"}),
+        ("input", "star-4", {"type": "radio", "name": "ratings[4]", "value": "4"}),
+        ("input", "star-3", {"type": "radio", "name": "ratings[4]", "value": "3"}),
+    )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:native-rating-group",
+        source_revision="revision:native-rating-group",
+        page_identity="page:native-rating-group",
+        episode_identity="episode:native-rating-group",
+        task_state=reset_task_state("observation:native-rating-group"),
+        entity_identity=BrowserGymEntityIdentityMap(b"native-rating-group-key-00000001"),
+    )
+    world = projection.world
+    task = TaskGoal("read-native-rating", "Read the selected rating")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "fixture"),
+    )
+    groups = tuple(item for item in world.semantic_topology if item.role == "radiogroup")
+    assert len(groups) == 1
+    assert groups[0].semantic_shape.kind.value == "control_group"
+    assert tuple(
+        next(item for item in world.semantic_topology if item.structure_id == child).role
+        for child in groups[0].child_structure_ids
+    ) == ("radio", "radio", "radio")
+
+    region = next(item for item in context.region_index.regions if item.role == "radiogroup")
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=context.canonical_world.region_refs[region.key],
+    )
+
+    assert isinstance(outcome, Opened)
+    group = next(item for item in outcome.items if item.get("shape") == "control_group")
+    assert group["member_count"] == 3
+    assert group["value_status"] == "known"
+    assert group["selected_value"] == "3"
+    assert tuple(item["state"]["semantic.control.value"] for item in group["content"]) == ("5", "4", "3")
+
+
+def test_browsergym_native_radio_group_does_not_claim_value_from_identical_labels() -> None:
+    raw = raw_observation(
+        ax_node("review", "group", "Review", child_ids=("one", "two")),
+        ax_node("one", "radio", "★", parent_id="review", properties=(("checked", True),)),
+        ax_node("two", "radio", "★", parent_id="review", properties=(("checked", False),)),
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("input", "one", {"type": "radio", "name": "rating"}),
+        ("input", "two", {"type": "radio", "name": "rating"}),
+    )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:incomplete-rating-group",
+        source_revision="revision:incomplete-rating-group",
+        page_identity="page:incomplete-rating-group",
+        episode_identity="episode:incomplete-rating-group",
+        task_state=reset_task_state("observation:incomplete-rating-group"),
+        entity_identity=BrowserGymEntityIdentityMap(b"incomplete-rating-group-key-0001"),
+    )
+    group = next(item for item in projection.world.semantic_topology if item.role == "radiogroup")
+    assert dict(group.state)["semantic.control.value_status"] == "incomplete"
+    assert "semantic.control.selected_value" not in group.state
+
+
+def test_browsergym_native_radio_groups_respect_html_form_ownership() -> None:
+    raw = raw_observation(
+        ax_node("root", "group", "Settings", child_ids=("a-yes", "a-no", "b-yes", "b-no")),
+        ax_node("a-yes", "radio", "Yes", parent_id="root", properties=(("checked", True),)),
+        ax_node("a-no", "radio", "No", parent_id="root", properties=(("checked", False),)),
+        ax_node("b-yes", "radio", "Yes", parent_id="root", properties=(("checked", False),)),
+        ax_node("b-no", "radio", "No", parent_id="root", properties=(("checked", True),)),
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("input", "a-yes", {"type": "radio", "form": "form-a", "name": "choice", "value": "yes"}),
+        ("input", "a-no", {"type": "radio", "form": "form-a", "name": "choice", "value": "no"}),
+        ("input", "b-yes", {"type": "radio", "form": "form-b", "name": "choice", "value": "yes"}),
+        ("input", "b-no", {"type": "radio", "form": "form-b", "name": "choice", "value": "no"}),
+    )
+    projection = project_browsergym_observation(
+        raw,
+        observation_id="observation:form-owned-radio-groups",
+        source_revision="revision:form-owned-radio-groups",
+        page_identity="page:form-owned-radio-groups",
+        episode_identity="episode:form-owned-radio-groups",
+        task_state=reset_task_state("observation:form-owned-radio-groups"),
+        entity_identity=BrowserGymEntityIdentityMap(b"form-owned-radio-groups-key-0001"),
+    )
+
+    groups = tuple(item for item in projection.world.semantic_topology if item.role == "radiogroup")
+    assert len(groups) == 2
+    assert {dict(group.state)["semantic.control.selected_value"] for group in groups} == {"yes", "no"}
+    assert all(len(group.child_structure_ids) == 2 for group in groups)
 
 
 def test_multifield_record_detail_cursor_recovers_every_omitted_field() -> None:

@@ -1594,7 +1594,7 @@ def _action_structural_context(target_id: str, region, observation) -> tuple[tup
 
 
 def _bounded_region(region: WorldRegion, limits: DeliveryLimits) -> bool:
-    if region.semantic_unit_roots and len(region.semantic_unit_roots) > limits.repeated_items:
+    if region.semantic_unit_roots and len(region.semantic_unit_roots) > limits.semantic_units:
         return False
     token_limit = (
         limits.top_navigation_tokens
@@ -1988,17 +1988,14 @@ def _semantic_unit_records(
         if shape is SemanticShapeKind.RECORD:
             record["field_count"] = len(content)
         elif shape is SemanticShapeKind.CONTROL_GROUP:
-            selected = tuple(
-                item
-                for item in content
-                if isinstance(item.get("state"), Mapping)
-                and any(item["state"].get(key) is True for key in ("checked", "selected", "active"))
-            )
             record["member_count"] = len(content)
-            record["selected_members"] = tuple(
-                str(item.get("text", "")) for item in selected if item.get("text")
-            )
-            record["value_status"] = "known" if not partial else "incomplete"
+            group_state = project_model_state(root.state, interactive=False)
+            value_status = group_state.get("semantic.control.value_status")
+            selected_value = group_state.get("semantic.control.selected_value")
+            if value_status is not None:
+                record["value_status"] = value_status
+            if selected_value is not None:
+                record["selected_value"] = selected_value
         grouped.append(record)
     return tuple(grouped), repeated_target_ids
 

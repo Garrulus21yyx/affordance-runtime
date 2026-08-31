@@ -3352,9 +3352,12 @@ per-step planner was added.
 The source-to-World boundary now owns a small closed compositional algebra: `Region | Collection | Record |
 ControlGroup | Atom`. `SemanticShape` is either a resolved kind with `complete|incomplete` coverage or a typed
 `unknown(reason)`. BrowserGym and DOM use one shared explicit-role conversion at their SurfaceAdapter boundaries;
-BrowserGym additionally derives completeness from retained AX subtree closure. Neither adapter uses repeated counts,
-task text, site labels, selectors, or benchmark identities. Unclassifiable containers remain unknown and retain their
-source subtree.
+BrowserGym additionally derives completeness from retained AX subtree closure. At the same BrowserGym source boundary,
+native HTML radios without an explicit AX `radiogroup` are grouped by the standard `form owner + name` identity into
+the existing `ObservationStructureNode` topology. Authored radio values and selected state produce one source-owned
+group value; identical labels without an authored value remain typed `incomplete`. Neither adapter uses repeated
+counts, task text, site labels, selectors, or benchmark identities. Unclassifiable containers remain unknown and
+retain their source subtree.
 
 `WorldFusion` projects every retained source node into `WorldObservation.semantic_topology`, rewrites source-local
 target links and parent/child links to canonical current identities, and retains source observation/structure lineage.
@@ -3362,15 +3365,18 @@ This topology is the public compositional authority. Delivery regions consume it
 `_repeated_item_roots` role/count inference has been removed; region indexing admits only source-declared `Record`
 and `ControlGroup` roots as indivisible semantic units.
 
-Actor snapshot capacity packing and `read_region`/`find` serialize a whole semantic unit. Records retain ordered fields; control groups expose all
-members, selected members, member count, and a typed known/incomplete value status. Pagination occurs between units.
+Actor snapshot capacity packing and `read_region`/`find` serialize a whole semantic unit. Records retain ordered fields;
+control groups expose all members, member count, and the source-owned selected value with a typed
+known/incomplete/none/conflicted status. The renderer no longer derives “known” merely from structural completeness.
+Pagination occurs between units.
 If a single unit exceeds the byte gate, delivery may trim leaf strings and mark the unit partial, but it conserves
 the complete member skeleton and emits typed path/range omissions. The same continuation stream then returns the exact
 omitted suffixes as `detail_page` items; if the skeleton itself cannot fit, it returns `CapacityExceeded` rather than
 slicing the unit. Source-owned incomplete text is reported separately and has no fabricated continuation. Thus
 Delivery detail, record/group membership, and ordering are lossless for every complete source item.
 
-Generic integration witnesses cover multi-field table rows, radio-group value normalization, unknown shape
+Generic integration witnesses cover multi-field table rows including one-unit pages, explicit and native same-name
+radio-group value normalization, distinct HTML form ownership, incomplete identical-label groups, unknown shape
 preservation, canonical fusion lineage, multi-field detail reconstruction, generated lossless continuation streams,
 and an 80-field oversized record whose skeleton survives bounding. Task142
 and Task113 remain live benchmark witnesses, not production branches. Live WebArena acceptance remains open and
@@ -3378,3 +3384,11 @@ requires separate authorization. The complete fixed-environment provider-free su
 1 deselected, 1 warning`; that count is the topology-stage gate. The continuation-stage full gate passes
 `2269 passed, 19 skipped, 1 deselected, 1 warning`; the deselection is the previously documented absent archived dashboard trace. Ruff and
 `git diff --check` pass.
+
+The native-radio follow-up reuses the existing topology, shape completeness, value-scope, source coverage, and
+delivery-continuation authorities. It removes the legacy `repeated_item_roots` compatibility property and
+`repeated_items` limit name after migrating their consumers; no second structure tree, group store, completeness
+enum, cursor, provider call, or Runtime path is introduced. A focused provider-free owner/conformance gate passes
+`441` tests, and the topology/delivery subset passes `150` tests with the one repository-missing archived dashboard
+trace deselected. The complete fixed-interpreter provider-free suite passes `2273 passed, 19 skipped, 1 deselected,
+1 warning`; Live Tasks 113 and 142 remain open.

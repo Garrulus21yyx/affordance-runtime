@@ -25,7 +25,7 @@ class DeliveryLimits:
     """Frozen v2 semantic-delivery limits (estimated text tokens)."""
 
     exact_region_tokens: int = 4_000
-    repeated_items: int = 20
+    semantic_units: int = 20
     top_navigation_controls: int = 24
     top_navigation_tokens: int = 1_500
     descriptor_tokens: int = 160
@@ -35,7 +35,7 @@ class DeliveryLimits:
     def __post_init__(self) -> None:
         numeric_limits = (
             self.exact_region_tokens,
-            self.repeated_items,
+            self.semantic_units,
             self.top_navigation_controls,
             self.top_navigation_tokens,
             self.descriptor_tokens,
@@ -164,13 +164,6 @@ class WorldRegion:
         if self.region_membership not in {"complete", "partial"}:
             raise ValueError("delivery region membership is invalid")
         object.__setattr__(self, "source_coverage", source_coverage)
-
-    @property
-    def repeated_item_roots(self) -> tuple[str, ...]:
-        """Compatibility read; units now come from source-declared topology."""
-
-        return self.semantic_unit_roots
-
 
 @dataclass(frozen=True)
 class RegionVersion:

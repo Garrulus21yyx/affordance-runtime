@@ -1241,7 +1241,7 @@ def test_repeated_rows_inside_a_focused_form_do_not_become_an_unbounded_hard_bun
     region_index = WorldDeliveryIndex.from_observation(world, actions.options)
     editor_region = region_index.target_contexts[editor.target_id].primary_region_key
     region = next(item for item in region_index.regions if item.key == editor_region)
-    assert len(region.repeated_item_roots) == len(row_actions)
+    assert len(region.semantic_unit_roots) == len(row_actions)
 
     context = ContextBuilder().build(
         task,

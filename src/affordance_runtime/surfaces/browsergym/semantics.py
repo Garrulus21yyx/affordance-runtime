@@ -164,6 +164,8 @@ class _AxRecord:
 class _DomSemanticEvidence:
     tag: str
     state: tuple[tuple[str, SemanticScalar | tuple[str, ...]], ...]
+    radio_group_key: str = ""
+    radio_value: str = ""
 
 
 @dataclass(frozen=True)
@@ -290,9 +292,14 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
                 ),
             ),
         )
+    structure = _normalize_radio_group_structure(
+        tuple(structure_by_node_id.values()),
+        tuple(controls),
+        dom_semantics,
+    )
     return BrowserGymSemanticAnalysis(
         tuple(controls),
-        tuple(structure_by_node_id.values()),
+        structure,
         BrowserGymInventoryAnalysis(
             BROWSERGYM_AX_TARGET_INVENTORY_PROFILE_ID,
             recognized,
@@ -630,7 +637,7 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
         )
 
     result: dict[str, _DomSemanticEvidence] = {}
-    for document in documents:
+    for document_index, document in enumerate(documents):
         document_base_url = _dom_document_base_url(document, strings, raw)
         nodes = document.get("nodes") if isinstance(document, dict) else None
         attributes = nodes.get("attributes") if isinstance(nodes, dict) else None
@@ -708,7 +715,26 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     ))
                     if len(tokens) > MAX_DOM_ATTRIBUTE_TOKENS:
                         state.append((f"semantic.dom.attribute.{name}.truncated", True))
-            evidence = _DomSemanticEvidence(tag, tuple(state))
+            radio_group_key = ""
+            radio_value = ""
+            if (
+                tag == "input"
+                and decoded.get("type", "").casefold() == "radio"
+                and decoded.get("name", "").strip()
+            ):
+                radio_group_key = _native_radio_group_key(
+                    document_index,
+                    node_index,
+                    tuple(tags),
+                    tuple(decoded_attributes),
+                    parent_indices,
+                )
+                radio_value = decoded.get("value", "").strip()
+                if radio_value:
+                    state.append(("semantic.control.value", radio_value[:MAX_SEMANTIC_TEXT]))
+                    if len(radio_value) > MAX_SEMANTIC_TEXT:
+                        state.append(("semantic.control.value.truncated", True))
+            evidence = _DomSemanticEvidence(tag, tuple(state), radio_group_key, radio_value)
             previous = result.setdefault(bid, evidence)
             if previous != evidence:
                 raise BrowserGymSemanticError(
@@ -716,6 +742,160 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     f"BID {bid!r} has conflicting DOM semantic evidence",
                 )
     return result
+
+
+def _native_radio_group_key(
+    document_index: int,
+    node_index: int,
+    tags: tuple[str, ...],
+    attributes: tuple[dict[str, str], ...],
+    parent_indices: tuple[int, ...],
+) -> str:
+    """Return HTML's native radio-group identity without exposing private routing data."""
+
+    item = attributes[node_index]
+    name = item.get("name", "").strip()
+    explicit_owner = item.get("form", "").strip()
+    owner = f"form-id:{explicit_owner}" if explicit_owner else ""
+    if not owner and parent_indices:
+        current = parent_indices[node_index]
+        seen: set[int] = set()
+        while current >= 0 and current not in seen:
+            seen.add(current)
+            if tags[current] == "form":
+                form_id = attributes[current].get("id", "").strip()
+                owner = f"form-id:{form_id}" if form_id else f"form-index:{current}"
+                break
+            current = parent_indices[current]
+    return f"document:{document_index}:{owner or 'document-owner'}:name:{name}"
+
+
+def _normalize_radio_group_structure(
+    structure: tuple[CanonicalBrowserStructureNode, ...],
+    controls: tuple[CanonicalBrowserControl, ...],
+    dom_semantics: dict[str, _DomSemanticEvidence],
+) -> tuple[CanonicalBrowserStructureNode, ...]:
+    """Normalize explicit and native HTML radio groups at the source boundary."""
+
+    nodes = {item.private_node_id: item for item in structure}
+    control_state = {
+        item.private_node_id: dict(item.public_state)
+        for item in controls
+        if item.role == "radio"
+    }
+    explicit_groups = {
+        item.private_node_id: tuple(
+            child_id
+            for child_id in item.private_child_ids
+            if child_id in nodes and nodes[child_id].role == "radio"
+        )
+        for item in structure
+        if item.role == "radiogroup"
+    }
+    explicit_members = {child for members in explicit_groups.values() for child in members}
+    native_groups: dict[str, list[str]] = {}
+    for item in structure:
+        evidence = dom_semantics.get(item.private_bid)
+        if (
+            item.role == "radio"
+            and item.private_node_id not in explicit_members
+            and evidence is not None
+            and evidence.radio_group_key
+        ):
+            native_groups.setdefault(evidence.radio_group_key, []).append(item.private_node_id)
+
+    replacements = dict(nodes)
+    for group_id, members in explicit_groups.items():
+        if members:
+            root = replacements[group_id]
+            replacements[group_id] = replace(
+                root,
+                public_state=(*root.public_state, *_radio_group_state(members, nodes, control_state, dom_semantics)),
+            )
+
+    additions: list[CanonicalBrowserStructureNode] = []
+    for group_key, member_ids in native_groups.items():
+        members = tuple(member_ids)
+        if not members:
+            continue
+        parent_id = _common_structure_parent(members, nodes)
+        digest = hashlib.sha256(group_key.encode()).hexdigest()[:24]
+        group_id = f"native-radio-group:{digest}"
+        group_name = group_key.rsplit(":name:", 1)[-1]
+        additions.append(CanonicalBrowserStructureNode(
+            "",
+            group_id,
+            parent_id,
+            members,
+            "radiogroup",
+            group_name,
+            _radio_group_state(members, nodes, control_state, dom_semantics),
+        ))
+        for member_id in members:
+            replacements[member_id] = replace(replacements[member_id], private_parent_id=group_id)
+        original_parents = tuple(dict.fromkeys(nodes[item].private_parent_id for item in members if nodes[item].private_parent_id))
+        for original_parent_id in original_parents:
+            parent = replacements[original_parent_id]
+            children: list[str] = []
+            inserted = False
+            for child_id in parent.private_child_ids:
+                if child_id in members:
+                    if original_parent_id == parent_id and not inserted:
+                        children.append(group_id)
+                        inserted = True
+                    continue
+                children.append(child_id)
+            if original_parent_id == parent_id and not inserted:
+                children.append(group_id)
+            replacements[original_parent_id] = replace(parent, private_child_ids=tuple(children))
+
+    return tuple(replacements[item.private_node_id] for item in structure) + tuple(additions)
+
+
+def _common_structure_parent(
+    member_ids: tuple[str, ...],
+    nodes: dict[str, CanonicalBrowserStructureNode],
+) -> str:
+    parents = {nodes[item].private_parent_id for item in member_ids}
+    return next(iter(parents)) if len(parents) == 1 else ""
+
+
+def _radio_group_state(
+    member_ids: tuple[str, ...],
+    nodes: dict[str, CanonicalBrowserStructureNode],
+    control_state: dict[str, dict[str, object]],
+    dom_semantics: dict[str, _DomSemanticEvidence],
+) -> tuple[tuple[str, SemanticScalar | tuple[str, ...]], ...]:
+    selected = tuple(
+        member_id
+        for member_id in member_ids
+        if any(control_state.get(member_id, {}).get(key) is True for key in ("checked", "selected"))
+    )
+    state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = [
+        ("semantic.control.member_count", len(member_ids)),
+        ("semantic.control.selected_count", len(selected)),
+    ]
+    if len(selected) != 1:
+        state.append(("semantic.control.value_status", "none" if not selected else "conflicted"))
+        return tuple(state)
+    member = nodes[selected[0]]
+    evidence = dom_semantics.get(member.private_bid)
+    labels = tuple(nodes[item].accessible_name for item in member_ids)
+    explicit_value = evidence.radio_value if evidence is not None else ""
+    label_is_distinct = bool(member.accessible_name) and labels.count(member.accessible_name) == 1
+    if explicit_value and len(explicit_value) <= MAX_SEMANTIC_TEXT:
+        state.extend((
+            ("semantic.control.selected_value", explicit_value[:MAX_SEMANTIC_TEXT]),
+            ("semantic.control.value_status", "known"),
+        ))
+    elif label_is_distinct and len(member.accessible_name) <= MAX_SEMANTIC_TEXT:
+        state.extend((
+            ("semantic.control.selected_value", member.accessible_name[:MAX_SEMANTIC_TEXT]),
+            ("semantic.control.value_status", "known"),
+        ))
+    else:
+        state.append(("semantic.control.value_status", "incomplete"))
+    return tuple(state)
 
 
 def _explicit_pagination_relation(attributes: dict[str, str]) -> str:
