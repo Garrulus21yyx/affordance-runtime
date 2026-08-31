@@ -124,9 +124,7 @@ class RecordedProviderInvocation:
     model_request_parameters: FrozenBoundaryObject
 
 
-DecisionScript: TypeAlias = list[
-    tuple[str, dict[str, object]] | str | Exception | ModelResponse
-]
+DecisionScript: TypeAlias = list[tuple[str, dict[str, object]] | str | Exception | ModelResponse]
 
 
 @dataclass
@@ -154,7 +152,11 @@ class RecordingPydanticModel:
     @property
     def model_settings(self) -> list[object]:
         return [
-            ({key: value for key, value in record.model_settings.items()} if record.model_settings is not None else None)
+            (
+                {key: value for key, value in record.model_settings.items()}
+                if record.model_settings is not None
+                else None
+            )
             for record in self.records
         ]
 
@@ -241,6 +243,7 @@ class RecordingPydanticModel:
                 )
             if isinstance(scripted, str) and scripted in {
                 "first_gui_action",
+                "atomic_first_gui_action",
                 "first_gui_action_invalid_extra",
                 "multiple_gui_actions",
                 "multiple_distinct_gui_actions",
@@ -276,18 +279,29 @@ class RecordingPydanticModel:
             else:
                 assert isinstance(scripted, tuple)
                 name, arguments = scripted
-            call_id = (
-                self.last_gui_call_id
-                if scripted == "repeat_last_gui_call"
-                else f"recording-call:{ordinal}"
-            )
+            call_id = self.last_gui_call_id if scripted == "repeat_last_gui_call" else f"recording-call:{ordinal}"
             if scripted != "repeat_last_gui_call":
                 self.last_gui_call_id = call_id
-            parts = [ToolCallPart(name, arguments, tool_call_id=call_id)]
-            if scripted == "multiple_gui_actions":
+            parts = []
+            if scripted == "atomic_first_gui_action":
                 parts.append(
-                    ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}:second")
+                    TextPart(
+                        json.dumps(
+                            {
+                                "recovery_decision": {
+                                    "previous_effect": "unchanged",
+                                    "failure_cause": "The previous route produced no useful effect.",
+                                    "next_route": "Use one different current action route.",
+                                    "expected_effect": "The fresh World should expose new task evidence.",
+                                }
+                            },
+                            separators=(",", ":"),
+                        )
+                    )
                 )
+            parts.append(ToolCallPart(name, arguments, tool_call_id=call_id))
+            if scripted == "multiple_gui_actions":
+                parts.append(ToolCallPart(name, arguments, tool_call_id=f"recording-call:{ordinal}:second"))
             elif scripted == "multiple_distinct_gui_actions":
                 alternate = next(item for item in info.function_tools if item.name != name)
                 parts.append(
@@ -587,11 +601,7 @@ def _schema_example(schema: Mapping[str, object], *, last: bool = False) -> obje
     if kind == "array":
         items = schema.get("items", {})
         count = int(schema.get("minItems", 0))
-        return (
-            [_schema_example(items, last=last) for _ in range(count)]
-            if isinstance(items, Mapping)
-            else []
-        )
+        return [_schema_example(items, last=last) for _ in range(count)] if isinstance(items, Mapping) else []
     if kind == "integer":
         return int(schema.get("minimum", 0))
     if kind == "number":

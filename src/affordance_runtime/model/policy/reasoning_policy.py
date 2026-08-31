@@ -60,14 +60,14 @@ class ActionPolicyReasoningPolicy:
                 ActionPolicyInvocationPhase.DELIBERATE,
                 trigger,
                 self.deliberate_max_tokens,
-                "enabled",
+                "disabled",
             )
         if _at_collection_evidence_boundary(context.last_step):
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.DELIBERATE,
                 ActionPolicyInvocationTrigger.EVIDENCE_REVIEW,
                 min(self.deliberate_max_tokens, _EVIDENCE_REVIEW_MAX_TOKENS),
-                "enabled",
+                "disabled",
             )
         return ActionPolicyCallProfile(
             ActionPolicyInvocationPhase.ORDINARY,

@@ -111,9 +111,19 @@ from affordance_runtime.model.providers.port import StructuredOutputFailureKind
 _MAX_PROVIDER_RETRIES = 1
 _ACTION_POLICY_TOOL_RETRY_BUDGET = 1
 _ACTION_POLICY_OUTPUT_RETRY_BUDGET = 1
-_ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES = 3_072
-_ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES = 2_100
-_ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES = 700
+_ATOMIC_RECOVERY_PROMPT_MAX_BYTES = 3_072
+_ATOMIC_RECOVERY_DECISION_MAX_BYTES = 1_200
+_ATOMIC_RECOVERY_TEXT_MAX_CHARS = 240
+_ATOMIC_RECOVERY_EFFECTS = frozenset(
+    {
+        "satisfied",
+        "changed",
+        "unchanged",
+        "unknown",
+        "not_sent",
+        "no_usable_information",
+    }
+)
 _ACTION_POLICY_MAX_PROTOCOL_RETRIES = _ACTION_POLICY_TOOL_RETRY_BUDGET + _ACTION_POLICY_OUTPUT_RETRY_BUDGET
 _DEFAULT_PROVIDER_BACKOFF_S = 1.0
 _MAX_PROVIDER_BACKOFF_S = 5.0
@@ -753,7 +763,9 @@ class PydanticAIGroundedDecisionPort:
                 tool_retry_budget: int,
                 output_retry_budget: int,
                 required_tool_name: str = "",
-                reasoning_checkpoint: str = "",
+                atomic_recovery: bool = False,
+                allow_complete_retry: bool = False,
+                complete_retry: bool = False,
             ):
                 nonlocal transport_retries_remaining
                 persistence_run_id, persistence_capabilities = self._step_persistence_capabilities(agent_name)
@@ -788,10 +800,10 @@ class PydanticAIGroundedDecisionPort:
                         current_prompt,
                         required_tool_name=required_tool_name,
                     )
-                elif force_required_action:
-                    sequence_prompt = _pydantic_decision_recovery_prompt(
+                elif atomic_recovery:
+                    sequence_prompt = _pydantic_atomic_recovery_prompt(
                         current_prompt,
-                        reasoning_checkpoint=reasoning_checkpoint,
+                        complete_retry=complete_retry,
                     )
                 current_agent = Agent(
                     self.model,
@@ -887,18 +899,14 @@ class PydanticAIGroundedDecisionPort:
                     )
                     response_count, failure_kind = _captured_output_failure(serialized)
                     if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
-                        can_retry_length = (
-                            not force_required_action
-                            and phase != ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
-                            and response_count == 1
-                        )
+                        can_retry_complete = allow_complete_retry and response_count == 1
                         latest = self.last_generation_attempts[-1]
                         transcript = dict(latest.transcript) if isinstance(latest.transcript, Mapping) else {}
-                        transcript["status"] = "invalid" if can_retry_length else "failed"
+                        transcript["status"] = "invalid" if can_retry_complete else "failed"
                         transcript["error.code"] = failure_kind.value
                         corrected = replace(
                             latest,
-                            status="invalid" if can_retry_length else "failed",
+                            status="invalid" if can_retry_complete else "failed",
                             output_failure_kind=failure_kind,
                             transcript=transcript,
                         )
@@ -911,9 +919,35 @@ class PydanticAIGroundedDecisionPort:
                             None,
                             UnexpectedModelBehavior("provider output was truncated"),
                             captured_messages,
-                            can_retry_length,
+                            can_retry_complete,
                         )
-                    return result, None, (), False
+                    if atomic_recovery:
+                        atomic_error = _atomic_recovery_decision_error(serialized)
+                        if atomic_error:
+                            can_retry_atomic = allow_complete_retry and response_count == 1
+                            latest = self.last_generation_attempts[-1]
+                            transcript = dict(latest.transcript) if isinstance(latest.transcript, Mapping) else {}
+                            transcript["status"] = "invalid" if can_retry_atomic else "failed"
+                            transcript["error.code"] = "policy_incomplete"
+                            transcript["error.detail"] = atomic_error
+                            corrected = replace(
+                                latest,
+                                status="invalid" if can_retry_atomic else "failed",
+                                output_failure_kind=StructuredOutputFailureKind.JSON_INVALID,
+                                transcript=transcript,
+                            )
+                            object.__setattr__(
+                                self,
+                                "last_generation_attempts",
+                                (*self.last_generation_attempts[:-1], corrected),
+                            )
+                            return (
+                                None,
+                                UnexpectedModelBehavior("atomic recovery decision is incomplete"),
+                                captured_messages,
+                                can_retry_atomic,
+                            )
+                    return result, None, captured_messages, False
                 except UsageLimitExceeded as error:
                     serialized = _serialized_current_pydantic_invocation(
                         captured_messages,
@@ -935,11 +969,10 @@ class PydanticAIGroundedDecisionPort:
                         max_response_count=protocol_request_limit,
                     )
                     response_count, failure_kind = _captured_output_failure(serialized)
-                    can_retry_length = (
-                        not force_required_action
-                        and phase != ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
+                    can_retry_complete = bool(
+                        allow_complete_retry
                         and response_count == 1
-                        and failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED
+                        and (atomic_recovery or failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED)
                     )
                     physical_attempt_phase = (
                         self.last_generation_attempts[-1].phase
@@ -951,67 +984,86 @@ class PydanticAIGroundedDecisionPort:
                         physical_attempt_phase,
                         current_envelope,
                         accepted=False,
-                        terminal_failure=not can_retry_length,
+                        terminal_failure=not can_retry_complete,
                         physical_settings=physical_settings,
                         latency_ms=(time.perf_counter() - started) * 1000,
                     )
-                    return None, error, captured_messages, can_retry_length
+                    return None, error, captured_messages, can_retry_complete
                 finally:
                     transport_retries_remaining = max(
                         0,
                         transport_retries_remaining - (self.last_provider_retry_count - provider_retries_before),
                     )
 
+            atomic_recovery = phase == ActionPolicyInvocationPhase.DELIBERATE.value
             output_retry_budget = (
                 0
-                if phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
+                if atomic_recovery or phase == ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value
                 else _ACTION_POLICY_OUTPUT_RETRY_BUDGET
             )
+            tool_retry_budget = 0 if atomic_recovery else _ACTION_POLICY_TOOL_RETRY_BUDGET
             try:
-                result, error, captured, can_retry_length = await run_output_sequence(
-                    force_required_action=False,
+                result, error, captured, can_retry_complete = await run_output_sequence(
+                    force_required_action=atomic_recovery,
                     attempt_phase=phase,
-                    tool_retry_budget=_ACTION_POLICY_TOOL_RETRY_BUDGET,
+                    tool_retry_budget=tool_retry_budget,
                     output_retry_budget=output_retry_budget,
+                    atomic_recovery=atomic_recovery,
+                    allow_complete_retry=phase != ActionPolicyInvocationPhase.REPRESENTATION_REPAIR.value,
                 )
             except (asyncio.CancelledError, Exception):
                 close_dispatched_pending_history()
                 raise
             if result is not None:
                 return result
-            if can_retry_length:
-                serialized_truncation = _serialized_current_pydantic_invocation(
+            if can_retry_complete:
+                serialized_failure = _serialized_current_pydantic_invocation(
                     captured,
                     max_response_count=_action_policy_protocol_request_limit(
-                        _ACTION_POLICY_TOOL_RETRY_BUDGET,
+                        tool_retry_budget,
                         output_retry_budget,
                     ),
                 )
-                required_tool_name = _truncated_current_tool_name(
-                    serialized_truncation,
-                    offered_names=frozenset(item.name for item in current_envelope.function_tools),
-                )
-                reasoning_checkpoint = (
-                    "" if required_tool_name else _truncated_reasoning_checkpoint(serialized_truncation)
-                )
-                try:
-                    result, error, captured, _unused = await run_output_sequence(
-                        force_required_action=True,
-                        attempt_phase=f"{phase}_output_retry",
-                        # A recognized operation is a semantic anchor. Spend
-                        # the one remaining retry on enforcing the narrowed
-                        # operation surface. Without an anchor, retain the
-                        # existing current-tool retry over the full catalog.
-                        tool_retry_budget=_ACTION_POLICY_TOOL_RETRY_BUDGET,
-                        output_retry_budget=0,
-                        required_tool_name=required_tool_name,
-                        reasoning_checkpoint=reasoning_checkpoint,
+                required_tool_name = (
+                    ""
+                    if atomic_recovery
+                    else _truncated_current_tool_name(
+                        serialized_failure,
+                        offered_names=frozenset(item.name for item in current_envelope.function_tools),
                     )
-                except (asyncio.CancelledError, Exception):
-                    close_dispatched_pending_history()
-                    raise
-                if result is not None:
-                    return result
+                )
+                if atomic_recovery or required_tool_name:
+                    try:
+                        result, error, captured, _unused = await run_output_sequence(
+                            force_required_action=True,
+                            attempt_phase=(f"{phase}_complete_retry" if atomic_recovery else f"{phase}_output_retry"),
+                            tool_retry_budget=0 if atomic_recovery else tool_retry_budget,
+                            output_retry_budget=0,
+                            required_tool_name=required_tool_name,
+                            atomic_recovery=atomic_recovery,
+                            complete_retry=atomic_recovery,
+                        )
+                    except (asyncio.CancelledError, Exception):
+                        close_dispatched_pending_history()
+                        raise
+                    if result is not None:
+                        return result
+                elif self.last_generation_attempts:
+                    latest = self.last_generation_attempts[-1]
+                    transcript = dict(latest.transcript) if isinstance(latest.transcript, Mapping) else {}
+                    transcript["status"] = "failed"
+                    object.__setattr__(
+                        self,
+                        "last_generation_attempts",
+                        (
+                            *self.last_generation_attempts[:-1],
+                            replace(
+                                latest,
+                                status="failed",
+                                transcript=transcript,
+                            ),
+                        ),
+                    )
             if pending_call_parts:
                 object.__setattr__(
                     self,
@@ -1326,7 +1378,12 @@ class PydanticAIGroundedDecisionPort:
                 catalog.specs if catalog is not None else (),
             )
             failure_kind = _latest_structured_output_failure(self.last_generation_attempts)
-            if failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
+            if call_profile.phase is ActionPolicyInvocationPhase.DELIBERATE:
+                failure = _failure(
+                    ModelFailureKind.INVALID_RESPONSE,
+                    "policy_incomplete",
+                )
+            elif failure_kind is StructuredOutputFailureKind.OUTPUT_TRUNCATED:
                 failure = _failure(
                     ModelFailureKind.INVALID_RESPONSE,
                     "output_budget_exhausted",
@@ -2482,9 +2539,7 @@ def _grounded_rejection_exchange(
     argument_paths = spec.ephemeral_argument_paths
     if error.code is GroundedToolResolutionCode.INVALID_ARGUMENTS:
         argument_paths = tuple(
-            dict.fromkeys(
-                (*argument_paths, *invalid_value_paths(call.arguments, spec.input_schema))
-            )
+            dict.fromkeys((*argument_paths, *invalid_value_paths(call.arguments, spec.input_schema)))
         )
     paths_by_call = tuple(
         (call_id, argument_paths if call_id == call.call_id else paths)
@@ -3779,9 +3834,7 @@ def _required_schema_node(
             raise ValueError("ActionPolicy tool schema has an invalid union shape")
         projected_union: dict[str, object] = {
             union_key: [
-                _required_schema_node(variant, root=root)
-                for variant in variants
-                if isinstance(variant, Mapping)
+                _required_schema_node(variant, root=root) for variant in variants if isinstance(variant, Mapping)
             ]
         }
         if len(projected_union[union_key]) != len(variants):
@@ -3846,36 +3899,40 @@ def _pydantic_operation_recovery_prompt(
     return [prompt, instruction]
 
 
-def _pydantic_decision_recovery_prompt(
+def _pydantic_atomic_recovery_prompt(
     prompt: object,
     *,
-    reasoning_checkpoint: str = "",
+    complete_retry: bool,
 ) -> list[object]:
-    """Append one decision-only instruction after pre-operation truncation."""
+    """Require one bounded assessment and one action in the same response."""
 
     instruction = json.dumps(
         {
-            "action_selection_recovery": {
-                "cause": "previous response was truncated before one complete tool call",
-                "checkpoint_status": (
-                    "incomplete, non-authoritative same-call reasoning; verify against the same fresh context"
-                ),
+            "atomic_recovery_decision": {
+                "retry": complete_retry,
                 "instruction": (
-                    "Use the checkpoint only to retain settled work; it is not a completed decision. Complete any "
-                    "unfinished enumeration, classification, or record audit against the same fresh context and "
-                    "active constraints. Preserve every supported positive; the truncation boundary never completes "
-                    "a set. Then return exactly one complete offered tool call. Do not repeat a settled read or "
-                    "pagination state. If evidence supports the requested output, use the final-response tool; "
-                    "otherwise use one materially new action. Add no explanatory text."
+                    "Return one assistant response containing exactly one compact JSON text part matching the "
+                    "decision schema and exactly one complete offered tool call. The JSON is a bounded decision "
+                    "summary, not hidden chain-of-thought or a second plan. Use the same fresh World, exact recent "
+                    "outcomes, stable summary, and active recovery facts. Choose a materially new route when the "
+                    "previous route has no effect; submit when evidence is sufficient; stop re-checking a closed "
+                    "coverage scope. Do not repeat an exact failed attempt."
                 ),
-                "incomplete_reasoning_checkpoint": reasoning_checkpoint,
+                "decision_schema": {
+                    "recovery_decision": {
+                        "previous_effect": sorted(_ATOMIC_RECOVERY_EFFECTS),
+                        "failure_cause": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
+                        "next_route": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
+                        "expected_effect": f"non-empty string <= {_ATOMIC_RECOVERY_TEXT_MAX_CHARS} chars",
+                    }
+                },
             }
         },
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    if len(instruction.encode("utf-8")) > _ACTION_SELECTION_RECOVERY_PROMPT_MAX_BYTES:
-        raise ValueError("action-selection recovery prompt exceeds its capacity reserve")
+    if len(instruction.encode("utf-8")) > _ATOMIC_RECOVERY_PROMPT_MAX_BYTES:
+        raise ValueError("atomic recovery prompt exceeds its capacity reserve")
     if isinstance(prompt, list):
         return [*prompt, instruction]
     return [prompt, instruction]
@@ -3917,7 +3974,7 @@ def _is_pydantic_protocol_recovery_text(value: object) -> bool:
         return False
     return isinstance(payload, Mapping) and set(payload) in (
         {"representation_recovery"},
-        {"action_selection_recovery"},
+        {"atomic_recovery_decision"},
     )
 
 
@@ -3975,8 +4032,9 @@ def _action_policy_physical_settings(
     settings = dict(envelope.model_settings)
     if require_action:
         # DeepSeek rejects required tool choice while thinking is enabled.
-        # The fallback preserves the same semantic envelope and current World,
-        # but trades further reasoning for one complete action envelope.
+        # Recovery therefore externalizes one bounded decision summary beside
+        # the required ToolCall instead of opening an unbounded hidden-thinking
+        # channel.  The semantic envelope and fresh World remain unchanged.
         settings["thinking"] = False
         settings["tool_choice"] = "required"
     else:
@@ -4029,6 +4087,57 @@ def _captured_output_failure(
     )
 
 
+def _atomic_recovery_decision_error(messages: list[dict[str, object]]) -> str:
+    """Validate the bounded assessment paired with one recovery ToolCall."""
+
+    responses = tuple(message for message in messages if message.get("kind") == "response")
+    if len(responses) != 1:
+        return "response_count"
+    parts = responses[0].get("parts")
+    if not isinstance(parts, list):
+        return "parts"
+    text_parts = tuple(
+        part
+        for part in parts
+        if isinstance(part, Mapping)
+        and part.get("part_kind") == "text"
+        and isinstance(part.get("content"), str)
+        and str(part["content"]).strip()
+    )
+    tool_parts = tuple(part for part in parts if isinstance(part, Mapping) and part.get("part_kind") == "tool-call")
+    unsupported = tuple(
+        part for part in parts if not isinstance(part, Mapping) or part.get("part_kind") not in {"text", "tool-call"}
+    )
+    if len(text_parts) != 1 or len(tool_parts) != 1 or unsupported:
+        return "atomic_parts"
+    text = str(text_parts[0]["content"]).strip()
+    if len(text.encode("utf-8")) > _ATOMIC_RECOVERY_DECISION_MAX_BYTES:
+        return "decision_capacity"
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return "decision_json"
+    if not isinstance(payload, Mapping) or set(payload) != {"recovery_decision"}:
+        return "decision_root"
+    decision = payload["recovery_decision"]
+    required = {"previous_effect", "failure_cause", "next_route", "expected_effect"}
+    if not isinstance(decision, Mapping) or set(decision) != required:
+        return "decision_fields"
+    previous_effect = decision["previous_effect"]
+    if previous_effect not in _ATOMIC_RECOVERY_EFFECTS:
+        return "previous_effect"
+    for field_name in ("failure_cause", "next_route", "expected_effect"):
+        value = decision[field_name]
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or value != value.strip()
+            or len(value) > _ATOMIC_RECOVERY_TEXT_MAX_CHARS
+        ):
+            return field_name
+    return ""
+
+
 def _truncated_current_tool_name(
     messages: list[dict[str, object]],
     *,
@@ -4059,64 +4168,6 @@ def _truncated_current_tool_name(
     if len(names) != 1 or names[0] not in offered_names:
         return ""
     return names[0]
-
-
-def _truncated_reasoning_checkpoint(messages: list[dict[str, object]]) -> str:
-    """Project one bounded, non-authoritative same-call continuation checkpoint."""
-
-    responses = tuple(message for message in messages if message.get("kind") == "response")
-    if not responses:
-        return ""
-    response = responses[-1]
-    if str(response.get("finish_reason") or "").casefold() not in {"length", "max_tokens"}:
-        return ""
-    parts = response.get("parts")
-    parts = parts if isinstance(parts, list) else []
-    reasoning = "\n".join(
-        str(part.get("content") or "").strip()
-        for part in parts
-        if isinstance(part, Mapping)
-        and part.get("part_kind") in {"thinking", "text"}
-        and str(part.get("content") or "").strip()
-    )
-    if _json_string_payload_bytes(reasoning) <= _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES:
-        return reasoning
-    omission_marker = "\n[...truncated reasoning omitted...]\n"
-    tail_json_bytes = (
-        _ACTION_SELECTION_RECOVERY_CHECKPOINT_MAX_JSON_BYTES
-        - _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES
-        - _json_string_payload_bytes(omission_marker)
-    )
-    return (
-        _bounded_json_string_edge(
-            reasoning,
-            _ACTION_SELECTION_RECOVERY_CHECKPOINT_HEAD_JSON_BYTES,
-            suffix=False,
-        )
-        + omission_marker
-        + _bounded_json_string_edge(reasoning, tail_json_bytes, suffix=True)
-    )
-
-
-def _bounded_json_string_edge(value: str, maximum_payload_bytes: int, *, suffix: bool) -> str:
-    """Return the longest prefix/suffix inside one compact-JSON string byte bound."""
-
-    if maximum_payload_bytes < 0:
-        raise ValueError("JSON string edge bound must be non-negative")
-    low, high = 0, len(value)
-    while low < high:
-        middle = (low + high + 1) // 2
-        candidate = value[-middle:] if suffix else value[:middle]
-        if _json_string_payload_bytes(candidate) <= maximum_payload_bytes:
-            low = middle
-        else:
-            high = middle - 1
-    return value[-low:] if suffix and low else value[:low]
-
-
-def _json_string_payload_bytes(value: str) -> int:
-    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    return len(encoded) - 2
 
 
 def _structured_output_failure_for_response(
