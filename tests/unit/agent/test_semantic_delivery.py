@@ -367,7 +367,7 @@ def _functional_world(*, rows: int = 3):
     return result.observation
 
 
-def _paginated_collection_world(*, ambiguous: bool = False):
+def _paginated_collection_world(*, ambiguous: bool = False, embedded: bool = False):
     source_id = "source:paginated-collection"
     rows = ("record:one", "record:two")
     other_rows = ("other:one", "other:two") if ambiguous else ()
@@ -400,14 +400,18 @@ def _paginated_collection_world(*, ambiguous: bool = False):
             "generic",
             "Current results",
             parent_structure_id="root",
-            child_structure_ids=("records", *(("other-records",) if ambiguous else ()), "pages"),
+            child_structure_ids=(
+                "records",
+                *(("other-records",) if ambiguous else ()),
+                *(() if embedded else ("pages",)),
+            ),
         ),
         ObservationStructureNode(
             "records",
             "list",
             "Records",
             parent_structure_id="section",
-            child_structure_ids=rows,
+            child_structure_ids=(*rows, *(("next-item",) if embedded else ())),
         ),
         *(
             ObservationStructureNode(
@@ -442,18 +446,24 @@ def _paginated_collection_world(*, ambiguous: bool = False):
             if ambiguous
             else ()
         ),
-        ObservationStructureNode(
-            "pages",
-            "list",
-            "Pages",
-            parent_structure_id="section",
-            child_structure_ids=("next-item",),
+        *(
+            ()
+            if embedded
+            else (
+                ObservationStructureNode(
+                    "pages",
+                    "list",
+                    "Pages",
+                    parent_structure_id="section",
+                    child_structure_ids=("next-item",),
+                ),
+            )
         ),
         ObservationStructureNode(
             "next-item",
             "listitem",
             "",
-            parent_structure_id="pages",
+            parent_structure_id="records" if embedded else "pages",
             child_structure_ids=("next",),
         ),
         ObservationStructureNode(
@@ -558,6 +568,68 @@ def test_read_region_distinguishes_local_completion_from_web_collection_continua
         item for item in context.complete_actions if item.action_id == activated.decision.action_id
     )
     assert selected.target_id == "pagination:next"
+
+
+def test_collection_region_owns_its_embedded_current_paginator() -> None:
+    world = _paginated_collection_world(embedded=True)
+    task = TaskGoal(
+        "embedded-paginated-collection",
+        "Inspect every record",
+        allowed_effects=("external_ui_interaction",),
+        risk_profile=RiskProfile.LOW,
+    )
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpaceBuilder().build(task, world),
+        _evaluation(task, world.observation_id),
+    )
+    collection = next(
+        region
+        for region in context.region_index.regions
+        if region.role == "list" and region.repeated_item_roots
+    )
+
+    assert collection.collection_navigation == (("pagination:next", "next"),)
+    assert any(
+        option.target_id == "pagination:next" and option.operation == "activate"
+        for option in context.complete_actions
+    )
+
+    _, catalog = catalog_for(context)
+    resolved = resolve_catalog_call(
+        catalog,
+        ToolCall(
+            "read_region",
+            {"region_ref": context.canonical_world.region_refs[collection.key]},
+            "call:embedded-read",
+        ),
+        expected_context_id=context.context_id,
+    )
+    continuation = resolved.decision.result["collection_continuations"][0]
+    assert resolved.decision.result["collection_coverage"] == "open"
+    activated = resolve_catalog_call(
+        compile_grounded_tool_catalog(
+            context,
+            GroundedToolPhase.ACTION_SELECTION,
+            build_model_turn_delivery(
+                context,
+                include_images=False,
+                committed_step=StepResult(
+                    resolved.decision,
+                    world,
+                    world,
+                    _evaluation(task, world.observation_id),
+                    feedback="local_tool_result",
+                ),
+                pending_tool_call_id="call:embedded-read",
+                pending_tool_name="read_region",
+            ),
+        ),
+        ToolCall("activate", {"target": continuation["target_ref"]}, "call:embedded-next"),
+        expected_context_id=context.context_id,
+    )
+    assert isinstance(activated.decision, SelectAction)
 
 
 def test_ambiguous_sibling_collections_do_not_claim_one_paginator() -> None:

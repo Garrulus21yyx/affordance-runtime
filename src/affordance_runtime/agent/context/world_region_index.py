@@ -1139,20 +1139,49 @@ def _associate_collection_navigation(
 
     regions_by_key = {item.key: item for item in regions}
     assigned: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    canonical = {
+        (item.source_observation_id, item.source_target_id): item.canonical_target_id
+        for item in observation.entity_source_links
+    }
     for source in observation.sources:
         nodes = {item.structure_id: item for item in source.structure}
         parents = _parents(nodes)
+        directly_owned: set[str] = set()
+        for region in regions:
+            navigation = pagination_by_region.get(region.key, ())
+            if region.source_id != source.observation_id or not navigation or not region.repeated_item_roots:
+                continue
+            pagination_targets = {target_id for target_id, _relation in navigation}
+            record_roots = tuple(
+                root_id
+                for root_id in region.repeated_item_roots
+                if not _structure_contains_any_target(
+                    root_id,
+                    pagination_targets,
+                    nodes,
+                    source.observation_id,
+                    canonical,
+                )
+            )
+            # Two non-paginator item roots prove that this is a repeated
+            # collection which embeds its paginator. A paginator-only list (or
+            # an ambiguous one-record shape) remains available for the nearest
+            # unique structural-owner pass below instead of claiming itself.
+            if len(record_roots) >= 2:
+                assigned[region.key].extend(navigation)
+                directly_owned.add(region.key)
         paginators = tuple(
             regions_by_key[key]
             for key in pagination_by_region
             if regions_by_key[key].source_id == source.observation_id
+            and key not in directly_owned
         )
         collections = tuple(
             region
             for region in regions
             if region.source_id == source.observation_id
             and region.repeated_item_roots
-            and region.key not in pagination_by_region
+            and (region.key not in pagination_by_region or region.key in directly_owned)
         )
         for paginator in paginators:
             scored = tuple(
@@ -1185,6 +1214,21 @@ def _associate_collection_navigation(
         else region
         for region in regions
     )
+
+
+def _structure_contains_any_target(
+    root_id: str,
+    target_ids: set[str],
+    nodes: Mapping[str, object],
+    source_id: str,
+    canonical: Mapping[tuple[str, str], str],
+) -> bool:
+    for structure_id in _walk_ids(root_id, nodes):
+        source_target_id = str(getattr(nodes[structure_id], "semantic_target_id", ""))
+        target_id = canonical.get((source_id, source_target_id), source_target_id)
+        if target_id in target_ids:
+            return True
+    return False
 
 
 def _collection_paginator_distance(

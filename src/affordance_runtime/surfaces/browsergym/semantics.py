@@ -645,6 +645,8 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                 BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
                 "DOM snapshot node tables have conflicting lengths",
             )
+        decoded_attributes: list[dict[str, str]] = []
+        tags: list[str] = []
         for node_index, encoded_attributes in enumerate(attributes):
             if not isinstance(encoded_attributes, list) or len(encoded_attributes) % 2:
                 raise BrowserGymSemanticError(
@@ -656,10 +658,19 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                 name = _dom_string(strings, encoded_attributes[offset])
                 value = _dom_string(strings, encoded_attributes[offset + 1], allow_missing=True)
                 decoded[name.casefold()] = value
+            decoded_attributes.append(decoded)
+            tags.append(_dom_string(strings, node_names[node_index]).casefold())
+        parent_indices = _dom_parent_indices(nodes, len(attributes))
+        pagination_relations = _dom_pagination_relations(
+            tuple(tags),
+            tuple(decoded_attributes),
+            parent_indices,
+        )
+        for node_index, decoded in enumerate(decoded_attributes):
             bid = decoded.get("bid", "").strip()
             if not bid:
                 continue
-            tag = _dom_string(strings, node_names[node_index]).casefold()
+            tag = tags[node_index]
             state: list[tuple[str, SemanticScalar | tuple[str, ...]]] = []
             if tag:
                 state.append(("semantic.dom.tag", tag[:MAX_SEMANTIC_TEXT]))
@@ -675,7 +686,7 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
                     ))
                     if len(destination) > MAX_LINK_DESTINATION_TEXT:
                         state.append(("semantic.link.destination.truncated", True))
-                    relation = _dom_pagination_relation(decoded)
+                    relation = pagination_relations.get(node_index, "")
                     if relation:
                         state.append(("pagination_relation", relation))
                         state.append((
@@ -707,22 +718,95 @@ def _dom_semantic_evidence(raw: dict[str, object]) -> dict[str, _DomSemanticEvid
     return result
 
 
-def _dom_pagination_relation(attributes: dict[str, str]) -> str:
-    """Normalize explicit HTML pagination markers without reading task text.
-
-    ``rel=next|prev`` is the platform contract.  The ``next``/``previous`` and
-    ``page`` class tokens are the same structural conventions already
-    supported by the DOM adapter.  A destination is required by the caller,
-    so decorative classes cannot create an executable continuation.
-    """
-
+def _explicit_pagination_relation(attributes: dict[str, str]) -> str:
     relations = set(attributes.get("rel", "").casefold().split())
-    classes = set(attributes.get("class", "").casefold().split())
-    if "next" in relations or "next" in classes:
+    if "next" in relations:
         return "next"
-    if relations & {"prev", "previous"} or classes & {"prev", "previous"}:
+    if relations & {"prev", "previous"}:
+        return "previous"
+    return ""
+
+
+def _class_pagination_relation(attributes: dict[str, str]) -> str:
+    classes = set(attributes.get("class", "").casefold().split())
+    if "next" in classes:
+        return "next"
+    if classes & {"prev", "previous"}:
         return "previous"
     return "page" if "page" in classes else ""
+
+
+def _dom_parent_indices(nodes: dict[str, object], size: int) -> tuple[int, ...]:
+    raw = nodes.get("parentIndex")
+    if raw is None:
+        return ()
+    if (
+        not isinstance(raw, list)
+        or len(raw) != size
+        or any(type(item) is not int or item < -1 or item >= size for item in raw)
+    ):
+        raise BrowserGymSemanticError(
+            BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
+            "DOM snapshot parent indexes are malformed",
+        )
+    return tuple(raw)
+
+
+def _dom_pagination_relations(
+    tags: tuple[str, ...],
+    attributes: tuple[dict[str, str], ...],
+    parent_indices: tuple[int, ...],
+) -> dict[int, str]:
+    """Return only standard or structurally-proven pagination relations.
+
+    HTML ``rel=next|prev`` is authoritative on its own. Generic class names
+    such as ``next`` are not: they also describe workflows, carousels, and
+    unrelated navigation. Class-based relations therefore require one bounded
+    list owner that is explicitly marked as pagination or contains a coherent
+    multi-link page group. Missing ancestry fails closed without removing the
+    ordinary link from the ActionSpace.
+    """
+
+    result: dict[int, str] = {}
+    grouped: dict[int, list[tuple[int, str]]] = {}
+    for index, (tag, item) in enumerate(zip(tags, attributes, strict=True)):
+        if tag not in {"a", "area"}:
+            continue
+        explicit = _explicit_pagination_relation(item)
+        if explicit:
+            result[index] = explicit
+            continue
+        relation = _class_pagination_relation(item)
+        owner = _nearest_dom_list_owner(index, tags, parent_indices)
+        if relation and owner is not None:
+            grouped.setdefault(owner, []).append((index, relation))
+
+    for owner, candidates in grouped.items():
+        owner_classes = set(attributes[owner].get("class", "").casefold().split())
+        structurally_explicit = "pagination" in owner_classes
+        coherent_page_group = len(candidates) >= 2 and any(
+            relation == "page" for _index, relation in candidates
+        )
+        if structurally_explicit or coherent_page_group:
+            result.update(candidates)
+    return result
+
+
+def _nearest_dom_list_owner(
+    index: int,
+    tags: tuple[str, ...],
+    parent_indices: tuple[int, ...],
+) -> int | None:
+    if not parent_indices:
+        return None
+    current = parent_indices[index]
+    seen: set[int] = set()
+    while current >= 0 and current not in seen:
+        seen.add(current)
+        if tags[current] in {"ul", "ol"}:
+            return current
+        current = parent_indices[current]
+    return None
 
 
 def _dom_document_base_url(

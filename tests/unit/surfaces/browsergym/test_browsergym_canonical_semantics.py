@@ -187,21 +187,43 @@ def test_link_destination_is_current_read_only_semantics_not_a_binding() -> None
 
 def test_browsergym_normalizes_explicit_link_pagination_without_task_text() -> None:
     raw = raw_observation(
+        ax_node("page-2", "link", "Page 2"),
         ax_node("next-page", "link", "Weiter"),
-        ax_node("ordinary", "button", "Advance workflow"),
+        ax_node("ordinary", "link", "Advance workflow"),
         url="https://forum.example/catalog?page=1",
     )
     raw["dom_object"] = dom_snapshot(
+        ("ul", "pager", {"class": "items pages-items"}),
+        ("li", "page-item", {}),
+        ("a", "page-2", {"href": "?page=2", "class": "page"}),
+        ("li", "next-item", {}),
         ("a", "next-page", {"href": "?page=2", "class": "action next"}),
-        ("button", "ordinary", {"class": "next"}),
+        ("a", "ordinary", {"href": "/wizard/step-2", "class": "next"}),
     )
+    raw["dom_object"]["documents"][0]["nodes"]["parentIndex"] = [-1, 0, 1, 0, 3, -1]
 
     analysis = analyze_browsergym_semantics(raw)
     by_bid = {item.private_bid: item for item in analysis.controls}
 
+    assert dict(by_bid["page-2"].public_state)["pagination_relation"] == "page"
     assert dict(by_bid["next-page"].public_state)["pagination_relation"] == "next"
     assert dict(by_bid["next-page"].public_state)["pagination_current"] is False
     assert "pagination_relation" not in dict(by_bid["ordinary"].public_state)
+
+
+def test_browsergym_accepts_standard_link_pagination_rel_without_dom_ancestry() -> None:
+    raw = raw_observation(
+        ax_node("next-page", "link", "Continue"),
+        url="https://forum.example/catalog?page=1",
+    )
+    raw["dom_object"] = dom_snapshot(
+        ("a", "next-page", {"href": "?page=2", "rel": "next"}),
+    )
+
+    control = canonical_control_for_bid(raw, "next-page")
+
+    assert control is not None
+    assert dict(control.public_state)["pagination_relation"] == "next"
 
 
 @pytest.mark.parametrize("href", ("javascript:alert(1)", "mailto:user@example.com", "data:text/plain,x"))
