@@ -461,23 +461,17 @@ seconds. The complete fixed-interpreter suite reports `2251 passed, 19 skipped, 
 seconds. The sole deselection is the documented repository-missing archived dashboard trace. This supersedes the
 earlier Task388 live-open statement for this bounded case, not the separate Task801 or ten-case efficiency status.
 
-The independent fresh-context review then found two provider-free pagination P2s without invalidating the r9 native
-result. A plain workflow link `<a class="next">` could be mislabeled as pagination, and a typed current paginator
-embedded in the same list region as its records could be omitted from that collection. Commit `b8b6f2fe` requires
-standard `rel=next|prev` or a structurally proven pagination group before class tokens gain pagination authority, and
-assigns an embedded paginator to its own repeated collection. Ordinary links and the complete ActionSpace are
-unchanged. The first re-review then showed that a standard `rel=next` proves direction but not ownership: even the
-`d72c783b` restriction to a sibling paginator list under one local neutral structural owner could falsely join two
-unrelated sibling lists. Commit `7206d5a3` removes the unowned sibling join entirely. A same-region embedded
-paginator-only item can make its collection `open`; every sibling route stays in the complete ActionSpace, but
-collection coverage remains `unknown` without explicit Surface-owned collection identity. Final fresh review then
-showed that a record-local `rel=next` (for example, article continuation) is direction evidence but not a paginator
-item. Commit `5fb14fe6` requires the independent repeated item's target subtree to contain only typed pagination
-targets beside at least two record items. A generated 3–8 record property proves that placing the route in any record
-keeps coverage `unknown` while retaining its activate route. No distance, label, site, or task heuristic replaces the
-owner proof. The owner-related set reports `148 passed, 1 deselected`; the full fixed-interpreter suite reports
-`2255 passed, 19 skipped, 1 deselected, 1 warning` in 109.00 seconds. This provider-free follow-up has not been given
-a second live Task388 run and does not alter the accepted r9 attestation.
+Independent fresh-context review did not invalidate the r9 native result, but it did falsify the attempted collection
+association. Standard `rel=next`, a structural pagination group, sibling proximity, same-region placement, and a
+standalone-looking item prove direction or layout—not which business collection the route paginates. Commit
+`7d61f594` therefore deletes the association and `WorldRegion.collection_navigation` instead of adding another DOM
+shape rule. Pagination direction and every current executable route remain in the complete ActionSpace. Without an
+explicit Surface-owned collection identity, repeated `read_region` coverage is `unknown` with no continuation; the
+single ActionPolicy decides whether an ordinary pagination route can expose materially new records, and the existing
+Monitor/Runtime loop handles no progress and exact replay. The owner-related set reports `147 passed, 1 deselected`;
+the full fixed-interpreter suite reports `2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.06 seconds. This
+provider-free rollback has not been given a second live Task388 run and does not alter the accepted r9 attestation for
+the separate ranking and response-codec repairs.
 
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 

@@ -507,44 +507,24 @@ Task388 efficiency rescore; the live convergence status remains open until the c
 because the prior mutation already left `/groups/crew` in the shared GitLab state, so it cannot provide a clean
 comparison without an explicit environment reset.
 
-### 2026-08-31 collection coverage and candidate-relevance convergence — live verified, bounded
+### 2026-08-31 collection ownership rollback and candidate relevance — live verified, bounded
 
-Commit `1c33a8e6` makes a bounded subset of site pagination a typed World fact without adding a progress ledger.
-BrowserGym projects an explicitly supported relation/current marker on a current link, and the region index associates
-a current executable continuation with a repeated collection only when an independent paginator-only item is
-embedded in that same collection region. `read_region` returns
-`collection_coverage=open` plus that continuation when the proof exists; otherwise a repeated collection is
-`unknown`, never silently closed. It does not claim a page number, total page count, or terminal coverage without
-Surface evidence. These are current-World scope facts: record bodies remain in the same-call ToolReturn/native
-history, cross-World novelty remains in `ObservationDeliveryStore`, and the single ActionPolicy still decides whether
-another route is materially useful.
+Commit `1c33a8e6` introduced typed pagination direction and attempted to associate a current route with one repeated
+collection. Successive held-out reviews showed one shared authority error rather than several special cases:
+standard `rel=next`, structural pagination markup, sibling proximity, same-region placement, and a standalone-looking
+item can establish route direction or layout, but none identifies the business collection it paginates. Continuing
+to refine those shapes would make the region index a second SurfaceAdapter.
 
-Fresh review found two gaps in that positive contract. A generic `<a class="next">` could be mislabeled as pagination
-without a pagination owner, and a paginator embedded in the same list region as its repeated records was excluded
-from association. Commit `b8b6f2fe` closes both at the existing owners. Standard HTML `rel=next|prev` remains direct
-evidence; class-based relations require one structural pagination list or a coherent multi-link page group, so a
-wizard/carousel-style `next` link remains an ordinary ActionSpace route. The region index assigns an independent
-embedded paginator item to its own repeated collection; an unowned sibling paginator does not change collection
-coverage.
+Commit `7d61f594` removes the association and its `WorldRegion.collection_navigation` state. BrowserGym still exposes
+only standard or structurally supported pagination direction, and every current executable route remains in the
+complete ActionSpace. Without an explicit Surface-owned collection identity, `read_region` reports a repeated
+collection as `collection_coverage=unknown` with no continuation. The same ActionPolicy may choose a current
+pagination action when it can expose materially new records; `ActionOutcome`, `EpisodeMonitor`, and Runtime exact
+replay admission remain the single correction loop. No distance, ancestor, item-shape, label, site, or task rule
+infers ownership, and no progress ledger or second planner was added.
 
-The first re-review then separated link direction from collection ownership. Even standards-valid `rel=next` proves
-only direction, not that a workflow route belongs to the page's record list. Commit `d72c783b` attempted to limit the
-sibling join to a paginator list under one local neutral structural owner, but a held-out pair of unrelated sibling
-lists remained indistinguishable from the supported positive shape. Commit `7206d5a3` therefore removes that
-unowned sibling join instead of adding another proximity heuristic. Same-region embedded ownership remains
-supported. Every sibling route remains executable in the complete ActionSpace, but the collection stays `unknown`
-until a future Surface contract supplies explicit collection identity. This is a fail-closed ownership boundary, not
-a new progress state or control path.
-
-Final fresh review found one remaining same-region ambiguity: a standards-valid `rel=next` inside one business record
-could be mistaken for a collection paginator when two other records remained. Commit `5fb14fe6` makes the positive
-proof explicit. The relation target must occupy an independent repeated item whose target subtree contains only
-typed pagination targets, beside at least two non-paginator record items. A record-local “next chapter” route remains
-current and executable but cannot authorize collection coverage. A generated property varies 3–8 records and the
-record carrying that route; every such shape remains `unknown` while retaining the activate route.
-
-At product SHA `5fb14fe6`, the owner-related set reports `148 passed, 1 deselected`; the complete fixed-interpreter
-suite reports `2255 passed, 19 skipped, 1 deselected, 1 warning` in 109.00 seconds. The sole deselection is the
+At product SHA `7d61f594`, the owner-related set reports `147 passed, 1 deselected`; the complete fixed-interpreter
+suite reports `2254 passed, 19 skipped, 1 deselected, 1 warning` in 110.06 seconds. The sole deselection is the
 documented repository-missing archived dashboard trace.
 
 The first live Task388 run on that repair exposed a separate ranking error. The `2 stars` control was not a hidden or
@@ -581,13 +561,13 @@ improvement and official task success, not a claim that heuristic ranking or pol
 
 At the live product SHA `5ebcb58f`, the affected cross-layer gate reported `526 passed, 3 skipped, 1 deselected`; the
 full fixed BrowserGym-interpreter suite reported `2251 passed, 19 skipped, 1 deselected, 1 warning` in 106.67 seconds.
-After the final fresh-review pagination refinement, product SHA `5fb14fe6` reports
-`148 passed, 1 deselected` across the owner-related set and
-`2255 passed, 19 skipped, 1 deselected, 1 warning` across the full suite in 109.00 seconds. The sole deselection
+After the collection-ownership rollback, product SHA `7d61f594` reports
+`147 passed, 1 deselected` across the owner-related set and
+`2254 passed, 19 skipped, 1 deselected, 1 warning` across the full suite in 110.06 seconds. The sole deselection
 remains the repository-missing archived dashboard trace. These gates cover the explicit-query boundary, offscreen
-executable preservation, candidate/Catalog delivery, structurally proven pagination relation and independent
-paginator-item ownership, Monitor/recovery, and the WebArena response codec; they do not turn a one-case live result
-into aggregate benchmark closure.
+executable preservation, candidate/Catalog delivery, pagination-direction admission without inferred collection
+ownership, Monitor/recovery, and the WebArena response codec; they do not turn a one-case live result into aggregate
+benchmark closure.
 
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
