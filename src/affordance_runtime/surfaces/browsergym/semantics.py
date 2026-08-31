@@ -18,7 +18,11 @@ from affordance_runtime.surfaces.browsergym.interaction_profile import (
     diagnostic_browsergym_roles,
     is_inventory_target_browsergym_role,
 )
-from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
+from affordance_runtime.world.state_semantics import (
+    VALUE_SCOPE_ACTIVE_SEGMENT,
+    VALUE_SCOPE_STATE_KEY,
+    VALUE_TRUNCATED_STATE_KEY,
+)
 
 PRIVATE_CONTROL_PROPERTIES_KEY = "_browsergym_private_control_properties"
 MAX_SEMANTIC_TEXT = 240
@@ -179,19 +183,34 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
             BrowserGymSemanticErrorCode.MALFORMED_PRIVATE_PROPERTIES,
             "observation is not a mapping",
         )
-    records = _normalized_records(raw, _ax_records(raw))
     dom_semantics = _dom_semantic_evidence(raw)
     physical = _physical_properties(raw)
     dom_properties = _dom_properties(raw)
+    records = _normalized_records(
+        raw,
+        _with_dom_only_clickable_records(
+            _ax_records(raw),
+            dom_semantics,
+            physical,
+            dom_properties,
+        ),
+    )
     suppressed_clickable_bids = _suppressed_dom_clickable_bids(records, dom_properties)
+    by_node_id: dict[str, list[_AxRecord]] = {}
+    by_bid: dict[str, list[_AxRecord]] = {}
+    for record in records:
+        by_node_id.setdefault(record.node_id, []).append(record)
+        if record.bid:
+            by_bid.setdefault(record.bid, []).append(record)
     suppressed_native_bids, native_alias_records = _nested_native_control_aliases(
         records,
         physical,
         dom_semantics,
+        by_node_id={
+            node_id: tuple(items)
+            for node_id, items in by_node_id.items()
+        },
     )
-    by_node_id: dict[str, list[_AxRecord]] = {}
-    for record in records:
-        by_node_id.setdefault(record.node_id, []).append(record)
     controls: list[CanonicalBrowserControl] = []
     seen_controls: set[str] = set()
     option_owners: dict[str, str] = {}
@@ -205,7 +224,9 @@ def analyze_browsergym_semantics(raw: object) -> BrowserGymSemanticAnalysis:
         identity = record.bid or f"node:{record.node_id}"
         if identity in seen_controls:
             continue
-        same_bid = [item for item in records if record.bid and item.bid == record.bid and _is_semantic_record(item)]
+        same_bid = tuple(
+            item for item in by_bid.get(record.bid, ()) if _is_semantic_record(item)
+        )
         if any(_record_signature(item) != _record_signature(record) for item in same_bid):
             raise BrowserGymSemanticError(
                 BrowserGymSemanticErrorCode.CONFLICTING_BID,
@@ -289,6 +310,75 @@ def canonical_control_for_bid(raw: object, bid: str) -> CanonicalBrowserControl 
         (item for item in analyze_browsergym_semantics(raw).controls if item.private_bid == bid),
         None,
     )
+
+
+def _with_dom_only_clickable_records(
+    records: tuple[_AxRecord, ...],
+    dom_semantics: dict[str, _DomSemanticEvidence],
+    physical: dict[str, object],
+    dom_properties: dict[str, object],
+) -> tuple[_AxRecord, ...]:
+    """Conserve clickable DOM elements omitted from the AX record set.
+
+    BrowserGym marks DOM elements and captures DOM/AX separately. A custom
+    widget can therefore have a current DOM BID and clickability receipt while
+    its AX element is absent from that physical sample. The DOM identity is
+    still executable through BrowserGym, so publish one bounded semantic
+    record instead of leaving readable child text without an action route.
+    """
+
+    represented_bids = {item.bid for item in records if item.bid}
+    additions: list[_AxRecord] = []
+    for bid, properties in dom_properties.items():
+        if (
+            bid in represented_bids
+            or not isinstance(properties, dict)
+            or properties.get("clickable") is not True
+        ):
+            continue
+        evidence = dom_semantics.get(bid)
+        values = dict(evidence.state) if evidence is not None else {}
+        authored_role = values.get("semantic.dom.attribute.role")
+        role = (
+            authored_role
+            if isinstance(authored_role, str) and browsergym_role_spec(authored_role) is not None
+            else _native_dom_role(
+                evidence.tag if evidence is not None else "",
+                values,
+            )
+        )
+        private = physical.get(bid)
+        additions.append(
+            _AxRecord(
+                f"dom:{bid}",
+                "",
+                (),
+                bid,
+                role or "generic",
+                _private_label_hint(private),
+                (),
+            )
+        )
+    return (*records, *additions)
+
+
+def _native_dom_role(tag: str, values: dict[str, object]) -> str:
+    input_type = str(values.get("semantic.dom.attribute.type", "")).casefold()
+    if tag == "input":
+        return {
+            "button": "button",
+            "checkbox": "checkbox",
+            "radio": "radio",
+            "range": "slider",
+            "submit": "button",
+        }.get(input_type, "textbox")
+    return {
+        "a": "link",
+        "area": "link",
+        "button": "button",
+        "select": "combobox",
+        "textarea": "textbox",
+    }.get(tag, "")
 
 
 def _ax_records(raw: dict[str, object]) -> tuple[_AxRecord, ...]:
@@ -750,6 +840,8 @@ def _nested_native_control_aliases(
     records: tuple[_AxRecord, ...],
     physical: dict[str, object],
     dom_semantics: dict[str, _DomSemanticEvidence],
+    *,
+    by_node_id: dict[str, tuple[_AxRecord, ...]],
 ) -> tuple[frozenset[str], dict[str, _AxRecord]]:
     """Collapse one proven native wrapper/anchor interaction.
 
@@ -770,7 +862,7 @@ def _nested_native_control_aliases(
             or wrapper.role == "clickable"
         ):
             continue
-        owned = _all_native_executable_descendants(wrapper, records)
+        owned = _all_native_executable_descendants(wrapper, by_node_id)
         if len(owned) != 1:
             continue
         anchor_bid = next(iter(owned))
@@ -841,9 +933,8 @@ def _normalized_dom_title(dom_evidence: _DomSemanticEvidence | None) -> str:
 
 def _all_native_executable_descendants(
     owner: _AxRecord,
-    records: tuple[_AxRecord, ...],
+    by_node_id: dict[str, tuple[_AxRecord, ...]],
 ) -> frozenset[str]:
-    by_node_id = {item.node_id: item for item in records if item.node_id}
     pending = list(owner.child_ids)
     visited: set[str] = set()
     result: set[str] = set()
@@ -852,13 +943,11 @@ def _all_native_executable_descendants(
         if not node_id or node_id in visited:
             continue
         visited.add(node_id)
-        record = by_node_id.get(node_id)
-        if record is None:
-            continue
-        spec = browsergym_role_spec(record.role)
-        if record.role != "clickable" and record.bid and spec is not None and spec.executable:
-            result.add(record.bid)
-        pending.extend(record.child_ids)
+        for record in by_node_id.get(node_id, ()):
+            spec = browsergym_role_spec(record.role)
+            if record.role != "clickable" and record.bid and spec is not None and spec.executable:
+                result.add(record.bid)
+            pending.extend(record.child_ids)
     return frozenset(result)
 
 
@@ -1052,6 +1141,11 @@ def _canonical_control(
         public_state.append(("active", physical["active"]))
     if isinstance(physical, dict) and physical.get("focused") is True:
         public_state.append(("focused", physical["focused"]))
+    if (
+        isinstance(physical, dict)
+        and physical.get("value_scope") == VALUE_SCOPE_ACTIVE_SEGMENT
+    ):
+        public_state.append((VALUE_SCOPE_STATE_KEY, VALUE_SCOPE_ACTIVE_SEGMENT))
     if isinstance(physical, dict) and isinstance(physical.get("color_family"), str):
         color = physical["color_family"]
         public_state.append(

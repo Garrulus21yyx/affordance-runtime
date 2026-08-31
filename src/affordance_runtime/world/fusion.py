@@ -90,8 +90,11 @@ class WorldFusion:
         conflicts: list[ObservationConflict] = []
         bindings: list[ActionBinding] = []
         links_by_canonical: dict[str, list[EntitySourceLink]] = defaultdict(list)
+        mapping_by_source: dict[str, dict[str, str]] = defaultdict(dict)
         for link in plan.links:
             links_by_canonical[link.canonical_target_id].append(link)
+        for endpoint, canonical_id in plan.mapping.items():
+            mapping_by_source[endpoint.source_observation_id][endpoint.source_target_id] = canonical_id
 
         for canonical_id in plan.canonical_order:
             endpoint_targets = tuple(
@@ -104,7 +107,11 @@ class WorldFusion:
                     key=lambda item: (item.source_observation_id, item.source_target_id),
                 )
             )
-            target, target_conflicts = _fuse_target(canonical_id, endpoint_targets, plan.mapping)
+            target, target_conflicts = _fuse_target(
+                canonical_id,
+                endpoint_targets,
+                mapping_by_source,
+            )
             targets.append(target)
             conflicts.extend(target_conflicts)
 
@@ -515,7 +522,7 @@ def _coordinate_spaces_compatible(
 def _fuse_target(
     canonical_id: str,
     endpoint_targets: tuple[tuple[SurfaceObservation, SemanticTarget], ...],
-    mapping: dict[SourceEntityEndpoint, str],
+    mapping_by_source: dict[str, dict[str, str]],
 ) -> tuple[SemanticTarget, list[ObservationConflict]]:
     conflicts: list[ObservationConflict] = []
     role, role_conflicted = OBSERVATION_PREDICATE_REGISTRY.resolve(
@@ -545,11 +552,7 @@ def _fuse_target(
             state[predicate] = value
     relation_claims: dict[str, list[object]] = defaultdict(list)
     for source, target in endpoint_targets:
-        local_mapping = {
-            endpoint.source_target_id: canonical
-            for endpoint, canonical in mapping.items()
-            if endpoint.source_observation_id == source.observation_id
-        }
+        local_mapping = mapping_by_source[source.observation_id]
         for key, value in _rewrite_relations(dict(target.relations), local_mapping).items():
             relation_claims[key].append(value)
     relations: dict[str, object] = {}

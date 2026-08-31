@@ -111,6 +111,56 @@ def test_thread_bound_capture_batches_large_stable_executable_inventory() -> Non
     assert enriched[PRIVATE_CONTROL_PROPERTIES_KEY]["link-1999"]["visible"] is True
 
 
+def test_bulk_dom_capture_projects_pointer_affordance_and_composite_value_scope() -> None:
+    class PhysicalPage:
+        frames = ()
+
+        def evaluate(self, script, bids):
+            assert script == browsergym_backend._BULK_PHYSICAL_PROPERTIES_SCRIPT  # noqa: SLF001
+            assert bids == ["choice", "editor", "dom-only-result"]
+            common = {
+                "attached": True,
+                "visible": True,
+                "enabled": True,
+                "readonly": False,
+                "active": False,
+                "focusable": True,
+                "focused": False,
+                "editable": False,
+                "bbox": [10, 10, 80, 20],
+                "options": [],
+            }
+            return {
+                "choice": {**common, "pointerActionable": True, "valueScope": "complete"},
+                "editor": {
+                    **common,
+                    "editable": True,
+                    "pointerActionable": False,
+                    "valueScope": "active_segment",
+                },
+                "dom-only-result": {
+                    **common,
+                    "pointerActionable": True,
+                    "valueScope": "complete",
+                },
+            }
+
+    raw = raw_observation(
+        ax_node("choice", "generic", "Selectable result"),
+        ax_node("editor", "textbox", "Editor", value="current line"),
+    )
+    raw["extra_element_properties"]["dom-only-result"] = {
+        "clickable": True,
+        "visibility": 1.0,
+    }
+
+    enriched = browsergym_backend._with_private_control_properties(PhysicalPage(), raw)  # noqa: SLF001
+
+    assert enriched["extra_element_properties"]["choice"]["clickable"] is True
+    assert "dom-only-result" in enriched[PRIVATE_CONTROL_PROPERTIES_KEY]
+    assert enriched[PRIVATE_CONTROL_PROPERTIES_KEY]["editor"]["value_scope"] == "active_segment"
+
+
 def test_browsergym_physical_calls_do_not_block_the_asyncio_watchdog() -> None:
     class BlockingProbe(FakeBrowserGym):
         def __init__(self, raw):

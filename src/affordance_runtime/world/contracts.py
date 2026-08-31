@@ -789,8 +789,10 @@ class WorldObservation:
 
         expected_components: set[frozenset[SourceEntityEndpoint]] = set()
         remaining_endpoints = set(typed_endpoints)
-        while remaining_endpoints:
-            pending = [min(remaining_endpoints)]
+        for root in sorted(typed_endpoints):
+            if root not in remaining_endpoints:
+                continue
+            pending = [root]
             component: set[SourceEntityEndpoint] = set()
             while pending:
                 endpoint = pending.pop()

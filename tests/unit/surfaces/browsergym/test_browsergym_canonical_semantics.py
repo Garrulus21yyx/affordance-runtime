@@ -23,7 +23,7 @@ from affordance_runtime.surfaces.browsergym.semantics import (
     canonical_control_for_bid,
     canonicalize_browsergym_controls,
 )
-from affordance_runtime.world import SemanticInventoryStatus
+from affordance_runtime.world import VALUE_SCOPE_ACTIVE_SEGMENT, VALUE_SCOPE_STATE_KEY, SemanticInventoryStatus
 from tests.support.surfaces.browsergym.browsergym_adapter_support import (
     ax_node,
     dom_snapshot,
@@ -260,6 +260,16 @@ def test_executable_ax_value_bound_is_explicit() -> None:
     assert state[VALUE_TRUNCATED_STATE_KEY] is True
 
 
+def test_composite_editor_proxy_marks_exposed_value_as_one_active_segment() -> None:
+    raw = raw_observation(ax_node("control", "textbox", "Editor", value="current line"))
+    raw[PRIVATE_CONTROL_PROPERTIES_KEY]["control"]["value_scope"] = VALUE_SCOPE_ACTIVE_SEGMENT
+
+    control = canonical_control_for_bid(raw, "control")
+
+    assert control is not None
+    assert dict(control.public_state)[VALUE_SCOPE_STATE_KEY] == VALUE_SCOPE_ACTIVE_SEGMENT
+
+
 @given(st.permutations(("class", "title", "type")))
 def test_dom_semantics_are_invariant_to_attribute_order(order: tuple[str, ...]) -> None:
     values = {"class": "like active", "title": "Like", "type": "button"}
@@ -484,6 +494,50 @@ def test_dom_clickable_inventory_preserves_off_viewport_capability_and_deduplica
     }
     assert structure_roles["tiny"] == "generic"
     assert structure_roles["occluded"] == "clickable"
+
+
+@given(count=st.integers(min_value=1, max_value=16))
+def test_dom_only_clickable_inventory_has_one_action_route_per_current_bid(count: int) -> None:
+    raw = raw_observation(ax_node("root", "document", "Page"))
+    raw["dom_object"] = dom_snapshot(*(
+        ("button", f"result-{index}", {"role": "menuitem", "type": "button"})
+        for index in range(count)
+    ))
+    for index in range(count):
+        bid = f"result-{index}"
+        raw["extra_element_properties"][bid] = {
+            "clickable": True,
+            "visibility": 1.0,
+            "bbox": [10.0, float(index * 24), 120.0, 20.0],
+        }
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY][bid] = {
+            "attached": True,
+            "visible": True,
+            "enabled": True,
+            "readonly": False,
+            "editable": False,
+            "focusable": True,
+            "focused": False,
+            "options": [],
+            "bbox": [10.0, float(index * 24), 120.0, 20.0],
+            "label_hint": f"Result {index}",
+        }
+
+    projection = _projection(raw)
+    results = tuple(
+        item for item in _page_targets(projection.world) if item.role == "menuitem"
+    )
+    result_ids = {item.target_id for item in results}
+    activate_ids = {
+        item.target_id
+        for item in _page_bindings(projection.world)
+        if item.semantic_action == "activate" and item.target_id in result_ids
+    }
+
+    assert {item.label for item in results} == {
+        f"Result {index}" for index in range(count)
+    }
+    assert activate_ids == result_ids
 
 
 @given(

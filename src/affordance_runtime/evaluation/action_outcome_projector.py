@@ -23,7 +23,11 @@ from affordance_runtime.world import CoverageState
 from affordance_runtime.world.evidence_refs import canonical_artifact_ref, canonical_fact_ref
 from affordance_runtime.world.public_semantic_digest import public_subject_semantics_changed
 from affordance_runtime.world.source_profile import assurance_satisfies
-from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
+from affordance_runtime.world.state_semantics import (
+    VALUE_SCOPE_ACTIVE_SEGMENT,
+    VALUE_SCOPE_STATE_KEY,
+    VALUE_TRUNCATED_STATE_KEY,
+)
 
 
 class ProductionActionOutcomeProjector:
@@ -156,6 +160,14 @@ def _current_value_evidence(
         for item in observation.facts
     ) and not any(
         item.subject_id == target_id and item.predicate == VALUE_TRUNCATED_STATE_KEY
+        for item in observation.conflicts
+    ) and not any(
+        item.subject_id == target_id
+        and item.predicate == VALUE_SCOPE_STATE_KEY
+        and item.value == VALUE_SCOPE_ACTIVE_SEGMENT
+        for item in observation.facts
+    ) and not any(
+        item.subject_id == target_id and item.predicate == VALUE_SCOPE_STATE_KEY
         for item in observation.conflicts
     )
     source_complete = (

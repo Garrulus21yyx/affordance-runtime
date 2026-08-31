@@ -19,10 +19,12 @@ from affordance_runtime.execution import ActionResult, DispatchStatus, Execution
 from affordance_runtime.surfaces.browsergym.entity_identity import (
     BrowserGymEntityIdentityMap,
 )
-from affordance_runtime.surfaces.browsergym.semantics import MAX_SEMANTIC_TEXT
+from affordance_runtime.surfaces.browsergym.semantics import MAX_SEMANTIC_TEXT, PRIVATE_CONTROL_PROPERTIES_KEY
 from affordance_runtime.surfaces.browsergym.transition import BrowserGymStabilityStatus
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
+    VALUE_SCOPE_ACTIVE_SEGMENT,
+    VALUE_SCOPE_STATE_KEY,
     VALUE_TRUNCATED_STATE_KEY,
     CoverageState,
     ObservationConflict,
@@ -62,6 +64,7 @@ def _world(
     coverage: CoverageState = CoverageState.COMPLETE,
     conflict: bool = False,
     weak: bool = False,
+    value_scope: str = "",
 ):
     if semantic == "type_text":
         nodes = (ax_node("private-text", "textbox", "Input", value=value),)
@@ -71,9 +74,12 @@ def _world(
             ax_node("private-a", "option", "A"),
             ax_node("private-b", "option", "B"),
         )
+    raw = raw_observation(*nodes)
+    if semantic == "type_text" and value_scope:
+        raw[PRIVATE_CONTROL_PROPERTIES_KEY]["private-text"]["value_scope"] = value_scope
     snapshot = reset_task_state(observation_id)
     world = project_browsergym_observation(
-        raw_observation(*nodes), observation_id=observation_id,
+        raw, observation_id=observation_id,
         source_revision=f"revision:{observation_id}", page_identity="page:opaque",
         episode_identity="0", task_state=snapshot,
         entity_identity=_IDENTITY,
@@ -295,6 +301,34 @@ def test_truncated_value_prefix_cannot_prove_exact_text_satisfaction() -> None:
     assert target.state[VALUE_TRUNCATED_STATE_KEY] is True
     evaluation = _evaluate(before, after, "type_text", requested)
     assert evaluation.observed_change is ObservedChange.CHANGED
+    assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
+
+
+@given(
+    requested=st.text(
+        alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters=("\x00",)),
+        min_size=1,
+        max_size=24,
+    ),
+    changed=st.booleans(),
+)
+@settings(max_examples=12)
+def test_composite_editor_segment_never_proves_whole_document_postcondition(
+    requested: str,
+    changed: bool,
+) -> None:
+    before_value = f"before:{requested}" if changed else requested
+    before = _world("obs:before", "type_text", before_value)
+    after = _world(
+        "obs:after",
+        "type_text",
+        requested,
+        value_scope=VALUE_SCOPE_ACTIVE_SEGMENT,
+    )
+    target = next(item for item in after.targets if item.role == "textbox")
+
+    assert target.state[VALUE_SCOPE_STATE_KEY] == VALUE_SCOPE_ACTIVE_SEGMENT
+    evaluation = _evaluate(before, after, "type_text", requested)
     assert evaluation.local_postcondition is LocalPostconditionStatus.UNKNOWN
 
 

@@ -76,7 +76,11 @@ from affordance_runtime.world.source_profile import (
     VerificationStrength,
     assurance_satisfies,
 )
-from affordance_runtime.world.state_semantics import VALUE_TRUNCATED_STATE_KEY
+from affordance_runtime.world.state_semantics import (
+    VALUE_SCOPE_ACTIVE_SEGMENT,
+    VALUE_SCOPE_STATE_KEY,
+    VALUE_TRUNCATED_STATE_KEY,
+)
 from affordance_runtime.world.vision_escalation import (
     VisionEvidenceNeed,
     derive_visual_evidence_needs,
@@ -85,6 +89,8 @@ from affordance_runtime.world.vision_escalation import (
 __all__ = [
     "MAX_OBSERVATION_GROUNDING_REGIONS",
     "MAX_SEMANTIC_INVENTORY_COUNT",
+    "VALUE_SCOPE_ACTIVE_SEGMENT",
+    "VALUE_SCOPE_STATE_KEY",
     "AcquisitionCost",
     "AcquisitionOrigin",
     "AcquisitionReason",

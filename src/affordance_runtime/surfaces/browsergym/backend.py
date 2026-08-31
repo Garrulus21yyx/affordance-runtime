@@ -138,6 +138,17 @@ _PHYSICAL_PROPERTIES_SCRIPT = r"""el => ({
       if (label) return String(label.textContent || '').trim();
     }
     const tag = el.tagName.toLowerCase();
+    const authoredRole = String(el.getAttribute('role') || '').trim();
+    const style = getComputedStyle(el);
+    const nativeActionable = (
+      ['button', 'select', 'textarea'].includes(tag) ||
+      (tag === 'a' && Boolean(el.getAttribute('href'))) ||
+      (tag === 'input' && String(el.getAttribute('type') || '').toLowerCase() !== 'hidden')
+    );
+    if (nativeActionable || authoredRole || style.cursor === 'pointer') {
+      const text = String(el.textContent || '').trim().replace(/\s+/g, ' ');
+      if (text && text.length <= 120) return text;
+    }
     const classes = el.classList;
     const explicitHtmlDrag = el.getAttribute('draggable') === 'true';
     const gestureCandidate = (
@@ -287,13 +298,32 @@ _BULK_PHYSICAL_PROPERTIES_SCRIPT = r"""bids => {
       ? el.checkVisibility({checkOpacity: false, checkVisibilityCSS: true})
       : style.display !== 'none' && style.visibility !== 'hidden' &&
         (rect.width > 0 || rect.height > 0 || el.getClientRects().length > 0);
+    const parentStyle = el.parentElement ? getComputedStyle(el.parentElement) : null;
+    const pointerActionable = (
+      style.cursor === 'pointer' &&
+      style.pointerEvents !== 'none' &&
+      (!parentStyle || parentStyle.cursor !== 'pointer' || parentStyle.pointerEvents === 'none')
+    );
+    const valueScope = (
+      textEditable &&
+      !el.isContentEditable &&
+      (
+        rect.width <= 2 ||
+        rect.height <= 2 ||
+        Number.parseFloat(style.opacity || '1') <= 0.05 ||
+        (style.clip && style.clip !== 'auto') ||
+        (style.clipPath && style.clipPath !== 'none')
+      )
+    ) ? 'active_segment' : 'complete';
     result[bid] = {
       ...physical,
       attached: el.isConnected,
       visible: Boolean(visible),
       enabled: !disabled,
       readonly,
-      editable: !disabled && !readonly && textEditable
+      editable: !disabled && !readonly && textEditable,
+      pointerActionable,
+      valueScope
     };
   }
   return result;
@@ -834,15 +864,22 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
     nodes = tree.get("nodes") if isinstance(tree, dict) else None
     if not isinstance(nodes, list):
         raise RuntimeError("BrowserGym observation omitted AX nodes")
-    bids = tuple(dict.fromkeys(
-        bid for node in nodes if isinstance(node, dict)
-        for bid in (node.get("browsergym_id"),)
-        if isinstance(bid, str) and bid
-    ))
     dom_extra = raw.get("extra_element_properties")
     dom_extra = dom_extra if isinstance(dom_extra, dict) else {}
+    bids = tuple(dict.fromkeys((
+        *(
+            bid for node in nodes if isinstance(node, dict)
+            for bid in (node.get("browsergym_id"),)
+            if isinstance(bid, str) and bid
+        ),
+        *(bid for bid in dom_extra if isinstance(bid, str) and bid),
+    )))
     captured = _bulk_physical_properties(page, bids)
     properties: dict[str, object] = {}
+    enriched_dom_extra = {
+        key: dict(value) if isinstance(value, dict) else value
+        for key, value in dom_extra.items()
+    }
     for bid in bids:
         physical = captured.get(bid)
         physical = physical if isinstance(physical, dict) else {}
@@ -861,6 +898,11 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
             snapshot_bbox = snapshot_properties.get("bbox")
             if isinstance(snapshot_bbox, list):
                 bbox = snapshot_bbox
+        if physical.get("pointerActionable") is True:
+            snapshot = enriched_dom_extra.get(bid)
+            snapshot = dict(snapshot) if isinstance(snapshot, dict) else {}
+            snapshot["clickable"] = True
+            enriched_dom_extra[bid] = snapshot
         label_hint = physical.get("labelHint")
         gesture = physical.get("gesture")
         gesture = gesture if isinstance(gesture, dict) else {}
@@ -890,6 +932,11 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
                 else ""
             ),
             "editable": editable if isinstance(editable, bool) else None,
+            "value_scope": (
+                physical.get("valueScope")
+                if physical.get("valueScope") in {"complete", "active_segment"}
+                else ""
+            ),
             "focusable": (
                 physical["focusable"]
                 if isinstance(physical.get("focusable"), bool)
@@ -934,6 +981,7 @@ def _with_private_control_properties(page: object, raw: object) -> dict[str, obj
         ):
             item["gesture_role"] = "drop_target"
     enriched = dict(raw)
+    enriched["extra_element_properties"] = enriched_dom_extra
     enriched[PRIVATE_CONTROL_PROPERTIES_KEY] = properties
     return enriched
 
