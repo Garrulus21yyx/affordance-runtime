@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from affordance_runtime.actions import ActionSpace
 from affordance_runtime.agent.context.compact_world_renderer import (
+    CapacityExceeded,
     Opened,
-    _bounded_tool_record,
     inspect_actor_world,
 )
 from affordance_runtime.agent.context.context_builder import ContextBuilder
@@ -173,22 +173,129 @@ def test_browsergym_control_group_delivers_one_normalized_group_value() -> None:
     assert group["value_status"] == "known"
 
 
-def test_semantic_unit_bounding_trims_detail_without_slicing_the_record_skeleton() -> None:
-    fields = tuple(
-        {"role": "cell", "text": f"field-{index}:" + "x" * 3_000}
-        for index in range(80)
+def test_multifield_record_detail_cursor_recovers_every_omitted_field() -> None:
+    values = tuple(f"field-{index}:" + chr(65 + index) * 5_000 for index in range(5))
+    field_ids = tuple(f"field-{index}" for index in range(len(values)))
+    projection = project_browsergym_observation(
+        raw_observation(
+            ax_node("table", "table", "Large record", child_ids=("row",)),
+            ax_node("row", "row", "", parent_id="table", child_ids=field_ids),
+            *(ax_node(field_id, "StaticText", value, parent_id="row") for field_id, value in zip(field_ids, values)),
+        ),
+        observation_id="observation:continued-record",
+        source_revision="revision:continued-record",
+        page_identity="page:continued-record",
+        episode_identity="episode:continued-record",
+        task_state=reset_task_state("observation:continued-record"),
+        entity_identity=BrowserGymEntityIdentityMap(b"continued-record-integration-key-01"),
     )
-
-    bounded = _bounded_tool_record(
-        {
-            "kind": "complete_item",
-            "shape": "record",
-            "field_count": len(fields),
-            "content": fields,
-        }
+    world = projection.world
+    task = TaskGoal("continued-record", "Read every field")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "fixture"),
     )
+    region = next(item for item in context.region_index.regions if item.role == "table")
+    region_ref = context.canonical_world.region_refs[region.key]
+    cursor = ""
+    chunks: dict[tuple[object, ...], list[str]] = {}
+    skeleton = None
+    while True:
+        outcome = inspect_actor_world(
+            context.actor_world,
+            context.grounding,
+            region_index=context.region_index,
+            canonical_world=context.canonical_world,
+            observation=world,
+            action="read_region",
+            region_ref=region_ref,
+            cursor=cursor,
+            hard_limit=4_096,
+        )
+        assert isinstance(outcome, Opened)
+        assert bool(outcome.next_cursor) is (outcome.continuation is not None)
+        for item in outcome.items:
+            if item.get("kind") == "detail_page":
+                chunks.setdefault(tuple(item["path"]), []).append(item["text"])
+            else:
+                skeleton = item
+                for omission in item.get("delivery_omissions", ()):
+                    path = tuple(omission["path"])
+                    field = item
+                    for segment in path:
+                        field = field[segment]
+                    chunks.setdefault(path, []).append(field)
+        if not outcome.next_cursor:
+            break
+        cursor = outcome.next_cursor
 
-    assert bounded["kind"] == "partial_item"
-    assert bounded["field_count"] == 80
-    assert len(bounded["content"]) == 80
-    assert all(item["text"].endswith("…") for item in bounded["content"])
+    assert skeleton is not None
+    assert skeleton["field_count"] == 5
+    assert len(skeleton["content"]) == 5
+    assert skeleton["delivery_coverage"] == "continued"
+    for index, expected in enumerate(values):
+        assert "".join(chunks[("content", index, "text")]) == expected
+
+
+def test_record_skeleton_is_never_sliced_to_fit_the_byte_gate() -> None:
+    values = tuple(f"field-{index}:" + "x" * 3_000 for index in range(80))
+    field_ids = tuple(f"field-{index}" for index in range(len(values)))
+    projection = project_browsergym_observation(
+        raw_observation(
+            ax_node("table", "table", "Wide record", child_ids=("row",)),
+            ax_node("row", "row", "", parent_id="table", child_ids=field_ids),
+            *(ax_node(field_id, "StaticText", value, parent_id="row") for field_id, value in zip(field_ids, values)),
+        ),
+        observation_id="observation:wide-record",
+        source_revision="revision:wide-record",
+        page_identity="page:wide-record",
+        episode_identity="episode:wide-record",
+        task_state=reset_task_state("observation:wide-record"),
+        entity_identity=BrowserGymEntityIdentityMap(b"wide-record-integration-key-0000001"),
+    )
+    world = projection.world
+    task = TaskGoal("wide-record", "Read the wide record")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        TaskEvaluation(task.task_id, world.observation_id, TaskEvaluationStatus.INCOMPLETE, "fixture"),
+    )
+    region = next(item for item in context.region_index.regions if item.role == "table")
+    arguments = {
+        "snapshot": context.actor_world,
+        "grounding": context.grounding,
+        "region_index": context.region_index,
+        "canonical_world": context.canonical_world,
+        "observation": world,
+        "action": "read_region",
+        "region_ref": context.canonical_world.region_refs[region.key],
+    }
+
+    admitted = inspect_actor_world(**arguments, hard_limit=64 * 1024)
+    assert isinstance(admitted, Opened)
+    if not any(item.get("shape") == "record" for item in admitted.items):
+        admitted = inspect_actor_world(
+            **arguments,
+            cursor=admitted.next_cursor,
+            hard_limit=64 * 1024,
+        )
+    rejected = inspect_actor_world(**arguments, hard_limit=4_096)
+    assert isinstance(rejected, Opened)
+    if rejected.next_cursor:
+        rejected = inspect_actor_world(
+            **arguments,
+            cursor=rejected.next_cursor,
+            hard_limit=4_096,
+        )
+
+    assert isinstance(admitted, Opened)
+    skeleton = next(item for item in admitted.items if item.get("shape") == "record")
+    assert skeleton["field_count"] == 80
+    assert len(skeleton["content"]) == 80
+    assert len(skeleton["delivery_omissions"]) == 80
+    assert admitted.continuation is not None
+    assert admitted.continuation.kind == "detail"
+    assert isinstance(rejected, CapacityExceeded)

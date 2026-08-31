@@ -31,6 +31,30 @@ Task142 and Task113 remain independent upstream World-contract gaps. Task142 nee
 Task113 needs grouped control-value normalization at the SurfaceAdapter/World owner boundary; this recovery change
 does not reinterpret either downstream.
 
+### 2026-09-01 semantic-unit delivery continuation — provider-free implementation, live-open
+
+The first semantic-topology repair preserved `Record` and `ControlGroup` skeletons, but its last-resort byte gate
+still returned a boolean-truncated item with no recovery position. That contradicted the existing cursor contract:
+top-level record pagination was recoverable while omitted fields inside one oversized record were not. It also left
+`next_cursor` and a richer continuation capable of becoming two cursor authorities.
+
+Delivery now owns one typed stream for `read_region`, `search_page_content`, and `list_regions`. A continuation is
+either the next semantic unit or an exact `(item, field path, character offset)` inside the current unit. Its opaque
+cursor is bound to World, operation, region/query, owner-produced item inventory, page size, and hard byte limit.
+`next_cursor` is only a compatibility projection of the one stored `continuation.cursor`. A complete source item can
+therefore be reconstructed without loss or duplication across all pages. Delivery never splits the mapping/list
+skeleton of a Record or ControlGroup; if that skeleton plus its omission map cannot fit, it returns
+`CapacityExceeded`. Source-owned incomplete data remains explicitly incomplete and receives no fabricated cursor.
+
+Provider-free witnesses cover codec tampering and cross-stream rejection, generated multi-record byte streams, a
+100,000-character field, five independently omitted fields in one BrowserGym table row, an 80-field skeleton, and
+source-incomplete input. No Task ID, site label, field name, selector, or benchmark branch was added. Live Task142 and
+Task113 acceptance remains pending separate authorization; this implementation does not claim benchmark closure.
+The complete fixed-interpreter provider-free gate reports `2269 passed, 19 skipped, 1 deselected, 1 warning`; the
+sole deselection is the repository-missing archived dashboard trace already documented below. Ruff and
+`git diff --check` pass. Repository-wide mypy remains red on its pre-existing baseline; the new cursor/delivery code
+adds no remaining mypy diagnostic.
+
 ### 2026-08-30 recovery-owner convergence — provider-free verified, live-open
 
 Task554
@@ -1900,7 +1924,8 @@ discovery do not use the read cursor.
 
 BrowserGym informational AX text is now preserved into World. The read owner packs whole repeated records against the
 final ToolReturn byte budget; it does not cap every body at 240 or 2048 before computing that total. Only a record that
-cannot fit alone is safety-bounded and returned as `partial_item` with `content_truncated=true`. A real-page Chromium
+cannot fit alone is safety-bounded and returned as `partial_item`; the later continuation contract makes every
+Delivery-owned omitted suffix exactly recoverable. A real-page Chromium
 AX diagnostic confirmed that the four relevant bodies (327, 660, 1112, and 906 characters) survive the semantic owner,
 including the two conclusions beyond character 240. This diagnostic supports the owner repair but is not a benchmark
 acceptance run.
@@ -1953,10 +1978,9 @@ Properties cover:
 - finite same-request opaque-cursor page progress;
 - invalid cursor as a typed result;
 - complete records packed first against the final serialized result limit;
-- oversized individual content returned as `partial_item` with `content_truncated=true`;
-- absence of `content_fragment`/digest/reassembly protocol;
-- no loss or duplication across records, with every fitting record exact and every non-fitting record explicitly
-  partial.
+- oversized individual content returned as a skeleton-complete `partial_item` with typed omissions and continuation;
+- exact path/range detail pages without a second fragment store or hidden inventory;
+- no loss or duplication across records or detail ranges, with every complete source item exactly reconstructable.
 
 The byte bound belongs to the read/search/list owner, not Store or request packing.
 

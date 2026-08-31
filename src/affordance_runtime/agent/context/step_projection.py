@@ -250,6 +250,13 @@ def project_decision_summary(decision: AgentDecision | InteractionRequest) -> Ma
         continuations = decision.result.get("collection_continuations")
         if isinstance(continuations, tuple | list):
             summary["collection_continuation_count"] = len(continuations)
+        continuation = decision.result.get("continuation")
+        if isinstance(continuation, Mapping):
+            summary["continuation"] = {
+                name: project_public_value(continuation[name])
+                for name in ("kind", "item_offset", "total_items", "path", "offset", "total")
+                if name in continuation
+            }
         return summary
     if isinstance(decision, FinalResponse):
         return {"content": _bounded(decision.content), "public_intent": _bounded(decision.public_intent)}

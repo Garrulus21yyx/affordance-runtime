@@ -14,6 +14,7 @@ import affordance_runtime.agent.context.world_region_index as world_region_index
 from affordance_runtime.actions import ActionBinder, ActionBinding, ActionRisk, ActionSpace, ActionSpaceBuilder
 from affordance_runtime.agent.context.compact_world_renderer import (
     CapacityExceeded,
+    DeliveryContinuation,
     Empty,
     InvalidCursor,
     InvalidRegion,
@@ -170,6 +171,28 @@ def test_inspect_result_history_contract_preserves_ref_shaped_semantics_only() -
     assert "executable_grounding" not in projected
     assert "R5" in json.dumps(projected)
     assert all(token not in json.dumps(projected) for token in ("R1", "E1"))
+
+    continued = Matches(
+        ({"kind": "detail_page", "path": ("content", 0, "text"), "text": "detail"},),
+        "complete",
+        continuation=DeliveryContinuation(
+            "detail",
+            "cursor:opaque",
+            0,
+            1,
+            ("content", 0, "text"),
+            12,
+            100,
+        ),
+    )
+    continued_public = inspect_outcome_public(continued)
+    continued_history = sanitize_history_arguments(
+        continued_public,
+        ephemeral_paths=inspect_outcome_ephemeral_paths(continued, continued_public),
+    )
+    assert "next_cursor" not in continued_history
+    assert "cursor" not in continued_history["continuation"]
+    assert continued_history["continuation"]["path"] == ("content", 0, "text")
 
     opened = Opened(
         ({"kind": "complete_item", "content": ({"text": "record"},)},),
@@ -731,10 +754,20 @@ def _many_region_world(*, count: int = 16, suffix: str = "current"):
     return result.observation
 
 
-def _long_record_world(lengths: tuple[int, ...], *, suffix: str = "current"):
+def _long_record_world(
+    lengths: tuple[int, ...],
+    *,
+    suffix: str = "current",
+    source_incomplete: bool = False,
+):
     row_ids = tuple(f"comment:{index}" for index in range(len(lengths)))
     targets = tuple(
-        SemanticTarget(row_id, "StaticText", f"Comment {index} " + "x" * length)
+        SemanticTarget(
+            row_id,
+            "StaticText",
+            f"Comment {index} " + "x" * length,
+            {"semantic.accessible_name.truncated": True} if source_incomplete else {},
+        )
         for index, (row_id, length) in enumerate(zip(row_ids, lengths, strict=True))
     )
     nodes = (
@@ -864,12 +897,57 @@ def _read_complete_region(context, region_ref: str, *, hard_limit: int):
         assert isinstance(outcome, Opened)
         assert outcome.items
         assert _serialized_outcome_bytes(outcome) <= hard_limit
+        assert bool(outcome.next_cursor) is (outcome.continuation is not None)
+        if outcome.continuation is not None:
+            assert outcome.continuation.cursor == outcome.next_cursor
         outcomes.append(outcome)
         if not outcome.next_cursor:
             return tuple(outcomes)
         assert outcome.next_cursor not in seen_cursors
         seen_cursors.add(outcome.next_cursor)
         cursor = outcome.next_cursor
+
+
+def _content_string_paths(value, path=()):
+    if isinstance(value, str):
+        if path and path[0] == "content":
+            yield path, value
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _content_string_paths(item, (*path, key))
+    elif isinstance(value, tuple | list):
+        for index, item in enumerate(value):
+            yield from _content_string_paths(item, (*path, index))
+
+
+def _value_at_path(value, path):
+    current = value
+    for segment in path:
+        current = current[segment]
+    return current
+
+
+def _assert_detail_stream_reconstructs(pages, complete_items) -> None:
+    chunks: dict[tuple[int, tuple[object, ...]], list[str]] = {}
+    next_item = 0
+    for page in pages:
+        for item in page.items:
+            if item.get("kind") == "detail_page":
+                key = (int(item["parent_item"]), tuple(item["path"]))
+                chunks.setdefault(key, []).append(str(item["text"]))
+                continue
+            item_index = next_item
+            next_item += 1
+            for path, _expected in _content_string_paths(complete_items[item_index]):
+                delivered = _value_at_path(item, path)
+                assert isinstance(delivered, str)
+                chunks.setdefault((item_index, tuple(path)), []).append(delivered)
+
+    assert next_item == len(complete_items)
+    for item_index, complete in enumerate(complete_items):
+        for path, expected in _content_string_paths(complete):
+            assert "".join(chunks[(item_index, tuple(path))]) == expected
 
 
 def _table_world(*, rows: int = 5, coverage: CoverageState = CoverageState.COMPLETE):
@@ -1353,7 +1431,7 @@ def test_search_matches_visible_text_but_not_dom_tag_class_or_id_values() -> Non
     assert "semantic.dom.attribute.title" in public_result
 
 
-def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -> None:
+def test_single_oversized_region_record_has_recoverable_detail_continuation() -> None:
     world = _long_record_world((100_000, 100), suffix="bounded")
     task = TaskGoal("bounded-record", "Inspect all reviews")
     context = ContextBuilder().build(
@@ -1361,14 +1439,53 @@ def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -
     )
     region = next(item for item in context.region_index.regions if item.role == "list")
     region_ref = context.canonical_world.region_refs[region.key]
+    complete = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=region_ref,
+        hard_limit=1024 * 1024,
+    )
+    assert isinstance(complete, Opened)
     pages = _read_complete_region(context, region_ref, hard_limit=64 * 1024)
     delivered = tuple(item for page in pages for item in page.items)
 
-    assert len(delivered) == 2
-    assert delivered[0]["kind"] == "partial_item"
-    assert delivered[0]["content_truncated"] is True
-    assert len(delivered[0]["content"][0]["text"]) <= 2_048
-    assert all(item.get("kind") != "content_fragment" for item in delivered)
+    skeletons = tuple(item for item in delivered if item.get("kind") != "detail_page")
+    details = tuple(item for item in delivered if item.get("kind") == "detail_page")
+    assert len(skeletons) == 2
+    assert skeletons[0]["kind"] == "partial_item"
+    assert skeletons[0]["delivery_coverage"] == "continued"
+    assert skeletons[0]["delivery_omissions"][0]["total_chars"] > 2_048
+    assert details
+    _assert_detail_stream_reconstructs(pages, complete.items)
+
+
+def test_source_incomplete_detail_does_not_fabricate_a_delivery_cursor() -> None:
+    world = _long_record_world((100,), suffix="source-incomplete", source_incomplete=True)
+    task = TaskGoal("source-incomplete", "Inspect the review")
+    context = ContextBuilder().build(
+        task, world, ActionSpace(world.observation_id, ()), _evaluation(task, world.observation_id)
+    )
+    region = next(item for item in context.region_index.regions if item.role == "list")
+    outcome = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=context.canonical_world.region_refs[region.key],
+    )
+
+    assert isinstance(outcome, Opened)
+    assert outcome.next_cursor == ""
+    assert outcome.continuation is None
+    assert outcome.items[0]["kind"] == "partial_item"
+    assert outcome.items[0]["source_detail_coverage"] == "incomplete"
+    assert "delivery_coverage" not in outcome.items[0]
 
 
 @settings(max_examples=10, deadline=None)
@@ -1379,7 +1496,7 @@ def test_single_oversized_region_record_is_bounded_without_fragment_protocol() -
         max_size=25,
     ).map(tuple)
 )
-def test_region_read_byte_pages_generated_preserve_or_explicitly_mark_each_record(lengths) -> None:
+def test_region_read_byte_pages_generated_are_lossless_through_continuations(lengths) -> None:
     world = _long_record_world(lengths, suffix=f"generated-{sum(lengths)}-{len(lengths)}")
     task = TaskGoal("generated-byte-paging", "Inspect all records")
     context = ContextBuilder().build(
@@ -1401,16 +1518,7 @@ def test_region_read_byte_pages_generated_preserve_or_explicitly_mark_each_recor
     assert isinstance(complete, Opened)
 
     pages = _read_complete_region(context, region_ref, hard_limit=4096)
-    delivered = tuple(item for page in pages for item in page.items)
-
-    assert len(delivered) == len(complete.items)
-    assert all(item.get("kind") != "content_fragment" for item in delivered)
-    for actual, expected in zip(delivered, complete.items, strict=True):
-        if actual.get("content_truncated") is True:
-            assert actual["kind"] == "partial_item"
-            assert len(json.dumps(to_json_compatible(actual))) < len(json.dumps(to_json_compatible(expected)))
-        else:
-            assert to_json_compatible(actual) == to_json_compatible(expected)
+    _assert_detail_stream_reconstructs(pages, complete.items)
 
 
 def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
@@ -1659,6 +1767,12 @@ def test_paginated_search_reuses_the_same_tool_with_its_returned_cursor() -> Non
     )
     cursor = first.decision.result["next_cursor"]
     assert cursor.startswith("cursor:")
+    assert first.decision.result["continuation"] == {
+        "kind": "items",
+        "cursor": cursor,
+        "item_offset": 20,
+        "total_items": 40,
+    }
     second = resolve_catalog_call(
         catalog,
         ToolCall("search_page_content", {"query": "Needle", "cursor": cursor}),
@@ -1743,6 +1857,8 @@ def test_world_read_paging_is_tool_local_and_reuses_read_region() -> None:
     assert opened.result["has_more"] is True
     cursor = opened.result["next_cursor"]
     assert cursor.startswith("cursor:")
+    assert opened.result["continuation"]["kind"] == "items"
+    assert opened.result["continuation"]["cursor"] == cursor
     different_region_ref = next(
         first.canonical_world.region_refs[region.key]
         for region in first.region_index.regions
@@ -1786,6 +1902,7 @@ def test_byte_bounded_region_pages_are_direct_results_and_store_keeps_only_diges
     assert opened.decision.result["has_more"] is True
     assert "cursor" not in opened.decision.arguments
     assert opened.decision.result["next_cursor"]
+    assert opened.decision.result["continuation"]["cursor"] == opened.decision.result["next_cursor"]
     opened_step = StepResult(
         opened.decision,
         world,

@@ -632,8 +632,8 @@ def compile_grounded_tool_catalog(
                     "cursor": {
                         "type": "string",
                         "description": (
-                            "optional opaque next_cursor from the immediately preceding result of this "
-                            "same tool, World, and region"
+                            "optional opaque continuation.cursor from the immediately preceding result of this "
+                            "same tool, World, and region; continues records or omitted field detail"
                         ),
                         "minLength": 1,
                         "maxLength": 512,
@@ -669,8 +669,8 @@ def compile_grounded_tool_catalog(
                 "cursor": {
                     "type": "string",
                     "description": (
-                        "optional opaque next_cursor from the immediately preceding result of this "
-                        "same tool, World, and exact query"
+                        "optional opaque continuation.cursor from the immediately preceding result of this "
+                        "same tool, World, and exact query; continues matches or omitted field detail"
                     ),
                     "minLength": 1,
                     "maxLength": 512,
@@ -688,7 +688,8 @@ def compile_grounded_tool_catalog(
                 "cursor": {
                     "type": "string",
                     "description": (
-                        "optional opaque next_cursor from the immediately preceding result of this same tool and World"
+                        "optional opaque continuation.cursor from the immediately preceding result of this same "
+                        "tool and World"
                     ),
                     "minLength": 1,
                     "maxLength": 512,

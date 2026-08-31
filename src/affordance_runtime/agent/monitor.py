@@ -930,7 +930,7 @@ def _control_stall_instruction(result: StepResult) -> str:
             "This read/search added no semantic record that is not already present in completed tool history. "
             "Preserve and use that evidence instead of reopening it for verification. If the requested output is "
             "already supported, finish; otherwise choose one materially different current route for a specific "
-            "missing output. Follow next_cursor only when has_more is true, and stop with a typed no-progress outcome "
+            "missing output. Follow continuation.cursor only when has_more is true, and stop with a typed no-progress outcome "
             "when no materially new route remains."
         )
     if isinstance(result.decision, RequestObservation):

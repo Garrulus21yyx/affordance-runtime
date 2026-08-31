@@ -2084,9 +2084,9 @@ The observation contract is now positive and owner-specific:
 - read/search operate on the preserved text and first try complete enclosing records against the final serialized
   ToolReturn byte limit;
 - an individual record is bounded only when it cannot fit on an otherwise empty result page, and then becomes
-  `partial_item` with `content_truncated=true`;
-- pagination advances only across records in the same read owner. There is no fragment protocol, evidence inventory,
-  second summarizer, or new cursor state machine.
+  `partial_item` with a complete semantic skeleton, typed `delivery_omissions`, and one `continuation`;
+- the same opaque continuation algebra advances between records or through the exact omitted suffix of one leaf;
+  source-owned incompleteness remains `source_detail_coverage=incomplete` and never fabricates recoverability.
 
 Run11 live-verified this observation contract: Catso's and Michelle's full bodies appeared as complete ToolReturn
 records and all same-World routes remained valid. Its final provider call timed out before producing a decision. Run12
@@ -2378,8 +2378,16 @@ Conceptually:
     "kind": "Opened | Matches | Page | Empty | InvalidRegion | InvalidCursor | CapacityExceeded",
     "items": [...],
     "has_more": bool,
-    "next_cursor": str | None,
-    "content_truncated": bool,  # only on an item whose fields were bounded
+    "next_cursor": str | None,  # compatibility projection of continuation.cursor
+    "continuation": {
+        "kind": "items | detail",
+        "cursor": str,
+        "item_offset": int,
+        "total_items": int,
+        "path": [str | int, ...],  # detail only
+        "offset": int,
+        "total": int,
+    } | None,
     # operation-specific coverage metadata
 }
 ```
@@ -2390,9 +2398,10 @@ operation at the Runtime boundary. They do not create a second evidence algebra.
 For repeated DOM/AX structures, search returns the smallest enclosing repeated item, with compact role, text, label,
 and state fields. A matching child therefore carries its sibling fields (for example, one card's title and author)
 without copying internal evidence metadata or serializing the whole surrounding region. The item is
-`complete_item` only when its content is complete; any source or owner truncation changes it to `partial_item` and
-sets `content_truncated=true`. This rule is generic to the public tree shape and contains no site, task, phrase, or
-fixed-region branch.
+`complete_item` only when its content is complete. Source incompleteness changes it to `partial_item` with
+`source_detail_coverage=incomplete`; Delivery-owned byte omission changes it to `partial_item` with
+`delivery_coverage=continued`, exact `delivery_omissions`, and a continuation. This rule is generic to the public tree
+shape and contains no site, task, phrase, or fixed-region branch.
 
 Within one repeated item, the same producer joins adjacent stateless AX `StaticText` fragments into one ordered text
 block and removes only an exact accessible-label echo immediately following an interactive element. It does not drop
@@ -2408,16 +2417,19 @@ read_region(region_ref=R9, cursor="cursor:<opaque>")
 -> next bounded page
 ```
 
-The cursor encodes a bounded offset plus a fingerprint understood by that same read owner. It is not a Store
+The cursor encodes a typed item/detail position plus a fingerprint understood by that same read owner. It is not a Store
 capability, provider state, Workspace state, evidence cursor, GUI-effect cursor, or action-result cursor. The current
 catalog and resolver still own current-World and current-ref validation. A malformed cursor or a fingerprint/offset
-mismatch returns `InvalidCursor` deterministically.
+mismatch returns `InvalidCursor` deterministically. The fingerprint binds the current World, operation, region/query,
+complete owner-produced inventory, page size, and hard byte limit.
 
 The read owner packs complete records first against the final serialized ToolReturn limit. It does not pre-truncate
-every field before calculating that total. Only a record that cannot fit on an empty page uses the individual
-string/collection safety bound, becomes `partial_item`, and receives `content_truncated=true`. The former
-`content_fragment`, record digest, fragment offset, lossless reassembly, and hidden admitted/suffix protocol are
-removed. GUI benchmark work does not need arbitrary 100 KiB DOM strings reconstructed exactly by the model.
+every field before calculating that total. Only a record that cannot fit on an empty page becomes `partial_item`.
+Delivery preserves every mapping key, collection member, field order, and ControlGroup member, trims only leaf-string
+suffixes, and publishes each omitted path and range. Following `continuation.cursor` returns typed `detail_page`
+items whose exact ranges reconstruct those suffixes before advancing to the next semantic unit. If even the complete
+skeleton and omission map cannot fit, Delivery returns `CapacityExceeded`; it never silently slices that skeleton.
+`continuation` is the sole stored cursor authority. `next_cursor` is derived only as a compatibility projection.
 
 ### Action discovery
 
@@ -3353,12 +3365,16 @@ and `ControlGroup` roots as indivisible semantic units.
 Actor snapshot capacity packing and `read_region`/`find` serialize a whole semantic unit. Records retain ordered fields; control groups expose all
 members, selected members, member count, and a typed known/incomplete value status. Pagination occurs between units.
 If a single unit exceeds the byte gate, delivery may trim leaf strings and mark the unit partial, but it conserves
-the complete member skeleton; if that still cannot fit, it returns `CapacityExceeded` rather than slicing the unit
-across pages. Thus detail may be lossy while record/group membership and ordering remain lossless.
+the complete member skeleton and emits typed path/range omissions. The same continuation stream then returns the exact
+omitted suffixes as `detail_page` items; if the skeleton itself cannot fit, it returns `CapacityExceeded` rather than
+slicing the unit. Source-owned incomplete text is reported separately and has no fabricated continuation. Thus
+Delivery detail, record/group membership, and ordering are lossless for every complete source item.
 
 Generic integration witnesses cover multi-field table rows, radio-group value normalization, unknown shape
-preservation, canonical fusion lineage, and an 80-field oversized record whose skeleton survives bounding. Task142
+preservation, canonical fusion lineage, multi-field detail reconstruction, generated lossless continuation streams,
+and an 80-field oversized record whose skeleton survives bounding. Task142
 and Task113 remain live benchmark witnesses, not production branches. Live WebArena acceptance remains open and
 requires separate authorization. The complete fixed-environment provider-free suite passes `2264 passed, 19 skipped,
-1 deselected, 1 warning`; the deselection is the previously documented absent archived dashboard trace. Ruff and
+1 deselected, 1 warning`; that count is the topology-stage gate. The continuation-stage full gate passes
+`2269 passed, 19 skipped, 1 deselected, 1 warning`; the deselection is the previously documented absent archived dashboard trace. Ruff and
 `git diff --check` pass.

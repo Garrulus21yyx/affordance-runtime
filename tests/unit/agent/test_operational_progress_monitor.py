@@ -758,7 +758,7 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.prohibited_attempt_signatures == (monitor.latest_attempt_signature,)
-    assert "Follow next_cursor only when has_more is true" in recovery.recovery_signal.human_instruction
+    assert "Follow continuation.cursor only when has_more is true" in recovery.recovery_signal.human_instruction
     assert "one materially different current route" in recovery.recovery_signal.human_instruction
     assert "do not repeat control discovery" not in recovery.recovery_signal.human_instruction
     assert stalled.recommendation is EpisodeMonitorRecommendation.BLOCK

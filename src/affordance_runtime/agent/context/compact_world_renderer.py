@@ -36,7 +36,12 @@ from affordance_runtime.world.contracts import (
     SemanticShapeKind,
     WorldObservation,
 )
-from affordance_runtime.world.page_cursor import decode_cursor, encode_cursor
+from affordance_runtime.world.page_cursor import (
+    DeliveryCursorMode,
+    DeliveryCursorPosition,
+    decode_delivery_cursor,
+    encode_delivery_cursor,
+)
 from affordance_runtime.world.public_refs import PublicRefCodec, PublicRefKind
 
 _SEARCHABLE_DOM_STATE_FIELDS = frozenset(
@@ -49,8 +54,6 @@ _SEARCHABLE_DOM_STATE_FIELDS = frozenset(
     }
 )
 _TOOL_RESULT_TEXT_MAX_CHARS = 2_048
-_TOOL_RESULT_COLLECTION_MAX_ITEMS = 64
-_TOOL_RESULT_MAX_DEPTH = 6
 _SOURCE_TEXT_TRUNCATION_FIELD = "semantic.accessible_name.truncated"
 _CURRENT_ACTION_SUBJECT_ROLES = frozenset(
     kind.value for kind in InteractionSubjectKind if kind is not InteractionSubjectKind.ENTITY
@@ -221,15 +224,48 @@ class RenderedWorldDelivery:
 
 
 @dataclass(frozen=True)
+class DeliveryContinuation:
+    kind: str
+    cursor: str
+    item_offset: int
+    total_items: int
+    path: tuple[str | int, ...] = ()
+    offset: int = 0
+    total: int = 0
+
+    def __post_init__(self) -> None:
+        if self.kind not in {"items", "detail"} or not self.cursor.startswith("cursor:"):
+            raise ValueError("delivery continuation requires a typed kind and cursor")
+        if any(
+            type(value) is not int or value < 0
+            for value in (self.item_offset, self.total_items, self.offset, self.total)
+        ):
+            raise ValueError("delivery continuation positions must be non-negative")
+        if self.item_offset > self.total_items:
+            raise ValueError("delivery continuation item offset exceeds total")
+        if self.kind == "detail" and (not self.path or self.offset > self.total):
+            raise ValueError("detail continuation requires a valid path and range")
+        if self.kind == "items" and (self.path or self.offset or self.total):
+            raise ValueError("item continuation cannot carry detail range")
+        object.__setattr__(self, "path", tuple(self.path))
+
+
+@dataclass(frozen=True)
 class Opened:
     items: tuple[Mapping[str, object], ...]
-    next_cursor: str = ""
     source_coverage: str = "complete"
     region_membership: str = "complete"
     result_page: str = "1/1"
     scope: Mapping[str, object] = field(default_factory=dict)
     collection_coverage: str = "not_applicable"
     collection_continuations: tuple[Mapping[str, object], ...] = ()
+    continuation: DeliveryContinuation | None = None
+
+    @property
+    def next_cursor(self) -> str:
+        """Compatibility projection; ``continuation`` is the sole cursor authority."""
+
+        return self.continuation.cursor if self.continuation is not None else ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scope", freeze_json(dict(self.scope)))
@@ -246,13 +282,25 @@ class Opened:
 class Matches:
     items: tuple[Mapping[str, object], ...]
     coverage: str
-    next_cursor: str = ""
+    continuation: DeliveryContinuation | None = None
+
+    @property
+    def next_cursor(self) -> str:
+        """Compatibility projection; ``continuation`` is the sole cursor authority."""
+
+        return self.continuation.cursor if self.continuation is not None else ""
 
 
 @dataclass(frozen=True)
 class Page:
     items: tuple[Mapping[str, object], ...]
-    next_cursor: str = ""
+    continuation: DeliveryContinuation | None = None
+
+    @property
+    def next_cursor(self) -> str:
+        """Compatibility projection; ``continuation`` is the sole cursor authority."""
+
+        return self.continuation.cursor if self.continuation is not None else ""
 
 
 @dataclass(frozen=True)
@@ -731,17 +779,22 @@ def inspect_actor_world(
                 page_size,
                 hard_limit,
             )
-            return _page_region_items(
+            return _page_delivery_items(
                 items,
                 cursor,
                 page_size,
-                cursor_fingerprint=cursor_fingerprint,
-                hard_limit=hard_limit,
-                source_coverage=region.source_coverage,
-                region_membership=region.region_membership,
-                scope=_region_read_scope(region),
-                collection_coverage=collection_coverage,
-                collection_continuations=(),
+                cursor_fingerprint,
+                hard_limit,
+                lambda page, continuation, start, end, total: Opened(
+                    items=page,
+                    source_coverage=region.source_coverage,
+                    region_membership=region.region_membership,
+                    result_page=_delivery_result_page(page, start, end, total),
+                    scope=_region_read_scope(region),
+                    collection_coverage=collection_coverage,
+                    collection_continuations=(),
+                    continuation=continuation,
+                ),
             )
         if action == "find":
             if not query.strip():
@@ -770,17 +823,16 @@ def inspect_actor_world(
                 page_size,
                 hard_limit,
             )
-            offset = _decode_read_cursor(cursor, len(matches), cursor_fingerprint)
-            return _page_read_items(
+            return _page_delivery_items(
                 matches,
-                offset,
+                cursor,
                 page_size,
-                hard_limit,
                 cursor_fingerprint,
-                lambda page, next_cursor: Matches(
+                hard_limit,
+                lambda page, continuation, _start, _end, _total: Matches(
                     page,
                     _index_coverage(region_index),
-                    next_cursor,
+                    continuation,
                 ),
             )
         if action == "view_all":
@@ -795,14 +847,16 @@ def inspect_actor_world(
                 page_size,
                 hard_limit,
             )
-            offset = _decode_read_cursor(cursor, len(items), cursor_fingerprint)
-            return _page_read_items(
+            return _page_delivery_items(
                 items,
-                offset,
+                cursor,
                 page_size,
-                hard_limit,
                 cursor_fingerprint,
-                Page,
+                hard_limit,
+                lambda page, continuation, _start, _end, _total: Page(
+                    page,
+                    continuation,
+                ),
             )
         return Empty(action, _index_coverage(region_index), ("use read_region, search, or view_all",))
     except ValueError:
@@ -818,6 +872,8 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
             "has_more": bool(outcome.next_cursor),
             "next_cursor": outcome.next_cursor or None,
         }
+        if outcome.continuation is not None:
+            result["continuation"] = _delivery_continuation_public(outcome.continuation)
         if isinstance(outcome, Opened):
             result.update(
                 {
@@ -836,15 +892,16 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
                 )
         return _with_world_read_metadata(result)
     if isinstance(outcome, Matches):
-        return _with_world_read_metadata(
-            {
-                "kind": kind,
-                "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
-                "coverage": outcome.coverage,
-                "has_more": bool(outcome.next_cursor),
-                "next_cursor": outcome.next_cursor or None,
-            }
-        )
+        result = {
+            "kind": kind,
+            "items": tuple(_search_match_with_follow_up(item) for item in outcome.items),
+            "coverage": outcome.coverage,
+            "has_more": bool(outcome.next_cursor),
+            "next_cursor": outcome.next_cursor or None,
+        }
+        if outcome.continuation is not None:
+            result["continuation"] = _delivery_continuation_public(outcome.continuation)
+        return _with_world_read_metadata(result)
     if isinstance(outcome, Empty):
         return _with_world_read_metadata(
             {
@@ -875,6 +932,24 @@ def inspect_outcome_public(outcome: InspectWorldOutcome) -> Mapping[str, object]
     )
 
 
+def _delivery_continuation_public(continuation: DeliveryContinuation) -> Mapping[str, object]:
+    result: dict[str, object] = {
+        "kind": continuation.kind,
+        "cursor": continuation.cursor,
+        "item_offset": continuation.item_offset,
+        "total_items": continuation.total_items,
+    }
+    if continuation.kind == "detail":
+        result.update(
+            {
+                "path": continuation.path,
+                "offset": continuation.offset,
+                "total": continuation.total,
+            }
+        )
+    return freeze_json(result)
+
+
 _INSPECT_RECORD_REF_KINDS: tuple[tuple[str, PublicRefKind | None], ...] = (
     ("region_ref", PublicRefKind.REGION),
     ("structural_context", PublicRefKind.REGION),
@@ -903,6 +978,7 @@ def inspect_outcome_ephemeral_paths(
     paths: set[tuple[str, ...]] = {("executable_grounding",)}
     if isinstance(outcome, Opened | Matches | Page):
         paths.add(("next_cursor",))
+        paths.add(("continuation", "cursor"))
         for prefix in (("items", "*"), ("items", "*", "content", "*")):
             paths.update((*prefix, field_name) for field_name in _INSPECT_RECORD_EPHEMERAL_FIELDS)
             paths.add((*prefix, "source_context", "region_ref"))
@@ -1905,8 +1981,8 @@ def _semantic_unit_records(
             "role": root.role,
             "content": content,
         }
-        if record["kind"] == "partial_item":
-            record["content_truncated"] = True
+        if partial:
+            record["source_detail_coverage"] = "incomplete"
         if root.label:
             record["label"] = root.label
         if shape is SemanticShapeKind.RECORD:
@@ -1936,6 +2012,8 @@ def _compact_repeated_target(target, grounding, verbs_by_ref) -> Mapping[str, ob
         item["text"] = target.label
     if state:
         item["state"] = state
+    if target.state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True:
+        item["source_detail_coverage"] = "incomplete"
     _attach_current_grounding(
         item,
         grounding.target_refs.get(target.target_id, ""),
@@ -2053,6 +2131,8 @@ def _target_item(region_ref, target, grounding, verbs_by_ref) -> Mapping[str, ob
     state = project_model_state(target.state, interactive=False)
     if state:
         item["state"] = state
+    if target.state.get(_SOURCE_TEXT_TRUNCATION_FIELD) is True:
+        item["source_detail_coverage"] = "incomplete"
     _attach_current_grounding(
         item,
         grounding.target_refs.get(target.target_id, ""),
@@ -2090,199 +2170,353 @@ def _walk_structure_ids(root_id, nodes):
             yield from _walk_structure_ids(child_id, nodes)
 
 
-def _bounded_tool_record(item: Mapping[str, object]) -> Mapping[str, object]:
-    """Bound one owner-produced ToolReturn item without a reassembly protocol."""
-
-    if item.get("shape") in {SemanticShapeKind.RECORD.value, SemanticShapeKind.CONTROL_GROUP.value}:
-        bounded, truncated = _bounded_semantic_tool_value(item)
-    else:
-        bounded, truncated = _bounded_tool_value(item)
-    if not isinstance(bounded, Mapping):
-        raise TypeError("tool record must remain an object")
-    result = dict(bounded)
-    if truncated:
-        if result.get("kind") == "complete_item":
-            result["kind"] = "partial_item"
-        result["content_truncated"] = True
-    return result
+@dataclass(frozen=True)
+class _OmittedText:
+    path: tuple[str | int, ...]
+    value: str
+    prefix_chars: int
 
 
-def _bounded_semantic_tool_value(value, *, depth: int = 0):
-    """Trim leaf detail while conserving every Record/ControlGroup skeleton member."""
+def _project_delivery_item(
+    value: object,
+    leaf_prefix_chars: int,
+    *,
+    path: tuple[str | int, ...] = (),
+) -> tuple[object, tuple[_OmittedText, ...]]:
+    """Project one lossless skeleton and describe every Delivery-owned text omission."""
 
     if isinstance(value, str):
-        if len(value) <= _TOOL_RESULT_TEXT_MAX_CHARS:
-            return value, False
-        return value[: _TOOL_RESULT_TEXT_MAX_CHARS - 1] + "…", True
+        if len(value) <= leaf_prefix_chars:
+            return value, ()
+        return value[:leaf_prefix_chars], (_OmittedText(path, value, leaf_prefix_chars),)
     if value is None or isinstance(value, bool | int | float):
-        return value, False
-    if depth >= _TOOL_RESULT_MAX_DEPTH:
-        return "[TRUNCATED]", True
+        return value, ()
     if isinstance(value, Mapping):
         result: dict[str, object] = {}
-        truncated = False
+        omissions: list[_OmittedText] = []
         for key, item in value.items():
-            bounded, item_truncated = _bounded_semantic_tool_value(item, depth=depth + 1)
-            result[str(key)[:240]] = bounded
-            truncated = truncated or item_truncated
-        return result, truncated
+            public_key = str(key)
+            projected, nested = _project_delivery_item(
+                item,
+                leaf_prefix_chars,
+                path=(*path, public_key),
+            )
+            result[public_key] = projected
+            omissions.extend(nested)
+        return result, tuple(omissions)
     if isinstance(value, tuple | list):
-        result = []
-        truncated = False
-        for item in value:
-            bounded, item_truncated = _bounded_semantic_tool_value(item, depth=depth + 1)
-            result.append(bounded)
-            truncated = truncated or item_truncated
-        return tuple(result), truncated
-    return _bounded_semantic_tool_value(str(value), depth=depth)
+        sequence_result: list[object] = []
+        sequence_omissions: list[_OmittedText] = []
+        for index, item in enumerate(value):
+            projected, nested = _project_delivery_item(
+                item,
+                leaf_prefix_chars,
+                path=(*path, index),
+            )
+            sequence_result.append(projected)
+            sequence_omissions.extend(nested)
+        return tuple(sequence_result), tuple(sequence_omissions)
+    return _project_delivery_item(str(value), leaf_prefix_chars, path=path)
 
 
-def _bounded_tool_value(value, *, depth: int = 0):
-    if isinstance(value, str):
-        if len(value) <= _TOOL_RESULT_TEXT_MAX_CHARS:
-            return value, False
-        return value[: _TOOL_RESULT_TEXT_MAX_CHARS - 1] + "…", True
-    if value is None or isinstance(value, bool | int | float):
-        return value, False
-    if depth >= _TOOL_RESULT_MAX_DEPTH:
-        return "[TRUNCATED]", True
-    if isinstance(value, Mapping):
-        result: dict[str, object] = {}
-        truncated = len(value) > _TOOL_RESULT_COLLECTION_MAX_ITEMS
-        for key, item in tuple(value.items())[:_TOOL_RESULT_COLLECTION_MAX_ITEMS]:
-            bounded, item_truncated = _bounded_tool_value(item, depth=depth + 1)
-            result[str(key)[:240]] = bounded
-            truncated = truncated or item_truncated
-        return result, truncated
-    if isinstance(value, tuple | list):
-        truncated = len(value) > _TOOL_RESULT_COLLECTION_MAX_ITEMS
-        result = []
-        for item in value[:_TOOL_RESULT_COLLECTION_MAX_ITEMS]:
-            bounded, item_truncated = _bounded_tool_value(item, depth=depth + 1)
-            result.append(bounded)
-            truncated = truncated or item_truncated
-        return tuple(result), truncated
-    return _bounded_tool_value(str(value), depth=depth)
+def _continued_item(
+    item: Mapping[str, object],
+    leaf_prefix_chars: int,
+) -> tuple[Mapping[str, object], tuple[_OmittedText, ...]]:
+    projected, omissions = _project_delivery_item(item, leaf_prefix_chars)
+    if not isinstance(projected, Mapping):
+        raise TypeError("delivery item must remain an object")
+    if not omissions:
+        return projected, ()
+    result = dict(projected)
+    if result.get("kind") == "complete_item":
+        result["kind"] = "partial_item"
+    result["delivery_coverage"] = "continued"
+    result["delivery_omissions"] = tuple(
+        {
+            "path": omission.path,
+            "delivered_chars": omission.prefix_chars,
+            "total_chars": len(omission.value),
+        }
+        for omission in omissions
+    )
+    return result, omissions
 
 
-def _page_region_items(
-    items,
+def _page_delivery_items(
+    items: tuple[Mapping[str, object], ...],
     cursor: str,
     page_size: int,
-    *,
     cursor_fingerprint: str,
     hard_limit: int,
-    source_coverage: str,
-    region_membership: str,
-    scope: Mapping[str, object],
-    collection_coverage: str,
-    collection_continuations: tuple[Mapping[str, object], ...],
-) -> Opened | CapacityExceeded:
-    """Pack stable public records against the final serialized result size."""
+    outcome_factory,
+) -> InspectWorldOutcome:
+    """One owner for item paging, detail continuation, and final byte admission."""
 
-    offset = _decode_read_cursor(cursor, len(items), cursor_fingerprint)
+    position = decode_delivery_cursor(cursor, cursor_fingerprint)
+    if position.item_offset > len(items):
+        raise ValueError("delivery cursor offset exceeds current stream")
+    if position.mode is DeliveryCursorMode.DETAIL:
+        return _page_delivery_detail(
+            items,
+            position,
+            cursor_fingerprint,
+            hard_limit,
+            outcome_factory,
+        )
+
+    start = position.item_offset
     page: list[Mapping[str, object]] = []
-    index = offset
+    index = start
     while index < len(items) and len(page) < page_size:
         candidate = (*page, items[index])
         candidate_end = index + 1
-        candidate_cursor = encode_cursor(candidate_end, cursor_fingerprint) if candidate_end < len(items) else ""
-        outcome = Opened(
-            candidate,
-            candidate_cursor,
-            source_coverage,
-            region_membership,
-            _region_result_page(offset, candidate_end, len(items)),
-            scope,
-            collection_coverage,
-            collection_continuations,
+        next_position = (
+            DeliveryCursorPosition(DeliveryCursorMode.ITEMS, candidate_end)
+            if candidate_end < len(items)
+            else None
         )
+        continuation = _continuation_for_position(
+            next_position,
+            cursor_fingerprint,
+            len(items),
+        )
+        outcome = outcome_factory(candidate, continuation, start, candidate_end, len(items))
         if _inspect_outcome_bytes(outcome) <= hard_limit:
             page.append(items[index])
             index = candidate_end
             continue
         if page:
-            next_cursor = encode_cursor(index, cursor_fingerprint)
-            admitted = Opened(
+            return _admitted_delivery_page(
                 tuple(page),
-                next_cursor,
-                source_coverage,
-                region_membership,
-                _region_result_page(offset, index, len(items)),
-                scope,
-                collection_coverage,
-                collection_continuations,
+                start,
+                index,
+                items,
+                cursor_fingerprint,
+                hard_limit,
+                outcome_factory,
             )
-            if _inspect_outcome_bytes(admitted) <= hard_limit:
-                return admitted
-            return CapacityExceeded(_inspect_outcome_bytes(admitted), hard_limit)
-        bounded = _bounded_tool_record(items[index])
-        bounded_outcome = Opened(
-            (bounded,),
-            candidate_cursor,
-            source_coverage,
-            region_membership,
-            _region_result_page(offset, candidate_end, len(items)),
-            scope,
-            collection_coverage,
-            collection_continuations,
+        return _continued_delivery_item_page(
+            items,
+            index,
+            cursor_fingerprint,
+            hard_limit,
+            outcome_factory,
         )
-        if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
-            page.append(bounded)
-            index = candidate_end
-            continue
-        return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
-    next_cursor = encode_cursor(index, cursor_fingerprint) if index < len(items) else ""
-    return Opened(
+    return _admitted_delivery_page(
         tuple(page),
-        next_cursor,
-        source_coverage,
-        region_membership,
-        _region_result_page(offset, index, len(items)),
-        scope,
-        collection_coverage,
-        collection_continuations,
+        start,
+        index,
+        items,
+        cursor_fingerprint,
+        hard_limit,
+        outcome_factory,
     )
 
 
-def _page_read_items(
+def _admitted_delivery_page(
+    page: tuple[Mapping[str, object], ...],
+    start: int,
+    end: int,
     items: tuple[Mapping[str, object], ...],
-    offset: int,
-    page_size: int,
-    hard_limit: int,
     cursor_fingerprint: str,
+    hard_limit: int,
     outcome_factory,
-) -> Matches | Page | CapacityExceeded:
-    """Bound a simple read/search page against its final public ToolReturn size."""
+) -> InspectWorldOutcome:
+    next_position = DeliveryCursorPosition(DeliveryCursorMode.ITEMS, end) if end < len(items) else None
+    continuation = _continuation_for_position(
+        next_position,
+        cursor_fingerprint,
+        len(items),
+    )
+    outcome = outcome_factory(page, continuation, start, end, len(items))
+    required = _inspect_outcome_bytes(outcome)
+    return outcome if required <= hard_limit else CapacityExceeded(required, hard_limit)
 
-    page: list[Mapping[str, object]] = []
-    index = offset
-    while index < len(items) and len(page) < page_size:
-        candidate = (*page, items[index])
-        candidate_end = index + 1
-        candidate_cursor = encode_cursor(candidate_end, cursor_fingerprint) if candidate_end < len(items) else ""
-        outcome = outcome_factory(candidate, candidate_cursor)
-        if _inspect_outcome_bytes(outcome) <= hard_limit:
-            page.append(items[index])
-            index = candidate_end
+
+def _continued_delivery_item_page(
+    items: tuple[Mapping[str, object], ...],
+    item_offset: int,
+    cursor_fingerprint: str,
+    hard_limit: int,
+    outcome_factory,
+) -> InspectWorldOutcome:
+    smallest_required = 0
+    for leaf_prefix_chars in (_TOOL_RESULT_TEXT_MAX_CHARS, 1024, 512, 256, 128, 64, 32, 16, 8, 0):
+        projected, omissions = _continued_item(items[item_offset], leaf_prefix_chars)
+        if not omissions:
             continue
-        if not page:
-            bounded = _bounded_tool_record(items[index])
-            bounded_outcome = outcome_factory((bounded,), candidate_cursor)
-            if _inspect_outcome_bytes(bounded_outcome) <= hard_limit:
-                page.append(bounded)
-                index = candidate_end
-                continue
-            return CapacityExceeded(_inspect_outcome_bytes(bounded_outcome), hard_limit)
-        break
-    next_cursor = encode_cursor(index, cursor_fingerprint) if index < len(items) else ""
-    admitted = outcome_factory(tuple(page), next_cursor)
-    required = _inspect_outcome_bytes(admitted)
-    return admitted if required <= hard_limit else CapacityExceeded(required, hard_limit)
+        position = DeliveryCursorPosition(
+            DeliveryCursorMode.DETAIL,
+            item_offset,
+            0,
+            omissions[0].prefix_chars,
+            leaf_prefix_chars,
+        )
+        continuation = _continuation_for_position(
+            position,
+            cursor_fingerprint,
+            len(items),
+            omissions=omissions,
+        )
+        outcome = outcome_factory(
+            (projected,),
+            continuation,
+            item_offset,
+            item_offset + 1,
+            len(items),
+        )
+        required = _inspect_outcome_bytes(outcome)
+        smallest_required = required if not smallest_required else min(smallest_required, required)
+        if required <= hard_limit:
+            return outcome
+    return CapacityExceeded(smallest_required or _inspect_item_bytes(items[item_offset]), hard_limit)
+
+
+def _page_delivery_detail(
+    items: tuple[Mapping[str, object], ...],
+    position: DeliveryCursorPosition,
+    cursor_fingerprint: str,
+    hard_limit: int,
+    outcome_factory,
+) -> InspectWorldOutcome:
+    if position.item_offset >= len(items):
+        raise ValueError("detail cursor item is absent")
+    _projected, omissions = _continued_item(items[position.item_offset], position.leaf_prefix_chars)
+    if position.detail_index >= len(omissions):
+        raise ValueError("detail cursor path is absent")
+    omission = omissions[position.detail_index]
+    if not omission.prefix_chars <= position.detail_offset < len(omission.value):
+        raise ValueError("detail cursor offset is invalid")
+
+    maximum = min(_TOOL_RESULT_TEXT_MAX_CHARS, len(omission.value) - position.detail_offset)
+    low, high = 1, maximum
+    admitted: InspectWorldOutcome | None = None
+    smallest_required = 0
+    while low <= high:
+        length = (low + high) // 2
+        end = position.detail_offset + length
+        next_position = _position_after_detail(position, omissions, end, len(items))
+        continuation = _continuation_for_position(
+            next_position,
+            cursor_fingerprint,
+            len(items),
+            omissions=omissions if next_position and next_position.mode is DeliveryCursorMode.DETAIL else (),
+        )
+        detail = {
+            "kind": "detail_page",
+            "parent_item": position.item_offset,
+            "path": omission.path,
+            "text": omission.value[position.detail_offset:end],
+            "range": {
+                "start": position.detail_offset,
+                "end": end,
+                "total": len(omission.value),
+            },
+            "delivery_coverage": "continued" if next_position is not None else "complete",
+        }
+        outcome = outcome_factory(
+            (detail,),
+            continuation,
+            position.item_offset,
+            position.item_offset + 1,
+            len(items),
+        )
+        required = _inspect_outcome_bytes(outcome)
+        smallest_required = required if not smallest_required else min(smallest_required, required)
+        if required <= hard_limit:
+            admitted = outcome
+            low = length + 1
+        else:
+            high = length - 1
+    return admitted or CapacityExceeded(smallest_required, hard_limit)
+
+
+def _position_after_detail(
+    position: DeliveryCursorPosition,
+    omissions: tuple[_OmittedText, ...],
+    end: int,
+    total_items: int,
+) -> DeliveryCursorPosition | None:
+    omission = omissions[position.detail_index]
+    if end < len(omission.value):
+        return DeliveryCursorPosition(
+            DeliveryCursorMode.DETAIL,
+            position.item_offset,
+            position.detail_index,
+            end,
+            position.leaf_prefix_chars,
+        )
+    if position.detail_index + 1 < len(omissions):
+        following = omissions[position.detail_index + 1]
+        return DeliveryCursorPosition(
+            DeliveryCursorMode.DETAIL,
+            position.item_offset,
+            position.detail_index + 1,
+            following.prefix_chars,
+            position.leaf_prefix_chars,
+        )
+    if position.item_offset + 1 < total_items:
+        return DeliveryCursorPosition(DeliveryCursorMode.ITEMS, position.item_offset + 1)
+    return None
+
+
+def _continuation_for_position(
+    position: DeliveryCursorPosition | None,
+    fingerprint: str,
+    total_items: int,
+    *,
+    omissions: tuple[_OmittedText, ...] = (),
+) -> DeliveryContinuation | None:
+    if position is None:
+        return None
+    cursor = encode_delivery_cursor(position, fingerprint)
+    if position.mode is DeliveryCursorMode.ITEMS:
+        return DeliveryContinuation("items", cursor, position.item_offset, total_items)
+    if position.detail_index >= len(omissions):
+        raise ValueError("detail continuation path is absent")
+    omission = omissions[position.detail_index]
+    return DeliveryContinuation(
+        "detail",
+        cursor,
+        position.item_offset,
+        total_items,
+        omission.path,
+        position.detail_offset,
+        len(omission.value),
+    )
+
+
+def _inspect_item_bytes(item: object) -> int:
+    return len(
+        json.dumps(
+            to_json_compatible(item),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    )
 
 
 def _region_result_page(start: int, end: int, total: int) -> str:
     return "1/1" if start == 0 and end == total else f"records:{start + 1}-{end}/{total}"
+
+
+def _delivery_result_page(
+    page: tuple[Mapping[str, object], ...],
+    start: int,
+    end: int,
+    total: int,
+) -> str:
+    if len(page) == 1 and page[0].get("kind") == "detail_page":
+        item_range = page[0].get("range", {})
+        parent_item = page[0].get("parent_item", 0)
+        if isinstance(item_range, Mapping) and type(parent_item) is int:
+            return (
+                f"detail:item={parent_item + 1} "
+                f"chars={item_range.get('start', 0)}-{item_range.get('end', 0)}/{item_range.get('total', 0)}"
+            )
+    return _region_result_page(start, end, total)
 
 
 def _inspect_outcome_bytes(outcome: InspectWorldOutcome) -> int:
@@ -2317,15 +2551,6 @@ def _region_read_scope(region: WorldRegion) -> Mapping[str, object]:
     if region.scope_path:
         scope["context"] = region.scope_path
     return scope
-
-
-def _decode_read_cursor(cursor: str, total: int, fingerprint: str) -> int:
-    if not cursor:
-        return 0
-    offset = decode_cursor(cursor, fingerprint)
-    if offset < 0 or offset > total:
-        raise ValueError("cursor outside result")
-    return offset
 
 
 def _world_read_cursor_fingerprint(

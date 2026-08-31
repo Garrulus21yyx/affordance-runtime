@@ -145,8 +145,9 @@ def test_action_prompt_requires_fresh_reassessment_and_bounded_collection_audit(
     assert "deduplicate by public identity" in system
     assert "full supported result set" in system
     assert "Fresh World and ToolReturn coverage own" in system
-    assert "Follow a returned next_cursor exactly once" in system
-    assert "next_cursor only continues the current" in system
+    assert "Follow a returned continuation.cursor exactly once" in system
+    assert "continuation.cursor continues either" in system
+    assert "exact omitted detail path" in system
     assert "collection_coverage=unknown does not prove exhaustion" in system
     assert "pagination route remains an ordinary action" in system
     assert "does not authorize repeating the same read" in system
