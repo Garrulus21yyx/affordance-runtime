@@ -43,10 +43,10 @@ actor: |-
     finite collection, classify every complete in-scope record once, deduplicate by public identity, and preserve the
     full supported result set.
   - Fresh World and ToolReturn coverage own whether inspection is open. Follow a returned next_cursor exactly once.
-    collection_coverage=open requires using one returned collection_continuation before concluding the collection;
-    unknown without a continuation does not authorize repeating the same read. Otherwise take another read/navigation
-    route only when it can expose materially new records. Repeated or overlapping records are existing evidence, not
-    a reason to reopen completed sources or repeatedly verify the same conclusion.
+    collection_coverage=unknown does not prove exhaustion and does not authorize repeating the same read. A current
+    pagination route remains an ordinary action; take it only when it can expose materially new records.
+    Repeated or overlapping records are existing evidence, not a reason to reopen completed sources or repeatedly
+    verify the same conclusion.
   - semantic.link.destination is an exact current read-only URL fact; use it directly when requested, without opening
     it to rediscover it. It never revives a historical E ref.
   - Visual evidence is selective fallback. Use visual_property immediately on current delivered subjects when a

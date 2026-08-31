@@ -718,12 +718,7 @@ def inspect_actor_world(
                 grounding,
                 verbs_by_ref,
             )
-            collection_coverage, collection_continuations = _region_collection_read_contract(
-                region,
-                observation,
-                grounding,
-                verbs_by_ref,
-            )
+            collection_coverage = "unknown" if region.repeated_item_roots else "not_applicable"
             cursor_fingerprint = _world_read_cursor_fingerprint(
                 observation.observation_id,
                 action,
@@ -742,7 +737,7 @@ def inspect_actor_world(
                 region_membership=region.region_membership,
                 scope=_region_read_scope(region),
                 collection_coverage=collection_coverage,
-                collection_continuations=collection_continuations,
+                collection_continuations=(),
             )
         if action == "find":
             if not query.strip():
@@ -2273,50 +2268,6 @@ def _region_read_scope(region: WorldRegion) -> Mapping[str, object]:
     if region.scope_path:
         scope["context"] = region.scope_path
     return scope
-
-
-def _region_collection_read_contract(
-    region: WorldRegion,
-    observation: WorldObservation,
-    grounding: AgentGroundingIndexView,
-    verbs_by_ref: Mapping[str, tuple[str, ...]],
-) -> tuple[str, tuple[Mapping[str, object], ...]]:
-    """Project collection coverage separately from local read pagination.
-
-    ``next_cursor`` only pages the records already present in this fresh
-    region.  A web collection remains open only when the SurfaceAdapter and
-    region index prove a sibling ``next`` control and that control is still an
-    executable route in the same World.  Missing or ambiguous navigation is
-    unknown, never silently closed.
-    """
-
-    if not region.repeated_item_roots:
-        return "not_applicable", ()
-    targets = {item.target_id: item for item in observation.targets}
-    continuations: list[Mapping[str, object]] = []
-    for target_id, relation in region.collection_navigation:
-        if relation != "next":
-            continue
-        target = targets.get(target_id)
-        target_ref = grounding.target_refs.get(target_id, "")
-        verbs = verbs_by_ref.get(target_ref, ())
-        if (
-            target is None
-            or not PublicRefCodec.accepts(target_ref, expected=PublicRefKind.EXECUTABLE)
-            or "activate" not in verbs
-        ):
-            continue
-        continuations.append(
-            freeze_json(
-                {
-                    "relation": relation,
-                    "label": target.label,
-                    "target_ref": target_ref,
-                    "verbs": verbs,
-                }
-            )
-        )
-    return ("open" if continuations else "unknown"), tuple(continuations)
 
 
 def _decode_read_cursor(cursor: str, total: int, fingerprint: str) -> int:

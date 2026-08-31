@@ -7,7 +7,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -127,7 +127,6 @@ class WorldRegion:
     source_coverage: str = ""
     region_membership: str = "complete"
     scope_path: tuple[str, ...] = ()
-    collection_navigation: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -149,16 +148,6 @@ class WorldRegion:
             if len(values) != len(set(values)):
                 raise ValueError(f"delivery region {name} must be unique")
             object.__setattr__(self, name, values)
-        navigation = tuple(self.collection_navigation)
-        if len(navigation) != len(set(navigation)) or any(
-            not isinstance(item, tuple)
-            or len(item) != 2
-            or not all(isinstance(value, str) and value.strip() for value in item)
-            or item[1] not in {"next", "previous", "page"}
-            for item in navigation
-        ):
-            raise ValueError("delivery region collection navigation is invalid")
-        object.__setattr__(self, "collection_navigation", navigation)
         counts = dict(self.counts)
         if any(type(value) is not int or value < 0 for value in counts.values()):
             raise ValueError("delivery region counts must be non-negative integers")
@@ -301,10 +290,7 @@ class WorldDeliveryIndex:
         previous_index: "WorldDeliveryIndex | None" = None,
     ) -> "WorldDeliveryIndex":
         seeds = _functional_partition(observation, action_options, limits)
-        regions = _associate_collection_navigation(
-            _materialize_regions(observation, seeds),
-            observation,
-        )
+        regions = _materialize_regions(observation, seeds)
         target_keys = {target_id: region.key for region in regions for target_id in region.member_target_ids}
         fact_keys = {fact_id: region.key for region in regions for fact_id in region.member_fact_ids}
         action_keys = {action_id: region.key for region in regions for action_id in region.member_action_ids}
@@ -1107,102 +1093,6 @@ def _materialize_regions(observation: WorldObservation, seeds: tuple[_RegionSeed
             )
         )
     return tuple(regions)
-
-
-def _associate_collection_navigation(
-    regions: tuple[WorldRegion, ...],
-    observation: WorldObservation,
-) -> tuple[WorldRegion, ...]:
-    """Attach only paginator controls whose collection ownership is proven.
-
-    Surface adapters own the normalized ``pagination_relation`` fact.  This
-    index owns the functional-region partition and may prove ownership when a
-    repeated collection embeds its paginator. A sibling ``next`` relation does
-    not identify which collection it paginates, even if only one collection is
-    visible. Until Surface evidence carries an explicit collection owner, every
-    sibling relation remains an ordinary ActionSpace route and collection
-    coverage fails closed as unknown.
-    """
-
-    targets = {item.target_id: item for item in observation.targets}
-    pagination_by_region: dict[str, tuple[tuple[str, str], ...]] = {}
-    for region in regions:
-        navigation = tuple(
-            (target_id, relation)
-            for target_id in region.member_target_ids
-            if (target := targets.get(target_id)) is not None
-            and isinstance((relation := target.state.get("pagination_relation")), str)
-            and relation in {"next", "previous", "page"}
-        )
-        if navigation:
-            pagination_by_region[region.key] = navigation
-    if not pagination_by_region:
-        return regions
-
-    assigned: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    canonical = {
-        (item.source_observation_id, item.source_target_id): item.canonical_target_id
-        for item in observation.entity_source_links
-    }
-    for source in observation.sources:
-        nodes = {item.structure_id: item for item in source.structure}
-        for region in regions:
-            navigation = pagination_by_region.get(region.key, ())
-            if region.source_id != source.observation_id or not navigation or not region.repeated_item_roots:
-                continue
-            pagination_targets = {target_id for target_id, _relation in navigation}
-            targets_by_root = {
-                root_id: _structure_target_ids(
-                    root_id,
-                    nodes,
-                    source.observation_id,
-                    canonical,
-                )
-                for root_id in region.repeated_item_roots
-            }
-            paginator_roots = {
-                root_id
-                for root_id, root_targets in targets_by_root.items()
-                if root_targets and root_targets <= pagination_targets
-            }
-            record_roots = tuple(
-                root_id for root_id in region.repeated_item_roots if root_id not in paginator_roots
-            )
-            owned_targets = set().union(*(targets_by_root[root_id] for root_id in paginator_roots))
-            owned_navigation = tuple(
-                item for item in navigation if item[0] in owned_targets
-            )
-            # Collection ownership requires an independent paginator-only item
-            # beside at least two record items. A direction-bearing link inside
-            # a record remains an ordinary ActionSpace route: it may describe
-            # article/workflow navigation rather than collection pagination.
-            if len(record_roots) >= 2 and owned_navigation:
-                assigned[region.key].extend(owned_navigation)
-
-    return tuple(
-        replace(
-            region,
-            collection_navigation=tuple(dict.fromkeys(assigned[region.key])),
-        )
-        if assigned.get(region.key)
-        else region
-        for region in regions
-    )
-
-
-def _structure_target_ids(
-    root_id: str,
-    nodes: Mapping[str, object],
-    source_id: str,
-    canonical: Mapping[tuple[str, str], str],
-) -> frozenset[str]:
-    target_ids: set[str] = set()
-    for structure_id in _walk_ids(root_id, nodes):
-        source_target_id = str(getattr(nodes[structure_id], "semantic_target_id", ""))
-        target_id = canonical.get((source_id, source_target_id), source_target_id)
-        if target_id:
-            target_ids.add(target_id)
-    return frozenset(target_ids)
 
 
 def _document_lineage(observation: WorldObservation) -> str:
