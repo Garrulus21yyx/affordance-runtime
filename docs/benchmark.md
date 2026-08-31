@@ -295,6 +295,53 @@ reviewer-name rule, fuzzy Runtime record merger, larger progress store, or secon
 Semantic accuracy and reasoning-token efficiency remain open for held-out comparison or a stronger ActionPolicy
 profile; they are not inferred fixed from the provider-free gate.
 
+### 2026-08-31 diagnostic10b owner repairs — implemented, live rerun pending
+
+The second ten-case cohort at
+[`de6ff135`](../evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/run.json)
+is a pre-repair diagnostic, not a post-repair score. Three cases provide direct generic World/ActionSpace witnesses:
+
+- Task307 timed out with readable `Nic Chan` text but no current action route for the corresponding autocomplete row.
+  The BrowserGym adapter now captures the AX/DOM BID union, publishes a bounded DOM-only actionable record when AX
+  omitted it, and deduplicates normal aliases. A generated property proves exactly one route for every current
+  DOM-only actionable BID.
+- Task780 timed out while a page exposed roughly 9,600 targets. Four per-target full scans made World construction
+  superlinear. The owner indexes each identity/descendant/source/component relation once. The full 9,600-target gate
+  conserves every label and completes in 3.7--4.9 seconds on this host versus about 18.5 seconds before repair, under
+  the unchanged complete-World contract.
+- Task566's complete document text had been written into Monaco, but the accessible native proxy exposed only its
+  active line. The adapter now marks that generic control value `semantic.value.scope=active_segment`; ActionOutcome
+  cannot use equality to prove a whole-document postcondition. Generated value-scope tests cover equality,
+  inequality, change, and truncation without editor/task specialization.
+
+The same cohort also reconfirmed a recovery-efficiency defect: deliberate DeepSeek generations could spend their
+entire 2K/4K output on hidden reasoning and then enter a non-thinking Catalog-wide fallback. The current production
+contract no longer continues a rejected reasoning prefix. One recovery call receives the same fresh World, current
+Catalog, exact ToolReturns/outcomes, Harness summary, recent ref-free outcomes, and active Monitor facts; its single
+complete ToolCall is the atomic decision. PydanticAI physically disables hidden thinking and requires a tool only at
+this recovery boundary. A truncated, missing, or multiple-call response receives one full same-context retry; a
+second incomplete response is `policy_incomplete` with zero dispatch. An ordinary truncation may complete only one
+already named current operation; without that anchor it fails instead of selecting an arbitrary action.
+
+This keeps the original owner split intact: SurfaceAdapter/World publishes facts and executable routes; Monitor
+detects mechanical no-progress; the sole ActionPolicy interprets and changes route; Runtime validates and blocks
+exact failed replay; the native evaluator alone terminates. No `current_activity`, progress ledger, second LLM,
+semantic Monitor, visual fallback, task vocabulary, or benchmark branch was added.
+
+Focused gates report 158 World/BrowserGym tests and 218 policy/Monitor/runtime/provider tests. A real final-contract
+probe returned one accepted DeepSeek v4 Flash `SelectAction` in 1.54 seconds with one physical request. The configured
+`glm-5.2` credential currently fails authentication, Zhipu was rate-limited, and Gemini/Mistral rejected the full
+dynamic-catalog request despite accepting minimal direct tool probes. Therefore no provider is hard-coded or silently
+promoted. GLM-5.2 is the preferred stronger-policy A/B candidate once it passes the same wire gate; DeepSeek is the
+only verified current option. These implementation and capability results do not change the diagnostic10b task
+outcomes. Post-repair held-out execution must still measure success, policy calls, recovery-to-new-route latency,
+exact replay, no-effect dispatches, and closed-coverage reinspection.
+
+The final fixed-interpreter repository gate reports
+`2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented
+repository-missing archived dashboard trace and fails before product code. Full Ruff and `git diff --check` pass.
+This is implementation evidence only; the post-repair live cohort remains deliberately unscored.
+
 ### 2026-08-31 perception lifecycle repair, appearance rollback, and live falsification
 
 The follow-up diagnosis separates three generic contract gaps, one falsified Surface hypothesis, and model-owned route

@@ -344,6 +344,76 @@ repository-missing archived dashboard trace; it fails before product code. Full 
 `git diff --check` pass. This verifies the provider-free owner algebra and request-profile wiring, not live policy
 quality, Task0/Task21 completion, or aggregate efficiency.
 
+### 2026-08-31 executable-World and atomic-recovery convergence — implemented, live-open
+
+The second frozen ten-case diagnostic cohort at
+[`de6ff135`](../evidence/live/webarena-diagnostic10b-deepseek-v4-flash-20260831-de6ff135/all10/run.json)
+reopened three long-standing World/ActionSpace invariants and the physical recovery boundary. The fixes remain on the
+same normative chain; they add no visual fallback, progress ledger, StrategyRevision call, Reviewer, second policy,
+or task/site/label branch.
+
+`2f97e317` closes the three World-side gaps at their existing owners:
+
+1. BrowserGym now captures the union of current AX and DOM BIDs in its one bulk physical pass. A current DOM element
+   that is natively actionable, has an authored role, or owns an outermost pointer affordance receives a bounded label
+   and one canonical action route even when the sampled AX tree omitted that element. Existing DOM/AX aliases still
+   deduplicate by BID. A generated inventory property varies DOM-only controls and proves one route per current BID.
+   This is the generic Task307 mechanism: readable `Nic Chan` existed, but the action projection had no corresponding
+   current route.
+2. The complete semantic pipeline no longer rebuilds whole-record, descendant, source-mapping, or connected-component
+   indexes once per target. A 9,600-target full projection conserves all labels and completes in 3.7--4.9 seconds on
+   this host under an 8-second gate; the pre-repair all-link witness took about 18.5 seconds. This is the Task780
+   mechanism. No target cap, sampling rule, or relaxed completeness threshold was introduced.
+3. A visually hidden native text control used as one active segment of a composite editor publishes
+   `semantic.value.scope=active_segment`. Exact equality to that proxy can no longer prove the whole document's
+   postcondition. Ordinary complete text controls retain the existing equality algebra. A generated property proves
+   that active-segment equality, inequality, changed state, and truncation never become a false whole-document
+   success. This is the Task566 Monaco mechanism.
+
+`655b142d`, `edaaffca`, and `a2ebf957` close the recovery output boundary without moving semantic ownership. The
+Monitor still detects no effect, repeated result, and oscillation; the same ActionPolicy still determines why a route
+failed and which current action to take; Runtime still validates and rejects an exact proved-failed attempt. The
+`deliberate` profile remains the semantic reasoning request for all policy adapters. At the PydanticAI physical wire,
+however, a recovery attempt receives the unchanged fresh context plus one bounded audit instruction, disables an
+unbounded hidden-thinking stream, requires one current ToolCall, and treats that single ToolCall as the complete
+atomic recovery decision.
+
+The supported transition is now:
+
+```text
+complete current ToolCall
+  -> normal Catalog validation, binding, and Runtime admission
+truncated / no ToolCall / multiple ToolCalls
+  -> one full retry with the same fresh context and current Catalog
+second incomplete response
+  -> policy_incomplete, zero dispatch
+one operation already named before an ordinary truncation
+  -> representation-only completion of that same current operation
+unanchored ordinary truncation
+  -> typed output_budget_exhausted, no arbitrary Catalog-wide guess
+```
+
+Rejected partial reasoning is transcript evidence only. It is not projected into a continuation checkpoint, official
+history, Harness summary, or a second progress stream. The next fresh World and `ActionOutcome` verify the selected
+action; an unchanged/unsatisfied result keeps the Monitor epoch active, and only owner-produced new information or a
+verified operational change closes the applicable recovery lifecycle. Provider, cancellation, pending ToolReturn,
+transport retry, exact replay, and dynamic `oneOf|anyOf` representation paths share this algebra.
+
+A real capability probe on the final contract produced one accepted DeepSeek v4 Flash `SelectAction` in one physical
+request (semantic thinking requested, physical hidden thinking disabled). The configured Aliyun `glm-5.2` credential
+currently fails authentication, Zhipu `glm-4.7-flash` was rate-limited, and the configured Gemini/Mistral dynamic
+catalog requests were rejected even though minimal direct tool probes succeeded; those provider/catalog-adapter
+combinations are not silently declared supported. Provider choice remains configuration, not Runtime logic. GLM-5.2
+is the first stronger-policy candidate once its credential passes this exact gate; DeepSeek remains the only locally
+verified current recovery wire. Benchmark route quality remains live-open until held-out runs show fewer repeated
+routes and successful recovery-to-different-action transitions.
+
+The final fixed-interpreter repository gate for this implementation reports
+`2237 passed, 19 skipped, 1 deselected, 1 warning` in 106.42 seconds. The deselection is the already documented
+repository-missing archived dashboard trace and fails before product code. The focused World/BrowserGym gate reports
+158 passed; the focused policy/Monitor/runtime/provider gate reports 218 passed. These gates prove the bounded owner
+contracts above, not post-repair live task quality.
+
 ### 2026-08-31 perception-result convergence and appearance rollback — provider-free verified, live-open
 
 The post-diagnostic repair keeps the same single inference/control chain. It adds no perception ledger, progress
@@ -471,18 +541,14 @@ optional artifact into a strict native STOP call. A direct-only codec exposes on
 that supports presentation still exposes `artifact` and `public_intent`. The capability is part of contract identity,
 so Catalog and Binding share it without checking benchmark, environment class, task, label, or payload encoding.
 
-The bounded physical-output algebra also preserves semantic continuity. If a length-truncated response already names
-one current operation, the existing required-only operation recovery completes that operation without reconsidering
-it. When the provider adapter separately surfaces a pre-operation length fallback, such as a thinking-only deliberate
-response, the same ActionPolicy's one non-thinking ToolCall retry receives a JSON-encoded 2,100-byte, explicitly
-incomplete and non-authoritative head/tail checkpoint of its own rejected reasoning. If an ordinary response instead
-contains text but no operation, PydanticAI may perform its output retry inside the same `Agent.run`; that retry already
-receives the bounded raw provider response and unchanged fresh context, so it does not synthesize a second checkpoint.
-Both forms are same-call physical continuations, and their rejected response/retry material is removed from official
-history on success, cancellation, or provider failure. Any incomplete continuation must finish an interrupted
-enumeration, classification, or record audit against the unchanged fresh context; a physical truncation boundary is
-never evidence that a result set is complete. No Memory Store, semantic parser, second policy, or post-hoc answer
-repair was added.
+The current bounded physical-output algebra is defined by the 2026-08-31 atomic-recovery section above. If a
+length-truncated ordinary response already names one current operation, required-only representation recovery may
+complete that same operation without reopening semantic selection. An unanchored truncation cannot choose freely
+from the Catalog. A deliberate recovery instead retries the complete one-ToolCall decision once from the unchanged
+fresh context; it never carries a partial-reasoning checkpoint forward. Rejected response/retry material remains
+transcript-only and is removed from official history on success, cancellation, or provider failure. The checkpoint
+mechanism described by the historical Task21 run13--run15 evidence below was useful for diagnosis but is no longer a
+production path.
 
 The Task21 live sequence falsified each narrower hypothesis. In
 [`run10`](../evidence/live/w1b-task-21-deepseek-v4-flash-20260830-contract-convergence-run10/run.json), the first final
