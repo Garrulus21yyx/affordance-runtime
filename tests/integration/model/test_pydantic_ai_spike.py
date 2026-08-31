@@ -54,7 +54,11 @@ from affordance_runtime.agent.context.contracts import (
 )
 from affordance_runtime.agent.context.failures import ModelFailureKind, ProviderAttemptOrigin
 from affordance_runtime.agent.context.model_turn_delivery import build_model_turn_delivery
-from affordance_runtime.agent.context.observation_delivery import ObservationDeliveryStore
+from affordance_runtime.agent.context.observation_delivery import (
+    InformationDelta,
+    InformationDeltaKind,
+    ObservationDeliveryStore,
+)
 from affordance_runtime.agent.context.step_projection import project_step_result
 from affordance_runtime.agent.decisions import (
     FinalResponse,
@@ -66,6 +70,7 @@ from affordance_runtime.agent.decisions import (
 from affordance_runtime.agent.monitor import EpisodeMonitor
 from affordance_runtime.agent.policy import AgentDecisionPorts, PolicyFailure
 from affordance_runtime.agent.run_state import StepResult
+from affordance_runtime.agent.workspace import AgentWorkspace
 from affordance_runtime.app.runtime import TargetRuntime
 from affordance_runtime.benchmarks.support import ScriptedEnvironment
 from affordance_runtime.benchmarks.webarena_verified import WebArenaVerifiedFinalResponseCodec
@@ -5096,7 +5101,27 @@ def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_b
             evaluation,
             feedback="local_tool_result",
         )
-        next_context = replace(context, last_step=committed)
+        information_delta = InformationDelta(
+            InformationDeltaKind.NEW_INFORMATION,
+            "read_region",
+            "sha256:" + "1" * 64,
+            "sha256:" + "2" * 64,
+            "sha256:" + "3" * 64,
+            "sha256:" + "4" * 64,
+            ("sha256:" + "5" * 64,),
+        )
+        next_context = replace(
+            context,
+            last_step=committed,
+            workspace=AgentWorkspace(
+                recent_steps=(
+                    project_step_result(
+                        committed,
+                        information_delta=information_delta,
+                    ),
+                ),
+            ),
+        )
 
         result = await policy.port.generate(
             ModelDecisionRequest("request:evidence-review", next_context, last_step=committed)

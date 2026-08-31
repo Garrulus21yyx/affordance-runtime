@@ -813,6 +813,77 @@ def test_exact_local_result_replay_is_rejected_under_the_same_recovery_epoch() -
     asyncio.run(scenario())
 
 
+def test_ajax_world_churn_cannot_release_or_replay_a_no_information_route() -> None:
+    @dataclass
+    class AjaxCollectionPolicy:
+        turns: int = 0
+        rejected: ToolRejectedResult | None = None
+
+        async def decide(self, context):
+            self.turns += 1
+            if self.turns in {1, 2}:
+                return SearchPageContentResult(
+                    context.context_id,
+                    "search_page_content",
+                    {"query": f"reviews-page-{self.turns}"},
+                    {
+                        "kind": "Matches",
+                        "items": ({"label": "N Randall", "rating": "40%"},),
+                        "total_count": 1,
+                    },
+                    f"provider-call:ajax-read-{self.turns}",
+                )
+            if self.turns in {3, 4}:
+                option = next(
+                    item
+                    for item in context.complete_actions
+                    if item.operation == "activate" and item.target_label == "Page 2"
+                )
+                return SelectAction(
+                    context.context_id,
+                    option.action_id,
+                    tool_call_id=f"provider-call:ajax-page-2-{self.turns}",
+                )
+            if self.turns == 5:
+                assert context.last_step is not None
+                assert isinstance(context.last_step.decision, ToolRejectedResult)
+                self.rejected = context.last_step.decision
+                return Abort(context.context_id, "replay rejected", AbortCategory.USER_REQUEST)
+            raise AssertionError("AJAX collection witness exceeded its bounded sequence")
+
+    async def scenario() -> None:
+        policy = AjaxCollectionPolicy()
+        before = _route_world("ajax-before", "/reviews", ("page-2",))
+        # The route and Page-2 control are stable, while an unrelated DOM row
+        # appears.  This is a genuine semantic World change but not a new
+        # collection record.
+        after = _route_world("ajax-after", "/reviews", ("page-2", "unrelated-row"))
+        runtime = TargetRuntime(
+            AgentDecisionPorts(policy),
+            CoreActionOutcomeProjector(),
+            RouteTaskEvaluator(),
+            goal_compiler=NotRequiredGoalCompiler("ajax_collection_recovery_test"),
+            episode_monitor=EpisodeMonitor(AgentLoopProfile(8, 1)),
+        )
+        environment = ScriptedEnvironment(
+            initial_observation=before,
+            post_observations=(after,),
+            results=(ActionResult("*", DispatchStatus.SENT, "dom", True),),
+        )
+
+        state = await runtime.run_task(environment, _route_task())
+
+        assert state.status is RunStatus.CANCELLED
+        assert policy.turns == 5
+        assert environment.execute_calls == 1
+        assert policy.rejected is not None
+        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
+        assert policy.rejected.result["failure_kind"] == "recovery_prohibited_attempt_replay"
+        assert policy.rejected.result["dispatch"] == "not_sent"
+
+    asyncio.run(scenario())
+
+
 def test_exact_control_discovery_replay_is_rejected_without_dispatch() -> None:
     @dataclass
     class DiscoveryReplayPolicy:

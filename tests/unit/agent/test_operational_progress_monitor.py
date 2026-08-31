@@ -1763,7 +1763,7 @@ def test_ineffectual_gui_attempt_after_local_recovery_remains_in_episode() -> No
     assert monitor.recovery_count == 1
 
 
-def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery() -> None:
+def test_causal_changed_gui_attempt_cannot_close_local_information_recovery() -> None:
     world = _world("observation:control-recovery")
     changed = _world("observation:changed-by-gui", route="/map/next")
     monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
@@ -1771,17 +1771,22 @@ def test_causal_changed_gui_attempt_starts_fresh_episode_after_control_recovery(
     recovery = _evaluate(monitor, _local_step(world, query="first"))
     second_recovery = _evaluate(monitor, _local_step(world, query="second"))
 
-    continued = _evaluate(monitor, _with_projected_outcome(_dispatched_step(world, changed)))
+    continued_step = _with_projected_outcome(_dispatched_step(world, changed))
+    continued = _evaluate(monitor, continued_step)
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert second_recovery.recovery_signal is not None
     assert second_recovery.recovery_signal.recovery_attempt == 1
-    assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert continued.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
-    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
-    assert continued.recovery_signal is None
-    assert monitor.recovery_count == 0
+    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CONTINUED
+    assert continued.recovery_signal is not None
+    assert continued.recovery_signal.epoch_id == second_recovery.recovery_signal.epoch_id
+    assert monitor_module._gui_attempt_signature(continued_step) in (
+        continued.recovery_signal.prohibited_attempt_signatures
+    )
+    assert monitor.recovery_count == 1
     assert monitor.latest_attempt_signature is not None
     assert monitor.latest_attempt_signature.operation == "activate"
     assert monitor.same_attempt_streak == 1

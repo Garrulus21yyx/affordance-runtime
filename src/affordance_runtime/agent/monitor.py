@@ -56,6 +56,14 @@ from affordance_runtime.world.public_semantic_digest import (
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
 _MAX_RECENT_GUI_ATTEMPTS = 16
 _MAX_PROHIBITED_ATTEMPTS = 16
+_INFORMATION_ACQUISITION_OPERATIONS = frozenset(
+    {
+        "find_controls",
+        "read_region",
+        "request_observation",
+        "search_page_content",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -208,10 +216,22 @@ class EpisodeMonitor:
         if information_delta is not None:
             evidence["latest_information_delta"] = information_delta.kind.value
         attempted_modes = tuple(dict.fromkeys((*active.attempted_modes, _attempted_mode(result))))
+        prohibited = active.prohibited_attempt_signatures
+        if _recovery_origin_is_information_stall(active) and _gui_dispatched(result):
+            gui_signature = _gui_attempt_signature(result)
+            if gui_signature is not None:
+                # A GUI route selected during a local no-information epoch gets
+                # one opportunity to expose a different inventory.  Keep its
+                # exact ref-free attempt unavailable until a subsequent local
+                # result adds information and closes this recovery.
+                prohibited = tuple(dict.fromkeys((*prohibited, gui_signature)))[
+                    -_MAX_PROHIBITED_ATTEMPTS:
+                ]
         signal = replace(
             active,
             observed_evidence=evidence,
             attempted_modes=attempted_modes,
+            prohibited_attempt_signatures=prohibited,
             evidence_revision=active.evidence_revision + 1,
         )
         self.active_recovery = signal
@@ -362,10 +382,18 @@ class EpisodeMonitor:
 
         if self.active_recovery is not None and gui_dispatched and _gui_has_operational_result(result):
             self.observation_only_streak = 0
-            self.recovery_count = 0
             self.latest_attempt_signature = gui_signature
             self.same_attempt_streak = 1
             self.active_gui_cycle_digest = ""
+            if _recovery_origin_is_information_stall(self.active_recovery):
+                # Structural/visual change proves that the GUI action took
+                # effect, not that an observation route produced new task
+                # evidence.  Carry the local recovery through the reveal or
+                # navigation action; only the following typed local delivery
+                # can close it with NEW_INFORMATION.
+                self.recovery_count = 1
+                return self._carry_recovery(result, events, information_delta)
+            self.recovery_count = 0
             return self._close_recovery(events)
 
         if self.active_recovery is not None and not gui_dispatched:
@@ -681,6 +709,17 @@ def _recovery_origin_is_local(signal: RecoverySignal) -> bool:
     return signal.observed_evidence.get("origin_dispatch") == DispatchStatus.NOT_SENT.value
 
 
+def _recovery_origin_is_information_stall(signal: RecoverySignal) -> bool:
+    """Whether a non-dispatched acquisition attempt still awaits typed information."""
+
+    attempt = signal.observed_evidence.get("attempt")
+    return bool(
+        _recovery_origin_is_local(signal)
+        and isinstance(attempt, Mapping)
+        and attempt.get("operation") in _INFORMATION_ACQUISITION_OPERATIONS
+    )
+
+
 def _control_stall_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
@@ -823,6 +862,7 @@ def _closed_route_review_signal(
         signature,
         {
             "returned_to_prior_semantic_page": True,
+            "dispatch": _dispatch_status(result),
             "closed_route_count": monitor.closed_route_count,
             "route_effectful_attempt_count": route_length,
             "outbound_operation": outbound_attempt.operation,

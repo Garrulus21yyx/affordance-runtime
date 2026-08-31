@@ -19,6 +19,7 @@ def _context(
     *,
     recovery_attempt: int = 1,
     last_step: object | None = None,
+    information_delta: str = "",
 ):
     return SimpleNamespace(
         control_feedback=(
@@ -31,6 +32,16 @@ def _context(
             else {}
         ),
         last_step=last_step,
+        workspace=SimpleNamespace(
+            recent_steps=(
+                SimpleNamespace(
+                    semantic_action="read_region",
+                    semantic_summary={"information_delta": information_delta},
+                ),
+            )
+            if last_step is not None and information_delta
+            else ()
+        ),
     )
 
 
@@ -122,9 +133,9 @@ def test_recovery_kind_without_epoch_identity_cannot_enable_deliberate_mode() ->
     assert profile.thinking_mode == "disabled"
 
 
-def test_closed_collection_read_leases_one_bounded_evidence_review() -> None:
+def test_closed_collection_with_new_information_leases_one_bounded_evidence_review() -> None:
     profile = ActionPolicyReasoningPolicy(deliberate_max_tokens=4096).select(
-        _context(last_step=_collection_read_step())
+        _context(last_step=_collection_read_step(), information_delta="new_information")
     )
 
     assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
@@ -134,15 +145,22 @@ def test_closed_collection_read_leases_one_bounded_evidence_review() -> None:
 
 
 @pytest.mark.parametrize(
-    "last_step",
+    ("last_step", "information_delta"),
     (
-        _collection_read_step(has_more=True),
-        _collection_read_step(role="main"),
-        None,
+        (_collection_read_step(has_more=True), "new_information"),
+        (_collection_read_step(role="main"), "new_information"),
+        (_collection_read_step(), "no_new_information"),
+        (_collection_read_step(), ""),
+        (None, ""),
     ),
 )
-def test_open_or_noncollection_reads_remain_ordinary(last_step: object | None) -> None:
-    profile = ActionPolicyReasoningPolicy().select(_context(last_step=last_step))
+def test_non_new_open_or_noncollection_reads_remain_ordinary(
+    last_step: object | None,
+    information_delta: str,
+) -> None:
+    profile = ActionPolicyReasoningPolicy().select(
+        _context(last_step=last_step, information_delta=information_delta)
+    )
 
     assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
     assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
@@ -155,6 +173,7 @@ def test_active_monitor_recovery_outranks_collection_evidence_review() -> None:
             "control_stall",
             "epoch:stable",
             last_step=_collection_read_step(),
+            information_delta="new_information",
         )
     )
 

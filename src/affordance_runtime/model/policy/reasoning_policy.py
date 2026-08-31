@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from affordance_runtime.agent.context.context import AgentContext
+from affordance_runtime.agent.context.observation_delivery import InformationDeltaKind
 from affordance_runtime.agent.decisions import ReadRegionResult
 
 _COLLECTION_SCOPE_ROLES = frozenset({"feed", "grid", "list", "table", "tree"})
@@ -62,7 +63,7 @@ class ActionPolicyReasoningPolicy:
                 self.deliberate_max_tokens,
                 "enabled",
             )
-        if _at_collection_evidence_boundary(context.last_step):
+        if _at_collection_evidence_boundary(context):
             return ActionPolicyCallProfile(
                 ActionPolicyInvocationPhase.DELIBERATE,
                 ActionPolicyInvocationTrigger.EVIDENCE_REVIEW,
@@ -97,11 +98,22 @@ def _deliberate_trigger(kind: str) -> ActionPolicyInvocationTrigger | None:
     return None
 
 
-def _at_collection_evidence_boundary(last_step: object | None) -> bool:
-    """Lease one bounded audit when a typed collection read has no local continuation."""
+def _at_collection_evidence_boundary(context: AgentContext) -> bool:
+    """Lease one bounded audit only for a newly extended collection inventory."""
 
+    last_step = context.last_step
     decision = getattr(last_step, "decision", None)
     if not isinstance(decision, ReadRegionResult):
+        return False
+    recent_steps = context.workspace.recent_steps
+    if not recent_steps:
+        return False
+    recent = recent_steps[-1]
+    if (
+        recent.semantic_action != "read_region"
+        or recent.semantic_summary.get("information_delta")
+        != InformationDeltaKind.NEW_INFORMATION.value
+    ):
         return False
     result = decision.result
     scope = result.get("scope")
