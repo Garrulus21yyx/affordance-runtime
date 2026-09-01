@@ -6,6 +6,28 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
+### 2026-09-01 source-topology projection convergence — provider-free implemented, live-open
+
+`SurfaceObservation.structure -> WorldObservation.semantic_topology` is the sole compositional authority. An
+unrecognized source node with children is never an `Atom`, even when that same node exposes a semantic target;
+unsupported containers remain typed `unknown` with their ordered source subtree intact. At the SurfaceAdapter
+boundary, exact repeated sibling topology may close one `Collection<Record>` claim. The proof uses only source role,
+target presence, and ordered child topology; labels, state values, task text, site text, selectors, and benchmark ids
+do not participate. Explicit table/list/row/radiogroup roles remain authoritative and are not reclassified.
+
+`WorldFusion` continues to canonicalize source ids and parent/child links without inferring structure. The existing
+`WorldDeliveryIndex` now assigns public handles, membership, coverage, and cursor capacity only from those canonical
+shape claims. Heading descendants, arbitrary target labels, repeated content, and estimated byte size no longer
+create new semantic boundaries. A source-resolved collection owns its whole Record children; an unresolved composite
+retains its original subtree. `PageMap`, `read_region`, and `search_page_content` therefore reference the same
+canonical subtree, and search returns the same complete item that region expansion returns.
+
+This is a migration of the existing topology path, not another World representation. No UnitGraph, domain Record
+builder, task parser, second renderer, cursor, memory, or provider was added. The former heading/size boundary split
+and descendant-label heading promotion in `WorldDeliveryIndex` are removed. Provider-free properties verify
+`Atom => leaf`, content-independent repeated-shape closure, exact parent/child/order conservation, whole-record
+delivery, and search/read coherence. Live benchmark closure remains open.
+
 ### 2026-09-01 one-shot decision-feedback convergence — provider-free implemented, live-open
 
 Recovery is not a second reasoning role or persistent semantic plan. `EpisodeMonitor` owns one bounded mechanical

@@ -81,7 +81,7 @@ def test_ordinary_deliberate_and_repair_profiles_are_disjoint_and_bounded() -> N
         ActionPolicyInvocationPhase.DELIBERATE,
         ActionPolicyInvocationTrigger.GROUNDING_GAP,
         1536,
-        "disabled",
+        "enabled",
     )
     assert (repair.phase, repair.trigger, repair.max_output_tokens, repair.thinking_mode) == (
         ActionPolicyInvocationPhase.REPRESENTATION_REPAIR,
@@ -99,7 +99,7 @@ def test_active_recovery_epoch_keeps_every_action_policy_call_deliberate() -> No
 
     assert {item.phase for item in profiles} == {ActionPolicyInvocationPhase.DELIBERATE}
     assert {item.trigger for item in profiles} == {ActionPolicyInvocationTrigger.CONTROL_STALL}
-    assert {item.thinking_mode for item in profiles} == {"disabled"}
+    assert {item.thinking_mode for item in profiles} == {"enabled"}
 
 
 @pytest.mark.parametrize(
@@ -122,7 +122,7 @@ def test_each_supported_monitor_recovery_kind_owns_one_deliberate_lease(
 
     assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
     assert profile.trigger is trigger
-    assert profile.thinking_mode == "disabled"
+    assert profile.thinking_mode == "enabled"
 
 
 def test_recovery_kind_without_epoch_identity_cannot_enable_deliberate_mode() -> None:

@@ -74,7 +74,6 @@ _BOUNDARY_ROLES = frozenset(
         "rootwebarea",
     }
 )
-_HEADING_ROLES = frozenset({"heading"})
 _ALNUM = re.compile(r"[^\W_]", re.UNICODE)
 
 
@@ -445,7 +444,7 @@ def _functional_partition(
                     "member_fact_ids": [],
                     "member_action_ids": [],
                     "heading": heading,
-                    "role": _region_kind(_functional_role(root)),
+                    "role": _delivery_region_kind(root),
                     "direct_labels": direct_labels,
                     "semantic_unit_roots": repeated_roots,
                     "state_badges": state_badges,
@@ -644,6 +643,12 @@ def _target_functional_paths(
 
 
 def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits) -> set[str]:
+    """Select only source-owned public topology boundaries.
+
+    Delivery assigns handles and capacity; it does not reinterpret headings,
+    repetition, or estimated size as new World structure.
+    """
+
     candidates = set(roots)
     for item in nodes.values():
         shape_kind = item.semantic_shape.kind if item.semantic_shape.status is SemanticShapeStatus.RESOLVED else None
@@ -653,20 +658,6 @@ def _candidate_boundaries(nodes, roots: tuple[str, ...], limits: DeliveryLimits)
             SemanticShapeKind.CONTROL_GROUP,
         }:
             candidates.add(item.structure_id)
-        children = tuple(nodes[child] for child in item.child_structure_ids if child in nodes)
-        if any(child.role.casefold() in _HEADING_ROLES for child in children):
-            candidates.add(item.structure_id)
-    for root_id in tuple(candidates):
-        root = nodes[root_id]
-        descendants = tuple(_walk_ids(root_id, nodes))
-        boundary_count = sum(
-            1 for item in descendants[1:] if _functional_role(nodes[item]) in _BOUNDARY_ROLES | _HEADING_ROLES
-        )
-        estimated_tokens = _estimate_tokens(" ".join(nodes[item].label for item in descendants if nodes[item].label))
-        if _functional_role(root) == "generic" and (boundary_count >= 2 or estimated_tokens > limits.exact_region_tokens):
-            for child_id in root.child_structure_ids:
-                if child_id in nodes and _meaningful_text(nodes[child_id].label):
-                    candidates.add(child_id)
     # A source-resolved collection/control group owns its semantic units.
     parents = _parents(nodes)
     return {item for item in candidates if not _has_atomic_container_ancestor(item, nodes, parents)}
@@ -745,15 +736,17 @@ def _exact_heading(root_id, member_ids, nodes, targets, canonical, source_id) ->
     root = nodes[root_id]
     if _meaningful_text(root.label):
         return root.label.strip()
-    for item_id in member_ids:
-        item = nodes[item_id]
-        if item.role.casefold() == "heading" and _meaningful_text(item.label):
-            return item.label.strip()
-    for item_id in member_ids:
-        target_id = canonical.get((source_id, nodes[item_id].semantic_target_id), "")
-        target = targets.get(target_id)
-        if target is not None and _meaningful_text(target.label):
-            return target.label.strip()
+    # A direct heading can name its containing source region.  Descendant
+    # headings and arbitrary target labels belong to their own subtrees and
+    # must not be promoted into a new delivery boundary name.
+    if (
+        root.semantic_shape.status is SemanticShapeStatus.RESOLVED
+        and root.semantic_shape.kind is SemanticShapeKind.REGION
+    ):
+        for item_id in root.child_structure_ids:
+            item = nodes.get(item_id)
+            if item is not None and item.role.casefold() == "heading" and _meaningful_text(item.label):
+                return item.label.strip()
     return ""
 
 
@@ -883,6 +876,25 @@ def _state_badges(target_ids: tuple[str, ...], targets) -> Mapping[str, object]:
 def _region_kind(role: str) -> str:
     normalized = role.casefold() or "region"
     return "document" if normalized in {"webarea", "rootwebarea"} else normalized
+
+
+def _delivery_region_kind(node: object) -> str:
+    """Expose a source-owned shape when an untyped container has no public role."""
+
+    role = _region_kind(_functional_role(node))
+    shape = getattr(node, "semantic_shape", None)
+    if role != "generic" or shape is None:
+        return role
+    if (
+        getattr(shape, "status", None) is SemanticShapeStatus.RESOLVED
+        and getattr(shape, "kind", None) in {
+            SemanticShapeKind.COLLECTION,
+            SemanticShapeKind.CONTROL_GROUP,
+            SemanticShapeKind.REGION,
+        }
+    ):
+        return shape.kind.value
+    return role
 
 
 def _functional_role(node: object) -> str:

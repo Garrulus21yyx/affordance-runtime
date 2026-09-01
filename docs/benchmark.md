@@ -2,6 +2,32 @@
 
 ## Current status
 
+### 2026-09-01 Task316 source-topology witness — provider-free repaired, live-open
+
+The bounded Task316/Task798 run under commit `04e3f799` did not reach native evaluation because the final deliberate
+DeepSeek calls exceeded their approximately 42-second transport attempt budgets. Task316 nevertheless isolated a
+World-delivery defect before that provider failure. The agent reached the correct
+`facebook/create-react-app/-/graphs/main` Contributors page. The captured source contained the exact leading records,
+including `Dan Abramov / 634 commits / dan.abramov@gmail.com`, `Joe Haddad / 292 / timer150@gmail.com`, and
+`Ian Sutherland / 153 / ian@iansutherland.ca`, but none of those names, counts, or addresses appeared in the final
+ActionPolicy prompt. The prior source classifier marked generic containers with children as `Atom`; the downstream
+region partition then promoted descendant headings and split the page into an empty `Commits to main` heading region
+and a misleading `History` main region. Two identical reads of that region correctly triggered Monitor recovery.
+
+The owner repair changes no task/site rule. At the BrowserGym SurfaceAdapter boundary, non-leaf unknown containers
+retain their source tree, and exact repeated sibling topology closes a generic `Collection<Record>` before fusion.
+Replaying the persisted Task316 source topology through that classifier produces one 100-child collection whose 100
+direct children are complete records; no label, email, commit count, or task term participates in the proof. The
+existing delivery index no longer creates boundaries from descendant headings or byte estimates, and an untyped
+source collection is publicly described by its resolved collection shape. A synthetic end-to-end owner test verifies
+that `read_region` returns each name and count/email in one complete item and that `search_page_content` returns that
+same item and region rather than a detached leaf.
+
+Focused Surface/World/delivery/model gates report `180 passed, 1 deselected`; the deselection is the already documented
+missing archived dashboard trace. The complete unit gate reports `1062 passed, 1 deselected, 1 warning`, with the same
+missing fixture excluded. Ruff and `git diff --check` pass. This is provider-free implementation evidence only: no new
+live task was run, and Task316 benchmark closure remains open.
+
 ### 2026-09-01 one-shot recovery convergence — provider-free implementation, live-open
 
 The ten-case [`diagnostic10c` cohort](../evidence/live/webarena-diagnostic10c-deepseek-flash-pro-20260831-bb0cbe83/all10-run3/summary.json)

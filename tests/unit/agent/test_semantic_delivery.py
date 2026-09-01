@@ -60,6 +60,10 @@ from affordance_runtime.model.policy.grounded_tool_contracts import (
     GroundedToolResolutionError,
 )
 from affordance_runtime.model.policy.tool_contracts import ToolCall
+from affordance_runtime.surfaces.semantic_shape import (
+    close_repeated_source_structure,
+    explicit_role_semantic_shape,
+)
 from affordance_runtime.task import RiskProfile, TaskGoal
 from affordance_runtime.world import (
     CoverageState,
@@ -1584,6 +1588,130 @@ def test_table_is_one_atomic_region_with_headers_and_complete_rows() -> None:
     descriptor = next(line for line in view.text.splitlines() if f"[{table_ref}]" in line)
     assert 'context=["Dashboard","Bestsellers summary"]' in descriptor
     assert "available_filter_controls=0" in descriptor
+
+
+def test_unknown_repeated_source_subtrees_are_delivered_as_complete_records() -> None:
+    source_id = "source:repeated-unknown"
+    targets = tuple(
+        SemanticTarget(target_id, role, label)
+        for target_id, role, label in (
+            ("contributors", "generic", ""),
+            ("dan", "generic", ""),
+            ("dan:name", "StaticText", "Dan Abramov"),
+            ("dan:detail", "StaticText", "634 commits (dan@example.test)"),
+            ("joe", "generic", ""),
+            ("joe:name", "StaticText", "Joe Haddad"),
+            ("joe:detail", "StaticText", "292 commits (joe@example.test)"),
+        )
+    )
+
+    def source_node(
+        structure_id: str,
+        role: str,
+        *,
+        parent: str = "",
+        children: tuple[str, ...] = (),
+        target: str = "",
+        label: str = "",
+    ) -> _ObservationStructureNode:
+        return _ObservationStructureNode(
+            structure_id,
+            role,
+            label,
+            parent_structure_id=parent,
+            child_structure_ids=children,
+            semantic_target_id=target,
+            semantic_shape=explicit_role_semantic_shape(
+                role,
+                has_children=bool(children),
+                has_semantic_target=bool(target),
+            ),
+        )
+
+    structure = close_repeated_source_structure((
+        source_node("root", "main", children=("contributors",)),
+        source_node(
+            "contributors",
+            "generic",
+            parent="root",
+            children=("dan", "joe"),
+            target="contributors",
+        ),
+        source_node("dan", "generic", parent="contributors", children=("dan:name", "dan:detail"), target="dan"),
+        source_node("dan:name", "StaticText", parent="dan", target="dan:name", label="Dan Abramov"),
+        source_node(
+            "dan:detail",
+            "StaticText",
+            parent="dan",
+            target="dan:detail",
+            label="634 commits (dan@example.test)",
+        ),
+        source_node("joe", "generic", parent="contributors", children=("joe:name", "joe:detail"), target="joe"),
+        source_node("joe:name", "StaticText", parent="joe", target="joe:name", label="Joe Haddad"),
+        source_node(
+            "joe:detail",
+            "StaticText",
+            parent="joe",
+            target="joe:detail",
+            label="292 commits (joe@example.test)",
+        ),
+    ))
+    fused = WorldFusion().fuse((
+        SurfaceObservation(
+            source_id,
+            "browser",
+            "revision:repeated-unknown",
+            ObservationSourceProfile.dom(),
+            targets,
+            structure=structure,
+            structure_total_count=len(structure),
+        ),
+    ))
+    assert fused.observation is not None
+    world = fused.observation
+    task = TaskGoal("repeated-unknown", "Get the top contributor emails")
+    context = ContextBuilder().build(
+        task,
+        world,
+        ActionSpace(world.observation_id, ()),
+        _evaluation(task, world.observation_id),
+    )
+    collection = next(
+        item for item in context.region_index.regions
+        if item.role == "collection" and item.semantic_unit_roots
+    )
+    region_ref = context.canonical_world.region_refs[collection.key]
+
+    opened = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="read_region",
+        region_ref=region_ref,
+    )
+    assert isinstance(opened, Opened)
+    records = tuple(item for item in opened.items if item.get("kind") == "complete_item")
+    assert tuple(tuple(field.get("text", "") for field in item["content"]) for item in records) == (
+        ("Dan Abramov", "634 commits (dan@example.test)"),
+        ("Joe Haddad", "292 commits (joe@example.test)"),
+    )
+
+    found = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="find",
+        query="dan@example.test",
+    )
+    assert isinstance(found, Matches)
+    assert found.items[0]["region_ref"] == region_ref
+    assert tuple(field.get("text", "") for field in found.items[0]["content"]) == tuple(
+        field.get("text", "") for field in records[0]["content"]
+    )
 
 
 def test_captured_dashboard_world_preserves_table_scope_rows_and_reports_action() -> None:

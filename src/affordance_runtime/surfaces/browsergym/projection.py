@@ -46,7 +46,10 @@ from affordance_runtime.surfaces.browsergym.task_state import (
     BROWSERGYM_TASK_STATE_EVIDENCE_KEY,
     BrowserGymTaskStateSnapshot,
 )
-from affordance_runtime.surfaces.semantic_shape import explicit_role_semantic_shape
+from affordance_runtime.surfaces.semantic_shape import (
+    close_repeated_source_structure,
+    explicit_role_semantic_shape,
+)
 from affordance_runtime.world import (
     MAX_OBSERVATION_GROUNDING_REGIONS,
     CoverageState,
@@ -182,7 +185,7 @@ def project_browsergym_observation(
             derived_structure_children.setdefault(structure_node.private_parent_id, []).append(
                 structure_node.private_node_id
             )
-    structure = tuple(
+    structure = close_repeated_source_structure(tuple(
         ObservationStructureNode(
             structure_ids[structure_node.private_node_id],
             structure_node.role,
@@ -209,7 +212,7 @@ def project_browsergym_observation(
             ),
         )
         for structure_node in retained_structure
-    )
+    ))
     controls_by_node_id = {node.private_node_id: node for node in projected}
     viewport_target, viewport_structure, viewport_public, viewport_private = _viewport_subject(
         raw,

@@ -431,7 +431,7 @@ def test_tool_targets_actor_state_and_verbs_are_conserved_to_model_input() -> No
     assert "binding:country" not in rendered
 
 
-def test_complete_action_inventory_still_offers_find_controls_recovery() -> None:
+def test_complete_delivered_action_inventory_does_not_offer_redundant_find_controls() -> None:
     observation = fused_world(
         "world:single-action",
         (SemanticTarget("target:1", "button", "Submit"),),
@@ -462,7 +462,8 @@ def test_complete_action_inventory_still_offers_find_controls_recovery() -> None
     _, catalog = catalog_for(context)
 
     assert not context.actions.has_more
-    assert "find_controls" in {item.name for item in catalog.specs}
+    assert {item.action_id for item in context.actions.options} == {"action:submit"}
+    assert "find_controls" not in {item.name for item in catalog.specs}
 
 
 def test_search_page_content_resolves_as_zero_dispatch_local_tool() -> None:
