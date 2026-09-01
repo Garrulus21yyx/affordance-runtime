@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordance Runtime：用 Harness 驾驭普通 DeepSeek V4 Flash 完成跨站网页任务的完整架构与面试手册。">
+  <meta name="theme-color" content="#081525">
+  <title>Affordance Runtime · Harness-first Web Agent</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/interview.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="site-top">
+    <div class="top-inner">
+      <a class="wordmark" href="index.html" aria-label="Affordance Runtime 首页">
+        <span class="wordmark-mark">AR</span>
+        <span class="wordmark-copy">Affordance Runtime<small>HARNESS-FIRST WEB AGENT</small></span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航">
+        <a href="index.html" aria-current="page">首页</a>
+        <a href="project-pitch.html">项目讲述</a>
+        <a href="interview-guide.html">面试指南</a>
+        <a href="architecture.md">架构原文</a>
+        <a href="benchmark.md">评测原文</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">One dispatch authority · one loop · one current world</div>
+        <h1>让普通模型<br>在 <em>Harness</em> 里<br>可靠地行动</h1>
+        <p class="lede">Affordance Runtime 不是再训练一个网页 Agent，而是给 DeepSeek V4 Flash 这样的通用工具调用模型补上一套可执行、可观察、可中断的控制面：模型负责理解与选择，Runtime 负责事实、权限、绑定、执行和终止。</p>
+        <div class="status-strip" role="group" aria-label="项目证据状态">
+          <span class="status-chip verified">2284 provider-free tests</span>
+          <span class="status-chip live">Task316 live success</span>
+          <span class="status-chip open">Task798 acceptance open</span>
+        </div>
+      </div>
+      <div class="hero-console" role="group" aria-label="运行片段示意">
+        <div class="console-head"><i></i><i></i><i></i></div>
+        <div class="console-body">
+          <p><b>goal</b> 跨站查找 3 位贡献者邮箱并返回</p>
+          <p><b>world</b> DOM + browser context + typed records</p>
+          <p><b>policy</b> read_region(R16)</p>
+          <p><b>runtime</b> admission → bind → execute → refresh</p>
+          <p><b>evaluator</b> native verified_success</p>
+          <p><b>live</b> Task316 · 11 steps · 122.8 s</p>
+          <p class="warn">open: Task798 typed negative not selected</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main id="content">
+    <div class="page-grid wide home-grid">
+      <div aria-hidden="true"></div>
+      <div>
+        <div class="page-cards">
+          <a class="page-link-card" href="project-pitch.html">
+            <span class="tag live">Pitch</span>
+            <h2>项目讲述与技术取舍</h2>
+            <p>从 30 秒开场到 10 分钟深挖：完整架构、一次任务链路、用户控制、VLM 路由、SOTA 取舍与真实失败故事。</p>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </a>
+          <a class="page-link-card" href="interview-guide.html">
+            <span class="tag verified">Interview</span>
+            <h2>代码库级面试指南</h2>
+            <p>按 owner 和目录组织的高频问答，覆盖模型合同、世界模型、执行安全、恢复、Checkpoint、评测与开放问题。</p>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
+
+        <section id="thesis" class="home-thesis">
+          <p class="section-kicker">The thesis</p>
+          <h2>项目解决的不是“模型不会点”，而是“谁有权相信什么”</h2>
+          <p class="section-intro">一个普通通用模型可以提出不错的下一步，但不能天然拥有当前页面事实、元素寿命、执行权限、动作副作用或任务完成真值。Harness 的工作，是把这些非认知问题机械化，让模型只做它擅长、也只能由开放世界推理完成的部分。</p>
+          <div class="cards">
+            <article class="card cyan">
+              <span class="tag verified">Model owns</span>
+              <h3>语义判断</h3>
+              <p>理解目标、判断当前缺什么证据、在当前公开工具里选一个动作、处理开放世界歧义；GoalPlan 只是稀疏语义骨架。</p>
+            </article>
+            <article class="card">
+              <span class="tag live">Runtime owns</span>
+              <h3>控制与真值</h3>
+              <p>合法性、currentness、私有 binding、风险确认、执行 receipt、局部效果、Checkpoint、Monitor 与终止状态。</p>
+            </article>
+            <article class="card amber">
+              <span class="tag open">Evaluator owns</span>
+              <h3>完成证明</h3>
+              <p>只有 TaskEvaluator 或环境 native verifier 能证明任务成功；Monitor、用户与 Runtime 仍可分别产生 blocked、cancelled、failed 等非成功终态。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="rail">
+          <p class="section-kicker">The harness rail</p>
+          <h2>一次决策如何穿过整个系统</h2>
+          <p class="section-intro">点击 owner 过滤器，观察每个角色真正拥有的节点。关键约束是：只有 ActionPolicy 能选择可执行语义动作；GoalCompiler 与 VLM 只提供静态建议或证据，没有第二个 planner、binder 或视觉旁路，所有路径回到同一个 CoreAgentLoop。</p>
+          <div class="harness" data-harness>
+            <div class="harness-head">
+              <div><h3>Cross-site task / logical turn</h3><p>AUTHORITY FLOWS LEFT → RIGHT, THEN RETURNS WITH FRESH WORLD</p></div>
+              <div class="owner-filters" role="group" aria-label="按 owner 高亮">
+                <button class="owner-filter active" data-owner="all" type="button">全部</button>
+                <button class="owner-filter" data-owner="user" type="button">User</button>
+                <button class="owner-filter" data-owner="runtime" type="button">Runtime</button>
+                <button class="owner-filter" data-owner="surface" type="button">Surface</button>
+                <button class="owner-filter" data-owner="model" type="button">Model</button>
+                <button class="owner-filter" data-owner="evaluator" type="button">Evaluator</button>
+              </div>
+            </div>
+            <div class="rail">
+              <div class="rail-step" data-owner="user runtime"><span class="rail-no">01 / TASK</span><b>TaskGoal</b><small>目标、约束、允许效果、成功标准、revision</small><span class="owner-label">User → Runtime</span></div>
+              <div class="rail-step" data-owner="surface runtime"><span class="rail-no">02 / SENSE</span><b>Unified World</b><small>DOM / BrowserGym / visual / WoT / HTTP 同源融合</small><span class="owner-label">Surface</span></div>
+              <div class="rail-step" data-owner="model runtime"><span class="rail-no">03 / CONTEXT</span><b>Bounded context</b><small>fresh World + GoalPlan + recent outcomes + current catalog</small><span class="owner-label">Runtime → Model</span></div>
+              <div class="rail-step" data-owner="model"><span class="rail-no">04 / DECIDE</span><b>One decision</b><small>SelectAction / observe / local read / ask / final / wait / abort</small><span class="owner-label">DeepSeek</span></div>
+              <div class="rail-step" data-owner="runtime"><span class="rail-no">05 / ROUTE</span><b>Route decision</b><small>action branch 才做 legality、risk、binding、currentness</small><span class="owner-label">Runtime</span></div>
+              <div class="rail-step" data-owner="surface evaluator runtime"><span class="rail-no">06 / CLOSE</span><b>Typed closure</b><small>dispatch + fresh World，或 observe / local / user / final / wait / abort</small><span class="owner-label">Runtime + owners</span></div>
+            </div>
+            <div class="rail-legend"><span>单一公开 World</span><span>单一 ActionPolicy</span><span>私有执行 binding</span><span>fresh post-action evaluation</span></div>
+          </div>
+        </section>
+
+        <section id="control">
+          <p class="section-kicker">Supervised autonomy</p>
+          <h2>用户不是旁观者，而是外部控制平面</h2>
+          <div class="cards two">
+            <article class="card">
+              <h3>Pause / Cancel</h3>
+              <p>采用协作式 safe boundary。Pause 在可提交边界生成 durable checkpoint；Cancel 终止未来动作，但不会假装撤销已经发生的外部效果。</p>
+            </article>
+            <article class="card cyan">
+              <h3>Revise</h3>
+              <p>修订产生新的 TaskGoal revision，旧 GoalPlan 失效并重编译。若已有副作用，先进入显式 effect reconciliation，而不是把新目标覆盖旧现实。</p>
+            </article>
+            <article class="card amber">
+              <h3>Take over</h3>
+              <p>先 durable pause，再签发 process-local control lease。用户可直接操作 live surface；Agent 此时没有输入权。</p>
+            </article>
+            <article class="card red">
+              <h3>Return control</h3>
+              <p>先撤销用户 lease，再重新采集 fresh World。若 currentness 无法恢复，Agent 保持禁用，避免在过期页面上继续。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="evidence">
+          <p class="section-kicker">Evidence, not a victory lap</p>
+          <h2>现在能证明什么，不能证明什么</h2>
+          <div class="truth-ledger">
+            <div class="truth-item"><b>IMPLEMENTED</b><p>单循环、统一 World、typed tools、用户控制、Checkpoint v8、Monitor failure center、选择性视觉路径。</p></div>
+            <div class="truth-item"><b>PROVIDER-FREE</b><p>完整固定环境套件 2284 passed、19 skipped、1 个已知缺失归档 fixture deselected。</p></div>
+            <div class="truth-item"><b>LIVE WITNESS</b><p>Task316 以 11 steps / 122.8 s 达到 native success；Task798 的 Monitor 在 18 步 typed block。</p></div>
+            <div class="truth-item"><b>STILL OPEN</b><p>Task798 的 ActionPolicy 没有选择已提供的 typed negative；DeepSeek 还曾两次违反 exactly-one-tool-call。</p></div>
+          </div>
+          <div class="callout warning">
+            <strong>面试中的准确表述</strong>
+            “我证明了 Harness 的 owner contract 和局部 live witness，不宣称 aggregate SOTA。当前瓶颈已经从 Monitor 不收敛，收缩为 ActionPolicy 对完整否定证据与 provider tool-call 纪律的接受问题。”
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <p>这是从当前代码、<a href="architecture.md">docs/architecture.md</a> 与 <a href="benchmark.md">docs/benchmark.md</a> 派生的面试材料，不是新的设计 authority。状态基线：2026-09-02，分支 <code>codex/tool-contract-convergence</code>。</p>
+      <div class="footer-links"><a href="project-pitch.html">Pitch</a><a href="interview-guide.html">Guide</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div>
+    </div>
+  </footer>
+  <script src="assets/interview.js"></script>
+</body>
+</html>

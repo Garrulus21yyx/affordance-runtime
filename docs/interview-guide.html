@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordance Runtime 面试指南：从代码库结构、完整 Agent 链路到用户控制、VLM、恢复和评测的高频问答。">
+  <meta name="theme-color" content="#081525">
+  <title>面试指南 · Affordance Runtime</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/interview.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="site-top">
+    <div class="top-inner">
+      <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>INTERVIEW GUIDE</small></span></a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="interview-guide.html" aria-current="page">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a></nav>
+    </div>
+  </header>
+
+  <div class="hero compact">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">Interview field manual · searchable Q&amp;A</div>
+        <h1>沿着一次任务<br>讲清<em>整个代码库</em></h1>
+        <p class="lede">不要背模块名。先说唯一 authority，再说对象如何穿过 owner 边界，最后用 trace、typed outcome 和 benchmark 证明。下面 57 个问题可以搜索，也可以按面试轮次展开。</p>
+      </div>
+      <div class="hero-console">
+        <div class="console-head"><i></i><i></i><i></i></div>
+        <div class="console-body">
+          <p><b>answer shape</b></p>
+          <p>1. outcome / invariant</p>
+          <p>2. owner and typed boundary</p>
+          <p>3. failure mode and trade-off</p>
+          <p>4. code + test + live evidence</p>
+          <p class="warn">never: “the model decides everything”</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-grid wide">
+    <aside class="side-nav" aria-label="问答分组">
+      <p class="side-nav-label">57 个问题</p>
+      <ol>
+        <li><a href="#opening">01 开场与定位</a></li>
+        <li><a href="#repository">02 代码库结构</a></li>
+        <li><a href="#loop">03 完整执行链</a></li>
+        <li><a href="#world">04 World 与感知</a></li>
+        <li><a href="#actions">05 工具与执行</a></li>
+        <li><a href="#model">06 DeepSeek 与上下文</a></li>
+        <li><a href="#control">07 用户控制</a></li>
+        <li><a href="#recovery">08 恢复与震荡</a></li>
+        <li><a href="#evaluation">09 验证与评测</a></li>
+        <li><a href="#sota">10 SOTA 与取舍</a></li>
+        <li><a href="#hardening">11 安全与恢复</a></li>
+        <li><a href="#drill">12 追问与反问</a></li>
+      </ol>
+      <div class="side-nav-meta">答题原则<br>先 owner<br>再 contract<br>再 evidence<br>最后 trade-off</div>
+    </aside>
+
+    <main id="content">
+      <div class="qa-tools">
+        <input class="qa-search" data-qa-search type="search" placeholder="搜索：checkpoint / VLM / Binder / Task798 …" aria-label="搜索面试问题">
+        <div class="qa-count" data-qa-count aria-live="polite"></div>
+      </div>
+
+      <section class="qa-group" id="opening">
+        <p class="section-kicker">01 · Opening</p><h2>开场与项目定位</h2><p>先把项目讲成一个明确工程命题，再让面试官选择深挖层。</p>
+
+        <details class="qa"><summary>Q1：一句话介绍这个项目。</summary><div class="answer"><p>Affordance Runtime 是一个 Harness-first 的网页 GUI Agent Runtime：它让普通 DeepSeek V4 Flash 只负责基于当前公开世界选择一个语义动作，而把工具合法性、私有绑定、currentness、执行、验证、恢复和用户控制放进 typed Runtime。</p><p class="answer-hook">面试钩子：它不是模型项目的壳，也不是 workflow engine；研究问题是 Harness 能把通用模型的能力可靠地落到跨站任务上到什么程度。</p></div></details>
+        <details class="qa"><summary>Q2：你解决的核心问题是什么？</summary><div class="answer"><p>模型“能理解页面”和系统“能可靠完成任务”之间有巨大鸿沟。跨站长任务需要控制过期引用、动态工具面、provider 非法输出、副作用、独立完成判定和用户中断。我的核心工作是给每类事实指定唯一 owner，并把错误变成 typed outcome，而不是用 prompt 猜。</p></div></details>
+        <details class="qa"><summary>Q3：为什么叫 Affordance Runtime？</summary><div class="answer"><p>模型不是在自由生成鼠标坐标，而是在当前 World 中选择 Runtime 公开的 affordance：例如 activate、type_text、read_region、request_evidence。Affordance 同时携带“可以做什么”和“只在当前 observation revision 有效”的约束。</p></div></details>
+        <details class="qa"><summary>Q4：项目最有区分度的三个点是什么？</summary><div class="answer"><p>第一，多源感知进入一个带 lineage 的 Unified World；第二，模型可见语义动作与私有 binding/selector/坐标分离；第三，supervised autonomy 是正式状态机边界——用户可 pause/cancel/revise/takeover，归还控制前必须重新建立 currentness。</p></div></details>
+        <details class="qa"><summary>Q5：你怎么证明这不是一个 Demo？</summary><div class="answer"><p>证据分层：provider-free 全套 2284 tests 保护 owner contract；BrowserGym/WebArena Verified runner 保存 per-case trace。Task316 是 GitLab contributor 图表中精确取前三位邮箱的任务，11 步 native live success；Task798 是订单配送地址不可编辑时应给出 typed negative 的任务，Monitor 在 18 步收敛，但业务 acceptance 仍开放。我会明确区分实现、合同测试、live witness 和 aggregate benchmark。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="repository">
+        <p class="section-kicker">02 · Repository</p><h2>代码库结构与 owner</h2><p>面试官问目录时，不要只报树；解释为什么修改某类事实必须落在这个目录。</p>
+
+        <details class="qa"><summary>Q6：从哪里开始读这个仓库？</summary><div class="answer"><p>先读 <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/composition.py">app/composition.py</a> 看 port 组装；再读 <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/core_loop.py">agent/core_loop.py</a> 看唯一循环；然后按一次 step 分别追 world/orchestrator、actions/action_space + binder、model/policy bridge、evaluation、monitor。外部控制则从 app/public_session 读。仓库当前为 private，页面链接固定到 <code>e4a57a5a</code>，需要仓库访问权。</p></div></details>
+        <details class="qa"><summary>Q7：app/、agent/、world/ 三者怎么分工？</summary><div class="answer"><p><code>app/</code> 拥有产品 composition 与 session lifecycle；<code>agent/</code> 编排 typed ports、RunState、step commit 和 Monitor；<code>world/</code> 拥有 observation algebra、source selection、fusion 与 canonical public projection。CoreLoop 不能顺手解析 DOM/provider，因为那会让 orchestrator 成为第二事实 owner。</p></div></details>
+        <details class="qa"><summary>Q8：surfaces/ 为什么不直接返回模型 prompt？</summary><div class="answer"><p>SurfaceAdapter 应保留外部来源语义和 currentness，例如 DOM revision、BrowserGym episode/page identity、visual frame digest。统一 projection 和 model delivery 是后续 owner。若 adapter 直接写 prompt，不同 source 会形成多个世界、多个 ref 规则和不可比较的 evidence。</p></div></details>
+        <details class="qa"><summary>Q9：benchmarks/ 为什么必须与生产语义隔离？</summary><div class="answer"><p>Benchmark 只负责环境适配、case manifest、native scorer 和 evidence 落盘。Task ID、页面文案、selector、expected answer 都不能成为生产分支，否则 pass 的是 fixture，不是泛化能力。项目 policy 明确要求 benchmark 是结果证据，不是条件输入。</p></div></details>
+        <details class="qa"><summary>Q10：external/interaction-shell 是第二个 Runtime 吗？</summary><div class="answer"><p>不是。它是部署与投影层：后端暴露 session commands、SSE、protected viewer 和 Labs；前端渲染 Runtime 给出的 command offers 与 feed。Shell 不能修改 TaskGoal、RunState、receipt 或 evaluator outcome，也不能重建控制状态。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="loop">
+        <p class="section-kicker">03 · Core loop</p><h2>完整执行链路</h2><p>这一组是技术面主干。答案要能从对象名一路讲到 fresh post-action World。</p>
+
+        <details class="qa"><summary>Q11：从用户输入到第一轮模型调用，完整链路是什么？</summary><div class="answer"><p><code>PublicSessionCommand → NaturalLanguageTaskRequest → TaskGoal → compose TargetRuntime → environment.reset → initial WorldObservation → GoalCompilerBoundary → RunState → ActionSpace → canonical World/DeliveryIndex → AgentContext → GroundedToolCatalog → ActionPolicy</code>。每个箭头都是一个 typed boundary，不是 CoreLoop 中的 dict 拼接。</p></div></details>
+        <details class="qa"><summary>Q12：一次 CoreAgentLoop.step 内部发生什么？</summary><div class="answer"><p>从 current World 构建完整 ActionSpace；建立/复用 WorldDeliveryIndex 与 canonical projection；打包 action page 和 AgentContext；调用唯一 ActionPolicy；检查 context_id currentness；按 decision kind 路由。SelectAction 再走 admission、recovery guard、risk、confirmation、binding、currentness、execute、fresh observation、ActionOutcome、TaskEvaluation，最后形成一个 StepResult。</p></div></details>
+        <details class="qa"><summary>Q13：为什么坚持一个 CoreAgentLoop？</summary><div class="answer"><p>一个 loop 让动作、观察、用户控制、checkpoint、budget 和终止只有一套时序。准确说法是“单一 dispatch authority”，不是“只调用一个模型”：GoalCompiler 和 VLM 可提供静态建议或证据，但只有 ActionPolicy 能选择可执行语义动作。把视觉 fallback、recovery agent 或 planner-worker 各自做 loop，会产生“谁能 dispatch、谁的 World 最新、谁能终止 run”的竞争。</p></div></details>
+        <details class="qa"><summary>Q14：RunState 保存什么，不保存什么？</summary><div class="answer"><p>保存 current World、task evaluation、step/observation/execution counters、bounded workspace、delivery facts、GoalPlan resolution、recovery signal、Monitor snapshot、control boundary 与 effect reconciliation。它不保存 GoalPlan item progress、symbolic world model、长期 semantic memory 或“已完成里程碑”第二真相。</p></div></details>
+        <details class="qa"><summary>Q15：StepResult 为什么是关键对象？</summary><div class="answer"><p>它把一个逻辑 turn 的 decision、before/after World、status、public delta，以及按分支可选的 execution receipts、局部 effect、task evaluation、observation outcome、failure 或 control boundary 收在一起。Local/AskUser/Wait 分支不会伪造 receipt。Monitor、trace、workspace reducer 与 state commit 都消费 owner 已产生的同一结果，避免事后猜动作到底发生了什么。</p></div></details>
+        <details class="qa"><summary>Q16：GoalPlan 是 Planner 吗？</summary><div class="answer"><p>不是。GoalPlan 只在 start/revision 生成一次，1–8 个静态项，字段仅 <code>id/objective/done_when/depends_on/final</code>。Runtime 只校验大小、ID、DAG 和 final 数量；每步由同一个 ActionPolicy 根据 fresh World 重新判断。没有 mutable status/frontier，也不授权动作或证明完成。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="world">
+        <p class="section-kicker">04 · World and perception</p><h2>统一世界、来源语义与视觉</h2>
+
+        <details class="qa"><summary>Q17：Unified World 解决了什么问题？</summary><div class="answer"><p>它让 DOM、BrowserGym、visual、WoT、HTTP 事实可以在同一个 ActionPolicy contract 中消费，同时保存 source observation、revision、acquisition root 和 provenance。模型只面对一个公开世界，Runtime 仍能追溯每个 binding 由哪个 Surface 证明；冲突事实被显式标记，相关 route 在 ActionSpace/grounding 边界 fail-closed，而不是 last writer wins。</p></div></details>
+        <details class="qa"><summary>Q18：ObservationOrchestrator 如何选择源？</summary><div class="answer"><p>它消费 typed ObservationNeed：purpose、subject、required modality/assurance、freshness；在 source offers 中按能力和成本选择，预算通常 1–2 个 source。视觉 offer 只有在结构 baseline 或显式 residual need 下进入计划，provider availability 本身不是调用证据。</p></div></details>
+        <details class="qa"><summary>Q19：什么是 currentness，为什么仅比较 URL 不够？</summary><div class="answer"><p>currentness 是 action binding 是否仍属于当前 source observation/revision 和目标 fingerprint。相同 URL 内 DOM 可变，跨 tab/title 也可能只改展示。Surface 用自己拥有的 lifecycle identity 证明 currentness；过期 binding 在 dispatch 前重新 capture 和 reselection，不能直接 replay。</p></div></details>
+        <details class="qa"><summary>Q20：VLM 在什么情况下开启？</summary><div class="answer"><p>明确截图请求、open-world visual entity、单目标视觉歧义、OCR/spatial query、或 action 后新 layer 的 postcondition diagnosis。重复、长任务、generic no-progress 不会自动触发 VLM。VLM 只返回 typed evidence，不能 click 或 complete。</p></div></details>
+        <details class="qa"><summary>Q21：为什么不采用 screenshot-first？</summary><div class="answer"><p>截图通用，但坐标 currentness 和事实定位更难；DOM/AX/BrowserGym 对表单、链接、状态和文本更精确。项目采用 structural-first + evidence-gated vision，主要换取可验证性；预计也会减少不必要的图像 token 与调用延迟，但尚未完成同条件 A/B。代价是 canvas、图表、纯视觉 UI 必须显式路由 specialist。</p></div></details>
+        <details class="qa"><summary>Q22：Task316 明明有数据，为什么模型看不到？怎么修？</summary><div class="answer"><p>Source 已正确保留 100 条 contributor Record，但匿名 Collection 没有可发现 descriptor；自然 main region 又只有 chart。修复没有加“邮箱检索”，而是让 source-owned Collection 从自身前 8 个 Record 的公开字段产生 bounded label；read_region 仍返回完整 Record。Task316 随后 11 步 native success。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="actions">
+        <p class="section-kicker">05 · Actions and execution</p><h2>工具合同、Catalog、Binder 与副作用</h2>
+
+        <details class="qa"><summary>Q23：ActionSpace、Catalog、Binder、Executor 的边界是什么？</summary><div class="answer"><p>ActionSpace 是 current World 对 TaskGoal 可合法执行的完整语义集合；Catalog 把当前交付子集编译成模型可见 tool schema 和 resolver rows；Binder 在合法 selection 后解析私有 binding；Executor 只执行 BoundActionRequest。任何一个都不能替另一个“顺手修复”缺口。</p></div></details>
+        <details class="qa"><summary>Q24：为什么 selector、坐标和 BID 不给模型？</summary><div class="answer"><p>它们是 Surface 私有、短生命周期的执行细节。暴露会让模型在历史里 replay 过期句柄，也把站点实现耦合进 prompt。模型只使用 ephemeral public ref 和语义参数；Binder 在 current World 上解析真正 route。</p></div></details>
+        <details class="qa"><summary>Q25：动态 Tool Catalog 为什么必要？</summary><div class="answer"><p>大页面的完整 ActionSpace 可能远超模型工具预算，而当轮只有一部分 current routes 已被公开交付。Catalog 必须与 DeliveryManifest 相交，确保“模型看见的 ref 当轮可 resolve”；local read/find 可扩展同一 manifest，但不能让过期历史恢复 executable authority。</p></div></details>
+        <details class="qa"><summary>Q26：一个 SelectAction 如何真正执行？</summary><div class="answer"><p>先按 action_id/parameters/destination/expected outcome 做 admission；检查 recovery 禁止重放；RiskPolicy 决定 allow/block/confirmation；Binder 生成 BoundActionRequest；Surface 再证明 currentness；Executor dispatch；随后采 fresh World。任何 NOT_SENT 可安全 reselection；SENT_UNKNOWN 不允许未知副作用盲重试。</p></div></details>
+        <details class="qa"><summary>Q27：RiskPolicy 与用户 confirmation 谁拥有授权？</summary><div class="answer"><p>TaskGoal 的 allowed effects 是调用边界授权；RiskPolicy 对具体 current selection 做确定性评估；用户 confirmation 只批准当前 subject，不会扩大 TaskGoal 能力。页面文案或模型请求都不能自授权限。</p></div></details>
+        <details class="qa"><summary>Q28：为什么 executor success 不等于 task success？</summary><div class="answer"><p>executor success 只表示命令已执行或 dispatch 正常；页面可能没发生预期变化、改错对象，或只完成子步骤。ActionOutcome 用 fresh before/after World 判断局部 postcondition，TaskEvaluator/native verifier 再判断完整 success criteria。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="model">
+        <p class="section-kicker">06 · Model boundary</p><h2>DeepSeek、工具协议与上下文管理</h2>
+
+        <details class="qa"><summary>Q29：DeepSeek V4 Flash 在系统中扮演什么角色？</summary><div class="answer"><p>默认是唯一 ActionPolicy：消费 TaskGoal、GoalPlan、fresh public World、bounded recent outcomes 和 current Catalog，输出一个 typed decision。它可以与 GoalCompiler 共用 provider，也可为稀疏 compiler 选择更强 model；但 provider、transport 和 capabilities 必须显式配置。</p></div></details>
+        <details class="qa"><summary>Q30：普通模型为什么能用 computer-use harness？</summary><div class="answer"><p>因为 Harness 把网页 interaction 降为模型熟悉的 tool-calling 闭环：结构化上下文、闭合 schema、tool result、下一轮 fresh state。模型不需要自己控制 Playwright 或坐标。它的能力短板仍存在，但系统性错误被 Runtime guard 和 evaluator 截住。</p></div></details>
+        <details class="qa"><summary>Q31：Provider 返回多个 tool calls 怎么办？</summary><div class="answer"><p>合同要求一个 logical turn 只有一个调用。Bridge 即使已发 <code>parallel_tool_calls=false</code> 也要验证物理响应；可做一次有界完整 retry，仍多个就 typed invalid_response。不能取第一个，因为第二个可能有依赖或副作用，Runtime 无权猜 provider 意图。</p></div></details>
+        <details class="qa"><summary>Q32：上下文怎么避免越来越大？</summary><div class="answer"><p>current World 每轮只出现一次；官方 PydanticAI history 保留 pair-safe recent suffix；Harness compaction 对更早历史保留完成 outcome、任务所需精确事实和 route failure，删除旧 World/media 与 E/R/N/F executable refs。compaction 是模型历史 owner，不是 semantic memory store。</p></div></details>
+        <details class="qa"><summary>Q33：为什么不让模型自己总结 history？</summary><div class="answer"><p>可以由模型生成摘要，但摘要必须受 schema/budget 和事实保留 contract 约束，不能成为当前 World 或 action authority。工具 call/return 配对、task-required exact value 和 unresolved suffix 需要机械保护，否则摘要会丢证据或复活过期 ref。</p></div></details>
+        <details class="qa"><summary>Q34：GoalCompiler 失败为什么不让整场任务 failed？</summary><div class="answer"><p>GoalPlan 是 advisory。Unsupported/Failed 只记录 guidance unavailable，继续普通 GUI loop；只有确实缺用户拥有事实的 NeedsInput 才进入 waiting_user。把 schema/provider failure 变成 task blocked 会让可选增强反过来成为单点故障。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="control">
+        <p class="section-kicker">07 · User control</p><h2>暂停、取消、修订与接管</h2>
+
+        <details class="qa"><summary>Q35：为什么 pause 是 cooperative，而不是取消 asyncio task？</summary><div class="answer"><p>用户可以随时发请求，但不能承诺瞬间切断。直接 cancel 可能落在 provider call、dispatch、post-action capture 或 history closure 中间，留下未知副作用或无法恢复的 tool pair。CooperativeRunControl 在 BEFORE_POLICY、AFTER_POLICY、AFTER_EVALUATION、WAITING_USER/CONFIRMATION 等语义边界 acknowledge，边界事实可以 checkpoint。</p></div></details>
+        <details class="qa"><summary>Q36：Checkpoint 里到底有什么？</summary><div class="answer"><p>当前 TaskGoal revision、committed RunState facts、remaining budget、workspace/delivery、GoalPlan resolution、recovery signal、EpisodeMonitorSnapshot、effect reconciliation、model history 和 environment reconnect reference。它是 committed owner facts 的 durable projection，不保存 coroutine、selector authority 或 Shell view state。</p></div></details>
+        <details class="qa"><summary>Q37：Cancel 能撤销已经点击的动作吗？</summary><div class="answer"><p>不能一概而论。Cancel 停止未来动作；已经发送的 effect 仍属于外部世界。若 Surface/ActionSpace 明确提供合法 compensation，revision 流程可进入 effect reconciliation；不可补偿或未知则 typed fail/needs input。项目不承诺通用 rollback。</p></div></details>
+        <details class="qa"><summary>Q38：运行中 revision 怎么保证一致性？</summary><div class="answer"><p>命令带 expected task revision/status/checkpoint；Runtime 先 durable pause，再由 TaskRevisionCompiler 产生完整 replacement，新的 TaskGoal revision 使旧 GoalPlan 失效。随后在 fresh World 上重新 evaluation，并检查已有 effect 是否满足、需补偿、不可补偿或未知。</p></div></details>
+        <details class="qa"><summary>Q39：Takeover 和普通 pause 有什么不同？</summary><div class="answer"><p>Takeover 先达到 durable pause并消费 checkpoint，然后把 control owner 改为 USER，签发 process-local input lease。只有持有 exact lease 的 viewer 输入被接收。Agent 不会与用户同时操作浏览器。</p></div></details>
+        <details class="qa"><summary>Q40：用户归还控制后为什么一定要 fresh capture？</summary><div class="answer"><p>用户可能导航、输入、打开弹窗或改变 tab，原 RunState 的 World 和 binding 已不可信。return_control 先撤销旧 lease，再调用 refresh_after_user_control；成功后才重建 action space 并继续。刷新失败会恢复 manual control，但使用新 lease，旧 token 永不复活。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="recovery">
+        <p class="section-kicker">08 · Recovery</p><h2>失败、震荡与收敛机制</h2>
+
+        <details class="qa"><summary>Q41：之前为什么发现 stall 却 block 不了震荡？</summary><div class="answer"><p>RecoverySignal 的 one-turn 生命周期错误地承载了 failure accumulation。模型用 read/search/observe 消费信号后，换一种操作就建立新 epoch，同一 R46 stall 11 次仍全是 attempt 1。根因是失败事实 owner 与反馈载体混在一起，不是阈值太宽。</p></div></details>
+        <details class="qa"><summary>Q42：新的 failure center 如何工作？</summary><div class="answer"><p>EpisodeMonitor 维护最多 16 个 transition/result identities 的 unresolved center。signal 被消费只表示模型看过一次反馈，不关闭 center；无 owner-produced progress 的替代动作加入 center，再进入成员或容量耗尽即 control_stalled。center digest 形成稳定 recovery signature。</p></div></details>
+        <details class="qa"><summary>Q43：什么才算真正 progress？</summary><div class="answer"><p>fresh public World semantic digest、NEW_INFORMATION、verified operational GUI result、native terminal、task revision 或 episode reset。操作名、query、region、result 语法、recovery profile 改变不算。这样不会把“换一种撞墙姿势”误判成进展。</p></div></details>
+        <details class="qa"><summary>Q44：Monitor 会不会把低效但真实的进展误杀？</summary><div class="answer"><p>设计上不会。例如逐次 Backspace 真的改变 editor value，虽然极低效，仍是 World progress，Monitor 不应 block。那是 ActionPolicy/tool semantics 问题。Monitor 只做可机械证明的 recurrence，不承担任务效率或语义优劣判断。</p></div></details>
+        <details class="qa"><summary>Q45：恢复时会不会启动 StrategyRevision 这个第二 Agent？</summary><div class="answer"><p>不会，当前生产代码已经删除独立 StrategyRevision、它的 schema/context/trace 和 scheduling state。EpisodeMonitor 只产生 typed recovery facts 与确证的 hard constraints；active recovery 让同一个 ActionPolicy 进入 deliberate profile，并在同一次 ToolCall 中提交有界 decision basis。语义路线选择仍只有一个 owner。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="evaluation">
+        <p class="section-kicker">09 · Evaluation</p><h2>验证、Trace 与 Benchmark</h2>
+
+        <details class="qa"><summary>Q46：ActionOutcome 和 TaskEvaluation 为什么分开？</summary><div class="answer"><p>ActionOutcome 回答“这次局部 UI effect 是否发生”，TaskEvaluation 回答“整个 TaskGoal 是否完成/阻塞”。一个 button pressed 可能是局部成功但任务未完成；native verifier success 也可能与模型 final prose 无关。分开后 retry、continue 和 terminal 都有清晰语义。</p></div></details>
+        <details class="qa"><summary>Q47：Trace 为什么不能成为第二状态？</summary><div class="answer"><p>Trace 在每个 owner boundary 直接记录输入、输出、typed failure、usage、latency 和 lineage；它只能观察，不在事后重建“真正状态”。Provider initial/repair 每次立即保存，Step event 引用 canonical facts；控制逻辑不从 Langfuse dashboard 回读。</p></div></details>
+        <details class="qa"><summary>Q48：为什么选择 BrowserGym / WebArena？</summary><div class="answer"><p>BrowserGym 提供统一 observation/action 环境和多 benchmark 接口，WebArena 提供跨电商、论坛、GitLab/CMS 等真实长任务与功能 scorer。它们适合验证“同一 Harness 跨站泛化”，也能保存 action-level trace 做 root-cause，而不是只看最终成功率。</p></div></details>
+        <details class="qa"><summary>Q49：2284 tests 能说明成功率吗？</summary><div class="answer"><p>不能。它们证明当前 bounded contract 的 provider-free 实现一致性，例如 owner、state transition、currentness、checkpoint round-trip 和 generated recurrence。模型行为、provider reliability 和网页任务成功必须用 live held-out benchmark；所以 Task798 acceptance 仍开放。</p></div></details>
+        <details class="qa"><summary>Q50：你会怎么设计下一轮 benchmark？</summary><div class="answer"><p>冻结 commit/profile/prompt/tool-schema/runner；先做 provider-free gate，再跑 repeated held-out WebArena cases，记录 success、turns、provider calls/tokens、VLM calls、recovery attempts、typed failures。Task798 要验证 complete negative evidence 能否触发 typed final；另选正向跨站 case 防止为否定任务过拟合。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="sota">
+        <p class="section-kicker">10 · SOTA trade-offs</p><h2>和专用 computer-use 系统怎么比较</h2>
+
+        <details class="qa"><summary>Q51：你的方案达到 SOTA 了吗？</summary><div class="answer"><p>不能这样宣称。OpenAI CUA、Gemini Computer Use、Claude computer/browser toolset 是专用模型或训练内 tool schema，并报告 aggregate benchmark；本项目证明的是 Harness 架构合同和局部 live witness。优势是模型可替换、authority 清晰、结构/视觉可组合和用户控制；总体成功率仍需完整 campaign。</p></div></details>
+        <details class="qa"><summary>Q52：为什么不用专用 Computer Use 模型直接做？</summary><div class="answer"><p>如果目标是短期最高成功率，专用模型值得优先 A/B；项目选择普通 DeepSeek 是为了隔离并研究 Harness 能贡献多少，同时保留 provider 可替换性。当前没有同条件成本、延迟、成功率数据，不能声称 DeepSeek 更便宜或更强。专用模型也可成为另一 profile，而不推翻 world/action/evaluation 边界。</p></div></details>
+        <details class="qa"><summary>Q53：为什么不是多 Agent / Manager-Worker？</summary><div class="answer"><p>当前 trace 的根因多是世界投影、工具交付、provider contract 和 recurrence owner，不是角色数量不足。多 Agent 会增加 history、authority 和 dispatch 协调成本。只有明确 benchmark 缺口证明一个 policy 无法兼顾规划/grounding，才新增 specialist；即便新增也不接管 Runtime 控制。</p></div></details>
+        <details class="qa"><summary>Q54：这个架构最大的 trade-off 是什么？</summary><div class="answer"><p>把可靠性从模型隐式能力迁到显式 Harness，得到可审计、可中断、可替换，但代价是合同和投影工程复杂、需要 evaluator integration、对每轮 current catalog 质量敏感。单 ActionPolicy 简化 authority，却把高层策略质量集中到一个模型角色；Task798 正是这个边界的诚实暴露。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="hardening">
+        <p class="section-kicker">11 · Security and recovery</p><h2>安全边界、崩溃恢复与多源冲突</h2>
+
+        <details class="qa"><summary>Q55：网页 Prompt Injection 怎么防？</summary><div class="answer"><p>现有确定性边界能阻止页面文本直接扩大 TaskGoal 的 allowed effects：模型只能选择 current Catalog，随后仍要过 admission、RiskPolicy、confirmation、binding 与 currentness；selector、credential 和私有 route 不进入公开 schema。仓库也有 WASP benchmark 适配，但这不等于已经证明通用 prompt-injection 防护。跨域隔离、指令/数据来源标注与完整攻击 campaign 仍是明确 hardening gap。</p></div></details>
+        <details class="qa"><summary>Q56：进程崩溃或 SENT_UNKNOWN 后怎么恢复？</summary><div class="answer"><p>Checkpoint 只保存 committed owner facts、model history、Monitor snapshot 和 environment reconnect reference；重启后必须 reconnect 并 fresh capture，过期 binding 不 replay。<code>SENT_UNKNOWN</code> 表示副作用可能已发生，系统不能靠 retry 猜测：要由 Surface 重新观测、effect reconciliation 或人工介入。Takeover lease 是 process-local，进程重启不会让旧 lease 复活。</p></div></details>
+        <details class="qa"><summary>Q57：DOM、视觉和 BrowserGym 互相冲突怎么办？</summary><div class="answer"><p>WorldFusion 保留每个 source 的 observation/revision/lineage，并按 predicate contract 输出显式 ObservationConflict；冲突字段不会被任意覆盖。ActionSpace 去掉 conflicted target/route，unified grounding 对 material unresolved conflict fail-closed，必要时再请求有针对性的证据。已实现的是冲突可见与不执行，不能把它夸成所有语义字段都已完成完美仲裁。</p></div></details>
+      </section>
+
+      <section class="qa-group" id="drill">
+        <p class="section-kicker">12 · Final drill</p><h2>临场追问与 10 分钟检查表</h2>
+        <div class="cards two">
+          <article class="card"><h3>如果被问“最难的 bug”</h3><p>讲 Task798/316 failure center。必须说出 symptom、trigger、immediate mechanism、shared root cause、owner repair、property tests、live result和仍开放 acceptance。</p></article>
+          <article class="card cyan"><h3>如果被问“你做了什么”</h3><p>从 owner-first architecture、typed contracts、trace causal analysis、property/state-machine tests、BrowserGym live evidence和 Pages/Console表达闭环回答，不只说“写 prompt”。</p></article>
+          <article class="card amber"><h3>如果被问“失败怎么办”</h3><p>区分 provider failure、admission/currentness、NOT_SENT、SENT_UNKNOWN、post-action acquisition、local effect、task evaluation和 control_stalled；每种失败有不同 owner。</p></article>
+          <article class="card red"><h3>如果被问“下一步”</h3><p>先闭合 ActionPolicy 对 complete negative evidence 的合同并做 held-out Task798；再跑 repeated breadth campaign；视觉只在命名缺口中启用，不增加 recovery 旁路。</p></article>
+        </div>
+
+        <h3>上场前 10 分钟</h3>
+        <ol class="flow-list">
+          <li><b>背住三个顶层真值。</b><span>TaskGoal、fresh World、TaskEvaluator/native verifier；再能说出 Catalog、Binder、Executor、Monitor 各自的转换 ownership。</span></li>
+          <li><b>能画一遍 14 段链路。</b><span>Session → Goal → World → Context/Catalog → Decision → Admit/Bind → Execute → Fresh World → Evaluate → Monitor/Commit。</span></li>
+          <li><b>能解释五个“不等于”。</b><span>GoalPlan ≠ workflow；tool call ≠ execution；executor success ≠ task success；pixel change ≠ semantic evidence；cancel ≠ rollback。</span></li>
+          <li><b>记住当前数字。</b><span>2284 provider-free；Task316 11 steps / 122.8s；Task798 18 steps / 107.2s control_stalled；业务 acceptance open。</span></li>
+          <li><b>准备一个诚实边界。</b><span>没有 aggregate SOTA、没有通用回滚、没有训练/RL/memory flywheel、VLM live breadth 尚未全面闭合。</span></li>
+        </ol>
+
+        <div class="callout"><strong>最后一句可以这样收</strong>“这个项目最重要的不是我写了多少 Agent 角色，而是把模型不应该拥有的 authority 一项项拿回来，同时保留它在开放世界语义判断上的价值；最终用真实 benchmark 证明这套边界有没有让普通通用模型走得更远。”</div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer"><div class="footer-inner"><p>本指南是派生的口述材料。遇到数字、实现状态或开放问题，以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 和当前源码为准。</p><div class="footer-links"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
+  <script src="assets/interview.js"></script>
+</body>
+</html>
