@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordance Runtime 项目讲述：Harness 架构、完整执行链路、用户控制、VLM、SOTA 取舍和真实证据。">
+  <meta name="theme-color" content="#081525">
+  <title>项目讲述与技术取舍 · Affordance Runtime</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/interview.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="site-top">
+    <div class="top-inner">
+      <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>PROJECT PITCH</small></span></a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航">
+        <a href="index.html">首页</a><a href="project-pitch.html" aria-current="page">项目讲述</a><a href="interview-guide.html">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="hero compact">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">Project pitch · architecture · trade-offs</div>
+        <h1>把“会调用工具”<br>变成“<em>能完成任务</em>”</h1>
+        <p class="lede">围绕一个普通 DeepSeek V4 Flash，构建 Harness-first 的跨站网页 Agent：统一感知、单步决策、私有执行、独立验证、机械收敛；用户可随时发出暂停、取消、修订或接管请求，Runtime 在最近合法安全边界生效。</p>
+      </div>
+      <div class="hero-console">
+        <div class="console-head"><i></i><i></i><i></i></div>
+        <div class="console-body">
+          <p><b>north star</b> benchmark generalization</p>
+          <p><b>model</b> ordinary tool-calling LLM</p>
+          <p><b>loop</b> one CoreAgentLoop</p>
+          <p><b>dispatch</b> one ActionPolicy</p>
+          <p><b>world</b> one fresh public projection</p>
+          <p><b>vision</b> evidence-gated specialist</p>
+          <p><b>control</b> user-safe boundaries</p>
+          <p class="warn">claim: bounded evidence, not aggregate SOTA</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-grid wide">
+    <aside class="side-nav" aria-label="本页目录">
+      <p class="side-nav-label">项目讲述</p>
+      <ol>
+        <li><a href="#versions">01 三种讲法</a></li>
+        <li><a href="#problem">02 问题定义</a></li>
+        <li><a href="#architecture">03 总体架构</a></li>
+        <li><a href="#chain">04 完整执行链路</a></li>
+        <li><a href="#repo">05 代码库结构</a></li>
+        <li><a href="#model">06 DeepSeek 边界</a></li>
+        <li><a href="#vision">07 VLM 开启路径</a></li>
+        <li><a href="#control">08 用户控制</a></li>
+        <li><a href="#recovery">09 震荡与收敛</a></li>
+        <li><a href="#sota">10 SOTA 取舍</a></li>
+        <li><a href="#evidence">11 评测与问题</a></li>
+        <li><a href="#stories">12 STAR 故事</a></li>
+        <li><a href="#sources">13 一手资料</a></li>
+      </ol>
+      <div class="side-nav-meta">DERIVED MATERIAL<br>authority: architecture.md<br>status: benchmark.md<br>baseline: 2026-09-02</div>
+    </aside>
+
+    <main id="content">
+      <section id="versions">
+        <p class="section-kicker">01 · Tell it at three depths</p>
+        <h2>30 秒、3 分钟、10 分钟怎么讲</h2>
+        <h3>30 秒版本</h3>
+        <div class="callout">
+          <strong>可直接背</strong>
+          我做的是一个 Harness-first 的网页 GUI Agent Runtime。目标不是训练专用模型，而是让 DeepSeek V4 Flash 这种普通工具调用模型也能做跨站长任务。模型只看统一的公开世界并选择一个语义动作；Runtime 拥有工具合同、私有 binding、currentness、风险确认、执行、postcondition、checkpoint 和最终状态。结构化证据不够时，VLM 作为同一 World 的证据源按需开启。用户可以随时请求暂停、取消、修订目标或接管浏览器，Runtime 在最近合法边界确认，归还控制时必须先刷新世界。核心创新是把认知与控制 authority 分开，并用 BrowserGym / WebArena trace 验证 owner contract、held-out 行为与收敛；aggregate 泛化仍是开放证据。
+        </div>
+
+        <h3>3 分钟版本</h3>
+        <ol class="flow-list">
+          <li><b>动机：模型能力 ≠ 系统可靠性。</b><span>通用模型会理解网页，却会调用过期元素、重复动作、把 executor success 当任务完成，也很难被外部用户安全中断。</span></li>
+          <li><b>设计：一个 loop，三个顶层真值。</b><span>TaskGoal 是当前目标；fresh World 是当前环境；TaskEvaluator/native verifier 提供任务完成真值。Catalog、Binder、Executor、Monitor 等转换也各有唯一 owner；GoalPlan、模型 prose、Trace 都不是第二真相。</span></li>
+          <li><b>感知：多源输入，单一世界。</b><span>DOM、BrowserGym、视觉、WoT、HTTP 由各自 SurfaceAdapter 投影并保留 lineage，再融合为 WorldObservation；VLM 不是平行 Agent。</span></li>
+          <li><b>动作：公开语义，私有执行。</b><span>ActionPolicy 只看到当前 Catalog 和短生命周期 E-ref；Runtime 重新 admission、risk、binding、currentness，再由 Surface 执行。</span></li>
+          <li><b>闭环：动作之后才知道。</b><span>每次 dispatch 后采 fresh World，ActionOutcome 只证明局部 UI 效果，TaskEvaluator/native verifier 提供完成或任务级失败事实；Monitor、用户和 Runtime 另行拥有控制终止。</span></li>
+          <li><b>协作：控制不是 kill thread。</b><span>pause/cancel 在 safe boundary 收敛；revision 生成新 TaskGoal；takeover 发放 lease；return control 先重采世界。</span></li>
+          <li><b>证据：说清边界。</b><span>provider-free 2284 tests；Task316 live success；Task798 的机械震荡已能 block，但 typed negative 的模型选择仍开放。</span></li>
+        </ol>
+
+        <h3>10 分钟版本</h3>
+        <p>按本页顺序讲：问题定义 1 分钟、全链路 4 分钟、用户控制和视觉 2 分钟、SOTA 取舍 1 分钟、真实失败与证据 2 分钟。主线始终是“事实由谁拥有、转换在哪个边界发生、失败如何 typed fail-closed”。</p>
+      </section>
+
+      <section id="problem">
+        <p class="section-kicker">02 · Problem framing</p>
+        <h2>真正难的是长链路的语义与状态收敛</h2>
+        <p class="section-intro">单步 click benchmark 只能说明 grounding。跨站任务会叠加页面切换、工具分页、长上下文、动态 DOM、provider 非法输出、副作用、用户干预和独立成功判定；任何一层 authority 混乱，模型再强也会“看见但做不到”。</p>
+        <div class="cards">
+          <article class="card"><span class="tag open">World</span><h3>模型看到的世界会过期</h3><p>元素引用随 navigation / DOM revision 失效；历史里保留的 E-ref 不是可执行句柄。当前世界必须由 Surface 重新证明。</p></article>
+          <article class="card cyan"><span class="tag open">Protocol</span><h3>模型输出不天然守合同</h3><p>即使声明 <code>parallel_tool_calls=false</code>，provider 仍可能返回多个调用；必须在 provider 边界保存原始 attempt 并 typed reject。</p></article>
+          <article class="card amber"><span class="tag open">Semantics</span><h3>有变化不等于有进展</h3><p>不同搜索、不同 read、甚至 DOM identity churn 都可能围绕同一失败中心震荡；恢复动作名不同不能洗掉累计失败。</p></article>
+        </div>
+        <div class="callout warning"><strong>项目命题</strong>不靠不断加 prompt、重试和 benchmark case 分支，而是把共享根因归还给正确 owner：Source 拥有事实、Catalog 拥有工具合同、Binder 拥有私有解析、Executor 拥有 dispatch、Evaluator 拥有任务完成证明、Monitor 拥有机械 recurrence。</div>
+      </section>
+
+      <section id="architecture">
+        <p class="section-kicker">03 · Architecture</p>
+        <h2>一套 Harness，三条互相校验的链</h2>
+        <div class="cards">
+          <article class="card cyan"><h3>Data plane</h3><p><code>TaskGoal + World → AgentContext → Decision → Receipt + fresh World → Evaluation</code>。解释每个对象如何变形。</p></article>
+          <article class="card"><h3>Control plane</h3><p><code>PublicSession → TargetRuntime → CoreAgentLoop</code>。解释谁推进 step、何时停、何时让用户介入。</p></article>
+          <article class="card amber"><h3>Authority plane</h3><p>目标、环境、合法动作、执行结果、完成判定各有唯一 owner；Trace/Shell 只观察或投影。</p></article>
+        </div>
+        <div class="callout"><strong>单一 dispatch authority，不等于只调用一个模型</strong>GoalCompiler 只在 start/revision 生成静态 advisory GoalPlan；VLM 只返回带 lineage 的视觉证据；TaskRevisionCompiler 只生成完整 replacement proposal。恢复时没有独立 StrategyRevision：typed recovery signal 直接让同一个 ActionPolicy 进入 deliberate profile。以上角色都不能 dispatch，也不能证明任务成功。</div>
+
+        <div class="harness">
+          <div class="harness-head">
+            <div><h3>Owner-aware Harness Rail</h3><p>FILTER BY RESPONSIBILITY — NOT BY CALL STACK LOCATION</p></div>
+            <div class="owner-filters">
+              <button class="owner-filter active" data-owner="all" type="button">全部</button><button class="owner-filter" data-owner="user" type="button">User</button><button class="owner-filter" data-owner="runtime" type="button">Runtime</button><button class="owner-filter" data-owner="surface" type="button">Surface</button><button class="owner-filter" data-owner="model" type="button">Model</button><button class="owner-filter" data-owner="evaluator" type="button">Evaluator</button>
+            </div>
+          </div>
+          <div class="rail">
+            <div class="rail-step" data-owner="user runtime"><span class="rail-no">01 / INGRESS</span><b>Public Session</b><small>typed command + expected revision/status/checkpoint</small><span class="owner-label">User / Runtime</span></div>
+            <div class="rail-step" data-owner="runtime model"><span class="rail-no">02 / GOAL</span><b>TaskGoal + GoalPlan</b><small>authoritative goal + optional static advisory DAG</small><span class="owner-label">Runtime / Model</span></div>
+            <div class="rail-step" data-owner="surface"><span class="rail-no">03 / PERCEPTION</span><b>WorldObservation</b><small>source semantics + current revisions + lineage</small><span class="owner-label">Surface</span></div>
+            <div class="rail-step" data-owner="runtime model"><span class="rail-no">04 / DECISION</span><b>Context + Catalog</b><small>bounded public world and executable routes</small><span class="owner-label">Runtime → Model</span></div>
+            <div class="rail-step" data-owner="runtime surface"><span class="rail-no">05 / EFFECT</span><b>Bound request</b><small>risk → confirmation → currentness → dispatch</small><span class="owner-label">Runtime / Surface</span></div>
+            <div class="rail-step" data-owner="evaluator runtime"><span class="rail-no">06 / CLOSURE</span><b>StepResult</b><small>fresh world + action effect + task evaluation + monitor</small><span class="owner-label">Evaluator / Runtime</span></div>
+          </div>
+          <div class="rail-legend"><span>GoalPlan 非权威</span><span>模型不见 selector/坐标</span><span>Trace 不重建状态</span><span>Shell 不修改 Runtime 真值</span></div>
+        </div>
+
+        <div class="table-wrap"><table class="owner-table">
+          <thead><tr><th>事实 / 转换</th><th>唯一 owner</th><th>模型能否改</th><th>核心不变量</th></tr></thead>
+          <tbody>
+            <tr><td>任务目标与修订</td><td><code>TaskGoal</code> / revision boundary</td><td>只能提案</td><td>新 revision 替换完整语义，不能局部偷改</td></tr>
+            <tr><td>当前环境</td><td><code>SurfaceAdapter → WorldObservation</code></td><td>不能</td><td>一个 fresh World；来源与 revision 可追溯</td></tr>
+            <tr><td>模型可见工具</td><td><code>GroundedToolCatalog</code></td><td>只能选已发布工具</td><td>Catalog 与当轮 DeliveryManifest 一致</td></tr>
+            <tr><td>私有执行路由</td><td><code>ActionBinder</code></td><td>看不到</td><td>仅对当前合法 selection 解析 binding</td></tr>
+            <tr><td>外部动作结果</td><td><code>Executor / Surface</code></td><td>不能声称</td><td>dispatch status 与 post-acquisition 分离</td></tr>
+            <tr><td>任务完成证明</td><td><code>TaskEvaluator / native verifier</code></td><td>不能</td><td>final prose、局部 effect、executor success 均不能宣告成功</td></tr>
+            <tr><td>机械震荡</td><td><code>EpisodeMonitor</code></td><td>收到一次 recovery 信号</td><td>换 recovery 动作不重置同一失败中心</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="chain">
+        <p class="section-kicker">04 · End-to-end code path</p>
+        <h2>从用户一句话到任务终止的完整链路</h2>
+        <ol class="flow-list">
+          <li><b>1. Session 接收有 currentness 的命令。</b><span><code>PublicSessionCommand</code> 带 <code>command_id + expected_task_revision + expected_run_status</code>；重复 ID 同 payload 幂等，不同 payload 冲突。入口不是随便调一个 runtime 方法。</span></li>
+          <li><b>2. Intake 建立 TaskGoal。</b><span><code>TaskGoal</code> 保存 instruction、constraints、allowed/forbidden effects、success criteria、requested outputs、risk profile、budget 和 revision；它描述“要什么”，不描述 selector 或步骤。</span></li>
+          <li><b>3. Composition 组装唯一 Runtime。</b><span><code>compose_target_runtime_from_environment</code> 创建 model roles、ActionSpaceBuilder、Binder、ContextBuilder、RiskPolicy、GoalCompiler、TaskRevisionCompiler、EpisodeMonitor 和 CooperativeRunControl，注入同一个 <code>TargetRuntime</code>。</span></li>
+          <li><b>4. Environment reset 产出初始 World。</b><span><code>ObservationAcquisitionCoordinator</code> 根据 typed need 选择 source；各 SurfaceAdapter 把 DOM/BrowserGym/visual/WoT/HTTP 投影为统一 contract，Fusion 保存 source lineage，不让 CoreLoop 解析 provider 协议。</span></li>
+          <li><b>5. GoalCompiler 只在 start/revision 稀疏调用。</b><span>它可返回 Ready / NotRequired / NeedsInput / Unsupported / Failed。Ready 中最多 8 项，仅有 <code>id/objective/done_when/depends_on/final</code>。Runtime 校验边界，不计算 item progress；失败时继续普通 loop。</span></li>
+          <li><b>6. 初始化唯一 RunState。</b><span>保存 current World、task evaluation、step budget、静态 goal resolution、delivery store、recovery signal、monitor snapshot 等控制事实。Checkpoint 是它在 committed boundary 的 typed projection，不是序列化 coroutine。</span></li>
+          <li><b>7. 每一步先构造完整 ActionSpace。</b><span><code>ActionSpaceBuilder</code> 从 TaskGoal 与 current World 生成语义 option，再由 <code>WorldDeliveryIndex / ActionDeliveryPlan / GroundedToolCatalog</code> 决定本轮可见子集和 resolver rows。</span></li>
+          <li><b>8. ContextBuilder 产生唯一模型输入。</b><span>输入是 TaskGoal、GoalPlan、fresh public World、bounded recent outcomes、current tools、recovery/control feedback 和 final response codec。历史不能把旧 E/R/N/F ref 重新变成可执行句柄。</span></li>
+          <li><b>9. DeepSeek 选择且只选择一个 decision。</b><span>支持 SelectAction、RequestObservation、find/read/search local tool、AskUser、FinalResponse、Wait、Abort。PydanticAI bridge 拥有 provider envelope、exactly-one-tool-call、重试预算与 transcript。</span></li>
+          <li><b>10. Runtime 在 dispatch 前逐门校验。</b><span>Catalog/ActionSpace admission → recovery replay guard → RiskPolicy → Confirmation → Binder → environment currentness。任何失败都是 typed outcome；模型不能凭 prose 构造 action ID、selector 或坐标。</span></li>
+          <li><b>11. Surface 执行动作并收集 fresh post-world。</b><span>BrowserGym/Playwright 是成熟的底层执行 owner。<code>DispatchStatus</code> 区分 NOT_SENT / SENT / SENT_UNKNOWN；发送未知时不能盲重试未知副作用。</span></li>
+          <li><b>12. 两级验证关闭动作分支。</b><span><code>ActionOutcomeProjector</code> 判断局部 UI change/postcondition；<code>TaskEvaluator</code> 或 native verifier 判断全局任务。<code>StepResult</code> 按 decision 分支携带 before/after World、可选 receipt/effect/evaluation、typed failure 和 lineage；local/control 分支不伪造执行 receipt。</span></li>
+          <li><b>13. Monitor 在 commit 后判断机械收敛。</b><span>它不理解业务语义，只观察 owner-produced transition/result identities。未解决 failure center 穿过不同 recovery 动作继续累计；有真实新 World、新信息或 verified GUI progress 才关闭。</span></li>
+          <li><b>14. Loop 继续或在闭合状态终止。</b><span>RUNNING 进入下一轮；WAITING_USER / WAITING_CONFIRMATION 暂停在有类型交互；DONE / BLOCKED / CANCELLED / FAILED 结束。Trace 与 SSE 只投影已产生事实。</span></li>
+        </ol>
+
+        <h3>第 9 步不是“永远 click”：closed decision algebra 如何分流</h3>
+        <div class="table-wrap"><table class="owner-table">
+          <thead><tr><th>Decision</th><th>Runtime 路径</th><th>如何闭合</th></tr></thead>
+          <tbody>
+            <tr><td><code>SelectAction</code></td><td>admission → risk/confirmation → bind → currentness → execute</td><td><code>NOT_SENT | SENT | SENT_UNKNOWN</code> + fresh World + local effect + task evaluation</td></tr>
+            <tr><td><code>RequestObservation</code></td><td>typed need → source offer 选择 → acquisition/fusion</td><td>新 World/typed observation outcome；没有 GUI dispatch receipt</td></tr>
+            <tr><td><code>read / find / search</code></td><td>对当前 canonical projection 做确定性局部检查</td><td>typed local result + delivery transition；exact replay 可在零 dispatch 前拒绝</td></tr>
+            <tr><td><code>AskUser</code></td><td>Runtime admission → public interaction request</td><td><code>WAITING_USER</code>，等待带 currentness 的外部响应</td></tr>
+            <tr><td><code>FinalResponse</code></td><td>final codec → environment finalize → native evaluation</td><td>只有 evaluator-confirmed completion 才发布 artifact / <code>DONE</code></td></tr>
+            <tr><td><code>Wait</code></td><td>WaitController 消耗有界预算</td><td>fresh capture/evaluation 后继续或 typed budget termination</td></tr>
+            <tr><td><code>Abort</code></td><td>按 category 映射控制终止</td><td>用户请求为 <code>CANCELLED</code>；其余为 typed <code>BLOCKED/FAILED</code></td></tr>
+          </tbody>
+        </table></div>
+        <pre class="tree-code"><code>StepResult = {
+  decision, before_world, after_world, status_after,
+  task_evaluation?, execution_receipts?, action_outcome?,
+  observation_outcome?, runtime_failure?, control_termination?
+}</code></pre>
+        <p class="section-intro">异常路径也不折叠：provider/schema failure 形成 <code>PolicyFailure</code>；dispatch 前失败是 <code>NOT_SENT</code>，可以在 fresh context 重新选择；<code>SENT_UNKNOWN</code> 表示外部效果可能已发生，必须观测/对账或人工介入，禁止盲重试；dispatch 后采集失败与动作失败也分别保留 owner。</p>
+
+        <div class="callout"><strong>一次跨站任务的关键转折</strong>网站切换不会触发 replan，也不会创建第二 Agent。新的 URL/DOM 由 Surface 形成新的 World；同一个 ActionPolicy 在下一轮重新解释 GoalPlan 与 fresh World。跨站能力来自统一公开协议，而不是每站 adapter 写任务规则。</div>
+      </section>
+
+      <section id="repo">
+        <p class="section-kicker">05 · Repository map</p>
+        <h2>代码库结构：从目录就能看出职责边界</h2>
+        <div class="repo-tree">
+          <pre class="tree-code"><code>affordance-runtime/
+├─ src/affordance_runtime/
+│  ├─ app/          # composition, runtime, public session,
+│  │                 # checkpoint and deployment boundary
+│  ├─ task/         # TaskGoal, intake, public values, revision
+│  ├─ goals/        # bounded GoalPlan + compiler boundary
+│  ├─ world/        # observation algebra, selection, fusion,
+│  │                 # canonical public projection
+│  ├─ surfaces/     # DOM, BrowserGym, visual, WoT, HTTP
+│  ├─ integrations/ # optional third-party visual integration
+│  ├─ actions/      # ActionSpace, admission, catalog inputs,
+│  │                 # private binding and routing policy
+│  ├─ model/        # provider ports, PydanticAI bridge,
+│  │                 # prompts, tools, context delivery
+│  ├─ agent/        # one CoreAgentLoop, RunState, Monitor,
+│  │                 # recovery and observability
+│  ├─ execution/    # bound request / receipt contracts
+│  ├─ evaluation/   # local action effect + task evaluation
+│  ├─ verification/ # evidence/output contracts + mechanical checks
+│  ├─ memory/       # execution binding cache; not semantic memory
+│  ├─ risk/         # deterministic risk policy
+│  ├─ confirmation/ # confirmation contracts
+│  └─ benchmarks/   # BrowserGym/WebArena harness only
+├─ external/interaction-shell/
+│  ├─ backend/      # session API, SSE, viewer, Labs
+│  └─ frontend/     # Next.js supervised workspace
+├─ environments/    # environment/profile descriptions
+├─ containers/      # reproducible service/runtime packaging
+├─ evidence/        # immutable-ish per-run traces and reports
+├─ scripts/         # developer/benchmark entry scripts
+├─ tests/           # unit / integration / conformance /
+│                    # architecture / benchmark
+├─ pyproject.toml    # package, toolchain and test configuration
+├─ docs/architecture.md  # design/status authority
+└─ docs/benchmark.md     # evidence authority</code></pre>
+          <div class="tree-notes">
+            <div class="tree-note"><b>app/</b> 是产品入口与生命周期 owner；它组装组件，但不解析 DOM、provider wire 或 benchmark 语义。</div>
+            <div class="tree-note"><b>world/ + surfaces/</b> 负责“世界是什么”；Surface 保留来源语义，Fusion 统一公开事实。</div>
+            <div class="tree-note"><b>actions/ + model/policy/</b> 分开“模型看到什么工具”和“动作如何私有执行”。</div>
+            <div class="tree-note"><b>agent/</b> 只编排 typed ports 与控制状态；Monitor 是机械收敛 owner，不是第二个语义 Agent。</div>
+            <div class="tree-note"><b>evaluation/</b> 把局部 effect 和全局 completion 分开，避免 self-reported success。</div>
+            <div class="tree-note"><b>verification/ + memory/</b> 分别保存证据/产物合同与短期 binding cache；后者不是 RAG、用户画像或长期语义记忆。</div>
+            <div class="tree-note"><b>benchmarks/</b> 只能适配评测和落 evidence，禁止把 case、selector 或 expected answer 反灌生产代码。</div>
+          </div>
+        </div>
+
+        <h3>推荐源码阅读顺序</h3>
+        <p class="section-intro">下列链接固定到本次根因修复提交 <code>e4a57a5a</code>。仓库当前为 private，未获授权的访客会看到 GitHub 404；页面中的完整路径和职责说明本身不依赖仓库访问。</p>
+        <div class="table-wrap"><table class="owner-table">
+          <thead><tr><th>顺序</th><th>文件</th><th>看什么</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/composition.py">app/composition.py</a></td><td>系统由哪些 port 组成，哪些角色可替换</td></tr>
+            <tr><td>2</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/public_session.py">app/public_session.py</a></td><td>外部命令、幂等/currentness、pause/revise/takeover</td></tr>
+            <tr><td>3</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/core_loop.py">agent/core_loop.py</a></td><td>唯一控制循环，step 前后所有 guard</td></tr>
+            <tr><td>4</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/world/orchestrator.py">world/orchestrator.py</a></td><td>观察源选择、fusion、execute 后采集和 currentness</td></tr>
+            <tr><td>5</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/action_space.py">actions/action_space.py</a> + <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/binder.py">binder.py</a></td><td>语义 action 如何合法化并变成私有请求</td></tr>
+            <tr><td>6</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">model/policy/pydantic_ai_bridge.py</a></td><td>provider tool protocol、history、compaction、retry、transcript</td></tr>
+            <tr><td>7</td><td><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/monitor.py">agent/monitor.py</a> + <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/checkpoint.py">app/checkpoint.py</a></td><td>失败中心、恢复信号与 durable projection</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="model">
+        <p class="section-kicker">06 · Ordinary DeepSeek inside a strict harness</p>
+        <h2>为什么普通 DeepSeek V4 Flash 能接入，而模型又不是系统中心</h2>
+        <p>DeepSeek 官方 API 采用 OpenAI/Anthropic 兼容格式，V4 Flash 支持工具型 Agent 场景；仓库通过 <code>OpenAICompatibleModelPort</code> 统一 transport，再由 PydanticAI bridge 处理模型消息和工具调用。接口适配直接，但兼容 wire 不代表行为合同天然可靠；本项目尚未完成同条件成本、延迟与成功率 A/B。</p>
+        <div class="cards two">
+          <article class="card"><h3>模型负责的</h3><p>解释任务、选择证据需求、在当前工具中选一步、处理语言与开放世界歧义、在必要时生成最终内容。</p></article>
+          <article class="card red"><h3>模型不负责的</h3><p>元素 currentness、selector/坐标、能力授权、风险、执行结果、任务完成、checkpoint、user lease、Monitor 状态。</p></article>
+          <article class="card cyan"><h3>Harness 给它的增益</h3><p>更小且当前的 action catalog、typed tool return、结构化 World、短期 recovery feedback、pair-safe history、独立 evaluator。</p></article>
+          <article class="card amber"><h3>Harness 不能凭空补的</h3><p>模型可能仍拒绝完整否定证据、选错可用 route、违反 exactly-one-call，或在真实进展上极低效；这些必须通过 live benchmark 暴露。</p></article>
+        </div>
+        <div class="callout danger"><strong>为什么 provider 违规不能“取第一个 tool call 就算了”</strong>多个调用可能互相依赖或产生两个副作用。选择其中一个会把 provider 非法输出变成 Runtime 猜测。当前边界保存每次 physical response，做一次有界完整 retry，仍非法则 typed <code>invalid_response</code> 失败。</div>
+      </section>
+
+      <section id="vision">
+        <p class="section-kicker">07 · Selective multimodality</p>
+        <h2>VLM 什么时候开：按证据义务，不按“撞墙了”</h2>
+        <p class="section-intro">默认结构化路线更可定位，也更容易证明 currentness；视觉用于结构源无法诚实回答的视觉问题。它预计能减少不必要的图像 token 与调用延迟，但项目尚未完成同条件 A/B；配置了 VLM 只是 capability，不是调用理由。</p>
+        <div class="table-wrap"><table class="compare-table">
+          <thead><tr><th>情形</th><th>结构化路径</th><th>视觉路径</th><th>最终进入哪里</th></tr></thead>
+          <tbody>
+            <tr><td>普通表单/链接/ARIA 控件</td><td>DOM/BrowserGym 足够</td><td>不调用</td><td>同一 World</td></tr>
+            <tr><td>用户明确要求截图证据</td><td>提供 baseline</td><td><code>RAW_SCREENSHOT</code></td><td>同一 World artifact</td></tr>
+            <tr><td>目标只在图像/画布中</td><td>证明结构缺口</td><td>open-world entity / point / OCR / spatial role</td><td>typed visual facts + revision lineage</td></tr>
+            <tr><td>单目标同名歧义</td><td>保留候选集合</td><td>bounded disambiguation</td><td>当前候选证据，不直接 click</td></tr>
+            <tr><td>动作后出现新 overlay</td><td>检测结构/几何 transition</td><td>postcondition diagnosis</td><td>fresh post-action World</td></tr>
+            <tr><td>重复、long task、generic no-progress</td><td>Monitor/ActionPolicy 处理</td><td>不自动开启</td><td>防止视觉成为恢复旁路</td></tr>
+          </tbody>
+        </table></div>
+        <p>视觉 provider 返回 typed outcome，不能直接选择 GUI action，也不能宣布 task complete。Surface 负责 frame digest、viewport、page generation 和候选 lineage；过期 frame 或不匹配 viewport fail-closed。当前 formal ordinary run 默认 VLM 调用为零，只有显式 visual profile 才组装七个模型-backed visual roles。</p>
+      </section>
+
+      <section id="control">
+        <p class="section-kicker">08 · External user control</p>
+        <h2>中断、撤销、修改、接管不是四个按钮，而是四种状态语义</h2>
+        <p class="section-intro">外部用户可在运行中随时发出请求，但“请求已接收”不等于“控制权已经切换”。Runtime 只在最近合法语义边界确认，避免截断 provider/tool pair、掩盖未知副作用或持久化半步状态。</p>
+        <div class="sequence">
+          <div class="actor">USER</div><div class="event"><b>pause(command_id, expected status)</b>：请求进入 CooperativeRunControl，不直接杀 task。</div>
+          <div class="actor">CORE LOOP</div><div class="event">在 BEFORE_POLICY / AFTER_POLICY / AFTER_EVALUATION / WAITING_* 等安全边界 acknowledge；若 action 已发送且结果未知，不能伪造干净暂停。</div>
+          <div class="actor">CHECKPOINT</div><div class="event">捕获 TaskGoal、committed RunState facts、model history、monitor snapshot 和 reconnect reference，SQLite 原子提交后才宣布 paused。</div>
+          <div class="actor">USER</div><div class="event"><b>revise</b>：完整新目标提案；<b>take_over</b>：消费 checkpoint 并签发 live input lease；<b>cancel</b>：停止未来控制。</div>
+          <div class="actor">RUNTIME</div><div class="event">修订评估既有副作用是否已满足、可补偿、未知或不可补偿；没有通用 rollback 幻觉。</div>
+          <div class="actor">RETURN</div><div class="event">撤销用户 lease → fresh capture → 重建 current action space → Agent 继续；刷新失败则 manual control 恢复为新 lease。</div>
+        </div>
+
+        <div class="callout warning"><strong>“撤销”的真实边界</strong>软件不能保证任意外部网站副作用可回滚。项目支持的是：若 owner 明确提供合法 compensation route，进入 effect reconciliation；否则返回 typed non-compensable / unknown / needs-input。Cancel 只保证不再发新动作。</div>
+      </section>
+
+      <section id="recovery">
+        <p class="section-kicker">09 · Root-cause convergence</p>
+        <h2>为什么之前能发现 stall，却始终察觉不了震荡</h2>
+        <p>旧机制把 <code>RecoverySignal</code> 同时当“给模型一次提示”和“失败累计的生命周期”。信号被下一次 read/search/observe 消费后，Monitor 没有保留同一 unresolved center；模型换一个 recovery 动作，累计就归零。于是 <code>S → A → S → B → S</code> 每次都像新的 attempt 1。</p>
+        <div class="sota-axis">
+          <div class="sota-side"><h4>症状级修法</h4><p>加 retry 次数、加更长 short-cycle window、枚举 search/read 组合、在 prompt 里强调“别重复”。它们只能覆盖已知波形。</p></div>
+          <div class="sota-vs">VS</div>
+          <div class="sota-side"><h4>owner 级修法</h4><p><code>EpisodeMonitor</code> 持有 bounded unresolved failure center；signal 只是当轮反馈。不同无进展动作加入同一 center，重新进入成员或容量耗尽就 typed block。</p></div>
+        </div>
+        <p>正向 escape contract 只有 owner-produced progress：fresh public semantic digest、NEW_INFORMATION、verified operational GUI result、native terminal、task revision 或 episode reset。动作名、query、region、result 语法、recovery epoch、model profile 改变都不算进展。</p>
+        <p>Checkpoint v8 保存 Monitor snapshot，恢复时只有 fresh World semantic digest 相同才恢复该 center。它不会进模型上下文，也不会记录“模型已经完成了某个里程碑”。Task798 live repeat 证明同一个 center 的 attempt 从 1 到 2，并在 18 步 <code>control_stalled</code>，不再跑满 8 分钟。</p>
+        <p>恢复推理仍由唯一 ActionPolicy 完成：active recovery 只改变同一 policy 的 deliberate 调用 profile，并要求有界 decision basis；生产代码没有 StrategyRevision、独立 reviewer 或第二套 history。Monitor 只提供机械事实与硬约束，不能替模型选择业务 route。</p>
+      </section>
+
+      <section id="sota">
+        <p class="section-kicker">10 · SOTA alignment and deliberate differences</p>
+        <h2>与当前 computer-use 路线对齐，但不盲目复制</h2>
+        <p class="section-intro">这里比较的是架构方向，不是宣称本项目成绩超过专用模型。2026 年的一手资料共同确认：最终都需要“模型—客户端执行环境—新观察”的闭环；差异在模型是否专训、观察与动作表示、验证和用户控制由谁拥有。</p>
+        <div class="table-wrap"><table class="compare-table">
+          <thead><tr><th>维度</th><th>专用 computer-use 模型</th><th>Affordance Runtime</th><th>取舍</th></tr></thead>
+          <tbody>
+            <tr><td>模型</td><td>OpenAI CUA / Gemini Computer Use / Claude computer or browser toolset，通常有 GUI 专训或训练内 schema</td><td>普通 DeepSeek V4 Flash + 可替换 Goal/VLM specialist</td><td>不预设能力/成本胜负；换来 provider 可替换性，并把 Harness 贡献与专用模型能力分开研究</td></tr>
+            <tr><td>观察</td><td>截图优先或 provider 定义 page-aware tool</td><td>DOM/BrowserGym 结构优先，视觉为 evidence-gated residual</td><td>currentness 更易证明；token/latency 收益仍需同条件测量，视觉 long tail 需要 specialist</td></tr>
+            <tr><td>动作</td><td>鼠标键盘坐标或 provider 原生 toolset</td><td>模型见语义工具与 ephemeral ref，坐标/selector/binding 私有</td><td>减少 hallucinated coordinates，代价是 catalog/delivery 工程复杂</td></tr>
+            <tr><td>规划</td><td>模型内部多步 reasoning，部分系统配 planner</td><td>单 ActionPolicy 每步重判；GoalPlan 只在 start/revision 编译一次</td><td>避免 stale mutable plan 和双控制流；更依赖每步 policy 质量</td></tr>
+            <tr><td>验证</td><td>常见模型自观察/自终止，也可接 benchmark scorer</td><td>局部 ActionOutcome 与 TaskEvaluator/native verifier 分离</td><td>更诚实地 fail-closed，但 evaluator integration 成本高</td></tr>
+            <tr><td>人工监督</td><td>官方系统强调 confirmations、watch mode、sandbox</td><td>typed command offers + cooperative safe points + checkpoint + control lease</td><td>控制语义更显式；不声称任意副作用可撤销</td></tr>
+            <tr><td>评测</td><td>常报 WebArena/OSWorld/WebVoyager aggregate</td><td>BrowserGym 统一 harness，MiniWoB/WebArena/Visual profiles，保存 per-case trace</td><td>更偏架构因果诊断；aggregate breadth 仍待完成</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>为什么不是 Manager / Worker 多 Agent</h3>
+        <p>当前失败主要来自世界投影、工具可发现性、provider contract、currentness 和 recurrence authority；增加 manager 不会修复这些 owner 缺口，反而产生第二计划、第二历史和委派失败。只有 benchmark 明确证明单 policy 的认知职责不可兼容，才值得新增 specialist；视觉就是 specialist，但它只返回证据，不接管控制。</p>
+
+        <h3>为什么不用 memory / RAG / RL data flywheel</h3>
+        <p>当前跨站任务的关键状态是 fresh World 和有限的 task-required facts，不是开放域知识库。仓库的 Harness compaction 保留 pair-safe outcomes 和必要事实，删除过期 executable refs。长期 memory 可能让旧世界重新获得权威；训练与 RL 又超出项目范围。研究界正在用 world model 与 RL 扩展 Web Agent，但那是模型能力路线，不是本项目当前的 runtime invariant 缺口。</p>
+      </section>
+
+      <section id="evidence">
+        <p class="section-kicker">11 · Evaluation and current risks</p>
+        <h2>评测金字塔与当前问题</h2>
+        <div class="cards">
+          <article class="card cyan"><span class="metric">2284</span><h3>Provider-free tests</h3><p>unit / integration / conformance / architecture / benchmark contract。19 skipped；1 个已知缺失历史 trace fixture 明确 deselected。</p></article>
+          <article class="card"><span class="metric">11</span><h3>Task316 live steps</h3><p>读取 source-owned contributor Record，返回三位贡献者准确邮箱，122.8 秒 native success。</p></article>
+          <article class="card amber"><span class="metric">18</span><h3>Task798 block step</h3><p>不同 search/read 操作未洗掉 failure center；attempt 2 触发 control_stalled，机械收敛 live verified。</p></article>
+        </div>
+        <p class="section-intro"><b>案例语境：</b>两者来自 WebArena Verified / BrowserGym native scorer。Task316 要从 GitLab contributor 图表对应的 source records 中精确返回前三位贡献者邮箱；Task798 要判断订单 <code>000000189</code> 是否存在可执行的配送地址修改路径，并在没有 eligible edit action 时给出 typed negative。前者证明可发现性修复，后者把“机械收敛”和“业务答案接受”拆成了两项证据。</p>
+        <div class="table-wrap"><table class="owner-table">
+          <thead><tr><th>证据</th><th>可复核 provenance</th><th>诚实结论</th></tr></thead>
+          <tbody>
+            <tr><td>实现快照</td><td><code>e4a57a5a</code> · failure-center owner repair</td><td>页面源码链接固定到该提交</td></tr>
+            <tr><td>Provider-free suite</td><td>固定 BrowserGym Python · 2284 passed / 19 skipped / 1 deselected</td><td>证明 bounded contract，不证明 live 成功率</td></tr>
+            <tr><td>Task316 live</td><td><code>...failure-center-live1/</code> · <code>model-long-horizon</code> · seed 7 · 2026-09-01</td><td>11 turns / 122.8s / native verified_success</td></tr>
+            <tr><td>Task798 live repeat</td><td><code>...failure-center-live2-task798/</code> · <code>model-long-horizon</code> · seed 7 · 2026-09-01</td><td>18 turns / 107.2s / episode_monitor control_stalled；business acceptance open</td></tr>
+          </tbody>
+        </table></div>
+        <div class="callout warning"><strong>Provenance 限制</strong>两个 live <code>run.json</code> 都记录 <code>git_sha=ec7923b4…</code> 且 <code>git_dirty=true</code>；修复随后整体提交为 <code>e4a57a5a</code>。因此它们是可追溯的 live witness，不是 clean-commit aggregate benchmark closure。</div>
+        <div class="table-wrap"><table class="owner-table">
+          <thead><tr><th>问题</th><th>当前判断</th><th>正确 owner / 下一证据</th></tr></thead>
+          <tbody>
+            <tr><td>完整否定证据已返回，模型仍假设隐藏 feature</td><td>ActionPolicy/tool-result semantic acceptance open</td><td>单 ActionPolicy 合同；fresh Task798 held-out acceptance</td></tr>
+            <tr><td>DeepSeek 两次返回多个工具调用</td><td>provider adherence failure，Runtime 已 fail-closed</td><td>provider/profile 能力与采样；不能由 executor 猜</td></tr>
+            <tr><td>长任务真实变化但低效，例如逐字符清空</td><td>不是机械 stall；Monitor 不应把真实 progress 当无进展</td><td>模型策略或更好的工具语义，不调 stall 阈值</td></tr>
+            <tr><td>跨 benchmark 稳定性</td><td>若干 live witness，不是 aggregate closure</td><td>冻结 profile 的 held-out / repeated BrowserGym campaign</td></tr>
+            <tr><td>视觉能力</td><td>provider-free contract 成立，正式 live VLM breadth 仍有限</td><td>VisualWebArena / ScreenSpot / paired adaptive-vision gates</td></tr>
+            <tr><td>任意外部效果回滚</td><td>不支持通用 rollback</td><td>每个 Surface 的 typed compensation capability 或人工处置</td></tr>
+            <tr><td>网页 prompt injection</td><td>effects/risk/currentness 有确定性边界；通用攻击鲁棒性未闭合</td><td>WASP + 跨域/指令来源 adversarial campaign</td></tr>
+            <tr><td>多源事实冲突</td><td>World 显式标冲突并对相关 route fail-closed</td><td>held-out DOM/visual/BrowserGym conflict cases；不声称完美语义仲裁</td></tr>
+            <tr><td>崩溃与未知副作用</td><td>committed checkpoint 可恢复；<code>SENT_UNKNOWN</code> 禁止盲重试</td><td>reconnect + fresh capture + reconciliation / 人工处置演练</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="stories">
+        <p class="section-kicker">12 · STAR stories</p>
+        <h2>三个适合面试展开的真实故事</h2>
+        <div class="cards">
+          <article class="card red">
+            <span class="tag open">Root cause</span>
+            <h3>Monitor 为什么永远 attempt 1</h3>
+            <p><b>S：</b>Task798/316 反复 recovery 不 block。<br><b>T：</b>不是加阈值，而是找到累计状态 owner。<br><b>A：</b>trace 证明 signal consumption 与 failure lifetime 混合；改为 bounded failure center + checkpoint projection。<br><b>R：</b>Task798 从 8 分钟变为 18 步 typed block。</p>
+          </article>
+          <article class="card cyan">
+            <span class="tag live">Data model</span>
+            <h3>数据存在，模型却永远看不到</h3>
+            <p><b>S：</b>Task316 World 已有 100 条 Record 和邮箱，模型输入没有。<br><b>T：</b>不加邮箱检索旁路。<br><b>A：</b>保持 source-owned Record 边界，只为匿名 Collection 暴露 bounded descriptor。<br><b>R：</b>11 步 native success。</p>
+          </article>
+          <article class="card amber">
+            <span class="tag open">Honesty</span>
+            <h3>Runtime 收敛了，业务仍没通过</h3>
+            <p><b>S：</b>Task798 complete search 已证明无 eligible route。<br><b>T：</b>避免 Runtime 猜“答案是不允许”。<br><b>A：</b>提供 typed final codec，由 ActionPolicy 决定；Monitor 只 block recurrence。<br><b>R：</b>系统边界正确但 acceptance 仍开放，避免假 closure。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="sources">
+        <p class="section-kicker">13 · Primary sources</p>
+        <h2>SOTA 对齐使用的一手资料</h2>
+        <ul class="source-list">
+          <li><time>2026-08</time><span><a href="https://ai.google.dev/gemini-api/docs/computer-use">Gemini API · Computer Use</a>：截图—动作—客户端执行循环、Flash 系列、safety 与 prompt-injection 检测。</span></li>
+          <li><time>2026-08</time><span><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations">Claude Platform · Tool combinations</a>：browser-aware tools 与通用 computer use 的适用边界和成本差异。</span></li>
+          <li><time>2026-07</time><span><a href="https://api-docs.deepseek.com/updates/">DeepSeek API · Change Log</a> 与 <a href="https://api-docs.deepseek.com/">API Docs</a>：V4 Flash、兼容 API 与 agent/harness 定位。</span></li>
+          <li><time>2025-03</time><span><a href="https://openai.com/index/operator-system-card/">OpenAI Operator System Card</a>：computer-use 风险、人类监督、confirmation/watch-mode 与可靠性边界。</span></li>
+          <li><time>2024-12</time><span><a href="https://arxiv.org/abs/2412.05467">The BrowserGym Ecosystem for Web Agent Research</a> 与 <a href="https://github.com/ServiceNow/BrowserGym">官方仓库</a>：统一 observation/action/evaluation harness 与多 benchmark 可复现性。</span></li>
+          <li><time>2024-01</time><span><a href="https://arxiv.org/abs/2401.13649">VisualWebArena</a>：真实网页中视觉信息对 text-only agent 的补充与 multimodal gap。</span></li>
+          <li><time>2023-07</time><span><a href="https://arxiv.org/abs/2307.13854">WebArena</a>：跨电商、论坛、开发协作、CMS 的功能正确性评测与长任务难度。</span></li>
+        </ul>
+        <p class="section-intro">关于“Affordance Runtime 为什么选择结构优先、视觉按需、单循环与独立验证”的结论，是基于这些来源和仓库约束作出的工程推论，不是来源作者对本项目的背书。</p>
+      </section>
+    </main>
+  </div>
+
+  <footer class="footer"><div class="footer-inner"><p>派生面试材料。实现与状态以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 及链接源码为准；不要把页面摘要当作新的 authority。</p><div class="footer-links"><a href="index.html">首页</a><a href="interview-guide.html">面试指南</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
+  <script src="assets/interview.js"></script>
+</body>
+</html>

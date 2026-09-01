@@ -1,452 +1,177 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Affordance Runtime 从自然语言到可验证结果的完整中文架构解读">
-  <title>Affordance Runtime：从自然语言到可验证结果</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordance Runtime：用 Harness 驾驭普通 DeepSeek V4 Flash 完成跨站网页任务的完整架构与面试手册。">
+  <meta name="theme-color" content="#081525">
+  <title>Affordance Runtime · Harness-first Web Agent</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="assets/interview.css">
 </head>
 <body>
-<button class="mobile-toggle" aria-controls="report-nav" aria-expanded="false">目录</button>
-<div class="page-shell">
-  <aside class="sidebar" id="report-nav">
-    <div class="brand">
-      <div class="brand-mark">Runtime Field Manual</div>
-      <h1>Affordance Runtime</h1>
-      <p>完整中文架构图谱</p>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="site-top">
+    <div class="top-inner">
+      <a class="wordmark" href="index.html" aria-label="Affordance Runtime 首页">
+        <span class="wordmark-mark">AR</span>
+        <span class="wordmark-copy">Affordance Runtime<small>HARNESS-FIRST WEB AGENT</small></span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航">
+        <a href="index.html" aria-current="page">首页</a>
+        <a href="project-pitch.html">项目讲述</a>
+        <a href="interview-guide.html">面试指南</a>
+        <a href="architecture.md">架构原文</a>
+        <a href="benchmark.md">评测原文</a>
+      </nav>
     </div>
-    <ol class="nav-list">
-      <li><a href="#executive-summary">01 · 一页读懂</a></li>
-      <li><a href="#global-atlas">02 · 全局架构图谱</a></li>
-      <li><a href="#entrypoints">03 · 入口与外层调用</a></li>
-      <li><a href="#intake">04 · 自然语言编译</a></li>
-      <li><a href="#planning">05 · Planner 与 TaskPlan</a></li>
-      <li><a href="#agent-loop">06 · 五阶段 Agent Loop</a></li>
-      <li><a href="#perception-action">07 · 感知、落地与执行</a></li>
-      <li><a href="#verification">08 · 验证、进度与终态</a></li>
-      <li><a href="#recovery">09 · 失败恢复与安全</a></li>
-      <li><a href="#context">10 · 上下文与压缩</a></li>
-      <li><a href="#evidence">11 · 证据、评测与演化</a></li>
-      <li><a href="#glossary">12 · 术语与源码索引</a></li>
-    </ol>
-    <div class="sidebar-meta">
-      branch: agent/migrate-runtime-components<br>
-      commit: 786857f8fb61<br>
-      tests: 1459 passed<br>
-      generated: 2026-08-01
-    </div>
-  </aside>
+  </header>
 
-  <div class="content">
-    <header class="hero">
-      <div class="eyebrow">Architecture atlas · E2E narrative · expandable deep dives</div>
-      <h2>从一句自然语言，到一份可验证结果</h2>
-      <p class="lead">这不是“模型会不会点按钮”的说明书，而是对一个受约束、可追踪、可恢复的 GUI Agent Runtime 的全链路解剖：语义如何被编译，权力如何被收紧，状态由谁写入，动作如何被证明，以及系统如何知道该继续、重试、询问还是停止。</p>
-      <div class="revision-stamp">
-        <span>FACT BASELINE · CURRENT IMPLEMENTATION</span>
-        <span>agent/migrate-runtime-components @ 786857f8fb61aa99f2c7e6a23eb8225957e1438b</span>
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">One dispatch authority · one loop · one current world</div>
+        <h1>让普通模型<br>在 <em>Harness</em> 里<br>可靠地行动</h1>
+        <p class="lede">Affordance Runtime 不是再训练一个网页 Agent，而是给 DeepSeek V4 Flash 这样的通用工具调用模型补上一套可执行、可观察、可中断的控制面：模型负责理解与选择，Runtime 负责事实、权限、绑定、执行和终止。</p>
+        <div class="status-strip" role="group" aria-label="项目证据状态">
+          <span class="status-chip verified">2284 provider-free tests</span>
+          <span class="status-chip live">Task316 live success</span>
+          <span class="status-chip open">Task798 acceptance open</span>
+        </div>
       </div>
-    </header>
-
-    <main>
-      <section id="executive-summary">
-        <div class="section-head"><div class="section-no">SECTION 01</div><div><h2>一页读懂：它到底是什么</h2><p>先建立正确心智模型，再进入类、字段与调用关系。</p></div></div>
-        <p class="lede"><strong>Affordance Runtime 是一个“权威在 Runtime、模型只做受限提议”的任务执行内核。</strong>它接收自然语言或父 Agent 提交的任务，将其编译为带来源、约束、义务和证据要求的 <span class="term" title="稳定、可校验的任务语义对象">TaskSpec</span>；再生成步骤计划，循环感知、规划、执行、验证和恢复，直到有独立证据支持任务完成，或以明确原因停下。</p>
-
-        <div class="truth-grid">
-          <div><strong>代码真实实现</strong><p>五阶段循环、单写者状态提交、严格 Planner 候选选择、快照绑定、能力与审批门、独立后验验证、类型化失败路由、因果 Trace DAG、外部任务级工具接口。</p></div>
-          <div><strong>不要误读</strong><p>模型不拥有 TaskSpec、TaskPlan 版本、坐标、能力、审批和完成判定；执行器返回 success 也不代表任务完成；仓库没有通用聊天历史滚动摘要器。</p></div>
+      <div class="hero-console" role="group" aria-label="运行片段示意">
+        <div class="console-head"><i></i><i></i><i></i></div>
+        <div class="console-body">
+          <p><b>goal</b> 跨站查找 3 位贡献者邮箱并返回</p>
+          <p><b>world</b> DOM + browser context + typed records</p>
+          <p><b>policy</b> read_region(R16)</p>
+          <p><b>runtime</b> admission → bind → execute → refresh</p>
+          <p><b>evaluator</b> native verified_success</p>
+          <p><b>live</b> Task316 · 11 steps · 122.8 s</p>
+          <p class="warn">open: Task798 typed negative not selected</p>
         </div>
-
-        <h3>最短 E2E 路径</h3>
-        <div class="object-chain" aria-label="从用户输入到任务结果的对象链">
-          <span>UserRequest</span><i>→</i><span>SourceLedger</span><i>→</i><span>IntentDraft</span><i>→</i><span>TaskSpec</span><i>→</i><span>TaskPlan / StepSpec</span><i>→</i><span>PlanningRequest</span><i>→</i><span>ActionChoice</span><i>→</i><span>ActionContract</span><i>→</i><span>ExecutionReceipt</span><i>→</i><span>VerificationReport</span><i>→</i><span>TaskResult + Evidence</span>
-        </div>
-        <div class="callout"><strong>贯穿全报告的核心问题</strong>每个阶段都要回答四件事：输入是什么？谁有权决定？状态由谁提交？结论靠什么证据成立？</div>
-      </section>
-
-      <section id="global-atlas">
-        <div class="section-head"><div class="section-no">SECTION 02</div><div><h2>全局混合式架构图谱</h2><p>横向看数据如何变形，纵向看权威如何逐层收紧。</p></div></div>
-        <div class="callout" id="modification-audit"><strong>逐条修改意见审计</strong>下面并列区分固定基线的真实生产路径与尚未实现的建议目标。每个判断、风险、优先级、源码证据和线上落点都在 <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/agent/migrate-runtime-components/docs/affordance-runtime-deep-dive/architecture-modification-audit.md">逐条修改意见审计（Markdown）</a> 中展开；实现事实仍绑定 <code>786857f8fb61…</code>。</div>
-
-        <div class="architecture-comparison">
-          <article class="architecture-view current" id="current-architecture">
-            <div class="architecture-label">CURRENT · 当前实现</div>
-            <h3>固定事实基线中的真实对象往返</h3>
-            <p>这是对生产路径的可读投影，不是目标设计。红色缺口标签表示意见指出的重复表达或有损往返。</p>
-            <ol class="architecture-chain">
-              <li><b>入口</b><code>UserRequest → SourceLedger</code></li>
-              <li><b>多次语义处理</b><code>LLMIntentDraft → IntentDraft → raw-text semantic normalizers → CanonicalObligationCompiler → TaskSpec</code><span class="gap-flag">重复理解</span></li>
-              <li><b>计划兼容往返</b><code>PlanCandidate&lt;StepSpec&gt; → TaskPlan&lt;SubgoalSpec&gt; → TaskPlanView&lt;StepSpec&gt;</code><span class="gap-flag">StepSpec → legacy SubgoalSpec → StepSpec</span></li>
-              <li><b>先裁剪再统一</b><code>BrowserSnapshot → bounded PlannerObservationView → UnifiedObservation → ActionChoice</code><span class="gap-flag">prompt space 限制 candidate space</span></li>
-              <li><b>上下文二次投影</b><code>PlanningRequest → PlannerContext → provider JSON</code></li>
-              <li><b>合同与执行</b><code>ActionChoice → ActionContract → ExecutionReceipt</code><span class="keep-flag">应保留</span></li>
-              <li><b>动作后证明</b><code>fresh post-action observation → VerificationReport → legacy TaskProgress</code><span class="keep-flag">应保留</span></li>
-              <li><b>两套窄终态机制</b><code>TerminalReadiness compatibility + latest-report TaskCompletionVerifier</code><span class="gap-flag">不是完整 TaskSpec closure</span></li>
-            </ol>
-          </article>
-
-          <article class="architecture-view proposed" id="proposed-architecture">
-            <div class="architecture-label">PROPOSED · 建议目标（尚未实现）</div>
-            <h3>意见建议的 11 段唯一生产链</h3>
-            <p>目标收缩重复表示，但不删除 admission、ActionContract、独立验证和 Runtime commit 等权威边界。</p>
-            <ol class="architecture-chain proposed-chain">
-              <li><b>01 外部输入</b><code>UserRequest → ingress validation</code></li>
-              <li><b>02 一次语义理解</b><code>SourceLedger → IntentProposal</code></li>
-              <li><b>03 任务权威化</b><code>TaskSpecAuthority → TaskSpec</code></li>
-              <li><b>04 Task 级规划</b><code>TaskComplexityRouter → PlanCandidate&lt;StepSpec&gt; → TaskPlanAuthority → TaskPlan&lt;StepSpec&gt;</code></li>
-              <li><b>05 感知</b><code>PerceptionSession → canonical UnifiedObservation</code></li>
-              <li><b>06 Step precheck</b><code>Active StepSpec + observation → StepCompletionPrecheck</code></li>
-              <li><b>07 Step 决策</b><code>ActionChoiceBuilder → 0 / 1 / N → bounded choice selection</code></li>
-              <li><b>08 合同与执行</b><code>ActionContract → policy / capability / approval → Executor → Receipt</code></li>
-              <li><b>09 动作后证明</b><code>reusable post-action UnifiedObservation → verifier ladder → ActionOutcome</code></li>
-              <li><b>10 进度</b><code>StepCompletionVerifier → TaskProgress</code></li>
-              <li><b>11 唯一完成权威</b><code>full TaskSpec completion expression → TaskCompletionVerifier → RuntimeCommitter → TaskCompleted</code></li>
-            </ol>
-          </article>
-        </div>
-
-        <div class="architecture-diff" id="architecture-diff">
-          <h3>逐层对比：保留、收缩、替换、新增</h3>
-          <div class="scroll-table"><table><thead><tr><th>层</th><th>当前实现</th><th>建议目标</th><th>变化</th><th>语义/权威影响</th><th>审计条目</th></tr></thead><tbody>
-            <tr><td>自然语言</td><td>模型图 + regex normalizers + coverage review</td><td>一次 IntentProposal</td><td>收缩</td><td>减少重复理解；保留 admission</td><td><a href="intake.html#02-b-intent-draft">OP-02</a></td></tr>
-            <tr><td>TaskSpec</td><td>effects/criteria/claims/obligations 并行</td><td>requirement + composite completion</td><td>替换</td><td>单一语义 authority</td><td><a href="intake.html#02-d-task-spec-admission">OP-04/05</a></td></tr>
-            <tr><td>Task plan</td><td>StepSpec → SubgoalSpec → StepSpec</td><td>TaskPlan&lt;StepSpec&gt;</td><td>收缩</td><td>避免 criteria/value/evidence 降维</td><td><a href="planning.html#03-b-plan-authority">OP-06–08</a></td></tr>
-            <tr><td>Observation</td><td>bounded view 后生成 Runtime observation</td><td>canonical full view 后分叉</td><td>替换</td><td>prompt 裁剪不再删除候选</td><td><a href="perception-action.html#05-b-unified-observation">OP-09/10</a></td></tr>
-            <tr><td>模型上下文</td><td>PlanningRequest → PlannerContext</td><td>typed request → pure serializer</td><td>收缩</td><td>减少二次领域投影</td><td><a href="context.html#08-b-planner-context">OP-11/12</a></td></tr>
-            <tr><td>Choice</td><td>0/1/N，N 的语义字段较少</td><td>保留 0/1/N，增强 bounded decision view</td><td>保留 + 新增</td><td>不开放自由坐标</td><td><a href="planning.html#03-d-action-choice">OP-13/14</a></td></tr>
-            <tr><td>执行</td><td>ActionContract + gates + executor</td><td>边界保留，内部 service 可拆</td><td>保留</td><td>Planner 不能直连 executor</td><td><a href="perception-action.html#05-d-action-contract">OP-16</a></td></tr>
-            <tr><td>Post action</td><td>fresh capture 后下轮可能再捕获</td><td>同一 observation 复用，按需 recapture</td><td>新增</td><td>减少重复采集但保留 freshness</td><td><a href="agent-loop.html#04-d-loop-directive">OP-17/18</a></td></tr>
-            <tr><td>Step evidence</td><td>强证据绑定，真值/因果模式未统一显式化</td><td>satisfaction mode + validity policy</td><td>新增</td><td>按任务类型要求因果证明</td><td><a href="verification.html#06-c-step-completion">OP-19/21</a></td></tr>
-            <tr><td>Task completion</td><td>两套窄机制</td><td>完整 TaskSpec closure</td><td>替换</td><td>唯一完成权威</td><td><a href="verification.html#06-d-task-completion">OP-20/22</a></td></tr>
-            <tr><td>离线证据</td><td>Trace/Artifact/benchmark/evolution</td><td>继续异步、不得影响当次完成</td><td>保留</td><td>运行权威与评测演化隔离</td><td><a href="evidence.html#09-a-trace-dag">OP-24</a></td></tr>
-          </tbody></table></div>
-        </div>
-
-        <div class="callout warn"><strong>扁平化边界</strong>扁平化的是重复数据表示和重叠权威所有者；Intent/Plan admission、ActionContract、独立验证、Runtime progress commit 等安全边界必须保留。</div>
-
-        <h3>三条不能混淆的链</h3>
-        <div class="three-col">
-          <article class="panel"><span class="tag">DATA PLANE</span><h4>数据链</h4><p>文本逐步变成有类型对象；页面逐步变成可验证证据。它回答“系统知道什么”。</p></article>
-          <article class="panel"><span class="tag">CONTROL PLANE</span><h4>控制链</h4><p>Coordinator 选择下一阶段，预算与失败所有者决定继续方式。它回答“下一步由谁做”。</p></article>
-          <article class="panel"><span class="tag">AUTHORITY PLANE</span><h4>权威链</h4><p>TaskSpec、Plan Authority、CapabilityGate、RuntimeCommitter 和 Verifier 限制模型权力。它回答“谁说了算”。</p></article>
-        </div>
-      </section>
-
-      <section id="entrypoints">
-        <div class="section-head"><div class="section-no">SECTION 03</div><div><h2>入口与外层调用：谁能把任务送进来</h2><p>同一个 Runtime 有多种外壳，但进入内核后收敛为同一套协议。</p></div></div>
-        <a class="chapter-link" href="entrypoints.html">查看入口逐步转换与语义损失</a>
-        <div class="scroll-table"><table><thead><tr><th>入口</th><th>提交对象</th><th>调用路径</th><th>边界意义</th></tr></thead><tbody>
-          <tr><td>Python API</td><td><code>RunRequest</code></td><td><code>RuntimeClient → RunCoordinator.run</code></td><td>最直接的嵌入方式</td></tr>
-          <tr><td>稳定任务 API</td><td><code>TaskRequest</code></td><td><code>TaskRuntimeService → TaskRunner</code></td><td>支持 submit、execute、revise、approve、cancel、result、evidence、trace</td></tr>
-          <tr><td>JSON-RPC</td><td>工具调用参数</td><td><code>tools/call → TaskToolAdapter</code></td><td>跨进程暴露任务级工具，不暴露 click/type 等原语</td></tr>
-          <tr><td>父 Agent</td><td>任务工具</td><td><code>LangGraph parent → gui_submit_task</code></td><td>父 Agent 管业务编排，Runtime 管 GUI 执行</td></tr>
-          <tr><td>CLI / Scenario</td><td>目标、约束、能力</td><td><code>run_scenario → compose_run_coordinator</code></td><td>本地演示、基准与 E2E 复现入口</td></tr>
-        </tbody></table></div>
-        <p><code>RunRequest</code> 是不可变运行信封，含 <code>task_id</code>、<code>goal</code>、<code>target</code>、约束、能力和可选 <code>task_spec</code>。如果传入 TaskSpec，任务 ID 与目标必须一致，避免外层信封偷偷覆盖规范语义。<code>RuntimeStep</code> 则把运行状态显式化为 observing、planning、preflight、waiting_approval、acting、verifying、recovering、done、failed 等状态。</p>
-        <div class="callout warn"><strong>为什么只给父 Agent 任务级工具？</strong>若父 Agent 同时拥有 click/type 和任务 API，它就能绕过 Runtime 的 TaskSpec、审批、快照租约与验证链。这里通过“工具面物理隔离”缩小越权空间，而不只靠 Prompt 告诫。</div>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/runtime.py">runtime.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/integrations/task_api.py">integrations/task_api.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/integrations/external_protocol.py">external_protocol.py</a></p>
-      </section>
-
-      <section id="intake">
-        <div class="section-head"><div class="section-no">SECTION 04</div><div><h2>自然语言如何变成可执行语义</h2><p>关键不是抽取几个槽位，而是建立来源、授权、义务和完成证据之间的可证明关系。</p></div></div>
-        <a class="chapter-link" href="intake.html">查看自然语言编译逐步转换与语义损失</a>
-        <h3>4.1 编译流水线</h3>
-        <ol>
-          <li><strong>接收 UserRequest：</strong><code>raw_text</code> 配合 conversation、attachment、target、profile 的引用和调用者、渠道、语言、时间信息。</li>
-          <li><strong>建立 SourceLedger：</strong>代码按整段与子句切出 source unit，记录文本范围、哈希、敏感性；引用型上下文只暴露标签与哈希，不自动把隐私内容塞给模型。</li>
-          <li><strong>模型产生 IntentDraft：</strong>抽取目标、实体、请求效果、偏好、输出、成功条件、证据、约束、语义值、来源声明、禁止效果和歧义。这个草稿被明确定义为“不可执行”。</li>
-          <li><strong>代码规范化义务图：</strong><code>CanonicalObligationCompiler</code> 重建 claim/obligation ID、依赖、值传递和类型化证据要求；模型提供的 ID 不继承权威。</li>
-          <li><strong>确定性准入：</strong>验证 objective、effect、success criterion、source authorization、能力、风险、歧义和覆盖。必要时做有界 schema 修复；可选模型审阅者只有否决权，没有放行权。</li>
-          <li><strong>生成 TaskSpec：</strong>不可变、可哈希、有 revision 的规范任务。结果可能是 READY、NEEDS_CLARIFICATION、POLICY_CONFLICT 或 UNSUPPORTED。</li>
-        </ol>
-
-        <h3>4.2 一个字段级示例</h3>
-        <pre><code>用户：把搜索结果中第二本书加入购物车，但不要购买。
-
-IntentDraft（模型提议，不可执行）
-  objective: "将指定书加入购物车"
-  requested_effects: [add selected book to cart]
-  entities: [search results, second book, cart]
-  constraints: [no_purchase]
-  ambiguities: []
-
-TaskSpec（Runtime 规范化并授权）
-  operation_class: effectful
-  obligations:
-    - locate-result-2     # 谓词义务：第二项被当前观测唯一识别
-    - add-to-cart         # 效果义务：依赖前者，要求后验状态证据
-  forbidden_effects: [purchase]
-  success_criteria: [cart contains selected book]
-  capabilities: [cart.write]  # 只能来自调用边界授予，不能由模型自授</code></pre>
-        <p>这里的 <strong>obligation（义务）</strong> 是带来源的目标状态或效果节点：它有 subject、relation、expected value、依赖、证据要求、是否阻塞、是否终端等字段。义务图让“完成任务”从模糊文本变成可检查的依赖闭包。</p>
-
-        <details><summary>深挖：为什么 SourceLedger 不是普通 Prompt 引用？</summary><div><p>它把每个语义断言追溯到代码拥有的 source unit。后续 canonical compiler 与 coverage validator 能证明：所有必须覆盖的用户来源最终落在结构有效的终端义务图上。模型不能凭空增加效果，也不能用自己生成的字符串 ID 冒充授权来源。</p></div></details>
-        <details><summary>深挖：父 Agent 已经结构化了语义，还要再编译吗？</summary><div><p><code>ParentSemanticProposalCompiler</code> 可以跳过一次模型抽取，但父 Agent 的结构化提案仍是“不可信输入”。Runtime 仍重建来源谱系、规范 ID 并走相同验证与覆盖流程。这是 trust boundary，而不是重复劳动。</p></div></details>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/task_intake.py">task_intake.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/intent_compiler.py">intent_compiler.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/canonical_obligation_compiler.py">canonical_obligation_compiler.py</a></p>
-      </section>
-
-      <section id="planning">
-        <div class="section-head"><div class="section-no">SECTION 05</div><div><h2>Planner 到 Task：计划如何拆，结构语言如何形成</h2><p>这里有两层 planning：任务级步骤分解，以及当前步骤内的动作选择。</p></div></div>
-        <a class="chapter-link" href="planning.html">查看规划逐步转换与语义损失</a>
-        <h3>5.1 任务级：TaskSpec → TaskPlan → StepSpec</h3>
-        <p>若 TaskSpec 已有义务图，<code>RulePlanCandidateGenerator</code> 通常按义务生成 StepSpec：每个步骤绑定 objective、<code>InteractionIntent</code>、completion criteria、source refs、depends_on 和 preconditions。随后 <code>TaskPlanAuthorityBinder</code> 才赋予 plan_id、version、based_on_state_version 与 supersedes。模型候选不带这些权威字段。</p>
-        <div class="two-col">
-          <article class="panel"><span class="tag">INTERACTION</span><h4>InteractionIntent：要怎么与界面交互</h4><p>有 ElementIntent、CollectionIntent、RelationIntent、RegionIntent 四种类型。例如“结果列表第二项”是 collection + ordinal 关系，不是 CSS selector。</p></article>
-          <article class="panel"><span class="tag">COMPLETION</span><h4>StateCriterion：什么状态算完成</h4><p>有 subject、relation、expected、evidence policy 和来源引用。交互方式与完成条件分离，避免“点过按钮”被误算为“效果已经发生”。</p></article>
-        </div>
-
-        <h3>5.2 步骤级：PlanningRequest → ActionChoice</h3>
-        <p><code>PlanningRequestBuilder</code> 从 StateKernel 和当前 BrowserSnapshot 只读投影出不可变请求，绑定 TaskSpec identity/revision、state version、snapshot/page/environment revision、活跃步骤、观测、最近结果、恢复摘要、预算和允许动作种类。任何 identity 不一致或投影过期都会被拒绝。</p>
-        <p>严格 profile 下，<code>ActionChoiceBuilder</code> 先由 Runtime 根据活跃 StepSpec 和当前统一观测生成合法候选：</p>
-        <ul>
-          <li>0 个候选：返回类型化 grounding/planning 失败；</li>
-          <li>1 个候选：Runtime 直接选，不浪费模型调用；</li>
-          <li>多个候选：模型只看到有界列表，只能返回 <code>choice_id</code>；</li>
-          <li>返回后再次校验 task/state/snapshot/active-step identity 与集合成员关系。</li>
-        </ul>
-        <pre><code>{
-  "identity": {"task_revision": 3, "state_version": 18, "snapshot_id": "snap-42"},
-  "active_step": {"step_id": "add-to-cart", "interaction": "CollectionIntent(...)"},
-  "choices": [
-    {"choice_id": "choice-a", "action_kind": "activate", "target_id": "result-2"},
-    {"choice_id": "choice-b", "action_kind": "activate", "target_id": "result-3"}
-  ]
-}
-模型输出：{"choice_id": "choice-a"}</code></pre>
-        <div class="callout"><strong>“结构化输出”不是只要求模型吐 JSON。</strong>真正稳定来自五层组合：有界输入、严格 schema、Runtime 生成候选、返回后身份与成员校验、失败后切换修复 schema。语法正确只是第一层。</div>
-
-        <h3>5.3 重规划不是把旧计划清零</h3>
-        <p><code>TaskPlanLifecycle</code> 在动作预算耗尽、动作族不可用、结果已满足或状态不支持时生成 replacement plan；新计划版本必须基于当前 state version，并保留已有验证证据与已完成子目标。计划生命周期本身无状态，持久状态仍由 StateKernel 经 committer 写入。</p>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/task_plan_generators.py">task_plan_generators.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/planning_request.py">planning_request.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/generalist_planner.py">generalist_planner.py</a></p>
-      </section>
-
-      <section id="agent-loop">
-        <div class="section-head"><div class="section-no">SECTION 06</div><div><h2>Agent Loop：每一轮到底怎么走</h2><p>实现不是简单 ReAct while-loop，而是阶段协议、单写者提交和失败所有者路由。</p></div></div>
-        <a class="chapter-link" href="agent-loop.html">查看五阶段循环逐步转换与语义损失</a>
-        <div class="loop-map" role="img" aria-label="感知、规划、执行、进度、恢复五阶段循环">
-          <div class="loop-node"><b>Perception</b><span>捕获一致快照，融合来源；必要时主动探测证据缺口。</span></div>
-          <div class="loop-node"><b>Planning</b><span>对齐当前状态、计划和活跃步骤；选择有界动作。</span></div>
-          <div class="loop-node"><b>Action</b><span>绑定合同，做策略、能力、审批、快照预检并执行。</span></div>
-          <div class="loop-node"><b>Progress</b><span>重新观测，独立验证 effect、step、task 三层进度。</span></div>
-          <div class="loop-node"><b>Recovery</b><span>按失败类型和所有者改变策略；无变化恢复被拒绝。</span></div>
-        </div>
-        <h3>6.1 一次正常迭代</h3>
-        <ol>
-          <li><code>RuntimeCommitSession.start</code> 创建任务状态与首个 Trace 事件，检查总预算。</li>
-          <li>PerceptionStage 捕获快照并返回 StageResult；RuntimeCommitter 提交 observation、perception 与事件。</li>
-          <li>ProgressStage 先做“动作前对账”：页面也许已经满足当前步骤，能验证就直接记进度，避免重复动作。</li>
-          <li>PlanningStage 生成或更新 TaskPlan，选择当前 ActionChoice，产出 PlannerProposal。</li>
-          <li>ActionStage 把 proposal 绑定为 ActionContract，立即重观测并预检；审批若需要则进入 waiting_approval。</li>
-          <li>执行器返回 ExecutionReceipt；Runtime 记录“发生了什么”，但不宣布成功。</li>
-          <li>ProgressStage 获取独立后验观测，经 verifier ladder 评估动作效果、当前步骤和整个任务。</li>
-          <li>RuntimeCommitter 原子提交状态增量与有序事件；终态则生成结果，否则进入下一轮。</li>
-        </ol>
-
-        <h3>6.2 为什么要 StageResult 和 RuntimeTransition</h3>
-        <p>阶段拿到的是分离的 <code>RuntimeStateSnapshot</code> 或只读投影，不能直接写 StateKernel/Trace。它只能返回 output、transition、events、failure、terminal、directive。<code>RuntimeCommitter</code> 是唯一写者，按固定顺序更新状态与因果事件。</p>
-        <div class="callout"><strong>单写者（single writer）</strong>指只有一个组件能提交权威状态。它降低并发式隐式写入、部分提交和“状态已变但 Trace 没记”的风险，也让架构测试能禁止 Planning/Execution/Progress 模块直接依赖 TraceDag。</div>
-        <h3>6.3 StateKernel 与 TraceDag 的职责</h3>
-        <div class="two-col">
-          <article class="panel"><h4>StateKernel：现在是什么状态</h4><p>保存当前 plan/progress、最新观测、合同、回执、验证、计数器、失败、恢复、排除项、最终结果与 state version。</p></article>
-          <article class="panel"><h4>TraceDag：为什么走到这里</h4><p>保存父子事件关系、时间、payload 与 artifact refs。当前状态不等于完整历史，完整历史不应反灌进每次模型上下文。</p></article>
-        </div>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/coordinator.py">coordinator.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/stage_protocol.py">stage_protocol.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/runtime_committer.py">runtime_committer.py</a></p>
-      </section>
-
-      <section id="perception-action">
-        <div class="section-head"><div class="section-no">SECTION 07</div><div><h2>从“看到页面”到“执行动作”</h2><p>目标不是从截图猜坐标，而是把语义意图绑定到当前、可追溯、未过期的界面证据。</p></div></div>
-        <a class="chapter-link" href="perception-action.html">查看感知、Grounding 与执行逐步转换</a>
-        <h3>7.1 统一观测</h3>
-        <p><code>UnifiedObservation</code> 把不同来源投影成 target-centric 视图：每个 target 有 id、surface、role、label、supported actions、state、confidence、conflict codes 和 source refs；整份观测绑定 snapshot、page revision 与 environment revision。</p>
-        <p><code>PerceptionSession</code> 负责一次一致捕获，并可保存截图 Artifact。主动感知不是任意探索：<code>EvidenceGap</code> 明确缺什么证据，<code>ProbeCapability</code> 必须只读，<code>ProbeBudget</code> 限制观测、超时、模型调用、成本与产物数，<code>ProbeCommand</code> 要求一个新的、一致的 epoch。</p>
-
-        <h3>7.2 语义落地 Grounding</h3>
-        <p><strong>Grounding（落地/指代解析）</strong>是把“第二个搜索结果”“保存按钮”“图中红色区域”等语义目标，绑定到当前观测里的具体可交互候选。结果显式区分 resolved、ambiguous、absent、capability_missing。候选还携带来源、目标指纹和当前性检查。</p>
-        <div class="object-chain"><span>StepSpec.interaction</span><i>→</i><span>ActiveStepScope</span><i>→</i><span>UnifiedObservation</span><i>→</i><span>GroundingCandidate</span><i>→</i><span>ActionChoice</span></div>
-
-        <h3>7.3 ActionContract 的真正作用</h3>
-        <p>PlannerProposal 仍不能直接执行。ContractBuilder 生成版本化 ActionContract，其中包括动作、参数、定位绑定、预期效果、所需能力、风险、审批语义、幂等与补偿信息，并绑定 run、snapshot、page revision、active step 与 verifier criterion。</p>
-        <div class="scroll-table"><table><thead><tr><th>预检门</th><th>检查内容</th><th>防止的问题</th></tr></thead><tbody>
-          <tr><td>Scope / Policy</td><td>目标是否来自 TaskSpec 授权，是否触发 no_purchase/no_delete/allowed_domains</td><td>页面诱导与越界副作用</td></tr>
-          <tr><td>Capability</td><td>所需 capability 是否由入口授予</td><td>模型或页面自授权限</td></tr>
-          <tr><td>Approval</td><td>高风险操作是否有绑定 run、contract hash、page revision、过期时间的 token</td><td>审批复用、换页后继续执行</td></tr>
-          <tr><td>Lease / Snapshot</td><td>环境、页面、快照、目标指纹是否仍匹配</td><td>在陈旧坐标或旧 DOM 上操作</td></tr>
-        </tbody></table></div>
-        <p>预检前会立即重观测；空间目标可在规则允许时 rebound。审批回来后也必须重新观测与重新验证，因为等待期间页面可能变化。审批 token 在 authorize 时原子消费，避免重复使用。</p>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/unified_observation.py">unified_observation.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/active_perception.py">active_perception.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/contracts.py">contracts.py</a></p>
-      </section>
-
-      <section id="verification">
-        <div class="section-head"><div class="section-no">SECTION 08</div><div><h2>验证、进度与终态：怎么知道真的完成</h2><p>执行是尝试改变世界；验证才是判断世界是否改变。</p></div></div>
-        <a class="chapter-link" href="verification.html">查看验证与终态逐步转换及语义损失</a>
-        <h3>8.1 三层结果必须分开</h3>
-        <div class="three-col">
-          <article class="panel"><span class="tag">ACTION EFFECT</span><h4>动作效果</h4><p>这次 contract 的 expected effect 是否发生，例如购物车数量增加。</p></article>
-          <article class="panel"><span class="tag">STEP COMPLETE</span><h4>步骤完成</h4><p>当前 StepSpec 的全部 StateCriterion 是否被当前证据满足。</p></article>
-          <article class="panel"><span class="tag">TASK COMPLETE</span><h4>任务完成</h4><p>TaskSpec 的终端义务与依赖闭包是否成立，禁止效果是否未发生。</p></article>
-        </div>
-        <p><code>ExecutionReceipt</code> 只说明执行器是否分发、报错、超时以及它观察到的底层结果。ProgressStage 会捕获独立 post-observation，运行 verifier ladder，生成 <code>VerificationReport</code>。证据带 verifier kind、target、observed/expected、criterion/requirement IDs、environment、snapshot、强度和语义 key。</p>
-
-        <h3>8.2 “按钮点成功”为什么仍可能失败</h3>
-        <p>按钮可能吞掉事件、网络请求可能失败、页面可能只显示乐观 UI、目标可能原本就已满足、动作可能作用在错误实体。因而 Runtime 只在后验状态满足来源绑定的 completion criteria 时计入步骤进度。</p>
-        <p><code>TerminalReadinessEvaluator</code> 还会检查终端候选的所有前置 obligation 是否 complete、证据是否存在、task revision 和 observation epoch 是否当前、目标指纹是否仍一致。只有 READY 的终端目标才能继续对 Planner 可见。</p>
-
-        <h3>8.3 活性与防重复</h3>
-        <p><strong>Liveness（活性）</strong>表示系统不仅安全，而且能持续产生可证明进展。Runtime 用 RecentActionOutcomeIndex 和 progress fingerprint 识别：</p>
-        <ul>
-          <li>相同页面上效果已经满足，但无法把证据归因给当前步骤：触发 progress-credit invariant；</li>
-          <li>相同 revision 下同类动作曾验证失败，又准备原样重做：触发 no-progress repeat；</li>
-          <li>预算是最后安全上限，不是发现死循环的第一手段。</li>
-        </ul>
-        <div class="callout danger"><strong>终态权威</strong>TaskSpec-backed 任务通常要求独立 passed verification 才能提交 TaskCompleted。最终成功转换和唯一 TaskCompleted 事件由 Runtime 统一提交，Planner 和 executor 都无权宣布终态。</div>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/verification.py">verification.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/terminal_readiness.py">terminal_readiness.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/runtime_terminal.py">runtime_terminal.py</a></p>
-      </section>
-
-      <section id="recovery">
-        <div class="section-head"><div class="section-no">SECTION 09</div><div><h2>失败恢复与安全：不是“一律重试三次”</h2><p>恢复首先要知道失败发生在哪一层、外部效果是否可能已发生、下一步该由谁负责。</p></div></div>
-        <a class="chapter-link" href="recovery.html">查看失败分类与恢复逐步转换</a>
-        <h3>9.1 统一失败信封</h3>
-        <p><code>FailureEnvelope</code> 可以覆盖 intake、observation、planning、grounding、preflight、execution、verification、progress、provider context 等阶段，记录 failure class、语义族哈希、精确调试哈希、state/snapshot/proposal/contract 谱系、证据、剩余预算和 effect status。</p>
-        <div class="scroll-table"><table><thead><tr><th>EffectStatus</th><th>含义</th><th>恢复约束</th></tr></thead><tbody>
-          <tr><td>not_dispatched</td><td>确认未发出</td><td>可在幂等与预算条件下换策略重试</td></tr>
-          <tr><td>may_have_occurred</td><td>超时或验证阶段无法确认</td><td>先 inspect post-state，不可盲重放</td></tr>
-          <tr><td>confirmed_occurred</td><td>效果已确认</td><td>推进或补偿，不再重复</td></tr>
-          <tr><td>confirmed_not_occurred</td><td>确认没发生</td><td>允许安全重试</td></tr>
-          <tr><td>irreversible_or_unknown</td><td>不可逆或未知</td><td>失败关闭，通常交给用户/终态处理</td></tr>
-        </tbody></table></div>
-
-        <h3>9.2 失败所有者路由</h3>
-        <div class="scroll-table"><table><thead><tr><th>Owner</th><th>典型失败</th><th>动作</th></tr></thead><tbody>
-          <tr><td>runtime_recovery</td><td>快照陈旧、落地路径失效、需重新观测</td><td>reobserve / active perception / reground / reroute</td></tr>
-          <tr><td>step_planner</td><td>模型 schema 错、候选决策不合法、上下文过大</td><td>repair schema / compact bounded context / switch provider</td></tr>
-          <tr><td>task_planner</td><td>动作族不可用、子目标设计不再适用</td><td>replacement plan，保留已验证进度</td></tr>
-          <tr><td>progress</td><td>效果不确定、证据无法归因</td><td>inspect post-state / reconciliation</td></tr>
-          <tr><td>user</td><td>需要澄清、审批或不可安全推断</td><td>waiting_clarification / waiting_approval</td></tr>
-          <tr><td>terminal</td><td>预算耗尽、不可恢复、策略/能力冲突</td><td>failed / aborted，保留证据</td></tr>
-        </tbody></table></div>
-        <p><code>RecoveryOwnerDispatcher</code> 要求 owner 身份正确、恢复前后 state/dimension 确实变化且有证据；没有改变策略的“恢复”被认定为 no-op。这直接防止重试风暴。</p>
-
-        <h3>9.3 安全不是一个 Gate</h3>
-        <ul>
-          <li><strong>语义层：</strong>SourceLedger + TaskSpec 限制用户真正请求的 effect；</li>
-          <li><strong>范围层：</strong>ProposalScopeEvaluator 要求目标文本、序数或关系证据与任务相符；</li>
-          <li><strong>策略层：</strong>read_only、no_purchase、no_delete、no_external_message、allowed_domains；</li>
-          <li><strong>能力层：</strong>CapabilityGate 只承认入口授予集合；</li>
-          <li><strong>审批层：</strong>高风险 token 绑定具体合同与页面版本，并过期、单次消费；</li>
-          <li><strong>执行层：</strong>lease、snapshot 与 target fingerprint 防陈旧操作；</li>
-          <li><strong>结果层：</strong>独立验证与禁止效果检查防假成功。</li>
-        </ul>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/failure_envelope.py">failure_envelope.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/recovery_protocol.py">recovery_protocol.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/safety.py">safety.py</a></p>
-      </section>
-
-      <section id="context">
-        <div class="section-head"><div class="section-no">SECTION 10</div><div><h2>上下文工程与压缩：仓库实际做了什么</h2><p>这是最容易被“通用 Agent 经验”带偏的部分，必须严格按代码表述。</p></div></div>
-        <a class="chapter-link" href="context.html">查看上下文投影、压缩与语义损失</a>
-        <h3>10.1 当前实现：每轮重建有界投影</h3>
-        <p>Planner 不直接读取整条 Trace，也不拿完整页面原始数据。<code>PlannerContext</code>/<code>PlanningRequest</code> 按当前 TaskSpec、活跃步骤、当前观测、预算、最近结果、验证状态、恢复摘要和少量 accepted knowledge 重新构建。页面文本、affordance 数、artifact refs 等都有边界；artifact 路径会被哈希化；任务命名还会从某些摘要中移除，降低 benchmark leakage。</p>
-        <div class="object-chain"><span>StateKernel 当前态</span><i>+</i><span>BrowserSnapshot</span><i>+</i><span>TaskSpec</span><i>→</i><span>只读 bounded projection</span><i>→</i><span>model messages</span></div>
-
-        <h3>10.2 当前“压缩”具体是什么</h3>
-        <p><code>compact_planner_context()</code> 会收紧可选展示预算，例如把 max_affordances、artifact refs、accepted knowledge 的上限减半；同时保留 TaskSpec、当前 snapshot、约束、剩余预算、verifier state 等关键控制事实。<code>PlannerContextCompactionOwner</code> 要求产生变化证据。</p>
-        <div class="callout warn"><strong>事实边界</strong>当前仓库没有一个通用的 conversation history manager，也没有 Claude Code 式“把长对话压成九段摘要再继续”的完整会话压缩器。把它描述为“实现了通用长对话压缩”是不准确的。</div>
-
-        <h3>10.3 为什么这种设计仍然能控制上下文</h3>
-        <ul>
-          <li><strong>状态外置：</strong>StateKernel 保存规范当前态，TraceDag/ArtifactStore 保存完整历史；模型无需携带全轨迹。</li>
-          <li><strong>语义分层：</strong>TaskSpec 与 StepSpec 保存必须无损的目标、约束和完成条件；观测文本属于可裁剪展示。</li>
-          <li><strong>按需引用：</strong>artifact 通过 ref 进入上下文，而非把截图、DOM、所有回执全文反复注入。</li>
-          <li><strong>恢复有类型：</strong>上下文过大只触发 provider-context 所有者的压缩，不与 grounding 或 task replan 混为一谈。</li>
-        </ul>
-
-        <h3>10.4 面向进一步演进的无损/有损分界</h3>
-        <div class="two-col">
-          <article class="panel"><h4>必须无损保留</h4><p>TaskSpec identity/revision、约束与能力、active step、state/snapshot revision、未完成 criteria、审批状态、effect uncertainty、剩余预算、已验证效果引用。</p></article>
-          <article class="panel"><h4>可以有损压缩</h4><p>重复页面文本、已失效候选、旧截图描述、冗长 provider 错误、已归一化的历史动作细节、可从 artifact/trace 恢复的内容。</p></article>
-        </div>
-        <p>如果未来加入滚动摘要，应评估的不只是 token 降幅，还包括恢复正确率、关键事实召回、过期事实残留、端到端延迟和失败后可审计性。这是 Agent Atlas 面试深度带来的检查维度，但不是当前实现声明。</p>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/planner_context.py">planner_context.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/planning_request_serializer.py">planning_request_serializer.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/planner_context_recovery.py">planner_context_recovery.py</a></p>
-      </section>
-
-      <section id="evidence">
-        <div class="section-head"><div class="section-no">SECTION 11</div><div><h2>证据、评测、演化与 E2E</h2><p>把“运行成功”“基准得分高”“经验可复用”拆成三套不同门槛。</p></div></div>
-        <a class="chapter-link" href="evidence.html">查看证据、评测与演化逐步转换</a>
-        <h3>11.1 运行时证据</h3>
-        <p><code>ArtifactStore</code> 按 run 保存 observation、screenshot、receipt、verification、run.json 和 events.jsonl，并为产物计算 SHA-256。<code>TraceDag</code> 的每个节点记录 kind、payload、parents 和 timestamp，写出时成为带 sequence 与 parent_event_ids 的 JSONL。</p>
-        <p>这支持回答：哪个观测促成哪个提议？哪个合同产生哪个回执？哪个后验验证支撑哪个步骤完成？失败恢复从哪条证据分支出来？</p>
-
-        <h3>11.2 基准与 E2E</h3>
-        <p>仓库既有本地 generalist 场景，也有 BrowserGym、MiniWoB、WebArena Verified、WorkArena、ScreenSpot、WASP 等适配与基准。它们是测试 Runtime 通用性的外部环境，不是产品内核本身。</p>
-        <div class="two-col">
-          <article class="panel"><h4>通用本地 E2E</h4><p><code>scripts/run_generalist_local_e2e.py</code> 启动 fixture server，构造场景、能力、审批源与浏览器会话，从 UserRequest 编译一路跑到结果，覆盖 pricing、settings、export。</p></article>
-          <article class="panel"><h4>父 Agent E2E</h4><p><code>integrations/langgraph_parent.py</code> 演示父图只通过 task tools 提交、审批和读取结果；父图不能看到 primitive GUI tools。</p></article>
-        </div>
-
-        <h3>11.3 演化为什么先隔离</h3>
-        <p>Trace mining 与 TaskSkill 机制可以从已验证轨迹提取语义模式，但新 skill 先进入 quarantine。只有原任务、任务族、held-out、全局 smoke、安全 smoke 等独立回放证据满足要求，并且报告与 trace/skill payload 做 digest 绑定，才可晋升。这样避免把一次偶然成功直接固化成生产策略。</p>
-
-        <h3>11.4 当前验证基线与环境细节</h3>
-        <p>在本报告绑定提交上，使用 <code>PYTHONPATH=src python -m pytest -q</code> 得到 <strong>1459 passed</strong>。直接调用当前 shell 的 <code>python -m pytest</code> 曾因解释器位于一个外部 venv、子进程无法导入本仓库而产生 2 个环境型失败；显式指定源码路径后全量通过。这个细节说明可复现报告必须记录解释器与导入边界，而不能只写“本地通过”。</p>
-        <div class="callout"><strong>评测防泄漏</strong>Planner 的产品路径不得依赖 benchmark 包或任务命名线索；架构治理测试扫描严格协作者的 imports。高分必须来自通用语义与观测，而非识别题目 ID 后走特判。</div>
-        <p class="source-path">源码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/trace.py">trace.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/artifacts.py">artifacts.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/task_skills.py">task_skills.py</a></p>
-      </section>
-
-      <section id="glossary">
-        <div class="section-head"><div class="section-no">SECTION 12</div><div><h2>术语、设计取舍与源码索引</h2><p>给第一次读 Agent Runtime 的工程师，也给准备深度架构追问的读者。</p></div></div>
-        <h3>12.1 核心术语</h3>
-        <div class="scroll-table"><table><thead><tr><th>术语</th><th>解释</th><th>在本仓库中的具体含义</th></tr></thead><tbody>
-          <tr><td>Affordance / 可供性</td><td>环境对当前主体“允许做什么”的可操作线索</td><td>带 role、label、supported actions、状态与 grounding candidates 的统一目标</td></tr>
-          <tr><td>Runtime</td><td>承载执行规则、状态和外部交互的运行环境</td><td>拥有准入、合同、提交、验证、恢复和终态权威</td></tr>
-          <tr><td>Agent Loop</td><td>观察—决策—行动—反馈的迭代控制过程</td><td>Perception、Planning、Action、Progress、Recovery 五阶段协议</td></tr>
-          <tr><td>TaskSpec</td><td>任务的规范结构表示</td><td>不可变、有 revision/identity、含来源、义务、约束、证据与能力上限</td></tr>
-          <tr><td>Obligation</td><td>必须成立的目标状态或效果</td><td>可组成依赖 DAG，并绑定来源与证据要求</td></tr>
-          <tr><td>DAG</td><td>有向无环图；边有方向且不存在循环</td><td>表达义务依赖和 Trace 因果关系</td></tr>
-          <tr><td>Planner</td><td>提出计划或下一动作的决策器</td><td>严格模式只在 Runtime 候选中选 choice_id，不拥有执行权</td></tr>
-          <tr><td>Grounding</td><td>把抽象指代落到当前环境实体</td><td>把 InteractionIntent 绑定为当前 epoch 的候选与目标指纹</td></tr>
-          <tr><td>Epoch / Revision</td><td>某次一致观测或状态版本</td><td>用于拒绝过期页面、快照、计划和模型回复</td></tr>
-          <tr><td>ActionContract</td><td>执行前冻结的动作协议</td><td>绑定动作、参数、目标、预期效果、风险、能力、审批、快照和 verifier</td></tr>
-          <tr><td>Idempotency / 幂等</td><td>重复执行与执行一次的最终效果相同</td><td>决定失败后能否安全重试；非幂等未知效果必须先对账</td></tr>
-          <tr><td>Compensation / 补偿</td><td>用逆向业务动作抵消已发生副作用</td><td>不是数据库回滚；只在合同声明并有权限时可用</td></tr>
-          <tr><td>Verification</td><td>用独立证据检查预期状态</td><td>与 executor receipt 分离，支撑 action/step/task 三层结论</td></tr>
-          <tr><td>Liveness</td><td>系统最终能继续产生进展或明确停止</td><td>通过进度指纹、重复失败检测、预算与 typed recovery 防止空转</td></tr>
-          <tr><td>Projection</td><td>从权威状态导出的受限只读视图</td><td>Planner 只拿当前任务所需字段，不直接读写 StateKernel</td></tr>
-          <tr><td>Trace</td><td>可追溯的执行事件记录</td><td>因果 DAG + JSONL；与当前状态和模型上下文分离</td></tr>
-        </tbody></table></div>
-
-        <h3>12.2 设计取舍：为什么不更简单</h3>
-        <details><summary>为什么不用一个大 Prompt 让模型输出完整操作序列？</summary><div><p>长序列会在页面变化后迅速陈旧，也把权限、grounding、完成判断混进同一概率输出。当前架构每轮只处理活跃步骤，并用最新观测重建候选，代价是组件与类型更多，收益是可验证与可恢复。</p></div></details>
-        <details><summary>为什么 Runtime 自动选唯一候选，而不是每次都问模型？</summary><div><p>唯一合法候选时模型没有增加决策价值，只增加延迟、成本和 schema 失败概率。多候选时才需要模型利用语义偏好消歧。</p></div></details>
-        <details><summary>为什么 StateKernel 不保存完整历史？</summary><div><p>权威当前态需要紧凑、一致、可校验；历史则可能无限增长，更适合 append-oriented Trace/ArtifactStore。二者分离也天然限制模型上下文膨胀。</p></div></details>
-        <details><summary>恢复为什么也要“所有者”？</summary><div><p>页面陈旧、模型 JSON 错、计划不适用和外部效果不确定不是同一种失败。若都交给同一 retry loop，系统容易原样重试、扩大副作用或掩盖架构责任。</p></div></details>
-
-        <h3>12.3 面试深度校准后的十个检查面</h3>
-        <p>以下不是问答题库，而是阅读本架构时应能自行回答的深层设计面：状态所有权；模型与 Runtime 的权威边界；结构化输出的多层稳定性；任务/步骤/动作三层规划；权限与审批绑定；幂等、未知效果与补偿；上下文无损/有损分界；活性与重试风暴；运行证据与评测证据分离；benchmark leakage 与演化晋升。</p>
-
-        <h3>12.4 关键源码导航</h3>
-        <ul class="evidence-list">
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/composition.py">composition.py</a>：依赖装配与五阶段 Coordinator 的 composition root。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/coordinator.py">coordinator.py</a>：串行主循环、阶段路由与终态控制。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/state_kernel.py">state_kernel.py</a>：当前权威状态及其不变量。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/task_intake.py">task_intake.py</a>：UserRequest、IntentDraft、TaskSpec 与 obligation schema。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/task_planning.py">task_planning.py</a>：TaskPlan、Subgoal、PlanProgress 与 replan 语义。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/action_choice.py">action_choice.py</a>：Runtime-owned 候选生成。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/execution_phase.py">execution_phase.py</a>：合同绑定、预检、审批与执行阶段。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/progress_phase.py">progress_phase.py</a>：后验验证、步骤/任务归因与活性。</li>
-          <li><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/786857f8fb61aa99f2c7e6a23eb8225957e1438b/src/affordance_runtime/recovery_protocol.py">recovery_protocol.py</a>：失败分类、所有者与恢复策略。</li>
-          <li><a href="../README.md">docs/README.md</a>：当前架构权威、实现状态和历史文档优先级。</li>
-        </ul>
-        <div class="callout"><strong>最终心智模型</strong>LLM 是受约束的语义提议者；TaskSpec 是用户意图的规范授权；TaskPlan 是版本化工作分解；StateKernel 是当前事实；ActionContract 是执行许可；VerificationReport 是成功证据；Coordinator + Committer 是控制面。</div>
-      </section>
-    </main>
-
-    <footer class="footer">
-      <p>本报告以当前代码与测试为实现事实。SAR-0 等设计文档用于解释长期方向；若与代码存在差异，页面明确以“当前实现”表述，不把目标架构写成既成事实。</p>
-      <p>Agent Atlas 仅用于校准追问深度与遗漏维度，未作为 Affordance Runtime 实现事实来源。</p>
-    </footer>
+      </div>
+    </div>
   </div>
-</div>
-<script src="site.js"></script>
+
+  <main id="content">
+    <div class="page-grid wide home-grid">
+      <div aria-hidden="true"></div>
+      <div>
+        <div class="page-cards">
+          <a class="page-link-card" href="project-pitch.html">
+            <span class="tag live">Pitch</span>
+            <h2>项目讲述与技术取舍</h2>
+            <p>从 30 秒开场到 10 分钟深挖：完整架构、一次任务链路、用户控制、VLM 路由、SOTA 取舍与真实失败故事。</p>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </a>
+          <a class="page-link-card" href="interview-guide.html">
+            <span class="tag verified">Interview</span>
+            <h2>代码库级面试指南</h2>
+            <p>按 owner 和目录组织的高频问答，覆盖模型合同、世界模型、执行安全、恢复、Checkpoint、评测与开放问题。</p>
+            <span class="arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
+
+        <section id="thesis" class="home-thesis">
+          <p class="section-kicker">The thesis</p>
+          <h2>项目解决的不是“模型不会点”，而是“谁有权相信什么”</h2>
+          <p class="section-intro">一个普通通用模型可以提出不错的下一步，但不能天然拥有当前页面事实、元素寿命、执行权限、动作副作用或任务完成真值。Harness 的工作，是把这些非认知问题机械化，让模型只做它擅长、也只能由开放世界推理完成的部分。</p>
+          <div class="cards">
+            <article class="card cyan">
+              <span class="tag verified">Model owns</span>
+              <h3>语义判断</h3>
+              <p>理解目标、判断当前缺什么证据、在当前公开工具里选一个动作、处理开放世界歧义；GoalPlan 只是稀疏语义骨架。</p>
+            </article>
+            <article class="card">
+              <span class="tag live">Runtime owns</span>
+              <h3>控制与真值</h3>
+              <p>合法性、currentness、私有 binding、风险确认、执行 receipt、局部效果、Checkpoint、Monitor 与终止状态。</p>
+            </article>
+            <article class="card amber">
+              <span class="tag open">Evaluator owns</span>
+              <h3>完成证明</h3>
+              <p>只有 TaskEvaluator 或环境 native verifier 能证明任务成功；Monitor、用户与 Runtime 仍可分别产生 blocked、cancelled、failed 等非成功终态。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="rail">
+          <p class="section-kicker">The harness rail</p>
+          <h2>一次决策如何穿过整个系统</h2>
+          <p class="section-intro">点击 owner 过滤器，观察每个角色真正拥有的节点。关键约束是：只有 ActionPolicy 能选择可执行语义动作；GoalCompiler 与 VLM 只提供静态建议或证据，没有第二个 planner、binder 或视觉旁路，所有路径回到同一个 CoreAgentLoop。</p>
+          <div class="harness" data-harness>
+            <div class="harness-head">
+              <div><h3>Cross-site task / logical turn</h3><p>AUTHORITY FLOWS LEFT → RIGHT, THEN RETURNS WITH FRESH WORLD</p></div>
+              <div class="owner-filters" role="group" aria-label="按 owner 高亮">
+                <button class="owner-filter active" data-owner="all" type="button">全部</button>
+                <button class="owner-filter" data-owner="user" type="button">User</button>
+                <button class="owner-filter" data-owner="runtime" type="button">Runtime</button>
+                <button class="owner-filter" data-owner="surface" type="button">Surface</button>
+                <button class="owner-filter" data-owner="model" type="button">Model</button>
+                <button class="owner-filter" data-owner="evaluator" type="button">Evaluator</button>
+              </div>
+            </div>
+            <div class="rail">
+              <div class="rail-step" data-owner="user runtime"><span class="rail-no">01 / TASK</span><b>TaskGoal</b><small>目标、约束、允许效果、成功标准、revision</small><span class="owner-label">User → Runtime</span></div>
+              <div class="rail-step" data-owner="surface runtime"><span class="rail-no">02 / SENSE</span><b>Unified World</b><small>DOM / BrowserGym / visual / WoT / HTTP 同源融合</small><span class="owner-label">Surface</span></div>
+              <div class="rail-step" data-owner="model runtime"><span class="rail-no">03 / CONTEXT</span><b>Bounded context</b><small>fresh World + GoalPlan + recent outcomes + current catalog</small><span class="owner-label">Runtime → Model</span></div>
+              <div class="rail-step" data-owner="model"><span class="rail-no">04 / DECIDE</span><b>One decision</b><small>SelectAction / observe / local read / ask / final / wait / abort</small><span class="owner-label">DeepSeek</span></div>
+              <div class="rail-step" data-owner="runtime"><span class="rail-no">05 / ROUTE</span><b>Route decision</b><small>action branch 才做 legality、risk、binding、currentness</small><span class="owner-label">Runtime</span></div>
+              <div class="rail-step" data-owner="surface evaluator runtime"><span class="rail-no">06 / CLOSE</span><b>Typed closure</b><small>dispatch + fresh World，或 observe / local / user / final / wait / abort</small><span class="owner-label">Runtime + owners</span></div>
+            </div>
+            <div class="rail-legend"><span>单一公开 World</span><span>单一 ActionPolicy</span><span>私有执行 binding</span><span>fresh post-action evaluation</span></div>
+          </div>
+        </section>
+
+        <section id="control">
+          <p class="section-kicker">Supervised autonomy</p>
+          <h2>用户不是旁观者，而是外部控制平面</h2>
+          <div class="cards two">
+            <article class="card">
+              <h3>Pause / Cancel</h3>
+              <p>采用协作式 safe boundary。Pause 在可提交边界生成 durable checkpoint；Cancel 终止未来动作，但不会假装撤销已经发生的外部效果。</p>
+            </article>
+            <article class="card cyan">
+              <h3>Revise</h3>
+              <p>修订产生新的 TaskGoal revision，旧 GoalPlan 失效并重编译。若已有副作用，先进入显式 effect reconciliation，而不是把新目标覆盖旧现实。</p>
+            </article>
+            <article class="card amber">
+              <h3>Take over</h3>
+              <p>先 durable pause，再签发 process-local control lease。用户可直接操作 live surface；Agent 此时没有输入权。</p>
+            </article>
+            <article class="card red">
+              <h3>Return control</h3>
+              <p>先撤销用户 lease，再重新采集 fresh World。若 currentness 无法恢复，Agent 保持禁用，避免在过期页面上继续。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="evidence">
+          <p class="section-kicker">Evidence, not a victory lap</p>
+          <h2>现在能证明什么，不能证明什么</h2>
+          <div class="truth-ledger">
+            <div class="truth-item"><b>IMPLEMENTED</b><p>单循环、统一 World、typed tools、用户控制、Checkpoint v8、Monitor failure center、选择性视觉路径。</p></div>
+            <div class="truth-item"><b>PROVIDER-FREE</b><p>完整固定环境套件 2284 passed、19 skipped、1 个已知缺失归档 fixture deselected。</p></div>
+            <div class="truth-item"><b>LIVE WITNESS</b><p>Task316 以 11 steps / 122.8 s 达到 native success；Task798 的 Monitor 在 18 步 typed block。</p></div>
+            <div class="truth-item"><b>STILL OPEN</b><p>Task798 的 ActionPolicy 没有选择已提供的 typed negative；DeepSeek 还曾两次违反 exactly-one-tool-call。</p></div>
+          </div>
+          <div class="callout warning">
+            <strong>面试中的准确表述</strong>
+            “我证明了 Harness 的 owner contract 和局部 live witness，不宣称 aggregate SOTA。当前瓶颈已经从 Monitor 不收敛，收缩为 ActionPolicy 对完整否定证据与 provider tool-call 纪律的接受问题。”
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <p>这是从当前代码、<a href="architecture.md">docs/architecture.md</a> 与 <a href="benchmark.md">docs/benchmark.md</a> 派生的面试材料，不是新的设计 authority。状态基线：2026-09-02，分支 <code>codex/tool-contract-convergence</code>。</p>
+      <div class="footer-links"><a href="project-pitch.html">Pitch</a><a href="interview-guide.html">Guide</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div>
+    </div>
+  </footer>
+  <script src="assets/interview.js"></script>
 </body>
 </html>
