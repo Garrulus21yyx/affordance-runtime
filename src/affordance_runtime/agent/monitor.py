@@ -33,6 +33,7 @@ from affordance_runtime.agent.profile import DEFAULT_AGENT_LOOP_PROFILE, AgentLo
 from affordance_runtime.agent.recovery import (
     EpisodeMonitorEvent,
     EpisodeMonitorRecommendation,
+    EpisodeMonitorSnapshot,
     EpisodeMonitorTransition,
     RecoveryKind,
     RecoveryLifecycleTransition,
@@ -72,10 +73,14 @@ class _TransitionRecord:
 
 
 @dataclass(frozen=True)
-class _ActiveTransitionCycle:
+class _ActiveFailureCenter:
+    """One bounded unresolved no-progress center owned only by Monitor."""
+
     digest: str
     period: int
     member_digests: frozenset[str]
+    kind: RecoveryKind = RecoveryKind.CONTROL_STALL
+    armed: bool = False
 
 
 @dataclass
@@ -91,7 +96,7 @@ class EpisodeMonitor:
     same_attempt_streak: int = 0
     no_progress_count: int = 0
     recent_transitions: tuple[_TransitionRecord, ...] = ()
-    active_transition_cycle: _ActiveTransitionCycle | None = None
+    active_failure_center: _ActiveFailureCenter | None = None
     active_recovery: RecoverySignal | None = None
     recovery_epoch_counter: int = 0
 
@@ -105,7 +110,7 @@ class EpisodeMonitor:
         self.same_attempt_streak = 0
         self.no_progress_count = 0
         self.recent_transitions = ()
-        self.active_transition_cycle = None
+        self.active_failure_center = None
         self.active_recovery = None
         self.recovery_epoch_counter = 0
 
@@ -113,16 +118,32 @@ class EpisodeMonitor:
         """Close Runtime recovery state at one terminal run boundary."""
 
         self.active_recovery = None
+        self.active_failure_center = None
 
     def restore_episode(
         self,
         world: WorldObservation,
         task_evaluation: object,
         recovery_signal: RecoverySignal | None,
+        monitor_snapshot: EpisodeMonitorSnapshot | None = None,
     ) -> None:
-        """Restore one unconsumed next-decision signal at a pause boundary."""
+        """Restore one Monitor authority projection at a pause boundary."""
 
         self.start_episode(world, task_evaluation)
+        if monitor_snapshot is not None:
+            if not isinstance(monitor_snapshot, EpisodeMonitorSnapshot):
+                raise TypeError("episode monitor restore requires one typed snapshot")
+            if monitor_snapshot.world_digest == self.world_digest:
+                self.recovery_epoch_counter = monitor_snapshot.recovery_epoch_counter
+                if monitor_snapshot.failure_center_digest:
+                    assert monitor_snapshot.failure_center_kind is not None
+                    self.active_failure_center = _ActiveFailureCenter(
+                        monitor_snapshot.failure_center_digest,
+                        monitor_snapshot.failure_center_period,
+                        frozenset(monitor_snapshot.failure_center_member_digests),
+                        monitor_snapshot.failure_center_kind,
+                        monitor_snapshot.failure_center_armed,
+                    )
         if recovery_signal is None:
             return
         self.active_recovery = recovery_signal
@@ -131,26 +152,45 @@ class EpisodeMonitor:
             recovery_signal.prohibited_attempt_signatures[-1] if recovery_signal.prohibited_attempt_signatures else None
         )
         self.same_attempt_streak = int(self.latest_attempt_signature is not None)
-        cycle_state = recovery_signal.monitor_state
-        member_digests = tuple(cycle_state.get("cycle_member_digests", ()))
-        cycle_digest = str(cycle_state.get("cycle_digest", ""))
-        cycle_period = cycle_state.get("cycle_period", 0)
+        center_state = recovery_signal.monitor_state
+        member_digests = tuple(center_state.get("failure_center_member_digests", ()))
+        center_digest = str(center_state.get("failure_center_digest", ""))
+        center_period = center_state.get("failure_center_period", 0)
+        center_armed = center_state.get("failure_center_armed", False)
         if (
-            recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
-            and cycle_digest.startswith("sha256:")
-            and type(cycle_period) is int
-            and cycle_period >= 1
+            center_digest.startswith("sha256:")
+            and type(center_period) is int
+            and center_period >= 1
+            and type(center_armed) is bool
             and member_digests
             and all(isinstance(item, str) and item.startswith("sha256:") for item in member_digests)
         ):
-            self.active_transition_cycle = _ActiveTransitionCycle(
-                cycle_digest,
-                cycle_period,
+            self.active_failure_center = _ActiveFailureCenter(
+                center_digest,
+                center_period,
                 frozenset(member_digests),
+                recovery_signal.kind,
+                center_armed,
             )
         parts = recovery_signal.epoch_id.split(":", 2)
         if len(parts) == 3 and parts[1].isdigit():
-            self.recovery_epoch_counter = int(parts[1])
+            self.recovery_epoch_counter = max(self.recovery_epoch_counter, int(parts[1]))
+
+    def snapshot(self) -> EpisodeMonitorSnapshot:
+        """Project bounded private recurrence state for durable Runtime pause."""
+
+        center = self.active_failure_center
+        return EpisodeMonitorSnapshot(
+            self.world_digest,
+            failure_center_digest=center.digest if center is not None else "",
+            failure_center_period=center.period if center is not None else 0,
+            failure_center_member_digests=(
+                tuple(sorted(center.member_digests)) if center is not None else ()
+            ),
+            failure_center_kind=center.kind if center is not None else None,
+            failure_center_armed=center.armed if center is not None else False,
+            recovery_epoch_counter=self.recovery_epoch_counter,
+        )
 
     def _open_recovery(
         self,
@@ -264,21 +304,41 @@ class EpisodeMonitor:
             self.recovery_count = 0
             self.same_attempt_streak = 0
             self.recent_transitions = ()
-            self.active_transition_cycle = None
+            self.active_failure_center = None
+            return self._continue_or_close(events, consumed_recovery)
+
+        transition_signature = _same_world_attempt_signature(result)
+        transition_record = _TransitionRecord(transition_signature, next_world_digest)
+        repeated_transition_result, cycle = self._record_transition(transition_record)
+        gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+
+        # Recovery feedback is one-decision model context.  Its mechanical
+        # failure center is independent Monitor state and closes only when an
+        # owner-produced result proves an escape.
+        active_center = self.active_failure_center
+        escaped_failure_center = durable_progress or world_semantic_changed
+        if active_center is not None and escaped_failure_center:
+            self.active_failure_center = None
+            self.observation_only_streak = 0
+            self.recovery_count = 0
+            self.latest_attempt_signature = None
+            self.same_attempt_streak = 0
             return self._continue_or_close(events, consumed_recovery)
 
         if consumed_recovery is not None and result.feedback == "recovery_repeat_rejected":
             rejected_signature = _rejected_attempt_signature(result)
-            signature = rejected_signature or _same_world_attempt_signature(result)
-            repeats_latest = signature == self.latest_attempt_signature
+            signature = rejected_signature or transition_signature
+            center = self.active_failure_center or _single_transition_failure_center(transition_record)
+            self.active_failure_center = replace(center, armed=True)
             self.no_progress_count += 1
-            self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
+            self.same_attempt_streak = self.same_attempt_streak + 1 if signature == self.latest_attempt_signature else 1
             self.latest_attempt_signature = signature
-            self.recovery_count = min(consumed_recovery.recovery_attempt + 1, 3)
+            self.recovery_count = 2
             signal = _control_stall_signal(
                 result,
                 self,
-                recovery_attempt=self.recovery_count,
+                recovery_attempt=2,
+                failure_center=self.active_failure_center,
                 prohibited_attempt_signature=rejected_signature,
             )
             return self._recovery_transition(
@@ -288,26 +348,72 @@ class EpisodeMonitor:
                 signal,
             )
 
-        if isinstance(result.decision, ToolRejectedResult):
-            signature = _same_world_attempt_signature(result)
-            repeats_latest = signature == self.latest_attempt_signature
-            self.no_progress_count += 1
-            self.same_attempt_streak = self.same_attempt_streak + 1 if repeats_latest else 1
-            self.latest_attempt_signature = signature
-            self.recovery_count = 1
-            signal = _control_stall_signal(
-                result,
-                self,
-                recovery_attempt=self.recovery_count,
-                prohibited_attempt_signature=result.decision.rejected_attempt_signature,
-            )
-            if consumed_recovery is not None and repeats_latest:
+        active_center = self.active_failure_center
+        if active_center is not None:
+            reentered = transition_record.digest in active_center.member_digests
+            if reentered and (active_center.armed or consumed_recovery is not None):
+                self.no_progress_count += 1
+                self.latest_attempt_signature = transition_signature
+                self.same_attempt_streak += 1
+                self.recovery_count = 2
+                self.active_failure_center = replace(active_center, armed=True)
+                signal = _failure_center_recovery_signal(
+                    result,
+                    self,
+                    center=self.active_failure_center,
+                    recovery_attempt=2,
+                    prohibited_attempt_signature=(
+                        transition_signature if active_center.kind is RecoveryKind.CONTROL_STALL else None
+                    ),
+                )
                 return self._recovery_transition(
-                    (*events, EpisodeMonitorEvent.REPEATED_ACTION),
+                    (*events, EpisodeMonitorEvent.OSCILLATION),
                     EpisodeMonitorRecommendation.BLOCK,
                     "control_stalled",
                     signal,
                 )
+
+            members = (*active_center.member_digests, transition_record.digest)
+            if len(set(members)) > _MAX_RECENT_TRANSITIONS:
+                self.recovery_count = 2
+                self.active_failure_center = replace(active_center, armed=True)
+                signal = _failure_center_recovery_signal(
+                    result,
+                    self,
+                    center=self.active_failure_center,
+                    recovery_attempt=2,
+                )
+                return self._recovery_transition(
+                    (*events, EpisodeMonitorEvent.OSCILLATION),
+                    EpisodeMonitorRecommendation.BLOCK,
+                    "control_stalled",
+                    signal,
+                )
+            self.active_failure_center = replace(
+                active_center,
+                member_digests=frozenset(members),
+                armed=active_center.armed or consumed_recovery is not None,
+            )
+            self.no_progress_count += 1
+            self.latest_attempt_signature = transition_signature
+            self.same_attempt_streak = 1
+            self.recovery_count = 1
+            return self._continue_or_close(events, consumed_recovery)
+
+        if isinstance(result.decision, ToolRejectedResult):
+            self.no_progress_count += 1
+            self.same_attempt_streak = self.same_attempt_streak + 1 if transition_signature == self.latest_attempt_signature else 1
+            self.latest_attempt_signature = transition_signature
+            self.recovery_count = 1
+            center = _single_transition_failure_center(transition_record)
+            self.active_failure_center = center
+            signal = _control_stall_signal(
+                result,
+                self,
+                recovery_attempt=1,
+                failure_center=center,
+                prohibited_attempt_signature=result.decision.rejected_attempt_signature,
+            )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.REPEATED_ACTION),
                 EpisodeMonitorRecommendation.RECOVER,
@@ -315,53 +421,25 @@ class EpisodeMonitor:
                 signal,
             )
 
-        transition_signature = _same_world_attempt_signature(result)
-        transition_record = _TransitionRecord(transition_signature, next_world_digest)
-        active_cycle = self.active_transition_cycle
-        if active_cycle is not None and transition_record.digest not in active_cycle.member_digests:
-            # One materially different transition/result is the mechanical
-            # escape condition.  Merely consuming the one-turn feedback is not.
-            self.active_transition_cycle = None
-            active_cycle = None
-        elif active_cycle is not None and consumed_recovery is not None:
-            self.no_progress_count += 1
-            self.latest_attempt_signature = transition_signature
-            self.recovery_count = 2
-            signal = _transition_cycle_recovery_signal(
-                result,
-                self,
-                cycle=active_cycle,
-                recovery_attempt=2,
-            )
-            return self._recovery_transition(
-                (*events, EpisodeMonitorEvent.OSCILLATION),
-                EpisodeMonitorRecommendation.BLOCK,
-                "control_stalled",
-                signal,
-            )
-        repeated_transition_result, cycle = self._record_transition(transition_record)
-        gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
-
         if repeated_transition_result and world_semantic_changed:
             self.observation_only_streak = 0
             self.no_progress_count += 1
             self.same_attempt_streak = 1
             self.latest_attempt_signature = transition_signature
-            recurrence = _transition_recurrence(transition_record)
-            repeated_cycle = active_cycle is not None and active_cycle.digest == recurrence.digest
-            self.active_transition_cycle = recurrence
-            self.recovery_count = 2 if repeated_cycle else 1
-            signal = _transition_cycle_recovery_signal(
+            center = _transition_recurrence(transition_record)
+            self.active_failure_center = center
+            self.recovery_count = 1
+            signal = _failure_center_recovery_signal(
                 result,
                 self,
-                cycle=recurrence,
-                recovery_attempt=self.recovery_count,
+                center=center,
+                recovery_attempt=1,
                 repeated_result_world=True,
             )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.OSCILLATION),
-                EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
-                "control_stalled" if repeated_cycle else RecoveryKind.STATE_OSCILLATION.value,
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
         if cycle is not None:
@@ -369,18 +447,18 @@ class EpisodeMonitor:
             self.no_progress_count += 1
             self.same_attempt_streak = 1
             self.latest_attempt_signature = transition_signature
-            repeated_cycle = active_cycle is not None and cycle.digest == active_cycle.digest
-            self.active_transition_cycle = cycle
-            signal = _transition_cycle_recovery_signal(
+            self.active_failure_center = cycle
+            self.recovery_count = 1
+            signal = _failure_center_recovery_signal(
                 result,
                 self,
-                cycle=cycle,
-                recovery_attempt=2 if repeated_cycle else 1,
+                center=cycle,
+                recovery_attempt=1,
             )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.OSCILLATION),
-                EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
-                "control_stalled" if repeated_cycle else RecoveryKind.STATE_OSCILLATION.value,
+                EpisodeMonitorRecommendation.RECOVER,
+                RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
 
@@ -444,10 +522,13 @@ class EpisodeMonitor:
         no_usable_observation = bool(
             information_delta is not None and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
         )
+        center = _single_transition_failure_center(transition_record)
+        self.active_failure_center = center
         signal = _control_stall_signal(
             result,
             self,
             recovery_attempt=1,
+            failure_center=center,
             prohibited_attempt_signature=(
                 signature
                 if exact_replay
@@ -462,6 +543,8 @@ class EpisodeMonitor:
             and signature is not None
             and signature in consumed_recovery.prohibited_attempt_signatures
         )
+        if prohibited_by_consumed:
+            self.active_failure_center = replace(center, armed=True)
         return self._recovery_transition(
             (*events, EpisodeMonitorEvent.REPEATED_ACTION),
             EpisodeMonitorRecommendation.BLOCK if prohibited_by_consumed else EpisodeMonitorRecommendation.RECOVER,
@@ -472,7 +555,7 @@ class EpisodeMonitor:
     def _record_transition(
         self,
         record: _TransitionRecord,
-    ) -> tuple[bool, _ActiveTransitionCycle | None]:
+    ) -> tuple[bool, _ActiveFailureCenter | None]:
         """Record one mixed decision transition and find bounded recurrence/cycles."""
 
         repeated_result = any(
@@ -531,6 +614,7 @@ def _control_stall_signal(
     monitor: EpisodeMonitor,
     *,
     recovery_attempt: int,
+    failure_center: _ActiveFailureCenter,
     prohibited_attempt_signature: PublicAttemptSignature | None = None,
 ) -> RecoverySignal:
     prohibited_attempt_signature = (
@@ -538,13 +622,7 @@ def _control_stall_signal(
         or _rejected_attempt_signature(result)
         or _proven_failed_gui_attempt_signature(result)
     )
-    signature_payload: tuple[object, ...] = (
-        monitor.world_digest,
-        monitor.current_findings_digest,
-    )
-    if prohibited_attempt_signature is not None:
-        signature_payload += (prohibited_attempt_signature.digest,)
-    signature = "control_stall:sha256:" + hashlib.sha256(_canonical_json(signature_payload).encode()).hexdigest()
+    signature = "control_stall:" + failure_center.digest
     return RecoverySignal(
         RecoveryKind.CONTROL_STALL,
         signature,
@@ -552,6 +630,7 @@ def _control_stall_signal(
             "attempt": _bounded_public_attempt(result),
             "dispatch": _dispatch_status(result),
             "observation_only_streak": monitor.observation_only_streak,
+            "failure_center_member_count": len(failure_center.member_digests),
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
         },
@@ -561,26 +640,38 @@ def _control_stall_signal(
         ),
         human_instruction=_control_stall_instruction(result),
         recovery_attempt=recovery_attempt,
+        monitor_state=_failure_center_monitor_state(failure_center),
     )
 
 
-def _transition_cycle_recovery_signal(
+def _failure_center_recovery_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
     *,
-    cycle: _ActiveTransitionCycle,
+    center: _ActiveFailureCenter,
     recovery_attempt: int,
     repeated_result_world: bool = False,
+    prohibited_attempt_signature: PublicAttemptSignature | None = None,
 ) -> RecoverySignal:
-    """Report a mechanical mixed-transition cycle without judging task progress."""
+    """Project one Monitor-owned center without creating semantic progress state."""
+
+    if center.kind is RecoveryKind.CONTROL_STALL:
+        return _control_stall_signal(
+            result,
+            monitor,
+            recovery_attempt=recovery_attempt,
+            failure_center=center,
+            prohibited_attempt_signature=prohibited_attempt_signature,
+        )
 
     return RecoverySignal(
         RecoveryKind.STATE_OSCILLATION,
-        "state_oscillation:" + cycle.digest,
+        "state_oscillation:" + center.digest,
         {
             "attempt": _bounded_public_attempt(result),
             "dispatch": _dispatch_status(result),
-            "cycle_period": cycle.period,
+            "cycle_period": center.period,
+            "failure_center_member_count": len(center.member_digests),
             "repeated_result_world": repeated_result_world,
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
@@ -597,15 +688,27 @@ def _transition_cycle_recovery_signal(
             "this cycle toward an unresolved requirement; do not revisit it merely to re-verify it."
         ),
         recovery_attempt=recovery_attempt,
-        monitor_state={
-            "cycle_digest": cycle.digest,
-            "cycle_period": cycle.period,
-            "cycle_member_digests": tuple(sorted(cycle.member_digests)),
-        },
+        monitor_state=_failure_center_monitor_state(center),
     )
 
 
-def _transition_recurrence(record: _TransitionRecord) -> _ActiveTransitionCycle:
+def _failure_center_monitor_state(center: _ActiveFailureCenter) -> Mapping[str, object]:
+    return {
+        "failure_center_digest": center.digest,
+        "failure_center_period": center.period,
+        "failure_center_member_digests": tuple(sorted(center.member_digests)),
+        "failure_center_armed": center.armed,
+    }
+
+
+def _single_transition_failure_center(record: _TransitionRecord) -> _ActiveFailureCenter:
+    digest = "sha256:" + hashlib.sha256(
+        _canonical_json(("no_progress_failure_center", record.digest)).encode()
+    ).hexdigest()
+    return _ActiveFailureCenter(digest, 1, frozenset((record.digest,)), RecoveryKind.CONTROL_STALL)
+
+
+def _transition_recurrence(record: _TransitionRecord) -> _ActiveFailureCenter:
     digest = (
         "sha256:"
         + hashlib.sha256(
@@ -614,12 +717,12 @@ def _transition_recurrence(record: _TransitionRecord) -> _ActiveTransitionCycle:
             ).encode()
         ).hexdigest()
     )
-    return _ActiveTransitionCycle(digest, 1, frozenset((record.digest,)))
+    return _ActiveFailureCenter(digest, 1, frozenset((record.digest,)), RecoveryKind.STATE_OSCILLATION)
 
 
 def _short_transition_cycle(
     attempts: Sequence[_TransitionRecord | PublicAttemptSignature],
-) -> _ActiveTransitionCycle | None:
+) -> _ActiveFailureCenter | None:
     """Return one phase-independent digest for any repeated suffix in the bounded window."""
 
     digests = tuple(item.digest for item in attempts[-_MAX_RECENT_TRANSITIONS:])
@@ -633,7 +736,7 @@ def _short_transition_cycle(
         digest = (
             "sha256:" + hashlib.sha256(_canonical_json(("decision_transition_cycle", canonical)).encode()).hexdigest()
         )
-        return _ActiveTransitionCycle(digest, period, frozenset(current))
+        return _ActiveFailureCenter(digest, period, frozenset(current), RecoveryKind.STATE_OSCILLATION)
     return None
 
 

@@ -96,6 +96,49 @@ class RecoverySignal:
 
 
 @dataclass(frozen=True)
+class EpisodeMonitorSnapshot:
+    """Durable projection of one Monitor-owned unresolved failure center."""
+
+    world_digest: str
+    failure_center_digest: str = ""
+    failure_center_period: int = 0
+    failure_center_member_digests: tuple[str, ...] = ()
+    failure_center_kind: RecoveryKind | None = None
+    failure_center_armed: bool = False
+    recovery_epoch_counter: int = 0
+
+    def __post_init__(self) -> None:
+        if len(self.world_digest) != 64 or any(character not in "0123456789abcdef" for character in self.world_digest):
+            raise ValueError("monitor snapshot requires one semantic World digest")
+        if type(self.recovery_epoch_counter) is not int or self.recovery_epoch_counter < 0:
+            raise ValueError("monitor snapshot recovery epoch is invalid")
+        members = tuple(self.failure_center_member_digests)
+        object.__setattr__(self, "failure_center_member_digests", members)
+        if self.failure_center_digest:
+            if (
+                not self.failure_center_digest.startswith("sha256:")
+                or type(self.failure_center_period) is not int
+                or self.failure_center_period < 1
+                or not members
+                or len(members) > 16
+                or len(set(members)) != len(members)
+                or any(not item.startswith("sha256:") for item in members)
+                or not isinstance(self.failure_center_kind, RecoveryKind)
+                or type(self.failure_center_armed) is not bool
+            ):
+                raise ValueError("monitor snapshot failure center is invalid")
+        elif any(
+            (
+                self.failure_center_period != 0,
+                bool(members),
+                self.failure_center_kind is not None,
+                self.failure_center_armed,
+            )
+        ):
+            raise ValueError("empty monitor snapshot cannot retain failure-center fragments")
+
+
+@dataclass(frozen=True)
 class EpisodeMonitorTransition:
     events: tuple[EpisodeMonitorEvent, ...]
     recommendation: EpisodeMonitorRecommendation

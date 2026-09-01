@@ -156,7 +156,7 @@ def test_action_prompt_requires_fresh_reassessment_and_bounded_collection_audit(
     assert "which requested output remains unsupported" in system
     assert "whether coverage is open" in system
     assert "When all outputs are supported, submit now" in system
-    assert "use typed abort instead of self-verifying" in system
+    assert "typed non-success outcome" in system
     assert "Formatting does not require reopening a source" in system
     assert "An E ref with a supported verb is executable" in system
     assert "active describes current/selected" in system

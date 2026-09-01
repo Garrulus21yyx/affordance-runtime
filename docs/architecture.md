@@ -6,7 +6,57 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-### 2026-09-01 source-topology projection convergence — provider-free implemented, live-open
+### 2026-09-01 unresolved failure-center and record-discoverability convergence — provider-free implemented, live-open
+
+`EpisodeMonitor` remains the only mechanical recurrence owner. A recovery signal is model-visible for exactly one
+`ActionPolicy` decision, while one bounded private failure center owns the unresolved transition/result identities.
+Consuming the signal arms that center; a different read, query, observation, or GUI attempt with no owner-produced
+progress joins the same center instead of erasing it. Re-entering any member then deterministically terminates with
+`control_stalled`. The center admits at most 16 distinct transition/results; exhausting that bound without progress is
+also a typed control stall. This closes non-periodic hub-and-spoke recurrence such as `S -> A -> S -> B -> S`, not only
+adjacent replay or exact short cycles.
+
+The escape algebra is positive and mechanical: a fresh public World semantic digest, `NEW_INFORMATION`, a verified
+operational GUI result, native task termination, task revision, or episode reset closes the center. Merely changing
+operation, region, query, result syntax, recovery epoch, or model profile does not. The recovery stable signature is
+derived from the failure-center digest, so one center cannot appear as an unlimited sequence of attempt-1 recoveries.
+`no_progress_count` remains diagnostic rather than a second threshold authority.
+
+Checkpoint v8 stores one typed `EpisodeMonitorSnapshot`, synchronized from the same live Monitor owner and never
+included in model context. It is a durable projection, not a second controller or semantic progress record. Restore
+reinstalls the center only when the freshly captured public World has the same semantic digest. The existing
+`RecoverySignal` separately restores an unconsumed next-decision signal. No model prose, failed-strategy narrative,
+milestone state, or task-semantic conclusion becomes Runtime truth.
+
+At delivery, the existing source-owned `Collection<Record>` remains the sole record boundary. An anonymous collection
+now exposes a bounded descriptor from the first meaningful public field of at most eight of its already-owned Record
+units. These labels describe the existing region in `PageMap`/`list_regions`; they never become a heading, new region,
+ranking rule, task match, or detached evidence path. `read_region` and search still return the same whole Record units.
+This makes source-conserved content discoverable without reintroducing descendant-heading boundary inference.
+
+The single `ActionPolicy` now states the supported no-route outcome positively: when current evidence establishes that
+no supported route remains and the offered final-response codec defines a typed non-success result, it submits that
+result; provider/runtime failure or incomplete inspection may not be converted into a task-level negative answer.
+Runtime does not infer UI impossibility and the final-response codec remains the representation owner. There is no
+recovery agent, alternate World, second planner, semantic memory, benchmark branch, or task/site special case.
+
+Provider-free properties cover immediate replay, generated non-periodic hub-and-spoke recurrence, distinct-attempt
+capacity, real World/information escape, mixed GUI/local cycles, consumed-signal snapshot restore, checkpoint
+round-trip, whole-record conservation, and model-visible collection descriptors. The first authorized post-change live
+run now confirms the record path: Task316 read the existing collection region, received the first three complete
+contributor records, submitted their exact emails, and reached native success in 11 steps. It also confirms bounded
+mechanical convergence for the reopened Task798 witness: an isolated repeat terminated `control_stalled` at step 18
+with recovery attempt 2 on the same stable failure-center signature instead of running to the eight-minute boundary.
+
+Overall live acceptance remains open. Task798 did not choose the offered final-response codec's typed non-success
+outcome. Its complete route search returned only `Address Book` as a partial lexical match and explicitly left the
+requested `edit` and `shipping` terms unmatched, but ActionPolicy assumed an undiscovered test-only feature and
+re-entered the already-read region. Runtime correctly blocked that recurrence; it must not invent the task-level
+negative outcome. This is now a remaining ActionPolicy/tool-result semantic acceptance gap, not evidence that the
+Monitor still loses its failure center. A separate first attempt also failed closed when DeepSeek ignored
+`parallel_tool_calls=false` and returned two calls on both the deliberate response and its one complete retry.
+
+### 2026-09-01 source-topology projection owner — retained and extended above
 
 `SurfaceObservation.structure -> WorldObservation.semantic_topology` is the sole compositional authority. An
 unrecognized source node with children is never an `Atom`, even when that same node exposes a semantic target;
@@ -28,7 +78,11 @@ and descendant-label heading promotion in `WorldDeliveryIndex` are removed. Prov
 `Atom => leaf`, content-independent repeated-shape closure, exact parent/child/order conservation, whole-record
 delivery, and search/read coherence. Live benchmark closure remains open.
 
-### 2026-09-01 one-shot decision-feedback convergence — provider-free implemented, live-open
+### Historical: 2026-09-01 one-shot decision-feedback design — superseded after live reopening
+
+The Task798/Task316 live witness showed that the design below did not implement its claimed private recurrence
+lifetime for exact local failure centers. It is retained as dated evidence; the failure-center contract above is
+normative.
 
 Recovery is not a second reasoning role or persistent semantic plan. `EpisodeMonitor` owns one bounded mechanical
 transition window across every committed decision type, including GUI dispatch, `read_region`,

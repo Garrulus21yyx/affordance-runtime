@@ -1681,6 +1681,31 @@ def test_unknown_repeated_source_subtrees_are_delivered_as_complete_records() ->
         if item.role == "collection" and item.semantic_unit_roots
     )
     region_ref = context.canonical_world.region_refs[collection.key]
+    assert collection.heading == ""
+    assert collection.direct_labels == ("Dan Abramov", "Joe Haddad")
+
+    listed = inspect_actor_world(
+        context.actor_world,
+        context.grounding,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+        action="view_all",
+    )
+    assert isinstance(listed, Page)
+    listed_collection = next(item for item in listed.items if item["region_ref"] == region_ref)
+    assert listed_collection["labels"] == ("Dan Abramov", "Joe Haddad")
+
+    compact = render_compact_actor_world(
+        context.actor_world,
+        context.grounding,
+        include_images=False,
+        region_index=context.region_index,
+        canonical_world=context.canonical_world,
+        observation=world,
+    )
+    descriptor = next(line for line in compact.text.splitlines() if f"[{region_ref}]" in line)
+    assert 'labels=["Dan Abramov","Joe Haddad"]' in descriptor
 
     opened = inspect_actor_world(
         context.actor_world,

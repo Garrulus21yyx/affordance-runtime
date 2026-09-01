@@ -2150,8 +2150,9 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
     replay = monitor.evaluate(local_step, findings_digest)
-    assert replay.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert replay.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert replay.recovery_signal is not None
+    assert replay.recovery_signal.recovery_attempt == 2
     assert replay.recovery_signal.epoch_id != recovery.recovery_signal.epoch_id
 
 

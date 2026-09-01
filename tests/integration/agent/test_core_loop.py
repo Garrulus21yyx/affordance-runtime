@@ -733,7 +733,7 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
-def test_exact_local_result_replay_requires_a_fresh_signal_after_a_different_route() -> None:
+def test_exact_local_result_replay_reenters_the_same_center_after_a_different_route() -> None:
     @dataclass
     class LocalReplayPolicy:
         turns: int = 0
@@ -771,9 +771,6 @@ def test_exact_local_result_replay_requires_a_fresh_signal_after_a_different_rou
             if self.turns == 4:
                 assert context.control_feedback == {}
                 return self.original(context, "provider-call:local-hard-replay")
-            if self.turns == 5:
-                assert len(context.control_feedback["prohibited_attempt_signatures"]) == 1
-                return self.original(context, "provider-call:local-rejected-replay")
             raise AssertionError("local replay test exceeded its bounded sequence")
 
     async def scenario() -> None:
@@ -791,13 +788,17 @@ def test_exact_local_result_replay_requires_a_fresh_signal_after_a_different_rou
         state = await runtime.run_task(environment, _task())
 
         assert state.status is RunStatus.BLOCKED
-        assert policy.turns == 5
+        assert policy.turns == 4
         assert environment.execute_calls == 0
         assert state.last_step is not None
-        assert isinstance(state.last_step.decision, ToolRejectedResult)
-        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
-        assert state.last_step.decision.result["failure_kind"] == "recovery_prohibited_attempt_replay"
-        assert state.last_step.decision.result["dispatch"] == "not_sent"
+        assert isinstance(state.last_step.decision, SearchPageContentResult)
+        assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
+        assert state.last_step.control_termination is not None
+        assert state.last_step.recovery_signal is not None
+        assert state.recovery_signal is None
+        assert state.monitor_snapshot is None
+        assert monitor.active_recovery is None
+        assert monitor.active_failure_center is None
 
     asyncio.run(scenario())
 

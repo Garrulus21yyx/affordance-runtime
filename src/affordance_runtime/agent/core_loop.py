@@ -263,6 +263,7 @@ class CoreAgentLoop:
         state.install_delivery_index(initial_index)
         state.install_canonical_world(initial_projection)
         self._start_episode(initial, evaluation)
+        self._sync_episode_monitor_snapshot(state)
         if isinstance(goal_resolution, NeedsInput) and initial_status is RunStatus.WAITING_USER:
             request = _admit_goal_input_request(initial, task.revision, goal_resolution)
             state.apply(
@@ -344,6 +345,7 @@ class CoreAgentLoop:
             goal_resolution=facts.goal_resolution,
             goal_plan_version_counter=facts.goal_plan_version_counter,
             recovery_signal=facts.recovery_signal,
+            monitor_snapshot=facts.monitor_snapshot,
             committed_sent_unknown_count=facts.committed_sent_unknown_count,
             decision_counts=dict(facts.decision_counts),
             currentness_probe_count=facts.currentness_probe_count,
@@ -355,7 +357,8 @@ class CoreAgentLoop:
         state.install_canonical_world(projection)
         restore_episode = getattr(self.episode_monitor, "restore_episode", None)
         if callable(restore_episode):
-            restore_episode(current, evaluation, facts.recovery_signal)
+            restore_episode(current, evaluation, facts.recovery_signal, facts.monitor_snapshot)
+        self._sync_episode_monitor_snapshot(state)
         state.commit_durable_pause(checkpoint_id)
         return state
 
@@ -447,6 +450,7 @@ class CoreAgentLoop:
         candidate.install_delivery_index(region_index)
         candidate.install_canonical_world(projection)
         self._start_episode(current, evaluation)
+        self._sync_episode_monitor_snapshot(candidate)
         self.trace_sink.goal_compiler_completed(
             goal_compiler_trace_diagnostic(
                 self.goal_compiler,
@@ -859,6 +863,7 @@ class CoreAgentLoop:
         state.recovery_signal = None
         state.delivery_store = ObservationDeliveryStore()
         self._start_episode(state.current_world, evaluation)
+        self._sync_episode_monitor_snapshot(state)
         if isinstance(resolution, Ready):
             state.goal_plan_version_counter = resolution.accepted_plan.plan_version
         state.resume(RunStatus.WAITING_USER)
@@ -944,6 +949,8 @@ class CoreAgentLoop:
             self._record_official_outcome(result.task_evaluation)
         if trace_step:
             self.trace_sink.step_completed(state.step_count, result)
+        if state.terminal:
+            self._settle_terminal_episode(state)
         return result
 
     def _attach_canonical_worlds(
@@ -1022,6 +1029,7 @@ class CoreAgentLoop:
             RunStatus.FAILED,
         }:
             self._end_episode()
+            state.monitor_snapshot = None
             return replace(result, recovery_signal=None)
         monitor = self.episode_monitor
         if monitor is None:
@@ -1043,6 +1051,7 @@ class CoreAgentLoop:
             current_findings_digest(result.after_world),
             delivery_transition.information_delta,
         )
+        self._sync_episode_monitor_snapshot(state)
         recommendation = getattr(transition, "recommendation", "")
         if str(recommendation) == "recover":
             signal = getattr(transition, "recovery_signal", None)
@@ -1077,6 +1086,10 @@ class CoreAgentLoop:
         if callable(start_episode):
             start_episode(world, evaluation)
 
+    def _sync_episode_monitor_snapshot(self, state: RunState) -> None:
+        snapshot = getattr(self.episode_monitor, "snapshot", None)
+        state.monitor_snapshot = snapshot() if callable(snapshot) else None
+
     def _end_episode(self) -> None:
         end_episode = getattr(self.episode_monitor, "end_episode", None)
         if callable(end_episode):
@@ -1086,6 +1099,7 @@ class CoreAgentLoop:
         if not state.terminal:
             raise ValueError("episode terminal settlement requires a terminal run")
         state.recovery_signal = None
+        state.monitor_snapshot = None
         self._end_episode()
 
     def commit_control_boundary(self, state: RunState, outcome: RunControlOutcome) -> None:

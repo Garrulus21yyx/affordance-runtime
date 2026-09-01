@@ -609,7 +609,7 @@ def test_existing_point_grounding_route_is_not_new_information() -> None:
     assert transition.information_delta.new_information_count == 0
 
 
-def test_control_discovery_recovery_is_consumed_by_the_next_decision() -> None:
+def test_control_discovery_feedback_is_consumed_but_failure_center_remains() -> None:
     world = _world("observation:control-discovery")
     monitor = EpisodeMonitor()
     monitor.start_episode(world, _evaluation(world))
@@ -649,7 +649,9 @@ def test_control_discovery_recovery_is_consumed_by_the_next_decision() -> None:
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert continued.recovery_signal is None
-    assert monitor.recovery_count == 0
+    assert monitor.recovery_count == 1
+    assert monitor.active_failure_center is not None
+    assert monitor.active_failure_center.armed
 
 
 def test_first_typed_tool_rejection_opens_deliberate_recovery_immediately() -> None:
@@ -681,8 +683,8 @@ def test_supported_recovery_budget_reaches_a_typed_block_within_the_signal_algeb
     )
     assert tuple(item.recovery_signal.recovery_attempt for item in transitions if item.recovery_signal is not None) == (
         1,
-        1,
-        1,
+        2,
+        2,
     )
 
 
@@ -707,10 +709,10 @@ def test_control_discovery_blocks_only_the_repeated_recovery_query() -> None:
 
     assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert constrained.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert constrained.recovery_signal is not None
     assert constrained.recovery_signal.prohibited_attempt_signatures
-    assert constrained.recovery_signal.recovery_attempt == 1
+    assert constrained.recovery_signal.recovery_attempt == 2
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -757,7 +759,7 @@ def test_exact_local_result_replay_recovers_then_stalls() -> None:
     assert stalled.reason == "control_stalled"
 
 
-def test_exact_replay_recovery_is_consumed_by_a_different_region_decision() -> None:
+def test_exact_replay_failure_center_survives_a_different_region_decision() -> None:
     world = _world("observation:replay-then-different-region")
     replayed_step = _search_with_items(world)
     different_step = _local_step(world, query="different", region="R10")
@@ -783,6 +785,11 @@ def test_exact_replay_recovery_is_consumed_by_a_different_region_decision() -> N
         current_findings_digest(world),
         different.information_delta,
     )
+    reentered = monitor.evaluate(
+        replayed_step,
+        current_findings_digest(world),
+        replay.information_delta,
+    )
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert different.information_delta is not None
@@ -790,7 +797,47 @@ def test_exact_replay_recovery_is_consumed_by_a_different_region_decision() -> N
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert continued.recovery_signal is None
-    assert monitor.recovery_count == 0
+    assert monitor.recovery_count == 2
+    assert monitor.active_failure_center is not None
+    assert reentered.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert reentered.reason == "control_stalled"
+
+
+@given(
+    alternate_queries=st.lists(
+        st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=20),
+        min_size=2,
+        max_size=8,
+        unique=True,
+    )
+)
+def test_nonperiodic_hub_and_spoke_reentry_blocks_one_failure_center(alternate_queries) -> None:
+    world = _world("observation:hub-and-spoke")
+    hub_step = _search_with_items(world)
+    store = ObservationDeliveryStore()
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first = store.reduce(hub_step, step_index=1)
+    monitor.evaluate(hub_step, current_findings_digest(world), first.information_delta)
+    replay = first.next_store.reduce(hub_step, step_index=2)
+    recovery = monitor.evaluate(hub_step, current_findings_digest(world), replay.information_delta)
+    current_store = replay.next_store
+    alternates = []
+    for step_index, query in enumerate(alternate_queries, start=3):
+        alternate_step = _local_step(world, query=query, region=f"R{step_index}")
+        delivered = current_store.reduce(alternate_step, step_index=step_index)
+        current_store = delivered.next_store
+        alternates.append(
+            monitor.evaluate(alternate_step, current_findings_digest(world), delivered.information_delta)
+        )
+    reentered = monitor.evaluate(hub_step, current_findings_digest(world), replay.information_delta)
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in alternates)
+    assert reentered.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert reentered.recovery_signal is not None
+    assert reentered.recovery_signal.stable_signature == recovery.recovery_signal.stable_signature
 
 
 @given(
@@ -1089,7 +1136,7 @@ def test_different_queries_and_regions_share_one_no_progress_family() -> None:
     assert monitor.recovery_count == 1
 
 
-def test_different_no_progress_attempt_consumes_the_previous_signal() -> None:
+def test_different_no_progress_attempt_consumes_feedback_without_erasing_center() -> None:
     world = _world("observation:stable")
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -1097,13 +1144,16 @@ def test_different_no_progress_attempt_consumes_the_previous_signal() -> None:
     _evaluate(monitor, _local_step(world, query="one"))
     recovery = _evaluate(monitor, _local_step(world, query="two"))
     continued = _evaluate(monitor, _local_step(world, query="three"))
+    reentered = _evaluate(monitor, _local_step(world, query="two"))
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert recovery.recovery_signal is not None
     assert continued.recovery_signal is None
     assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
-    assert monitor.recovery_count == 0
+    assert monitor.recovery_count == 2
+    assert monitor.active_failure_center is not None
+    assert reentered.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 
 @given(
@@ -1114,7 +1164,7 @@ def test_different_no_progress_attempt_consumes_the_previous_signal() -> None:
         unique=True,
     )
 )
-def test_distinct_no_progress_attempts_never_become_a_runtime_semantic_budget(queries) -> None:
+def test_distinct_no_progress_attempts_are_bounded_by_one_mechanical_center(queries) -> None:
     world = _world("observation:distinct-recovery-attempts")
     monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -1122,12 +1172,13 @@ def test_distinct_no_progress_attempts_never_become_a_runtime_semantic_budget(qu
     transitions = tuple(_evaluate(monitor, _local_step(world, query=query)) for query in queries)
 
     assert transitions[0].recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert all(item.recommendation is EpisodeMonitorRecommendation.RECOVER for item in transitions)
-    assert all(item.recovery_signal is not None for item in transitions)
-    assert monitor.recovery_count == 1
+    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in transitions[1:16])
+    assert all(item.recommendation is EpisodeMonitorRecommendation.BLOCK for item in transitions[16:])
+    assert monitor.active_failure_center is not None
+    assert len(monitor.active_failure_center.member_digests) <= 16
 
 
-def test_each_stall_signal_has_a_distinct_one_decision_identity() -> None:
+def test_one_decision_signal_does_not_split_one_failure_center_into_new_epochs() -> None:
     world = _world("observation:recovery-discovery-handoff")
     monitor = EpisodeMonitor(AgentLoopProfile(1, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -1140,18 +1191,19 @@ def test_each_stall_signal_has_a_distinct_one_decision_identity() -> None:
     blocked = _evaluate(monitor, discovery_step)
 
     assert first_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert second_recovery.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second_recovery.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert handoff.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert handoff.recovery_signal is None
-    assert handoff.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
-    assert constrained.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert handoff.recovery_lifecycle is RecoveryLifecycleTransition.NONE
+    assert constrained.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert constrained.recovery_signal is not None
     assert constrained.recovery_signal.prohibited_attempt_signatures
-    assert constrained.recovery_signal.recovery_attempt == 1
+    assert constrained.recovery_signal.recovery_attempt == 2
     assert first_recovery.recovery_signal is not None
-    assert second_recovery.recovery_signal is not None
-    assert first_recovery.recovery_signal.epoch_id != second_recovery.recovery_signal.epoch_id
-    assert second_recovery.recovery_signal.epoch_id != constrained.recovery_signal.epoch_id
+    assert second_recovery.recovery_signal is None
+    assert first_recovery.recovery_signal.stable_signature == constrained.recovery_signal.stable_signature
+    assert first_recovery.recovery_signal.epoch_id != constrained.recovery_signal.epoch_id
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
 
@@ -1285,7 +1337,7 @@ def test_local_stall_after_gui_signal_opens_a_new_signal_and_replay_blocks() -> 
     assert rejected.recovery_signal.recovery_attempt == 2
 
 
-def test_same_attempt_after_recovery_creates_a_new_exact_replay_prohibition() -> None:
+def test_same_attempt_after_recovery_reenters_the_existing_failure_center() -> None:
     world = _world("observation:stable-repeat")
     monitor = EpisodeMonitor(AgentLoopProfile(2, 1))
     monitor.start_episode(world, _evaluation(world))
@@ -1295,12 +1347,13 @@ def test_same_attempt_after_recovery_creates_a_new_exact_replay_prohibition() ->
     replay = _evaluate(monitor, _local_step(world, query="two"))
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert replay.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert replay.reason == RecoveryKind.CONTROL_STALL.value
+    assert replay.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert replay.reason == "control_stalled"
     assert replay.recovery_signal is not None
     assert recovery.recovery_signal is not None
     assert replay.recovery_signal.epoch_id != recovery.recovery_signal.epoch_id
     assert replay.recovery_signal.prohibited_attempt_signatures
+    assert replay.recovery_signal.recovery_attempt == 2
 
 
 def test_observation_streak_recovery_without_an_exact_receipt_creates_no_hard_prohibition() -> None:
@@ -1740,7 +1793,7 @@ def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
     assert delivery.information_delta is not None
     assert delivery.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
     assert len(monitor.recent_transitions) == 2
-    assert monitor.active_transition_cycle is None
+    assert monitor.active_failure_center is None
 
     returned = _evaluate(monitor, _dispatched_step(second, first))
 
@@ -1783,7 +1836,7 @@ def test_recovery_same_action_with_novel_result_escapes_old_cycle() -> None:
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert escaped.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert escaped.reason == "recovery_consumed"
-    assert monitor.active_transition_cycle is None
+    assert monitor.active_failure_center is None
 
 
 def test_mixed_cycle_identity_survives_pause_restore_boundary() -> None:
@@ -1800,9 +1853,32 @@ def test_mixed_cycle_identity_survives_pause_restore_boundary() -> None:
     restored.restore_episode(world, _evaluation(world), recovery.recovery_signal)
     blocked = _evaluate(restored, _local_step(world, query="same result"))
 
-    assert restored.active_transition_cycle is not None
+    assert restored.active_failure_center is not None
     assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
     assert blocked.reason == "control_stalled"
+
+
+def test_consumed_signal_failure_center_survives_snapshot_restore_boundary() -> None:
+    world = _world("observation:failure-center-snapshot")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+    _evaluate(monitor, _local_step(world, query="hub"))
+    _evaluate(monitor, _dispatched_step(world))
+    _evaluate(monitor, _local_step(world, query="hub"))
+    recovery = _evaluate(monitor, _dispatched_step(world))
+    alternate = _evaluate(monitor, _local_step(world, query="alternate"))
+
+    snapshot = monitor.snapshot()
+    restored = EpisodeMonitor(AgentLoopProfile(8, 1))
+    restored.restore_episode(world, _evaluation(world), None, snapshot)
+    blocked = _evaluate(restored, _local_step(world, query="hub"))
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert alternate.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert monitor.active_recovery is None
+    assert snapshot.failure_center_armed
+    assert restored.active_failure_center is not None
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
 
 
 def test_forward_only_gui_route_does_not_invent_a_regression() -> None:
@@ -1832,7 +1908,8 @@ def test_ineffectual_gui_attempt_consumes_local_recovery_for_one_decision() -> N
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert continued.recovery_signal is None
     assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
-    assert monitor.recovery_count == 0
+    assert monitor.recovery_count == 1
+    assert monitor.active_failure_center is not None
 
 
 def test_causal_changed_gui_attempt_consumes_local_recovery() -> None:
@@ -1847,12 +1924,12 @@ def test_causal_changed_gui_attempt_consumes_local_recovery() -> None:
     continued = _evaluate(monitor, continued_step)
 
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert second_recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
-    assert second_recovery.recovery_signal is not None
-    assert second_recovery.recovery_signal.recovery_attempt == 1
+    assert second_recovery.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert second_recovery.recovery_signal is None
+    assert second_recovery.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert EpisodeMonitorEvent.STATE_CHANGED in continued.events
-    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert continued.recovery_lifecycle is RecoveryLifecycleTransition.NONE
     assert continued.recovery_signal is None
     assert monitor.recovery_count == 0
     assert monitor.latest_attempt_signature is None
@@ -1914,7 +1991,7 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "same_attempt_streak",
         "no_progress_count",
         "recent_transitions",
-        "active_transition_cycle",
+        "active_failure_center",
         "active_recovery",
         "recovery_epoch_counter",
     } == set(vars(monitor)) - {"profile"}

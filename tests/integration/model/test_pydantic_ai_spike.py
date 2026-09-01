@@ -3887,7 +3887,7 @@ def test_harness_summary_contract_keeps_conclusions_without_action_narration() -
     assert "full supported result set" in MODEL_POLICY_INSTRUCTIONS
     assert "whether coverage is open" in MODEL_POLICY_INSTRUCTIONS
     assert "whether the proposed route is" in MODEL_POLICY_INSTRUCTIONS
-    assert "use typed abort instead of self-verifying" in MODEL_POLICY_INSTRUCTIONS
+    assert "typed non-success outcome" in MODEL_POLICY_INSTRUCTIONS
     assert "local_postcondition=unknown is not a proven failure" in MODEL_POLICY_INSTRUCTIONS
     assert "do not retype merely to force an exact accessibility-value echo" in MODEL_POLICY_INSTRUCTIONS
     assert not {

@@ -2,7 +2,65 @@
 
 ## Current status
 
-### 2026-09-01 Task316 source-topology witness — provider-free repaired, live-open
+### 2026-09-01 Task798/Task316 convergence reopening — owner repair implemented, live-open
+
+The paired run at commit `ec7923b4` falsified the prior closure model. Task798 completed 33 steps in its full
+eight-minute boundary, emitted 16 recovery signals, and produced no Monitor block. The dominant identical R46
+control-stall signature occurred 11 times; every occurrence was `recovery_attempt=1` with a new epoch. Interleaved
+reads and searches consumed the one-turn signal, while exact local recurrence never installed the private mixed-cycle
+identity. The agent had already selected order `000000189`, observed the shipping-address facts, received empty edit
+searches and hidden Update controls, yet repeatedly reopened the same region instead of returning the final codec's
+typed `ACTION_NOT_ALLOWED_ERROR`.
+
+Task316 was stopped after 64 trace events / 22 completed steps. It reached the correct
+`facebook/create-react-app/-/graphs/main` page. The first contributor observation already contained the exact Dan
+Abramov, Joe Haddad, and Ian Sutherland records and their emails in one source-owned 100-Record collection, but none
+of the three emails appeared in any completed `llm.input_messages`. The collection was conserved but exposed as an
+anonymous `heading=""` region, while the natural `main` region delivered only commit-chart content. Its five recovery
+signals were again all attempt 1. Because this run is partial, it is not terminal Task316 failure evidence; it is
+evidence of the same Monitor lifecycle defect plus a remaining delivery-discoverability defect.
+
+The owner repair replaces the private exact-cycle fragment with one bounded unresolved failure center in
+`EpisodeMonitor`. A one-turn signal arms but does not own that center; no-information alternatives join it, re-entry
+blocks, and only fresh semantic World/information/verified GUI progress closes it. Checkpoint v8 persists a typed
+projection of the same Monitor owner after the signal has been consumed. The existing record collection now advertises
+bounded labels from its source-owned Record units, so PageMap/list-regions can identify the collection before
+`read_region` returns complete name/count/email records. The single ActionPolicy, not Runtime, chooses a typed
+non-success final response when current evidence closes the supported route algebra.
+
+No Task ID, order ID, email value, page/site term, selector, expected output, task-conditioned branch, alternate
+retriever, second planner, or model memory was added. Provider-free full-suite evidence currently reports
+`2284 passed, 19 skipped, 1 known missing archived-fixture failure, 1 warning`; the same fixed-interpreter run with that
+already documented absent fixture deselected reports `2284 passed, 19 skipped, 1 deselected, 1 warning`.
+
+The authorized post-change live run
+[`failure-center-live1`](../evidence/live/webarena-query-coverage-paired-798-316-20260901-failure-center-live1/)
+provides split evidence:
+
+- Task316 reached native `done` in 11 steps / 122.8 seconds. `read_region(R16)` returned the first three source-owned
+  contributor Records with their exact emails, and the next call submitted the three values as a typed successful
+  retrieval. This crosses the previously reopened live record-discoverability witness.
+- Task798 reached its first recovery at step 8, but the deliberate DeepSeek response and its one complete retry each
+  returned two tool calls despite `parallel_tool_calls=false` and the exactly-one-call contract. Runtime failed closed
+  with `policy_failure_code=invalid_response` after 9 steps / 71.1 seconds. This is provider/output-contract failure,
+  not a task or Monitor conclusion.
+
+The clean isolated Task798 repeat
+[`failure-center-live2-task798`](../evidence/live/webarena-query-coverage-paired-798-316-20260901-failure-center-live2-task798/)
+removed that provider-format confounder. It terminated `blocked/control_stalled` at step 18 / 107.2 seconds. The same
+failure-center signature appeared at steps 8, 10, 16, and finally step 18 with `recovery_attempt=2`; the last re-entry
+blocked instead of producing another attempt-1 recovery and running to 480 seconds. This crosses the mechanical
+failure-center convergence witness, including different intervening search and control-discovery operations.
+
+Task798 business acceptance remains open. A complete `find_controls("edit shipping address")` returned only the
+partial lexical `Address Book` route and marked `edit` and `shipping` unmatched; complete content search exposed no
+eligible order-address edit action. ActionPolicy nevertheless assumed an undiscovered test-environment feature and
+re-entered `read_region(R46)` instead of submitting the offered typed `ACTION_NOT_ALLOWED_ERROR`; Monitor then
+correctly blocked. Runtime may not manufacture that semantic task outcome. No production change was made after these
+live runs. Overall live closure therefore requires a general single-ActionPolicy/tool-result contract repair and a
+fresh Task798 acceptance run, without weakening the now-live-validated failure-center bound.
+
+### Historical: 2026-09-01 Task316 source-topology witness — superseded by paired live reopening
 
 The bounded Task316/Task798 run under commit `04e3f799` did not reach native evaluation because the final deliberate
 DeepSeek calls exceeded their approximately 42-second transport attempt budgets. Task316 nevertheless isolated a
@@ -28,7 +86,7 @@ missing archived dashboard trace. The complete unit gate reports `1062 passed, 1
 missing fixture excluded. Ruff and `git diff --check` pass. This is provider-free implementation evidence only: no new
 live task was run, and Task316 benchmark closure remains open.
 
-### 2026-09-01 one-shot recovery convergence — provider-free implementation, live-open
+### Historical: 2026-09-01 one-shot recovery design — superseded by paired live reopening
 
 The ten-case [`diagnostic10c` cohort](../evidence/live/webarena-diagnostic10c-deepseek-flash-pro-20260831-bb0cbe83/all10-run3/summary.json)
 completed 10/10 executions but passed only Tasks 416, 735, and 375. Monitor detected stalls, but its prior control

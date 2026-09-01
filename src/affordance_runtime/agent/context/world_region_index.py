@@ -430,8 +430,8 @@ def _functional_partition(
             )
             root = nodes[root_id]
             heading = _exact_heading(root_id, member_structures, nodes, target_by_id, canonical, source.observation_id)
-            direct_labels = _direct_labels(root_id, nodes)
             repeated_roots = _semantic_unit_roots(root_id, member_structures, nodes, source_order)
+            direct_labels = _direct_labels(root_id, nodes, repeated_roots)
             state_badges = _state_badges(member_targets, target_by_id)
             seed_index = len(seeds)
             scope_path = _scope_path(root_id, nodes, parents)
@@ -750,14 +750,31 @@ def _exact_heading(root_id, member_ids, nodes, targets, canonical, source_id) ->
     return ""
 
 
-def _direct_labels(root_id, nodes) -> tuple[str, ...]:
+def _direct_labels(root_id, nodes, semantic_unit_roots: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Describe a region from source-owned direct children or whole semantic units."""
+
     root = nodes[root_id]
     labels = [
         nodes[item].label.strip()
         for item in root.child_structure_ids
         if item in nodes and _meaningful_text(nodes[item].label)
     ]
-    return tuple(dict.fromkeys(labels[:8]))
+    # A resolved Collection commonly has anonymous Record containers.  Its
+    # first public field labels are descriptors of those already-owned units,
+    # not inferred headings or new delivery boundaries.  Exposing a bounded
+    # sample makes the existing region discoverable without flattening it.
+    for unit_root in semantic_unit_roots:
+        label = next(
+            (
+                nodes[item].label.strip()
+                for item in _walk_ids(unit_root, nodes)
+                if item in nodes and _meaningful_text(nodes[item].label)
+            ),
+            "",
+        )
+        if label:
+            labels.append(label)
+    return tuple(dict.fromkeys(labels))[:8]
 
 
 def _scope_path(root_id: str, nodes, parents: Mapping[str, str]) -> tuple[str, ...]:

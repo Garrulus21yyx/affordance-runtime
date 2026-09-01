@@ -75,7 +75,7 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         "same_attempt_streak",
         "no_progress_count",
         "recent_transitions",
-        "active_transition_cycle",
+        "active_failure_center",
         "active_recovery",
         "recovery_epoch_counter",
     }

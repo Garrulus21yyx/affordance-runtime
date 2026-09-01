@@ -21,6 +21,7 @@ from affordance_runtime.agent.context.observation_delivery import (
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.recovery import (
     EpisodeMonitorRecommendation,
+    EpisodeMonitorSnapshot,
     RecoveryKind,
     RecoverySignal,
 )
@@ -75,6 +76,7 @@ from affordance_runtime.task import (
 )
 from affordance_runtime.task.contracts import criterion_id
 from affordance_runtime.world import SemanticTarget, StateFact, WorldFusion
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 from tests.integration.agent.test_core_loop import (
     CoreActionOutcomeProjector,
     CoreTaskEvaluator,
@@ -154,6 +156,48 @@ def test_legacy_recovery_closure_field_is_ignored_after_one_shot_migration() -> 
     restored = _restore_recovery_signal(payload)
 
     assert restored == signal
+
+
+def test_checkpoint_round_trip_preserves_consumed_signal_failure_center_snapshot() -> None:
+    task = TaskGoal("session:monitor-snapshot", "Inspect the current records", risk_profile=RiskProfile.READ_ONLY)
+    world = _action_world("monitor-snapshot", False)
+    evaluation = TaskEvaluation(
+        task.task_id,
+        world.observation_id,
+        TaskEvaluationStatus.INCOMPLETE,
+        "fixture evaluation",
+    )
+    snapshot = EpisodeMonitorSnapshot(
+        public_world_semantic_digest(world),
+        failure_center_digest="sha256:" + "a" * 64,
+        failure_center_period=1,
+        failure_center_member_digests=("sha256:" + "b" * 64, "sha256:" + "c" * 64),
+        failure_center_kind=RecoveryKind.CONTROL_STALL,
+        failure_center_armed=True,
+        recovery_epoch_counter=3,
+    )
+    state = RunState(
+        world,
+        evaluation,
+        5,
+        monitor_snapshot=snapshot,
+        control_boundary=RunControlOutcome(
+            "pause:monitor-snapshot",
+            RunControlKind.PAUSE,
+            RunControlOutcomeKind.PAUSE_BOUNDARY_REACHED,
+            RunControlBoundary.BEFORE_POLICY,
+        ),
+    )
+
+    checkpoint = RuntimeCheckpoint.capture(
+        session_id=task.task_id,
+        task=task,
+        state=state,
+        model_history={"format": "pydantic-ai.messages.v1", "messages": []},
+        environment_reference="browser-lease:monitor-snapshot",
+    )
+
+    assert checkpoint.restore_run_facts().monitor_snapshot == snapshot
 
 
 @pytest.mark.asyncio
@@ -244,7 +288,7 @@ async def test_checkpoint_restore_preserves_cross_world_novelty_and_active_recov
     )
     facts = checkpoint.restore_run_facts()
 
-    assert checkpoint.schema_version == "affordance-runtime.checkpoint.v7"
+    assert checkpoint.schema_version == "affordance-runtime.checkpoint.v8"
     assert facts.delivery_store == first_delivery.next_store
     assert "same record" not in checkpoint.to_json()
 

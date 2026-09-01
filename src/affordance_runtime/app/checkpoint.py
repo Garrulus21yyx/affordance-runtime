@@ -36,6 +36,7 @@ from affordance_runtime.agent.interactions import (
     restore_interaction_request_public_value,
 )
 from affordance_runtime.agent.recovery import (
+    EpisodeMonitorSnapshot,
     RecoveryKind,
     RecoverySignal,
 )
@@ -77,7 +78,7 @@ from affordance_runtime.task.contracts import (
     TaskGoal,
 )
 
-RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v7"
+RUNTIME_CHECKPOINT_SCHEMA_VERSION = "affordance-runtime.checkpoint.v8"
 _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
     {
         "affordance-runtime.checkpoint.v2",
@@ -85,6 +86,7 @@ _SUPPORTED_CHECKPOINT_SCHEMA_VERSIONS = frozenset(
         "affordance-runtime.checkpoint.v4",
         "affordance-runtime.checkpoint.v5",
         "affordance-runtime.checkpoint.v6",
+        "affordance-runtime.checkpoint.v7",
         RUNTIME_CHECKPOINT_SCHEMA_VERSION,
     }
 )
@@ -856,6 +858,7 @@ def _run_payload(state: RunState, boundary: RunControlOutcome) -> dict[str, obje
         "workspace": to_json_compatible(state.workspace),
         "delivery_store": _delivery_store_payload(state.delivery_store),
         "recovery_signal": _recovery_signal_payload(state.recovery_signal),
+        "monitor_snapshot": _monitor_snapshot_payload(state.monitor_snapshot),
         "pause_boundary": to_json_compatible(boundary),
         "current_observation_id": state.current_world.observation_id,
         "latest_effect": _committed_effect_payload(state.latest_effect),
@@ -939,6 +942,39 @@ def _restore_recovery_signal(payload: object) -> RecoverySignal | None:
         epoch_id=str(value["epoch_id"]),
         evidence_revision=_integer(value.get("evidence_revision", 1)),
         monitor_state=dict(_mapping(value.get("monitor_state", {}))),
+    )
+
+
+def _monitor_snapshot_payload(snapshot: EpisodeMonitorSnapshot | None) -> dict[str, object] | None:
+    if snapshot is None:
+        return None
+    return {
+        "world_digest": snapshot.world_digest,
+        "failure_center_digest": snapshot.failure_center_digest,
+        "failure_center_period": snapshot.failure_center_period,
+        "failure_center_member_digests": list(snapshot.failure_center_member_digests),
+        "failure_center_kind": snapshot.failure_center_kind.value if snapshot.failure_center_kind is not None else None,
+        "failure_center_armed": snapshot.failure_center_armed,
+        "recovery_epoch_counter": snapshot.recovery_epoch_counter,
+    }
+
+
+def _restore_monitor_snapshot(payload: object) -> EpisodeMonitorSnapshot | None:
+    if payload is None:
+        return None
+    value = _mapping(payload)
+    kind = value.get("failure_center_kind")
+    armed = value.get("failure_center_armed", False)
+    if type(armed) is not bool:
+        raise TypeError("monitor snapshot armed state must be boolean")
+    return EpisodeMonitorSnapshot(
+        str(value["world_digest"]),
+        failure_center_digest=str(value.get("failure_center_digest", "")),
+        failure_center_period=_integer(value.get("failure_center_period", 0)),
+        failure_center_member_digests=tuple(_string_sequence(value.get("failure_center_member_digests", []))),
+        failure_center_kind=RecoveryKind(str(kind)) if kind is not None else None,
+        failure_center_armed=armed,
+        recovery_epoch_counter=_integer(value.get("recovery_epoch_counter", 0)),
     )
 
 
@@ -1133,6 +1169,7 @@ def _restore_run_facts(
         latest_effect = _restore_committed_effect(run_payload.get("latest_effect"))
         reconciliation = _restore_effect_reconciliation(run_payload.get("effect_reconciliation"))
         recovery_signal = _restore_recovery_signal(run_payload.get("recovery_signal"))
+        monitor_snapshot = _restore_monitor_snapshot(run_payload.get("monitor_snapshot"))
         delivery_store = _restore_delivery_store(run_payload.get("delivery_store"))
         return RunCheckpointFacts(
             status_before_pause=status,
@@ -1152,6 +1189,7 @@ def _restore_run_facts(
             pause_boundary=boundary,
             delivery_store=delivery_store,
             recovery_signal=recovery_signal,
+            monitor_snapshot=monitor_snapshot,
             latest_effect=latest_effect,
             effect_reconciliation=reconciliation,
             last_decision=last_decision,

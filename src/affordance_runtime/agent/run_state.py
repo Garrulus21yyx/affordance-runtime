@@ -61,7 +61,7 @@ if TYPE_CHECKING:
     from affordance_runtime.agent.context.actor_world_snapshot import ActorWorldSnapshot
     from affordance_runtime.agent.context.model_turn_delivery import ModelTurnDelivery
     from affordance_runtime.agent.context.observation_delivery import DeliveryTransition
-    from affordance_runtime.agent.recovery import RecoverySignal
+    from affordance_runtime.agent.recovery import EpisodeMonitorSnapshot, RecoverySignal
 
 
 class RunStatus(StrEnum):
@@ -352,6 +352,7 @@ class RunCheckpointFacts:
     pause_boundary: RunControlOutcome
     delivery_store: ObservationDeliveryStore = field(default_factory=ObservationDeliveryStore)
     recovery_signal: RecoverySignal | None = None
+    monitor_snapshot: EpisodeMonitorSnapshot | None = None
     latest_effect: CommittedEffect | None = None
     effect_reconciliation: EffectReconciliation | None = None
     last_decision: AgentDecision | InteractionRequest | None = None
@@ -387,6 +388,11 @@ class RunCheckpointFacts:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("checkpoint recovery signal must be typed")
+        if self.monitor_snapshot is not None:
+            from affordance_runtime.agent.recovery import EpisodeMonitorSnapshot
+
+            if not isinstance(self.monitor_snapshot, EpisodeMonitorSnapshot):
+                raise TypeError("checkpoint monitor snapshot must be typed")
         _validate_effect_state(
             self.execution_count,
             self.task_revision,
@@ -436,6 +442,7 @@ class RunState:
     goal_resolution: GoalPlanResolution | None = None
     goal_plan_version_counter: int = 0
     recovery_signal: RecoverySignal | None = None
+    monitor_snapshot: EpisodeMonitorSnapshot | None = None
     committed_sent_unknown_count: int = 0
     decision_counts: dict[DecisionKind, int] = field(default_factory=dict)
     currentness_probe_count: int = 0
@@ -532,6 +539,11 @@ class RunState:
 
             if not isinstance(self.recovery_signal, RecoverySignal):
                 raise TypeError("run recovery signal must be typed")
+        if self.monitor_snapshot is not None:
+            from affordance_runtime.agent.recovery import EpisodeMonitorSnapshot
+
+            if not isinstance(self.monitor_snapshot, EpisodeMonitorSnapshot):
+                raise TypeError("run monitor snapshot must be typed")
         if self.control_termination is not None and not isinstance(self.control_termination, ControlTermination):
             raise TypeError("run control termination must be typed")
         if self.control_boundary is not None:

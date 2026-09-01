@@ -3977,9 +3977,10 @@ def _pydantic_atomic_recovery_prompt(
                 "retry": complete_retry,
                 "instruction": (
                     "Return exactly one complete offered ToolCall and no explanatory text. Reassess from the same "
-                    "fresh World, exact previous transition, stable Harness summary, and one-shot Monitor facts. "
-                    "Submit when evidence is sufficient, stop when no supported route remains, otherwise choose "
-                    "one materially new current action. Do not create a second plan or repeat an exact failed attempt."
+                    "fresh World, exact previous transition, stable Harness summary, and bounded Monitor failure-center facts. "
+                    "Submit success when evidence is sufficient; when evidence establishes that no supported route remains, "
+                    "use an offered typed non-success final outcome, otherwise choose one materially new current action. "
+                    "Do not create a second plan or repeat an exact failed attempt."
                 ),
             }
         },
