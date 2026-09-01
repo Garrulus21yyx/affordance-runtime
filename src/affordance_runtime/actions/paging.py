@@ -599,17 +599,32 @@ class ActionDiscoveryResult:
             raise ValueError("discovery result coverage is invalid")
         object.__setattr__(self, "unmatched_terms", tuple(self.unmatched_terms))
 
+    @property
+    def query_coverage(self) -> str:
+        """Describe query-term coverage separately from result pagination.
+
+        ``result_coverage`` says whether all ranked rows were delivered.  It
+        must not imply that those rows satisfy the complete query.
+        """
+
+        if not self.query:
+            return "not_applicable"
+        if not self.matches:
+            return "empty"
+        return "partial" if self.unmatched_terms else "complete"
+
     def to_public_value(self) -> dict[str, object]:
         return {
             "kind": "empty" if not self.matches else "page",
-            "matches": _public_discovery_rows(self.matches),
+            "query": self.query,
+            "query_coverage": self.query_coverage,
+            "unmatched_terms": self.unmatched_terms,
             "searched_domain": "executable_controls",
             "source_scope": "current_action_space",
             "source_coverage": self.source_coverage,
             "result_scope": "query" if self.query else "base_inventory",
             "result_coverage": self.result_coverage,
-            "query": self.query,
-            "unmatched_terms": self.unmatched_terms,
+            "matches": _public_discovery_rows(self.matches),
             "suggested_next": self.suggested_next,
         }
 
@@ -618,14 +633,15 @@ class ActionDiscoveryResult:
 
         return {
             "kind": "empty" if not self.matches else "page",
-            "matches": _history_discovery_rows(self.matches),
+            "query": self.query,
+            "query_coverage": self.query_coverage,
+            "unmatched_terms": self.unmatched_terms,
             "searched_domain": "executable_controls",
             "source_scope": "current_action_space",
             "source_coverage": self.source_coverage,
             "result_scope": "query" if self.query else "base_inventory",
             "result_coverage": self.result_coverage,
-            "query": self.query,
-            "unmatched_terms": self.unmatched_terms,
+            "matches": _history_discovery_rows(self.matches),
             "suggested_next": self.suggested_next,
         }
 

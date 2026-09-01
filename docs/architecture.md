@@ -3475,3 +3475,12 @@ enum, cursor, provider call, or Runtime path is introduced. A focused provider-f
 `441` tests, and the topology/delivery subset passes `150` tests with the one repository-missing archived dashboard
 trace deselected. The complete fixed-interpreter provider-free suite passes `2273 passed, 19 skipped, 1 deselected,
 1 warning`; Live Tasks 113 and 142 remain open.
+
+Action discovery now separates query-term coverage from result pagination. `query_coverage=complete|partial|empty`
+is derived by the existing `ActionRecallSet` owner from the canonical query and its unmatched terms, and is projected
+before candidate rows. `result_coverage` retains its sole meaning: whether all ranked rows fit the current result
+page. A partial `Address Book` row therefore cannot make a complete `Edit shipping address` query appear satisfied.
+This adds no site rule, planner conclusion, or second search path. Live Task798 remains open pending a fresh replay;
+the provider-free change establishes unambiguous negative discovery, not benchmark closure.
+The complete fixed BrowserGym/WebArena interpreter gate passes `2281 passed, 19 skipped, 1 deselected, 1 warning`;
+the deselection remains the documented repository-missing dashboard trace.

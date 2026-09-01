@@ -1688,6 +1688,7 @@ def test_find_controls_empty_result_does_not_redirect_to_readable_content_search
 
     assert discovery.matches == ()
     assert discovery.result_coverage == "empty"
+    assert discovery.query_coverage == "empty"
     assert discovery.to_public_value()["searched_domain"] == "executable_controls"
     assert discovery.suggested_next == ""
 
@@ -1707,6 +1708,25 @@ def test_find_controls_projects_candidate_owned_unmatched_query_terms() -> None:
     assert discovery.matches
     assert discovery.unmatched_terms == ("period",)
     assert discovery.to_public_value()["unmatched_terms"] == ("period",)
+    assert discovery.query_coverage == "partial"
+    assert discovery.to_public_value()["query_coverage"] == "partial"
+
+
+def test_find_controls_distinguishes_complete_query_from_result_paging() -> None:
+    _task, world, actions, _evaluation, context = _context()
+    builder = ContextBuilder(replace(ContextProjectionBudget(), max_action_options=1))
+    page = builder.page(actions, world, query="Settings")
+    discovery = builder.discovery_result(
+        actions,
+        world,
+        page,
+        canonical_world=context.canonical_world,
+        grounding=context.grounding,
+    )
+
+    assert discovery.matches
+    assert discovery.query_coverage == "complete"
+    assert discovery.result_coverage == "partial"
 
 
 def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog() -> None:

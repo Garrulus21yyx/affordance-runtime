@@ -2992,3 +2992,10 @@ unknown-shape, lineage, and skeleton-conservation cases. No Task ID, page label,
 Fresh held-out/live Task142 and Task113 acceptance is still pending separate benchmark authorization; implementation
 completion is not live closure. The complete fixed-environment provider-free suite reports `2264 passed, 19 skipped,
 1 deselected, 1 warning`; the deselection remains the known absent archived dashboard trace.
+
+The Task798 follow-up separates two formerly conflated observations. Its order-specific control search was complete,
+but the only returned row covered only part of the query. Action discovery now exposes query-term coverage
+independently from row pagination. Generic regressions prove that complete, partial, and empty query coverage remain
+distinct even when result paging is partial. Task798 remains
+a live witness; no post-change live result is claimed here. The complete fixed-interpreter provider-free gate passes
+`2281 passed, 19 skipped, 1 deselected, 1 warning`; the deselection is the known absent dashboard trace.
