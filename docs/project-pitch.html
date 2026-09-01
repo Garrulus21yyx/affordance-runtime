@@ -16,7 +16,7 @@
       <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>PROJECT PITCH</small></span></a>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
       <nav class="top-nav" id="top-navigation" aria-label="主导航">
-        <a href="index.html">首页</a><a href="project-pitch.html" aria-current="page">项目讲述</a><a href="interview-guide.html">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
+        <a href="index.html">首页</a><a href="project-pitch.html" aria-current="page">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
       </nav>
     </div>
   </header>
@@ -147,6 +147,7 @@
       <section id="chain">
         <p class="section-kicker">04 · End-to-end code path</p>
         <h2>从用户一句话到任务终止的完整链路</h2>
+        <div class="callout"><strong>这一节是面试叙事版</strong>要看 BrowserGym/Playwright 分工、raw observation、E-ref binding、动态 ToolCatalog、PydanticAI envelope、Harness compaction 与用户控制的逐对象源码版，请打开 <a href="implementation-walkthrough.html">实现链路逐层拆解 →</a></div>
         <ol class="flow-list">
           <li><b>1. Session 接收有 currentness 的命令。</b><span><code>PublicSessionCommand</code> 带 <code>command_id + expected_task_revision + expected_run_status</code>；重复 ID 同 payload 幂等，不同 payload 冲突。入口不是随便调一个 runtime 方法。</span></li>
           <li><b>2. Intake 建立 TaskGoal。</b><span><code>TaskGoal</code> 保存 instruction、constraints、allowed/forbidden effects、success criteria、requested outputs、risk profile、budget 和 revision；它描述“要什么”，不描述 selector 或步骤。</span></li>
@@ -412,7 +413,7 @@
     </main>
   </div>
 
-  <footer class="footer"><div class="footer-inner"><p>派生面试材料。实现与状态以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 及链接源码为准；不要把页面摘要当作新的 authority。</p><div class="footer-links"><a href="index.html">首页</a><a href="interview-guide.html">面试指南</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
+  <footer class="footer"><div class="footer-inner"><p>派生面试材料。实现与状态以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 及链接源码为准；不要把页面摘要当作新的 authority。</p><div class="footer-links"><a href="index.html">首页</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html">面试指南</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
   <script src="assets/interview.js"></script>
 </body>
 </html>
