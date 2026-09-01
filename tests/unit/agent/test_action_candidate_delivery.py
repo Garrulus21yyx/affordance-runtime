@@ -671,8 +671,12 @@ def _drag_context():
     )
 
 
-def _catalog(context):
-    delivery = build_model_turn_delivery(context, include_images=False)
+def _catalog(context, *, admitted_records=None):
+    delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records=admitted_records,
+    )
     return delivery, compile_grounded_action_catalog(context, delivery)
 
 
@@ -1635,7 +1639,7 @@ def test_find_controls_prioritizes_exact_result_without_replacing_base_inventory
     task, world, actions, evaluation, context = _context()
     omitted = next(item for item in context.complete_actions if item.target_label == "Zulu control")
 
-    delivery, catalog = _catalog(context)
+    delivery, catalog = _catalog(context, admitted_records={"base": 5})
     request = resolve_grounded_tool_call(
         catalog,
         ToolCall("find_controls", {"query": "Zulu control"}, "call:find-zulu"),
@@ -1708,7 +1712,7 @@ def test_find_controls_projects_candidate_owned_unmatched_query_terms() -> None:
 def test_find_controls_tool_return_routes_are_all_callable_in_the_next_catalog() -> None:
     task, world, actions, evaluation, context = _context()
     builder = ContextBuilder()
-    initial_delivery, initial_catalog = _catalog(context)
+    initial_delivery, initial_catalog = _catalog(context, admitted_records={"base": 5})
     request = resolve_grounded_tool_call(
         initial_catalog,
         ToolCall("find_controls", {"query": "Settings"}, "call:find-settings"),
@@ -2095,7 +2099,7 @@ def test_exact_label_route_reaches_delivery_manifest_catalog_and_unique_resolver
 
 def test_candidate_executes_directly_and_discovery_tools_never_dispatch_gui_actions() -> None:
     _task, _world_value, _actions, _evaluation, context = _context()
-    delivery, catalog = _catalog(context)
+    delivery, catalog = _catalog(context, admitted_records={"base": 5})
     candidate = context.action_candidates.candidates[0]
     selected = resolve_grounded_tool_call(
         catalog,

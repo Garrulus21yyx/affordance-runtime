@@ -54,7 +54,7 @@ class ActionPolicyReasoningPolicy:
                 ActionPolicyInvocationPhase.DELIBERATE,
                 trigger,
                 self.deliberate_max_tokens,
-                "disabled",
+                "enabled",
             )
         return ActionPolicyCallProfile(
             ActionPolicyInvocationPhase.ORDINARY,

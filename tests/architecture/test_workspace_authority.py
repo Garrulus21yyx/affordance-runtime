@@ -74,12 +74,10 @@ def test_monitor_has_one_fixed_information_increment_state() -> None:
         "latest_attempt_signature",
         "same_attempt_streak",
         "no_progress_count",
-        "recent_gui_attempts",
-        "recent_gui_results",
-        "active_gui_cycle_digest",
+        "recent_transitions",
+        "active_transition_cycle",
         "active_recovery",
         "recovery_epoch_counter",
-        "closed_route_count",
     }
     for removed in (
         "EpisodeMonitorConfig",

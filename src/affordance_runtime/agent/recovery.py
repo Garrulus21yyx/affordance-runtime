@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from affordance_runtime.agent.attempt_signature import PublicAttemptSignature
@@ -58,6 +58,12 @@ class RecoverySignal:
     recovery_attempt: int = 1
     epoch_id: str = ""
     evidence_revision: int = 1
+    monitor_state: Mapping[str, object] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+        metadata={"serialize": False},
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, RecoveryKind):
@@ -83,6 +89,10 @@ class RecoverySignal:
         object.__setattr__(self, "prohibited_attempt_signatures", prohibited)
         if len(self.human_instruction) > 1_000 or not 1 <= self.recovery_attempt <= 3:
             raise ValueError("recovery signal exceeds bounds")
+        monitor_state = dict(self.monitor_state)
+        if len(monitor_state) > 4:
+            raise ValueError("recovery monitor state exceeds bounds")
+        object.__setattr__(self, "monitor_state", freeze_json(monitor_state))
 
 
 @dataclass(frozen=True)

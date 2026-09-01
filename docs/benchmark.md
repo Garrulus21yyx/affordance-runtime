@@ -5,28 +5,40 @@
 ### 2026-09-01 one-shot recovery convergence — provider-free implementation, live-open
 
 The ten-case [`diagnostic10c` cohort](../evidence/live/webarena-diagnostic10c-deepseek-flash-pro-20260831-bb0cbe83/all10-run3/summary.json)
-completed 10/10 executions but passed only Tasks 416, 735, and 375. The shared
-failure is downstream of Monitor: stale recovery epochs and completed model narration outlived the transition that
-created them, while the latest action/effect was duplicated or separated from fresh World. A special recovery schema
-could force the model to label its ToolCall but could not make that label evidence-backed. Automatic collection
-review also escalated calls that normal ActionPolicy context should already resolve. Switching Flash to Pro therefore
-changed the route and budget without closing the decision-information lifecycle. Task735's eventual success after 29
-policy calls and eight recoveries is evidence of that non-convergence.
+completed 10/10 executions but passed only Tasks 416, 735, and 375. Monitor detected stalls, but its prior control
+algebra was non-monotonic: recovery consumption cleared the route constraint, the cycle detector saw only GUI
+dispatches, `local_postcondition=satisfied` could clear a route despite `observed_change=unchanged`, and accumulated
+`no_progress_count` had no blocking transition. Thus alternating read/find/GUI forms repeatedly looked like a new
+route. Separately, the configured `deliberate` call used Pro with `thinking=false`, forced `tool_choice=required`, and
+recorded zero reasoning tokens. Task735's eventual success after 29 policy calls and eight recoveries is evidence of
+that non-convergence rather than a clean success.
 
-The owner-level implementation now gives every ActionPolicy call fresh World with the exact previous transition
-adjacent to it. Monitor feedback is valid for exactly one decision; a later stall creates a new signal from the later
-transition rather than extending the old epoch. Completed response narration/private thinking expires after Runtime
-pairs the ToolCall with its result. Harness remains the sole history compactor. Ordinary and escalated calls share one
-ToolCatalog; `recovery_basis`, collection-triggered evidence review, a reflector, progress memory, and a second policy
-loop are absent. Flash handles ordinary calls. A fresh Monitor signal leases Pro once through the existing
-`deliberate` profile, with thinking disabled and one required ToolCall; the larger model must choose from the explicit
-causal slice rather than emit an unbounded reasoning transcript.
+The owner-level implementation keeps the existing causal ActionPolicy slice and Harness compactor, but replaces the
+disconnected Monitor pulses with one bounded mixed transition-result window. The first repeated cycle leases one
+deliberate decision; re-entry into that cycle blocks, while a transition with a new actual result escapes. The private
+cycle identity survives pause/checkpoint restore even though the model-visible signal is consumed after one decision.
+Local postcondition satisfaction without semantic change no longer counts as operational progress.
 
-Provider-free evidence covers signal consumption and new-event reissue, exact replay rejection, return to ordinary
-routing after any consumed signal, causal `previous_transition` placement, removal of settled self-narration, and an
-identical public tool contract across phases. This is not live closure. A separately authorized held-out cohort must
-show fewer recovery calls, fewer no-effect/reinspection loops, correct necessary verification, and no native-success
-regression before the mechanism can be called converged.
+Flash handles ordinary calls. A fresh Monitor signal leases Pro once through the existing `deliberate` profile with
+thinking enabled. DeepSeek requests omit `tool_choice` in both modes at the provider owner; the existing bounded
+output validator requires one current ToolCall and permits one complete same-context retry after truncated or
+text-only output. There is no recovery agent or new loop. Completed narration does not become Runtime state, and
+reasoning content remains only in the provider transcript required for a valid follow-up exchange.
+
+The existing dynamic GUI compiler remains. ToolCatalog now withholds `find_controls` when every complete ActionSpace
+route is already delivered and withholds page search when no readable region inventory exists. The largest generic
+schemas use compact discriminated objects with exact combinations enforced by their existing bindings; all seven
+dynamic evidence purposes serialize to about 1.9 KB before the surrounding tool envelope, without per-World ref
+enums. `list_regions` remains a small stable exploration operation, and the final-response codec is unchanged.
+`recovery_basis`, collection-triggered escalation, a reflector, progress memory, a second detector, and a second
+policy loop remain absent.
+
+Current provider-free evidence reports 236 passing owner/catalog/Monitor/checkpoint tests (13 skipped), 142 passing
+PydanticAI vertical/provider-wire tests with the unavailable WebArena dependency witness deselected, and 60 passing
+CoreLoop/architecture/cursor tests (3 skipped). The semantic-delivery suite also passes except for one repository-
+missing archived dashboard trace fixture; this is not a product assertion. This is implementation evidence, not live
+closure. A separately authorized held-out cohort must show fewer recovery calls, bounded cycle re-entry, correct
+necessary verification, and no native-success regression before the mechanism can be called converged.
 
 Task142 and Task113 are independent upstream World-contract witnesses. The provider-free World follow-up now verifies
 row-aligned table records across one-unit delivery pages and normalizes native same-name HTML radios at the

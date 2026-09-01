@@ -48,17 +48,34 @@ from affordance_runtime.evaluation.contracts import (
 from affordance_runtime.execution.contracts import DispatchStatus
 from affordance_runtime.immutable import to_json_compatible
 from affordance_runtime.world.contracts import WorldObservation
-from affordance_runtime.world.public_semantic_digest import (
-    public_page_semantic_digest,
-    public_world_semantic_digest,
-)
+from affordance_runtime.world.public_semantic_digest import public_world_semantic_digest
 
 _MAX_SAME_WORLD_CONTROL_DISCOVERY_STEPS = 2
-_MAX_RECENT_GUI_ATTEMPTS = 16
+_MAX_RECENT_TRANSITIONS = 16
+
+
 @dataclass(frozen=True)
-class _GuiAttemptRecord:
+class _TransitionRecord:
     signature: PublicAttemptSignature
-    page_semantic_digest: str
+    result_world_digest: str
+
+    @property
+    def digest(self) -> str:
+        """Identify one attempted transition together with its actual result."""
+
+        return (
+            "sha256:"
+            + hashlib.sha256(
+                _canonical_json(("decision_transition", self.signature.digest, self.result_world_digest)).encode()
+            ).hexdigest()
+        )
+
+
+@dataclass(frozen=True)
+class _ActiveTransitionCycle:
+    digest: str
+    period: int
+    member_digests: frozenset[str]
 
 
 @dataclass
@@ -70,13 +87,11 @@ class EpisodeMonitor:
     current_findings_digest: str = ""
     observation_only_streak: int = 0
     recovery_count: int = 0
-    closed_route_count: int = 0
     latest_attempt_signature: PublicAttemptSignature | None = None
     same_attempt_streak: int = 0
     no_progress_count: int = 0
-    recent_gui_attempts: tuple[_GuiAttemptRecord, ...] = ()
-    recent_gui_results: tuple[tuple[str, str], ...] = ()
-    active_gui_cycle_digest: str = ""
+    recent_transitions: tuple[_TransitionRecord, ...] = ()
+    active_transition_cycle: _ActiveTransitionCycle | None = None
     active_recovery: RecoverySignal | None = None
     recovery_epoch_counter: int = 0
 
@@ -86,13 +101,11 @@ class EpisodeMonitor:
         self.current_findings_digest = current_findings_digest(world)
         self.observation_only_streak = 0
         self.recovery_count = 0
-        self.closed_route_count = 0
         self.latest_attempt_signature = None
         self.same_attempt_streak = 0
         self.no_progress_count = 0
-        self.recent_gui_attempts = ()
-        self.recent_gui_results = ()
-        self.active_gui_cycle_digest = ""
+        self.recent_transitions = ()
+        self.active_transition_cycle = None
         self.active_recovery = None
         self.recovery_epoch_counter = 0
 
@@ -118,6 +131,23 @@ class EpisodeMonitor:
             recovery_signal.prohibited_attempt_signatures[-1] if recovery_signal.prohibited_attempt_signatures else None
         )
         self.same_attempt_streak = int(self.latest_attempt_signature is not None)
+        cycle_state = recovery_signal.monitor_state
+        member_digests = tuple(cycle_state.get("cycle_member_digests", ()))
+        cycle_digest = str(cycle_state.get("cycle_digest", ""))
+        cycle_period = cycle_state.get("cycle_period", 0)
+        if (
+            recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+            and cycle_digest.startswith("sha256:")
+            and type(cycle_period) is int
+            and cycle_period >= 1
+            and member_digests
+            and all(isinstance(item, str) and item.startswith("sha256:") for item in member_digests)
+        ):
+            self.active_transition_cycle = _ActiveTransitionCycle(
+                cycle_digest,
+                cycle_period,
+                frozenset(member_digests),
+            )
         parts = recovery_signal.epoch_id.split(":", 2)
         if len(parts) == 3 and parts[1].isdigit():
             self.recovery_epoch_counter = int(parts[1])
@@ -201,9 +231,10 @@ class EpisodeMonitor:
             self.current_findings_digest = current_findings_digest(result.before_world)
 
         events = _diagnostic_events(result)
+        world_semantic_changed = next_world_digest != self.world_digest
         state_changed = any(
             (
-                next_world_digest != self.world_digest,
+                world_semantic_changed,
                 findings_digest != self.current_findings_digest,
                 information_delta is not None and information_delta.kind is InformationDeltaKind.NEW_INFORMATION,
             )
@@ -231,11 +262,9 @@ class EpisodeMonitor:
         }:
             self.observation_only_streak = 0
             self.recovery_count = 0
-            self.closed_route_count = 0
             self.same_attempt_streak = 0
-            self.recent_gui_attempts = ()
-            self.recent_gui_results = ()
-            self.active_gui_cycle_digest = ""
+            self.recent_transitions = ()
+            self.active_transition_cycle = None
             return self._continue_or_close(events, consumed_recovery)
 
         if consumed_recovery is not None and result.feedback == "recovery_repeat_rejected":
@@ -286,80 +315,72 @@ class EpisodeMonitor:
                 signal,
             )
 
-        gui_record = _gui_attempt_record(result) if gui_dispatched else None
-        gui_signature = gui_record.signature if gui_record is not None else None
-        repeated_gui_result = self._record_gui_result(gui_signature, next_world_digest)
-        route_origin, route_length = _closed_gui_route(
-            self.recent_gui_attempts,
-            gui_record,
-            result.after_world,
-        )
-        cycle_digest, cycle_period = self._record_gui_attempt(gui_record)
-
-        if route_origin is not None:
-            self.observation_only_streak = 0
-            self.active_gui_cycle_digest = ""
-            self.closed_route_count = min(3, self.closed_route_count + 1)
-            if self.closed_route_count != 2:
-                # Returning from a distinct page is a normal acquisition pattern
-                # (for example open an item, read it, then return to the list).
-                # Runtime cannot call it failed merely because the route closed.
-                self.recovery_count = 0
-                self.same_attempt_streak = 1
-                self.latest_attempt_signature = gui_signature
-                return self._continue_or_close(events, consumed_recovery)
-            self.same_attempt_streak = 1
-            self.latest_attempt_signature = route_origin
-            self.recovery_count = 1
-            signal = _closed_route_review_signal(
-                result,
-                self,
-                outbound_attempt=route_origin,
-                route_length=route_length,
-            )
-            return self._recovery_transition(
-                (*events, EpisodeMonitorEvent.ROUTE_REVIEW),
-                EpisodeMonitorRecommendation.RECOVER,
-                RecoveryKind.STRATEGY_REVIEW.value,
-                signal,
-            )
-        if repeated_gui_result and state_changed and gui_signature is not None:
-            self.observation_only_streak = 0
+        transition_signature = _same_world_attempt_signature(result)
+        transition_record = _TransitionRecord(transition_signature, next_world_digest)
+        active_cycle = self.active_transition_cycle
+        if active_cycle is not None and transition_record.digest not in active_cycle.member_digests:
+            # One materially different transition/result is the mechanical
+            # escape condition.  Merely consuming the one-turn feedback is not.
+            self.active_transition_cycle = None
+            active_cycle = None
+        elif active_cycle is not None and consumed_recovery is not None:
             self.no_progress_count += 1
-            self.same_attempt_streak = 1
-            self.latest_attempt_signature = gui_signature
-            self.recovery_count = 1
-            self.active_gui_cycle_digest = ""
-            signal = _repeated_gui_result_signal(
+            self.latest_attempt_signature = transition_signature
+            self.recovery_count = 2
+            signal = _transition_cycle_recovery_signal(
                 result,
                 self,
-                gui_signature=gui_signature,
-                result_world_digest=next_world_digest,
+                cycle=active_cycle,
+                recovery_attempt=2,
             )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.OSCILLATION),
-                EpisodeMonitorRecommendation.RECOVER,
-                RecoveryKind.STATE_OSCILLATION.value,
+                EpisodeMonitorRecommendation.BLOCK,
+                "control_stalled",
                 signal,
             )
-        if cycle_digest:
+        repeated_transition_result, cycle = self._record_transition(transition_record)
+        gui_signature = _gui_attempt_signature(result) if gui_dispatched else None
+
+        if repeated_transition_result and world_semantic_changed:
             self.observation_only_streak = 0
             self.no_progress_count += 1
             self.same_attempt_streak = 1
-            self.latest_attempt_signature = gui_signature
-            repeated_cycle = cycle_digest == self.active_gui_cycle_digest
-            self.active_gui_cycle_digest = cycle_digest
-            signal = _gui_cycle_recovery_signal(
+            self.latest_attempt_signature = transition_signature
+            recurrence = _transition_recurrence(transition_record)
+            repeated_cycle = active_cycle is not None and active_cycle.digest == recurrence.digest
+            self.active_transition_cycle = recurrence
+            self.recovery_count = 2 if repeated_cycle else 1
+            signal = _transition_cycle_recovery_signal(
                 result,
                 self,
-                cycle_digest=cycle_digest,
-                cycle_period=cycle_period,
+                cycle=recurrence,
+                recovery_attempt=self.recovery_count,
+                repeated_result_world=True,
+            )
+            return self._recovery_transition(
+                (*events, EpisodeMonitorEvent.OSCILLATION),
+                EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
+                "control_stalled" if repeated_cycle else RecoveryKind.STATE_OSCILLATION.value,
+                signal,
+            )
+        if cycle is not None:
+            self.observation_only_streak = 0
+            self.no_progress_count += 1
+            self.same_attempt_streak = 1
+            self.latest_attempt_signature = transition_signature
+            repeated_cycle = active_cycle is not None and cycle.digest == active_cycle.digest
+            self.active_transition_cycle = cycle
+            signal = _transition_cycle_recovery_signal(
+                result,
+                self,
+                cycle=cycle,
                 recovery_attempt=2 if repeated_cycle else 1,
             )
             return self._recovery_transition(
                 (*events, EpisodeMonitorEvent.OSCILLATION),
                 EpisodeMonitorRecommendation.BLOCK if repeated_cycle else EpisodeMonitorRecommendation.RECOVER,
-                RecoveryKind.STATE_OSCILLATION.value,
+                "control_stalled" if repeated_cycle else RecoveryKind.STATE_OSCILLATION.value,
                 signal,
             )
 
@@ -368,12 +389,6 @@ class EpisodeMonitor:
             self.recovery_count = 0
             self.latest_attempt_signature = None
             self.same_attempt_streak = 0
-            if information_delta is not None and information_delta.kind is InformationDeltaKind.NEW_INFORMATION:
-                # New public content closes a same-screen read stall, but it
-                # does not prove that the surrounding GUI route advanced the
-                # task.  Keep the bounded effectful route so a later return to
-                # its origin can be reviewed by the ActionPolicy.
-                self.active_gui_cycle_digest = ""
             return self._continue_or_close(events, consumed_recovery)
 
         # A causally dispatched GUI attempt that reached a semantically
@@ -409,8 +424,7 @@ class EpisodeMonitor:
             (
                 exact_replay,
                 consumed_recovery is not None and repeats_latest,
-                information_delta is not None
-                and information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION,
+                information_delta is not None and information_delta.kind is InformationDeltaKind.NO_NEW_INFORMATION,
                 information_delta is not None
                 and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
                 and self.observation_only_streak >= 2,
@@ -428,8 +442,7 @@ class EpisodeMonitor:
         self.recovery_count = 1
         self.observation_only_streak = 0
         no_usable_observation = bool(
-            information_delta is not None
-            and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
+            information_delta is not None and information_delta.kind is InformationDeltaKind.NO_USABLE_INFORMATION
         )
         signal = _control_stall_signal(
             result,
@@ -456,30 +469,18 @@ class EpisodeMonitor:
             signal,
         )
 
-    def _record_gui_attempt(
+    def _record_transition(
         self,
-        record: _GuiAttemptRecord | None,
-    ) -> tuple[str, int]:
-        """Record bounded effectful attempts and identify a repeated short cycle."""
+        record: _TransitionRecord,
+    ) -> tuple[bool, _ActiveTransitionCycle | None]:
+        """Record one mixed decision transition and find bounded recurrence/cycles."""
 
-        if record is None:
-            return "", 0
-        self.recent_gui_attempts = (*self.recent_gui_attempts, record)[-_MAX_RECENT_GUI_ATTEMPTS:]
-        return _short_gui_cycle(self.recent_gui_attempts)
-
-    def _record_gui_result(
-        self,
-        signature: PublicAttemptSignature | None,
-        result_world_digest: str,
-    ) -> bool:
-        """Detect one repeated semantic action/result pair in the bounded window."""
-
-        if signature is None:
-            return False
-        key = (signature.digest, result_world_digest)
-        repeated = key in self.recent_gui_results
-        self.recent_gui_results = (*self.recent_gui_results, key)[-_MAX_RECENT_GUI_ATTEMPTS:]
-        return repeated
+        repeated_result = any(
+            item.signature.digest == record.signature.digest and item.result_world_digest == record.result_world_digest
+            for item in self.recent_transitions
+        )
+        self.recent_transitions = (*self.recent_transitions, record)[-_MAX_RECENT_TRANSITIONS:]
+        return repeated_result, _short_transition_cycle(self.recent_transitions)
 
 
 def _has_exact_local_result_replay(
@@ -563,23 +564,24 @@ def _control_stall_signal(
     )
 
 
-def _gui_cycle_recovery_signal(
+def _transition_cycle_recovery_signal(
     result: StepResult,
     monitor: EpisodeMonitor,
     *,
-    cycle_digest: str,
-    cycle_period: int,
+    cycle: _ActiveTransitionCycle,
     recovery_attempt: int,
+    repeated_result_world: bool = False,
 ) -> RecoverySignal:
-    """Report a mechanical effectful-action cycle without judging task progress."""
+    """Report a mechanical mixed-transition cycle without judging task progress."""
 
     return RecoverySignal(
         RecoveryKind.STATE_OSCILLATION,
-        "state_oscillation:" + cycle_digest,
+        "state_oscillation:" + cycle.digest,
         {
             "attempt": _bounded_public_attempt(result),
             "dispatch": _dispatch_status(result),
-            "cycle_period": cycle_period,
+            "cycle_period": cycle.period,
+            "repeated_result_world": repeated_result_world,
             "world_digest": monitor.world_digest,
             "current_findings_digest": monitor.current_findings_digest,
         },
@@ -590,131 +592,37 @@ def _gui_cycle_recovery_signal(
         # cycle finding and owns the semantic strategy change.
         prohibited_attempt_signatures=(),
         human_instruction=(
-            "Recent effectful GUI attempts repeated a short cycle across fresh Worlds. Preserve completed results "
-            "already present in tool history and choose an offered action outside this cycle toward an unresolved "
-            "requirement; do not revisit the same sequence merely to re-verify it."
+            "Recent decisions repeated the same bounded transition cycle or returned to an already-seen result. "
+            "Preserve completed results already present in tool history and choose an offered transition outside "
+            "this cycle toward an unresolved requirement; do not revisit it merely to re-verify it."
         ),
         recovery_attempt=recovery_attempt,
-    )
-
-
-def _repeated_gui_result_signal(
-    result: StepResult,
-    monitor: EpisodeMonitor,
-    *,
-    gui_signature: PublicAttemptSignature,
-    result_world_digest: str,
-) -> RecoverySignal:
-    """Request a new route when one action reaches an already-seen public result."""
-
-    digest = hashlib.sha256(_canonical_json((gui_signature.digest, result_world_digest)).encode()).hexdigest()
-    return RecoverySignal(
-        RecoveryKind.STATE_OSCILLATION,
-        "state_oscillation:sha256:" + digest,
-        {
-            "attempt": _bounded_public_attempt(result),
-            "dispatch": _dispatch_status(result),
-            "repeated_result_world": True,
-            "world_digest": monitor.world_digest,
-            "current_findings_digest": monitor.current_findings_digest,
+        monitor_state={
+            "cycle_digest": cycle.digest,
+            "cycle_period": cycle.period,
+            "cycle_member_digests": tuple(sorted(cycle.member_digests)),
         },
-        attempted_modes=(_attempted_mode(result),),
-        prohibited_attempt_signatures=(),
-        human_instruction=(
-            "The same semantic GUI action has reached this public result before. Preserve current evidence and "
-            "choose a materially different offered control or observation route; do not replay this action. If "
-            "structural coverage is partial and the expected content is still absent, use offered entity_discovery "
-            "once to inspect a visible blocker before trying alternate navigation."
-        ),
-        recovery_attempt=1,
     )
 
 
-def _closed_route_review_signal(
-    result: StepResult,
-    monitor: EpisodeMonitor,
-    *,
-    outbound_attempt: PublicAttemptSignature,
-    route_length: int,
-) -> RecoverySignal:
-    """Request one semantic review after the second distinct closed route."""
-
-    returned_page_digest = public_page_semantic_digest(result.after_world)
-    signature = (
-        "strategy_review:sha256:"
+def _transition_recurrence(record: _TransitionRecord) -> _ActiveTransitionCycle:
+    digest = (
+        "sha256:"
         + hashlib.sha256(
             _canonical_json(
-                (
-                    outbound_attempt.digest,
-                    returned_page_digest,
-                )
+                ("transition_result_recurrence", record.signature.digest, record.result_world_digest)
             ).encode()
         ).hexdigest()
     )
-    current_attempt = _gui_attempt_signature(result)
-    attempted_modes = tuple(
-        dict.fromkeys(
-            item
-            for item in (
-                outbound_attempt.operation,
-                current_attempt.operation if current_attempt is not None else "",
-            )
-            if item
-        )
-    )
-    return RecoverySignal(
-        RecoveryKind.STRATEGY_REVIEW,
-        signature,
-        {
-            "returned_to_prior_semantic_page": True,
-            "dispatch": _dispatch_status(result),
-            "closed_route_count": monitor.closed_route_count,
-            "route_effectful_attempt_count": route_length,
-            "outbound_operation": outbound_attempt.operation,
-            "return_operation": current_attempt.operation if current_attempt is not None else "",
-            "world_digest": monitor.world_digest,
-            "current_findings_digest": monitor.current_findings_digest,
-        },
-        attempted_modes=attempted_modes,
-        prohibited_attempt_signatures=(),
-        human_instruction=(
-            "The latest effectful GUI excursion returned to the semantic page where an earlier outbound attempt "
-            "began. Preserve facts acquired during the excursion and reassess them against the unresolved task "
-            "requirements. Do not immediately replay that exact outbound attempt; choose a different current route, "
-            "use the acquired result, or finish when the requested answer is already supported."
-        ),
-        recovery_attempt=2,
-    )
+    return _ActiveTransitionCycle(digest, 1, frozenset((record.digest,)))
 
 
-def _closed_gui_route(
-    prior_attempts: tuple[_GuiAttemptRecord, ...],
-    current_attempt: _GuiAttemptRecord | None,
-    after_world: WorldObservation,
-) -> tuple[PublicAttemptSignature | None, int]:
-    """Return the most recent outbound attempt whose semantic origin was revisited."""
-
-    if current_attempt is None:
-        return None, 0
-    returned_page_digest = public_page_semantic_digest(after_world)
-    if current_attempt.page_semantic_digest == returned_page_digest:
-        return None, 0
-    bounded_prior = prior_attempts[-(_MAX_RECENT_GUI_ATTEMPTS - 1) :]
-    for offset, attempt in enumerate(reversed(bounded_prior)):
-        if attempt.page_semantic_digest == returned_page_digest:
-            return attempt.signature, offset + 2
-    return None, 0
-
-
-def _short_gui_cycle(
-    attempts: Sequence[_GuiAttemptRecord | PublicAttemptSignature],
-) -> tuple[str, int]:
+def _short_transition_cycle(
+    attempts: Sequence[_TransitionRecord | PublicAttemptSignature],
+) -> _ActiveTransitionCycle | None:
     """Return one phase-independent digest for any repeated suffix in the bounded window."""
 
-    digests = tuple(
-        (item.signature if isinstance(item, _GuiAttemptRecord) else item).digest
-        for item in attempts[-_MAX_RECENT_GUI_ATTEMPTS:]
-    )
+    digests = tuple(item.digest for item in attempts[-_MAX_RECENT_TRANSITIONS:])
     for period in range(2, len(digests) // 2 + 1):
         previous = digests[-period * 2 : -period]
         current = digests[-period:]
@@ -722,9 +630,11 @@ def _short_gui_cycle(
             continue
         rotations = tuple(current[index:] + current[:index] for index in range(period))
         canonical = min(rotations)
-        digest = "sha256:" + hashlib.sha256(_canonical_json(("effectful_gui_cycle", canonical)).encode()).hexdigest()
-        return digest, period
-    return "", 0
+        digest = (
+            "sha256:" + hashlib.sha256(_canonical_json(("decision_transition_cycle", canonical)).encode()).hexdigest()
+        )
+        return _ActiveTransitionCycle(digest, period, frozenset(current))
+    return None
 
 
 def _control_stall_instruction(result: StepResult) -> str:
@@ -768,26 +678,18 @@ def _attempted_mode(result: StepResult) -> str:
 
 
 def _gui_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
-    record = _gui_attempt_record(result)
-    return record.signature if record is not None else None
-
-
-def _gui_attempt_record(result: StepResult) -> _GuiAttemptRecord | None:
     if not isinstance(result.decision, SelectAction):
         return None
     receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
     if not receipts:
         return None
     intent = receipts[-1].request.intent
-    return _GuiAttemptRecord(
-        public_attempt_signature(
-            intent.semantic_action,
-            intent.target_id,
-            intent.destination_id,
-            intent.parameters,
-            result.before_world,
-        ),
-        public_page_semantic_digest(result.before_world),
+    return public_attempt_signature(
+        intent.semantic_action,
+        intent.target_id,
+        intent.destination_id,
+        intent.parameters,
+        result.before_world,
     )
 
 
@@ -857,17 +759,15 @@ def _gui_has_operational_result(result: StepResult) -> bool:
     assert world_delta is not None  # StepResult establishes this committed invariant.
     return bool(
         outcome is not None
-        and (
-            outcome.local_postcondition is LocalPostconditionStatus.SATISFIED
-            or (outcome.observed_change is ObservedChange.CHANGED and world_delta.semantic_changed)
-        )
+        and outcome.observed_change is ObservedChange.CHANGED
+        and (outcome.local_postcondition is LocalPostconditionStatus.SATISFIED or world_delta.semantic_changed)
     )
 
 
 def _proven_failed_gui_attempt_signature(result: StepResult) -> PublicAttemptSignature | None:
     """Return an exact hard constraint only from a sent, verified stable no-effect."""
 
-    record = _gui_attempt_record(result)
+    record = _gui_attempt_signature(result)
     receipts = tuple(getattr(result.execution_receipts, "receipts", ()))
     outcome = result.action_outcome
     world_delta = result.public_world_delta
@@ -893,7 +793,7 @@ def _proven_failed_gui_attempt_signature(result: StepResult) -> PublicAttemptSig
         intent.parameters,
         result.after_world,
     )
-    return record.signature if after_signature == record.signature else None
+    return record if after_signature == record else None
 
 
 def _bounded_public_attempt(result: StepResult) -> Mapping[str, object]:

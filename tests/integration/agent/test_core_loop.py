@@ -1182,10 +1182,11 @@ def test_waiting_control_cancel_closes_both_recovery_projections() -> None:
     asyncio.run(scenario())
 
 
-def test_closed_gui_route_review_is_advisory_without_a_verified_no_effect() -> None:
+def test_distinct_route_results_are_not_conflated_into_a_recovery_pulse() -> None:
     @dataclass
     class RouteRecoveryPolicy:
         turns: int = 0
+        recovery_feedback: object = None
 
         @staticmethod
         def select(context, target_id: str, call_id: str) -> SelectAction:
@@ -1228,8 +1229,7 @@ def test_closed_gui_route_review_is_advisory_without_a_verified_no_effect() -> N
             if self.turns == 6:
                 return self.select(context, "return-route", "provider-call:second-return")
             if self.turns == 7:
-                assert context.control_feedback["kind"] == "strategy_review"
-                assert context.control_feedback["observed_evidence"]["returned_to_prior_semantic_page"] is True
+                self.recovery_feedback = context.control_feedback
                 return self.select(context, "second-route", "provider-call:second-replay")
             raise AssertionError("the advisory replay should reach the evaluator-confirmed result")
 
@@ -1274,6 +1274,7 @@ def test_closed_gui_route_review_is_advisory_without_a_verified_no_effect() -> N
         assert environment.execute_calls == 5
         assert state.last_step is not None
         assert state.last_step.decision.tool_call_id == "provider-call:second-replay"
+        assert not policy.recovery_feedback
 
     asyncio.run(scenario())
 

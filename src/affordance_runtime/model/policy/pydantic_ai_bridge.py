@@ -642,8 +642,7 @@ class PydanticAIGroundedDecisionPort:
     def compatibility_key(self) -> str:
         deliberate_route = (
             (f"deliberate={self.deliberate_model_config.model_id}",)
-            if self.deliberate_model_config is not None
-            and self.deliberate_model_config.model_id != self.model_id
+            if self.deliberate_model_config is not None and self.deliberate_model_config.model_id != self.model_id
             else ()
         )
         return ":".join(
@@ -2365,7 +2364,20 @@ def pydantic_ai_model_from_environment(
         # unknown provider-specific request fields.
         model_settings["thinking"] = False
     if profile == "deepseek":
-        model = OpenAIChatModel(
+
+        class DeepSeekThinkingToolModel(OpenAIChatModel):
+            """Apply DeepSeek's thinking/tool wire rule at its transport owner."""
+
+            def _get_tool_choice(self, current_settings, request_parameters):
+                provider_settings = dict(current_settings or {})
+                provider_settings.pop("tool_choice", None)
+                tools, _tool_choice = super()._get_tool_choice(provider_settings, request_parameters)
+                # DeepSeek's omitted value already means provider-default
+                # selection.  Runtime's output validator, not wire forcing,
+                # owns the one-ToolCall logical contract for every mode.
+                return tools, None
+
+        model = DeepSeekThinkingToolModel(
             model_id,
             provider=DeepSeekProvider(openai_client=client),
             # DeepSeek Chat Completions uses ``max_tokens``. PydanticAI's
@@ -2373,10 +2385,6 @@ def pydantic_ai_model_from_environment(
             # ``max_completion_tokens``, which this endpoint does not enforce.
             profile={
                 "openai_chat_supports_max_completion_tokens": False,
-                # DeepSeek V4 accepts ``required`` with tools in its supported
-                # per-call thinking modes even though PydanticAI's conservative
-                # provider profile disables it for every V4 model name.
-                "openai_supports_tool_choice_required": True,
             },
             settings=model_settings,
         )
@@ -3097,8 +3105,7 @@ def _strip_settled_tool_response_prose(
     for index in range(len(messages) - 1, -1, -1):
         message = messages[index]
         if not isinstance(message, ModelResponse) or not any(
-            isinstance(part, ToolCallPart) and part.tool_call_id == tool_call_id
-            for part in message.parts
+            isinstance(part, ToolCallPart) and part.tool_call_id == tool_call_id for part in message.parts
         ):
             continue
         parts = tuple(part for part in message.parts if not isinstance(part, (TextPart, ThinkingPart)))
@@ -3895,7 +3902,30 @@ def _required_schema_node(
     required_names = tuple(str(name) for name in required)
     if len(required_names) != len(set(required_names)) or any(name not in properties for name in required_names):
         raise ValueError("ActionPolicy tool schema has invalid required properties")
+    has_discriminator = any(
+        isinstance(properties[name], Mapping)
+        and isinstance(properties[name].get("enum"), list | tuple)
+        and len(properties[name]["enum"]) > 1
+        for name in required_names
+    )
     projected = dict(schema)
+    if has_discriminator:
+        # A compact discriminated grammar keeps branch-specific fields
+        # optional in JSON Schema and closes their exact combination at the
+        # Catalog binding owner. Dropping every optional property would make
+        # representation recovery incapable of completing any nontrivial
+        # branch (request_evidence, ask_user). The retry already exposes one
+        # selected operation, so retain this small grammar and let its binding
+        # enforce the discriminator-specific required set.
+        projected["properties"] = {
+            str(name): _required_schema_node(value) for name, value in properties.items() if isinstance(value, Mapping)
+        }
+        if len(projected["properties"]) != len(properties):
+            raise ValueError("ActionPolicy tool schema has an invalid property schema")
+        projected["required"] = list(required_names)
+        projected["additionalProperties"] = False
+        projected.pop("propertyNames", None)
+        return to_json_compatible(projected)
     projected["properties"] = {
         name: _required_schema_node(properties[name])
         for name in required_names
@@ -4055,18 +4085,29 @@ def _action_policy_physical_settings(
     """Return the one provider-compatible physical profile for this logical turn."""
 
     settings = dict(envelope.model_settings)
+    if envelope.identity.provider_id == "deepseek":
+        # DeepSeek provider-default selection is the one wire contract for
+        # both thinking and non-thinking turns.  Logical ToolCall enforcement
+        # remains at the bounded output validator below.
+        settings.pop("tool_choice", None)
+        return settings
     if require_action:
-        # DeepSeek rejects required tool choice while thinking is enabled.
-        # The one-shot escalated call therefore chooses directly from its
-        # causal decision slice and must return the required ToolCall instead
-        # of opening an unbounded hidden-thinking channel.
-        if envelope.identity.provider_id in {"zhipu", "aliyun", "deepseek"}:
-            settings["thinking"] = False
+        # The logical contract still requires one ToolCall, but providers that
+        # expose native thinking do not necessarily accept a simultaneous
+        # forced tool_choice.  Keep the selected reasoning profile and let the
+        # existing bounded output validator/complete retry enforce the logical
+        # result instead of silently disabling deliberation at transport.
+        if settings.get("thinking") is True:
+            settings.pop("tool_choice", None)
         else:
-            settings.pop("thinking", None)
-        settings["tool_choice"] = "required"
+            if envelope.identity.provider_id not in {"zhipu", "aliyun", "deepseek"}:
+                settings.pop("thinking", None)
+            settings["tool_choice"] = "required"
     else:
-        settings["tool_choice"] = "auto"
+        if settings.get("thinking") is True:
+            settings.pop("tool_choice", None)
+        else:
+            settings["tool_choice"] = "auto"
     return settings
 
 

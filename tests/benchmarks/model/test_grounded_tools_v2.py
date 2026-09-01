@@ -408,7 +408,7 @@ def test_grounding_projection_is_public_and_contains_no_runtime_identity() -> No
     viewport_ref = next(item.ref for item in context.grounding.entities if item.role == "viewport")
     assert f'[{focused_ref}] focused_context "Current keyboard focus"' in observation
     assert f'[{viewport_ref}] viewport "Current page viewport"' in observation
-    assert "find_controls" in {item.name for item in catalog.specs}
+    assert "find_controls" not in {item.name for item in catalog.specs}
 
 
 def test_actor_world_delivers_boolean_state_without_model_visible_facets() -> None:
@@ -510,7 +510,6 @@ def test_structure_first_grounded_action_starts_from_public_structure_without_im
         "read_region",
         "search_page_content",
         "list_regions",
-        "find_controls",
         "submit_final_response",
         "ask_user",
         "wait",
@@ -769,11 +768,9 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     )
     spec = next(item for item in catalog.specs if item.name == "request_evidence")
     assert "find_controls returns no usable control" in spec.description
-    point_variant = next(
-        item for item in spec.input_schema["oneOf"] if item["properties"]["purpose"]["enum"] == ["point_grounding"]
-    )
-    assert "no executable current ref" in point_variant["properties"]["purpose"]["description"]
-    assert "find_controls returns empty" in point_variant["properties"]["target_description"]["description"]
+    assert "oneOf" not in spec.input_schema
+    assert set(spec.input_schema["properties"]["purpose"]["enum"]) == set(purposes)
+    assert "lacking an executable ref" in spec.input_schema["properties"]["target_description"]["description"]
     refs = tuple(ref for ref in context.grounding.private_subject_bindings() if ref in delivery.manifest.exact_refs)
     assert len(refs) >= 2
     calls = {
@@ -871,24 +868,36 @@ def test_dynamic_request_evidence_uses_purpose_specific_public_arguments() -> No
     assert isinstance(change, RequestObservation)
     assert change.predicate == "the visible appearance changed"
     assert "structural evidence cannot answer" in spec.description
-    text_variant = next(
-        variant
-        for variant in spec.input_schema["oneOf"]
-        if variant["properties"]["purpose"]["enum"] == ("text_in_image",)
-    )
-    assert text_variant["properties"]["subject_refs"]["items"]["enum"] == (pixel_ref,)
+    ref_schema = spec.input_schema["properties"]["subject_refs"]["items"]
+    assert "enum" not in ref_schema
+    assert ref_schema["pattern"].startswith("^")
     non_pixel_ref = next(ref for ref in refs if ref != pixel_ref)
-    assert (
-        validate_value_issue(
-            {
-                "purpose": "text_in_image",
-                "subject_refs": [non_pixel_ref],
-                "text_query": "visible text",
-            },
-            spec.input_schema,
+    non_pixel_call = {
+        "purpose": "text_in_image",
+        "subject_refs": [non_pixel_ref],
+        "text_query": "visible text",
+    }
+    assert validate_value_issue(non_pixel_call, spec.input_schema) is None
+    with pytest.raises(GroundedToolResolutionError) as outside_purpose_domain:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("request_evidence", non_pixel_call, "call:non-pixel"),
+            expected_context_id=context.context_id,
         )
-        is not None
-    )
+    assert outside_purpose_domain.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
+    mismatched_shape = {
+        "purpose": "point_grounding",
+        "subject_refs": [refs[0]],
+        "predicate": "selected",
+    }
+    assert validate_value_issue(mismatched_shape, spec.input_schema) is None
+    with pytest.raises(GroundedToolResolutionError) as shape_error:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall("request_evidence", mismatched_shape, "call:mismatched-purpose-shape"),
+            expected_context_id=context.context_id,
+        )
+    assert shape_error.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
     encoded_schema = json.dumps(to_json_compatible(spec.input_schema))
     assert "entity_query" in encoded_schema
     assert "target_description" in encoded_schema
@@ -1165,7 +1174,6 @@ def test_compact_transport_carries_unified_world_and_tool_menu_once() -> None:
         "scroll",
         "read",
         "search",
-        "find",
         "list",
         "ask",
         "wait",
@@ -1405,7 +1413,8 @@ def test_pydantic_bridge_preserves_grounded_tool_failure_classification() -> Non
 
 def test_find_controls_has_one_natural_language_input_and_no_generic_continuation() -> None:
     context = _context()
-    catalog = _compile_catalog(context, GroundedToolPhase.ACTION_SELECTION)
+    delivery = build_model_turn_delivery(context, include_images=False, admitted_records={"base": 4})
+    catalog = compile_grounded_tool_catalog(context, GroundedToolPhase.ACTION_SELECTION, delivery)
     spec = next(item for item in catalog.specs if item.name == "find_controls")
 
     assert set(spec.input_schema["properties"]) == {"query"}
@@ -1450,21 +1459,22 @@ def test_monitor_feedback_does_not_fork_the_public_tool_contract() -> None:
 
     resolution = _resolve_catalog_call(
         ordinary,
-        ToolCall("list_regions", {}),
+        ToolCall("search_page_content", {"query": "Login"}),
         expected_context_id=context.context_id,
     )
-    assert isinstance(resolution.decision, ReadRegionResult)
+    assert isinstance(resolution.decision, SearchPageContentResult)
 
     with pytest.raises(GroundedToolResolutionError) as invented_side_channel:
         _resolve_catalog_call(
             ordinary,
             ToolCall(
-                "list_regions",
+                "search_page_content",
                 {
+                    "query": "Login",
                     "recovery_basis": {
                         "decision": "change_incomplete",
                         "remaining_gap": "invented model-side state",
-                    }
+                    },
                 },
             ),
             expected_context_id=context.context_id,
@@ -1864,8 +1874,15 @@ def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding(
     structured_ask = next(item for item in catalog.specs if item.name == "ask_user")
     compatibility_ask = next(item for item in compatibility.specs if item.name == "ask_user")
 
-    assert "oneOf" in structured_ask.input_schema
+    assert "oneOf" not in structured_ask.input_schema
     assert structured_ask.input_schema["type"] == "object"
+    assert set(structured_ask.input_schema["properties"]) == {
+        "prompt",
+        "public_intent",
+        "response_kind",
+        "option_drafts",
+        "field_drafts",
+    }
     assert "decision among grounded current options" in structured_ask.description
     assert "never performs a GUI action" in structured_ask.description
     assert "question" in compatibility_ask.input_schema["properties"]
@@ -1894,6 +1911,22 @@ def test_structured_interaction_profile_is_one_catalog_owned_schema_and_binding(
     assert outcome.decision.response_kind is InteractionResponseKind.SINGLE_SELECT
     assert tuple(item.title for item in outcome.decision.option_drafts) == ("First", "Second")
     assert outcome.decision.public_intent == "I need your choice before continuing."
+    assert "oneOf" not in structured_ask.input_schema["properties"]["field_drafts"]["items"]
+    with pytest.raises(GroundedToolResolutionError) as mismatched_kind:
+        _resolve_catalog_call(
+            catalog,
+            ToolCall(
+                "ask_user",
+                {
+                    "prompt": "This must not carry selectable options.",
+                    "response_kind": "free_text",
+                    "option_drafts": [{"title": "Invalid option"}],
+                },
+                "call:mismatched-interaction-kind",
+            ),
+            expected_context_id=context.context_id,
+        )
+    assert mismatched_kind.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_structured_profile_adds_sidecars_without_changing_compatibility_schema() -> None:
@@ -1944,10 +1977,8 @@ def test_structured_profile_omits_empty_evidence_ref_domain_and_runtime_defaults
     assert "evidence_refs" not in artifact["properties"]
     assert "evidence_refs" not in artifact["properties"]["items"]["items"]["properties"]
     ask = next(item for item in catalog.specs if item.name == "ask_user")
-    for variant in ask.input_schema["oneOf"]:
-        option_drafts = variant["properties"].get("option_drafts")
-        if option_drafts is not None:
-            assert "evidence_refs" not in option_drafts["items"]["properties"]
+    option_drafts = ask.input_schema["properties"]["option_drafts"]
+    assert "evidence_refs" not in option_drafts["items"]["properties"]
     outcome = _resolve_catalog_call(
         catalog,
         ToolCall(
@@ -2068,8 +2099,18 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
     assert feedback.result["world_changed"] is False
     assert feedback.result["supported_operations"] == ()
 
+    reduced_delivery = build_model_turn_delivery(
+        context,
+        include_images=False,
+        admitted_records={"base": 1},
+    )
+    discovery_catalog = compile_grounded_tool_catalog(
+        context,
+        GroundedToolPhase.ACTION_SELECTION,
+        reduced_delivery,
+    )
     request = _resolve_catalog_call(
-        catalog,
+        discovery_catalog,
         ToolCall("find_controls", {"query": "definitely-not-present"}, "call:find"),
         expected_context_id=context.context_id,
     ).decision
@@ -3039,7 +3080,7 @@ def test_active_recovery_epoch_keeps_deliberate_provider_configuration() -> None
     first = asyncio.run(adapter.generate(_action_request(context)))
     second = asyncio.run(adapter.generate(_action_request(context)))
     assert tuple(config.max_tokens for config in port.configs) == (4096, 4096)
-    assert tuple(config.thinking_mode for config in port.configs) == ("disabled", "disabled")
+    assert tuple(config.thinking_mode for config in port.configs) == ("enabled", "enabled")
     assert first.attempts[0].phase == "deliberate"
     assert first.attempts[0].trigger == "control_stall"
     assert second.attempts[0].phase == "deliberate"

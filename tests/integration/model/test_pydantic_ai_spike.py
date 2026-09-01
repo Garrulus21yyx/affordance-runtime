@@ -410,7 +410,7 @@ def test_deepseek_deliberate_thinking_uses_official_wire_and_roundtrips_tool_rea
     }
 
 
-def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking() -> None:
+def test_deepseek_deliberate_recovery_retries_one_complete_decision_with_thinking() -> None:
     responses = (
         _deepseek_text_response(
             1,
@@ -430,10 +430,10 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
                             {
                                 "id": "deepseek-call:2",
                                 "type": "function",
-                                    "function": {
-                                        "name": "list_regions",
-                                        "arguments": json.dumps({}),
-                                    },
+                                "function": {
+                                    "name": "search_page_content",
+                                    "arguments": json.dumps({"query": "current route"}),
+                                },
                             }
                         ],
                     },
@@ -481,7 +481,7 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
             "deliberate",
             "deliberate_complete_retry",
         ]
-        assert [attempt.thinking_effective for attempt in result.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "enabled"]
 
     try:
         asyncio.run(scenario())
@@ -491,13 +491,13 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
         thread.join(timeout=2)
 
     assert len(requests) == 2
-    assert requests[0]["tool_choice"] == "required"
-    assert requests[0].get("reasoning_effort") == "none"
-    assert requests[1]["tool_choice"] == "required"
-    assert requests[1].get("reasoning_effort") == "none"
+    assert "tool_choice" not in requests[0]
+    assert requests[0].get("reasoning_effort") == "medium"
+    assert "tool_choice" not in requests[1]
+    assert requests[1].get("reasoning_effort") == "medium"
 
 
-def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_wire() -> None:
+def test_deepseek_deliberate_length_fallback_uses_same_world_and_thinking_wire() -> None:
     responses = (
         {
             "id": "deepseek-response:length",
@@ -535,10 +535,10 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
                             {
                                 "id": "deepseek-call:length-fallback",
                                 "type": "function",
-                                    "function": {
-                                        "name": "list_regions",
-                                        "arguments": json.dumps({}),
-                                    },
+                                "function": {
+                                    "name": "search_page_content",
+                                    "arguments": json.dumps({"query": "current route"}),
+                                },
                             }
                         ],
                     },
@@ -591,7 +591,7 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
             "deliberate",
             "deliberate_complete_retry",
         ]
-        assert [attempt.thinking_effective for attempt in result.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "enabled"]
         assert [attempt.final_tool_call_present for attempt in result.attempts] == [False, True]
         assert len(policy.port.last_admitted_envelopes) == 1
         assert policy.port.last_model_delivery.action_candidates.world_observation_id == world.observation_id
@@ -604,10 +604,10 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
         thread.join(timeout=2)
 
     assert len(requests) == 2
-    assert requests[0]["tool_choice"] == "required"
-    assert requests[0].get("reasoning_effort") == "none"
-    assert requests[1]["tool_choice"] == "required"
-    assert requests[1].get("reasoning_effort") == "none"
+    assert "tool_choice" not in requests[0]
+    assert requests[0].get("reasoning_effort") == "medium"
+    assert "tool_choice" not in requests[1]
+    assert requests[1].get("reasoning_effort") == "medium"
     assert requests[0]["messages"][0] == requests[1]["messages"][0]
     initial_content = requests[0]["messages"][1]["content"]
     fallback_content = requests[1]["messages"][1]["content"]
@@ -3195,14 +3195,8 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
     assert tuple(part.content for part in projected_returns) == tuple(
         sanitize_history_value(part.content) for part in original_returns
     )
-    pending_response = next(
-        message
-        for message in reversed(original_tuple)
-        if isinstance(message, ModelResponse)
-    )
-    assert projected_text == tuple(
-        part.content for part in pending_response.parts if isinstance(part, TextPart)
-    )
+    pending_response = next(message for message in reversed(original_tuple) if isinstance(message, ModelResponse))
+    assert projected_text == tuple(part.content for part in pending_response.parts if isinstance(part, TextPart))
     assert projected_thinking.count(repeated_reasoning) == 1
     assert projected[-1] == original_tuple[-1]
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
@@ -4902,11 +4896,11 @@ def test_native_action_policy_keeps_deliberate_profile_for_active_recovery_epoch
 
         assert first.attempts[0].phase == "deliberate"
         assert first.attempts[0].trigger == "grounding_gap"
-        assert first.attempts[0].thinking_requested == "disabled"
+        assert first.attempts[0].thinking_requested == "enabled"
         assert first.attempts[0].max_output_tokens == 4096
         assert second.attempts[0].phase == "deliberate"
         assert second.attempts[0].trigger == "grounding_gap"
-        assert second.attempts[0].thinking_requested == "disabled"
+        assert second.attempts[0].thinking_requested == "enabled"
         assert second.attempts[0].max_output_tokens == 4096
         assert [settings["max_tokens"] for settings in scripted.model_settings] == [4096, 4096]
 
@@ -5053,9 +5047,7 @@ def test_deliberate_output_retry_keeps_one_model_lease() -> None:
             "deliberate",
             "deliberate_complete_retry",
         ]
-        assert {attempt.transcript["llm.model_name"] for attempt in result.attempts} == {
-            "deepseek-v4-pro"
-        }
+        assert {attempt.transcript["llm.model_name"] for attempt in result.attempts} == {"deepseek-v4-pro"}
 
     asyncio.run(scenario())
 
@@ -5187,21 +5179,23 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
     asyncio.run(scenario())
 
 
-def test_deepseek_atomic_recovery_records_one_tool_call_without_hidden_reasoning() -> None:
+def test_deepseek_deliberate_recovery_records_reasoning_and_one_tool_call() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
                 ModelResponse(
                     parts=[
+                        ThinkingPart("The current route is exhausted; use a different read."),
                         ToolCallPart(
-                            "list_regions",
-                            {},
+                            "search_page_content",
+                            {"query": "current route"},
                             "recording-call:deliberate",
                         ),
                     ],
                     usage=RequestUsage(
                         input_tokens=20,
-                        output_tokens=8,
+                        output_tokens=10,
+                        details={"reasoning_tokens": 2},
                     ),
                     provider_response_id="recording-response:deliberate",
                 )
@@ -5239,13 +5233,13 @@ def test_deepseek_atomic_recovery_records_one_tool_call_without_hidden_reasoning
         assert result.failure is None and result.output is not None
         attempt = result.attempts[0]
         assert attempt.phase == "deliberate"
-        assert attempt.thinking_requested == "disabled"
-        assert attempt.thinking_effective == "disabled"
-        assert attempt.reasoning_content_present is False
-        assert attempt.reasoning_tokens == 0
+        assert attempt.thinking_requested == "enabled"
+        assert attempt.thinking_effective == "enabled"
+        assert attempt.reasoning_content_present is True
+        assert attempt.reasoning_tokens == 2
         assert attempt.final_content_tokens == 8
-        assert attempt.transcript["llm.output.reasoning_content_present"] is False
-        assert attempt.transcript["llm.token_count.reasoning"] == 0
+        assert attempt.transcript["llm.output.reasoning_content_present"] is True
+        assert attempt.transcript["llm.token_count.reasoning"] == 2
         assert attempt.transcript["llm.token_count.final_content"] == 8
         official_history = ModelMessagesTypeAdapter.dump_json(list(port.message_history)).decode()
         assert '"recovery_basis"' not in official_history
@@ -5272,8 +5266,8 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
                 ModelResponse(
                     parts=[
                         ToolCallPart(
-                            "list_regions",
-                            {},
+                            "search_page_content",
+                            {"query": "current route"},
                             "recording-call:deliberate-retry",
                         ),
                     ],
@@ -5320,17 +5314,14 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
             "deliberate",
             "deliberate_complete_retry",
         ]
-        assert [record.model_settings["tool_choice"] for record in scripted.records] == [
-            "required",
-            "required",
-        ]
+        assert all("tool_choice" not in record.model_settings for record in scripted.records)
         assert [attempt.reasoning_content_present for attempt in result.attempts] == [True, False]
         assert [attempt.reasoning_tokens for attempt in result.attempts] == [2, 0]
         assert [attempt.final_content_tokens for attempt in result.attempts] == [5, 5]
-        assert [attempt.thinking_effective for attempt in result.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "enabled"]
         assert [attempt.transcript["llm.model_settings"]["thinking"] for attempt in result.attempts] == [
-            False,
-            False,
+            True,
+            True,
         ]
 
     asyncio.run(scenario())
@@ -5339,7 +5330,11 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
 def test_recovery_call_uses_the_ordinary_tool_contract_without_boundary_repair() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
-            [_atomic_tool_response("list_regions", {}, "recording-call:ordinary-contract")]
+            [
+                _atomic_tool_response(
+                    "search_page_content", {"query": "current route"}, "recording-call:ordinary-contract"
+                )
+            ]
         )
         policy = _policy(scripted.build())
         task = shared_task()
@@ -5362,7 +5357,7 @@ def test_recovery_call_uses_the_ordinary_tool_contract_without_boundary_repair()
 
         assert result.failure is None and result.output is not None
         assert [attempt.phase for attempt in result.attempts] == ["deliberate"]
-        assert isinstance(result.output.decision, ReadRegionResult)
+        assert isinstance(result.output.decision, SearchPageContentResult)
         assert result.diagnostics["tool_resolution_code"] == "accepted"
         official_history = ModelMessagesTypeAdapter.dump_json(list(policy.port.message_history)).decode()
         assert "recording-call:ordinary-contract" in official_history
@@ -5429,7 +5424,11 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         scripted = ScriptedModel(
             [
                 truncated,
-                _recovery_tool_response("list_regions", {}, "recording-call:2"),
+                _recovery_tool_response(
+                    "search_page_content",
+                    {"query": "current route"},
+                    "recording-call:2",
+                ),
             ]
         )
         port = PydanticAIGroundedDecisionPort(
@@ -5473,9 +5472,9 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
             StructuredOutputFailureKind.OUTPUT_TRUNCATED,
             None,
         ]
-        assert [attempt.thinking_effective for attempt in result.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "enabled"]
         assert [attempt.final_tool_call_present for attempt in result.attempts] == [False, True]
-        assert [record.model_settings["tool_choice"] for record in scripted.records] == ["required", "required"]
+        assert all("tool_choice" not in record.model_settings for record in scripted.records)
         fallback_prompt = json.dumps(scripted.records[1].messages, default=str)
         assert "atomic_recovery_decision" in fallback_prompt
         assert "The complete positive set already supported" not in fallback_prompt
@@ -5488,8 +5487,8 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         assert json.loads(recovery_prompt)["atomic_recovery_decision"]["retry"] is True
         assert len(recovery_prompt.encode("utf-8")) <= pydantic_bridge._ATOMIC_RECOVERY_PROMPT_MAX_BYTES
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
-            "list_regions",
-            {},
+            "search_page_content",
+            {"query": "current route"},
             "recording-call:2",
         )
         official_history = json.dumps(port.message_history, default=str)
@@ -5602,11 +5601,7 @@ def test_length_recovery_preserves_the_single_current_operation_exposed_before_t
             "invalid",
             "accepted",
         ]
-        assert [record.model_settings["tool_choice"] for record in scripted.records] == [
-            "auto",
-            "required",
-            "required",
-        ]
+        assert all("tool_choice" not in record.model_settings for record in scripted.records)
         assert scripted.offered_tools == [
             scripted.offered_tools[0],
             ("list_regions",),
@@ -5704,10 +5699,15 @@ def test_length_recovery_executes_a_catalog_request_evidence_one_of_branch() -> 
         assert scripted.calls == 2
         assert scripted.offered_tools[1] == ("request_evidence",)
         projected = scripted.records[1].function_tools[0].parameters_json_schema
-        assert "oneOf" in projected
+        assert "oneOf" not in projected
+        assert set(projected["properties"]["purpose"]["enum"]) == {
+            "entity_discovery",
+            "point_grounding",
+            "visual_property",
+        }
         validate_parameter_schema_contract(projected)
         validate_value(arguments, projected)
-        assert all("public_intent" not in branch["properties"] for branch in projected["oneOf"])
+        assert "public_intent" in projected["properties"]
 
     asyncio.run(scenario())
 
@@ -5999,7 +5999,7 @@ def test_pending_tool_return_is_delivered_once_when_atomic_recovery_retry_succee
         assert second.failure is None and second.output is not None
         assert second.output.decision.tool_call_id == "recording-call:3"
         assert [attempt.status for attempt in second.attempts] == ["invalid", "accepted"]
-        assert [attempt.thinking_effective for attempt in second.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in second.attempts] == ["enabled", "enabled"]
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
             {},
@@ -6122,7 +6122,7 @@ def test_logical_action_turn_generated_conserves_world_catalog_and_history(
         assert envelope.delivery_id == port.last_model_delivery.delivery_id
         assert port.last_model_delivery.action_candidates.world_observation_id == world.observation_id
         assert [attempt.status for attempt in result.attempts] == ["invalid", "accepted"]
-        assert [attempt.thinking_effective for attempt in result.attempts] == ["disabled", "disabled"]
+        assert [attempt.thinking_effective for attempt in result.attempts] == ["enabled", "enabled"]
         pending = pydantic_bridge._pending_call_from_history(port.message_history)
         assert pending is not None
         resolved = resolve_grounded_action_call(
@@ -7453,7 +7453,6 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
         "thinking": False,
     }
     assert selected.port.model.profile["openai_chat_supports_max_completion_tokens"] is False
-    assert selected.port.model.profile["openai_supports_tool_choice_required"] is True
     prepared, parameters = selected.port.model.prepare_request(
         {
             "thinking": False,
@@ -7475,7 +7474,9 @@ def test_factory_selects_deepseek_pydantic_ai_profile_by_default() -> None:
             ]
         ),
     )
-    assert prepared["tool_choice"] == "required"
+    tools, physical_tool_choice = selected.port.model._get_tool_choice(prepared, parameters)
+    assert tools
+    assert physical_tool_choice is None
     assert parameters.thinking is False
     with pytest.raises(ValueError, match="WIRE_CAPABILITY"):
         model_policy_from_environment(

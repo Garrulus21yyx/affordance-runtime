@@ -566,9 +566,7 @@ def test_point_grounding_route_is_new_information_without_a_new_fact() -> None:
             decision.query_id,
             decision.purpose,
             ObservationQueryDisposition.OBSERVED,
-            observed_items=(
-                ObservationObservedItem(InputLocator((0,)), ("go",)),
-            ),
+            observed_items=(ObservationObservedItem(InputLocator((0,)), ("go",)),),
         ),
     )
 
@@ -600,9 +598,7 @@ def test_existing_point_grounding_route_is_not_new_information() -> None:
             decision.query_id,
             decision.purpose,
             ObservationQueryDisposition.OBSERVED,
-            observed_items=(
-                ObservationObservedItem(InputLocator((0,)), ("go",)),
-            ),
+            observed_items=(ObservationObservedItem(InputLocator((0,)), ("go",)),),
         ),
     )
 
@@ -1425,6 +1421,45 @@ def test_verified_stable_gui_no_effect_creates_one_exact_hard_prohibition() -> N
     assert recovery.recovery_signal.prohibited_attempt_signatures == (monitor.latest_attempt_signature,)
 
 
+def test_satisfied_existing_value_without_change_is_not_route_progress() -> None:
+    first_world = _world("observation:already-satisfied-1")
+    second_world = _world("observation:already-satisfied-2")
+    third_world = _world("observation:already-satisfied-3")
+
+    def satisfied_without_change(before, after):
+        step = _dispatched_step(before, after)
+        assert step.execution_receipts is not None
+        receipt = step.execution_receipts.receipts[-1]
+        return replace(
+            step,
+            action_outcome=ActionOutcome(
+                receipt.request.request_id,
+                before.observation_id,
+                after.observation_id,
+                ObservedChange.UNCHANGED,
+                LocalPostconditionStatus.SATISFIED,
+                EvidenceMethod.NATIVE,
+                "requested value was already present",
+                ("artifact:verification:already-satisfied",),
+                {
+                    "observed_change": "unchanged",
+                    "local_postcondition": "satisfied",
+                },
+                step.public_world_delta,
+            ),
+        )
+
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(first_world, _evaluation(first_world))
+
+    first = _evaluate(monitor, satisfied_without_change(first_world, second_world))
+    recovery = _evaluate(monitor, satisfied_without_change(second_world, third_world))
+
+    assert first.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert monitor.no_progress_count == 2
+
+
 def test_screenshot_only_change_does_not_hide_repeated_gui_stall() -> None:
     first_world = _world("observation:visual-before")
     second_world = _world("observation:visual-after-1")
@@ -1549,12 +1584,11 @@ def test_first_closed_gui_route_is_normal_information_acquisition() -> None:
     assert EpisodeMonitorEvent.STATE_CHANGED in returned.events
     assert EpisodeMonitorEvent.ROUTE_REVIEW not in returned.events
     assert returned.recovery_signal is None
-    assert monitor.closed_route_count == 1
-    assert len(monitor.recent_gui_attempts) <= 16
+    assert len(monitor.recent_transitions) <= 16
 
 
 @given(period=st.integers(min_value=2, max_value=8), rotation=st.integers(min_value=0, max_value=7))
-def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: int) -> None:
+def test_short_transition_cycle_identity_is_phase_independent(period: int, rotation: int) -> None:
     values = tuple(
         PublicAttemptSignature(
             f"operation-{index}",
@@ -1568,14 +1602,15 @@ def test_short_gui_cycle_identity_is_phase_independent(period: int, rotation: in
     shifted_by = rotation % period
     shifted = values[shifted_by:] + values[:shifted_by]
 
-    original_digest, original_period = monitor_module._short_gui_cycle(values + values)
-    shifted_digest, shifted_period = monitor_module._short_gui_cycle(shifted + shifted)
+    original = monitor_module._short_transition_cycle(values + values)
+    shifted_cycle = monitor_module._short_transition_cycle(shifted + shifted)
 
-    assert original_period == shifted_period == period
-    assert original_digest == shifted_digest
+    assert original is not None and shifted_cycle is not None
+    assert original.period == shifted_cycle.period == period
+    assert original.digest == shifted_cycle.digest
 
 
-def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
+def test_transition_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
     values = tuple(
         PublicAttemptSignature(
             f"operation-{index}",
@@ -1587,10 +1622,9 @@ def test_gui_cycle_detection_is_bounded_by_one_fixed_attempt_window() -> None:
         for index in range(9)
     )
 
-    digest, period = monitor_module._short_gui_cycle(values + values)
+    cycle = monitor_module._short_transition_cycle(values + values)
 
-    assert digest == ""
-    assert period == 0
+    assert cycle is None
 
 
 def test_six_step_gui_excursion_is_not_declared_failed_on_first_return_to_origin() -> None:
@@ -1608,10 +1642,10 @@ def test_six_step_gui_excursion_is_not_declared_failed_on_first_return_to_origin
 
     assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in first_excursion)
     assert all(item.recovery_signal is None for item in first_excursion)
-    assert monitor.closed_route_count == 1
+    assert len(monitor.recent_transitions) == 6
 
 
-def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> None:
+def test_distinct_closed_routes_are_not_conflated_into_one_failed_cycle() -> None:
     origin = _multi_route_world(
         "observation:origin",
         "/search",
@@ -1674,17 +1708,13 @@ def test_distinct_closed_routes_accumulate_one_strategy_recovery_episode() -> No
 
     assert first_recovery.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert first_recovery.recovery_signal is None
-    assert second_recovery.recovery_signal is not None
-    assert second_recovery.recovery_signal.kind is RecoveryKind.STRATEGY_REVIEW
-    assert second_recovery.recovery_signal.recovery_attempt == 2
-    assert second_recovery.recovery_signal.observed_evidence["closed_route_count"] == 2
-    assert EpisodeMonitorEvent.ROUTE_REVIEW in second_recovery.events
-    assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.CLOSED
+    assert second_recovery.recovery_signal is None
+    assert EpisodeMonitorEvent.ROUTE_REVIEW not in second_recovery.events
+    assert resolved.recovery_lifecycle is RecoveryLifecycleTransition.NONE
     assert resolved.recovery_signal is None
     assert third_return.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert third_return.recovery_signal is None
     assert EpisodeMonitorEvent.ROUTE_REVIEW not in third_return.events
-    assert monitor.closed_route_count == 3
 
 
 def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
@@ -1696,7 +1726,7 @@ def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
 
     outbound = _evaluate(monitor, _dispatched_step(first, second))
     assert outbound.recommendation is EpisodeMonitorRecommendation.CONTINUE
-    assert len(monitor.recent_gui_attempts) == 1
+    assert len(monitor.recent_transitions) == 1
 
     information_step = _search_with_items(second)
     delivery = store.reduce(information_step, step_index=2)
@@ -1709,14 +1739,70 @@ def test_new_public_information_does_not_erase_an_open_gui_route() -> None:
     assert continued.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert delivery.information_delta is not None
     assert delivery.information_delta.kind is InformationDeltaKind.NEW_INFORMATION
-    assert len(monitor.recent_gui_attempts) == 1
-    assert monitor.active_gui_cycle_digest == ""
+    assert len(monitor.recent_transitions) == 2
+    assert monitor.active_transition_cycle is None
 
     returned = _evaluate(monitor, _dispatched_step(second, first))
 
     assert returned.recommendation is EpisodeMonitorRecommendation.CONTINUE
     assert returned.recovery_signal is None
-    assert monitor.closed_route_count == 1
+
+
+def test_mixed_read_and_gui_cycle_recovers_once_then_blocks_on_reentry() -> None:
+    world = _world("observation:mixed-cycle")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    first = _evaluate(monitor, _local_step(world, query="same result"))
+    second = _evaluate(monitor, _dispatched_step(world))
+    third = _evaluate(monitor, _local_step(world, query="same result"))
+    recovery = _evaluate(monitor, _dispatched_step(world))
+    blocked = _evaluate(monitor, _local_step(world, query="same result"))
+
+    assert all(item.recommendation is EpisodeMonitorRecommendation.CONTINUE for item in (first, second, third))
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert recovery.recovery_signal is not None
+    assert recovery.recovery_signal.kind is RecoveryKind.STATE_OSCILLATION
+    assert recovery.recovery_signal.observed_evidence["cycle_period"] == 2
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "control_stalled"
+
+
+def test_recovery_same_action_with_novel_result_escapes_old_cycle() -> None:
+    world = _world("observation:mixed-cycle-novel-result")
+    novel = _world("observation:mixed-cycle-novel-result-arrived", route="/novel-result")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+
+    _evaluate(monitor, _local_step(world, query="same result"))
+    _evaluate(monitor, _dispatched_step(world))
+    _evaluate(monitor, _local_step(world, query="same result"))
+    recovery = _evaluate(monitor, _dispatched_step(world))
+    escaped = _evaluate(monitor, _dispatched_step(world, novel))
+
+    assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert escaped.recommendation is EpisodeMonitorRecommendation.CONTINUE
+    assert escaped.reason == "recovery_consumed"
+    assert monitor.active_transition_cycle is None
+
+
+def test_mixed_cycle_identity_survives_pause_restore_boundary() -> None:
+    world = _world("observation:mixed-cycle-restore")
+    monitor = EpisodeMonitor(AgentLoopProfile(8, 1))
+    monitor.start_episode(world, _evaluation(world))
+    _evaluate(monitor, _local_step(world, query="same result"))
+    _evaluate(monitor, _dispatched_step(world))
+    _evaluate(monitor, _local_step(world, query="same result"))
+    recovery = _evaluate(monitor, _dispatched_step(world))
+    assert recovery.recovery_signal is not None
+
+    restored = EpisodeMonitor(AgentLoopProfile(8, 1))
+    restored.restore_episode(world, _evaluation(world), recovery.recovery_signal)
+    blocked = _evaluate(restored, _local_step(world, query="same result"))
+
+    assert restored.active_transition_cycle is not None
+    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    assert blocked.reason == "control_stalled"
 
 
 def test_forward_only_gui_route_does_not_invent_a_regression() -> None:
@@ -1827,10 +1913,8 @@ def test_monitor_runtime_state_has_one_information_and_attempt_identity_contract
         "latest_attempt_signature",
         "same_attempt_streak",
         "no_progress_count",
-        "recent_gui_attempts",
-        "recent_gui_results",
-        "active_gui_cycle_digest",
+        "recent_transitions",
+        "active_transition_cycle",
         "active_recovery",
         "recovery_epoch_counter",
-        "closed_route_count",
     } == set(vars(monitor)) - {"profile"}

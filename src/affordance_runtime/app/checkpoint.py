@@ -909,6 +909,7 @@ def _recovery_signal_payload(signal: RecoverySignal | None) -> dict[str, object]
         "prohibited_attempt_signatures": [to_json_compatible(item) for item in signal.prohibited_attempt_signatures],
         "human_instruction": signal.human_instruction,
         "recovery_attempt": signal.recovery_attempt,
+        "monitor_state": to_json_compatible(signal.monitor_state),
     }
 
 
@@ -937,6 +938,7 @@ def _restore_recovery_signal(payload: object) -> RecoverySignal | None:
         recovery_attempt=_integer(value.get("recovery_attempt", 1)),
         epoch_id=str(value["epoch_id"]),
         evidence_revision=_integer(value.get("evidence_revision", 1)),
+        monitor_state=dict(_mapping(value.get("monitor_state", {}))),
     )
 
 

@@ -75,6 +75,17 @@ class GroundedLocalToolName(StrEnum):
     ABORT = "abort"
 
 
+_DYNAMIC_EVIDENCE_REQUIRED_FIELDS = {
+    ObservationPurpose.ENTITY_DISCOVERY: frozenset(("entity_query", "max_results")),
+    ObservationPurpose.VISUAL_PROPERTY: frozenset(("subject_refs", "predicate")),
+    ObservationPurpose.TARGET_DISAMBIGUATION: frozenset(("candidate_refs", "selection_criterion")),
+    ObservationPurpose.POINT_GROUNDING: frozenset(("target_description",)),
+    ObservationPurpose.TEXT_IN_IMAGE: frozenset(("subject_refs", "text_query")),
+    ObservationPurpose.SPATIAL_RELATIONSHIP: frozenset(("subject_refs", "relation")),
+    ObservationPurpose.VISUAL_CHANGE: frozenset(("subject_refs", "change_predicate")),
+}
+
+
 @dataclass(frozen=True)
 class _FindControlsBinding:
     def resolve(self, arguments, context_id: str, tool_call_id: str) -> AgentDecision:
@@ -130,6 +141,12 @@ class _EvidenceBinding:
         purpose: ObservationPurpose,
         tool_call_id: str,
     ) -> RequestObservation:
+        required = _DYNAMIC_EVIDENCE_REQUIRED_FIELDS.get(purpose)
+        if required is None:  # pragma: no cover - guarded by the typed exposure set
+            raise ValueError("purpose is unavailable in dynamic observation schema")
+        supplied = frozenset(arguments) - {"purpose", "public_intent"}
+        if supplied != required:
+            raise ValueError(f"{purpose.value} requires exactly {', '.join(sorted(required))}")
         subject_ids: tuple[str, ...] = ()
         candidate_ids: tuple[str, ...] = ()
         atomic_query = ""
@@ -154,6 +171,8 @@ class _EvidenceBinding:
             atomic_query = str(arguments["text_query"]).strip()
         elif purpose is ObservationPurpose.SPATIAL_RELATIONSHIP:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
+            if len(subject_ids) < 2:
+                raise ValueError("spatial_relationship requires at least two subject_refs")
             predicate = str(arguments["relation"]).strip()
         elif purpose is ObservationPurpose.VISUAL_CHANGE:
             subject_ids = self._resolve_refs(arguments["subject_refs"], purpose=purpose)
@@ -495,7 +514,6 @@ def compile_grounded_tool_catalog(
                 if observation_tool_profile is ObservationToolExposureProfile.COMPATIBILITY
                 else _dynamic_evidence_request_schema(
                     ordered_purposes,
-                    dynamic_subjects or {},
                 )
             )
             ephemeral_evidence_paths = (
@@ -546,6 +564,9 @@ def compile_grounded_tool_catalog(
                 )
             )
 
+    admitted_action_routes = frozenset(
+        (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
+    )
     registered.extend(
         RegisteredGroundedTool(
             item.public_spec,
@@ -554,9 +575,7 @@ def compile_grounded_tool_catalog(
         for item in GroundedToolCompiler().compile(
             context.complete_actions,
             context_id=context.context_id,
-            admitted_routes=frozenset(
-                (route.operation, route.source_ref, route.destination_ref) for route in delivery.manifest.action_routes
-            ),
+            admitted_routes=admitted_action_routes,
             include_public_intent=(interaction_tool_profile is InteractionToolExposureProfile.STRUCTURED),
         )
     )
@@ -675,8 +694,8 @@ def compile_grounded_tool_catalog(
         ),
         ephemeral_argument_paths=(("cursor",),),
     )
-    registered.extend(
-        (
+    if context.region_index is not None and context.region_index.regions:
+        registered.append(
             RegisteredGroundedTool(
                 search_spec,
                 _WorldReadBinding(
@@ -684,15 +703,29 @@ def compile_grounded_tool_catalog(
                     "find",
                     ephemeral_argument_paths=search_spec.ephemeral_argument_paths,
                 ),
+            )
+        )
+    registered.append(
+        RegisteredGroundedTool(
+            list_spec,
+            _WorldReadBinding(
+                context,
+                "view_all",
+                ephemeral_argument_paths=list_spec.ephemeral_argument_paths,
             ),
-            RegisteredGroundedTool(
-                list_spec,
-                _WorldReadBinding(
-                    context,
-                    "view_all",
-                    ephemeral_argument_paths=list_spec.ephemeral_argument_paths,
-                ),
-            ),
+        )
+    )
+    complete_action_routes = frozenset(
+        (
+            row.option.operation,
+            row.option.target_ref,
+            row.destination.grounding_ref if row.destination is not None else "",
+        )
+        for option in context.complete_actions
+        for row in GroundedToolCompiler.expand_rows(option)
+    )
+    if complete_action_routes - admitted_action_routes:
+        registered.append(
             RegisteredGroundedTool(
                 ToolSpec(
                     GroundedLocalToolName.FIND_CONTROLS.value,
@@ -710,9 +743,8 @@ def compile_grounded_tool_catalog(
                     ),
                 ),
                 _FindControlsBinding(),
-            ),
+            )
         )
-    )
     evidence_bindings = {
         ref: canonical for ref, canonical in context.private_fact_bindings.items() if ref in delivery.manifest.fact_refs
     }
@@ -1021,8 +1053,9 @@ def _evidence_refs_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object
         raise ValueError("evidence ref schema requires a non-empty current domain")
     return {
         "type": "array",
-        "items": {"type": "string", "enum": list(evidence_refs)},
-        "maxItems": min(32, len(evidence_refs)),
+        "description": "current evidence refs from this delivery; exact currentness is resolved privately",
+        "items": {"type": "string", "minLength": 1, "maxLength": 512},
+        "maxItems": 32,
     }
 
 
@@ -1043,25 +1076,25 @@ def _option_draft_schema(
     if evidence_refs:
         properties["evidence_refs"] = _evidence_refs_schema(evidence_refs)
     if media_refs:
-        properties["media_ref"] = {"type": "string", "enum": list(media_refs)}
+        properties["media_ref"] = {
+            "type": "string",
+            "description": "current delivered media evidence ref",
+            "minLength": 1,
+            "maxLength": 512,
+        }
     return _object_schema(properties, ("title",))
 
 
 def _field_draft_schema() -> Mapping[str, object]:
-    variants = []
-    for kind in ("text", "integer", "decimal", "boolean", "date"):
-        variants.append(
-            _object_schema(
-                {
-                    "kind": {"type": "string", "enum": [kind]},
-                    "label": {"type": "string", "minLength": 1, "maxLength": 120},
-                    "description": {"type": "string", "maxLength": 500},
-                    "required": {"type": "boolean"},
-                },
-                ("kind", "label"),
-            )
-        )
-    return {"oneOf": variants}
+    return _object_schema(
+        {
+            "kind": {"type": "string", "enum": ["text", "integer", "decimal", "boolean", "date"]},
+            "label": {"type": "string", "minLength": 1, "maxLength": 120},
+            "description": {"type": "string", "maxLength": 500},
+            "required": {"type": "boolean"},
+        },
+        ("kind", "label"),
+    )
 
 
 def _structured_interaction_request_schema(
@@ -1071,44 +1104,28 @@ def _structured_interaction_request_schema(
     prompt = {"type": "string", "minLength": 1, "maxLength": 1000}
     intent = _public_intent_schema()
     common = {"prompt": prompt, "public_intent": intent}
-    return {
-        "type": "object",
-        "oneOf": [
-            _object_schema(
-                {**common, "response_kind": {"type": "string", "enum": ["free_text"]}},
-                ("prompt", "response_kind"),
-            ),
-            *(
-                _object_schema(
-                    {
-                        **common,
-                        "response_kind": {"type": "string", "enum": [kind]},
-                        "option_drafts": {
-                            "type": "array",
-                            "items": _option_draft_schema(evidence_refs, media_refs),
-                            "minItems": 1,
-                            "maxItems": 32,
-                        },
-                    },
-                    ("prompt", "response_kind", "option_drafts"),
-                )
-                for kind in ("single_select", "multi_select")
-            ),
-            _object_schema(
-                {
-                    **common,
-                    "response_kind": {"type": "string", "enum": ["structured_fields"]},
-                    "field_drafts": {
-                        "type": "array",
-                        "items": _field_draft_schema(),
-                        "minItems": 1,
-                        "maxItems": 32,
-                    },
-                },
-                ("prompt", "response_kind", "field_drafts"),
-            ),
-        ],
-    }
+    return _object_schema(
+        {
+            **common,
+            "response_kind": {
+                "type": "string",
+                "enum": ["free_text", "single_select", "multi_select", "structured_fields"],
+            },
+            "option_drafts": {
+                "type": "array",
+                "items": _option_draft_schema(evidence_refs, media_refs),
+                "minItems": 1,
+                "maxItems": 32,
+            },
+            "field_drafts": {
+                "type": "array",
+                "items": _field_draft_schema(),
+                "minItems": 1,
+                "maxItems": 32,
+            },
+        },
+        ("prompt", "response_kind"),
+    )
 
 
 def _artifact_draft_schema(evidence_refs: tuple[str, ...]) -> Mapping[str, object]:
@@ -1252,11 +1269,12 @@ def _compatibility_evidence_request_schema(
     purposes: tuple[str, ...],
     subjects: Mapping[str, str],
 ) -> Mapping[str, object]:
+    del subjects  # current membership remains authoritative in _EvidenceBinding
     visual_property = ObservationPurpose.VISUAL_PROPERTY.value
     subject_schema = {
         "type": "string",
         "description": "current_world or current E/N ref",
-        "enum": sorted(subjects),
+        "pattern": r"^(?:current_world|[EN][1-9][0-9]*)$",
     }
     property_schema = {
         "type": "string",
@@ -1301,142 +1319,74 @@ def _compatibility_evidence_request_schema(
 
 def _dynamic_evidence_request_schema(
     purposes: tuple[str, ...],
-    purpose_subjects: Mapping[str, Mapping[str, str]],
 ) -> Mapping[str, object]:
-    public_intent = {
-        "type": "string",
-        "description": "optional short user-visible intent",
-        "minLength": 1,
-        "maxLength": 240,
-    }
     bounded_text = {
         "type": "string",
         "minLength": 1,
         "maxLength": 500,
     }
-
-    def ref_array(purpose: str, minimum: int) -> Mapping[str, object]:
-        refs = sorted(purpose_subjects[purpose])
-        return {
-            "type": "array",
-            "description": "ordered unique current refs",
-            "items": {
+    ref_array = {
+        "type": "array",
+        "description": "ordered unique purpose-applicable current E/N refs from this delivery",
+        "items": {
+            "type": "string",
+            "pattern": r"^[EN][1-9][0-9]*$",
+        },
+        "minItems": 1,
+        "maxItems": 32,
+    }
+    candidate_array = {
+        **ref_array,
+        "description": "ordered unique purpose-applicable candidate E/N refs from this delivery",
+        "minItems": 2,
+    }
+    return _object_schema(
+        {
+            "purpose": {
                 "type": "string",
-                "description": "purpose-applicable current E/N ref from this delivery",
-                "enum": refs,
+                "description": "selects the exact required argument pair documented below",
+                "enum": list(purposes),
             },
-            "minItems": minimum,
-            "maxItems": min(32, len(refs)),
-        }
-
-    variants: list[Mapping[str, object]] = []
-    for purpose in purposes:
-        purpose_schema: dict[str, object] = {"type": "string", "enum": [purpose]}
-        properties: dict[str, object] = {
-            "purpose": purpose_schema,
-            "public_intent": public_intent,
-        }
-        required = ["purpose"]
-        if purpose == ObservationPurpose.ENTITY_DISCOVERY.value:
-            purpose_schema["description"] = "enumerate missing visible entities or regions"
-            properties.update(
-                {
-                    "entity_query": {
-                        **bounded_text,
-                        "description": (
-                            "visible entity class or regions to enumerate; use when relevant entities are not "
-                            "already represented by current refs; do not ask for a count, choice, or action"
-                        ),
-                    },
-                    "max_results": {"type": "integer", "minimum": 1, "maximum": 32},
-                }
-            )
-            required.extend(("entity_query", "max_results"))
-        elif purpose == ObservationPurpose.VISUAL_PROPERTY.value:
-            purpose_schema["description"] = "classify one directly visible property for each known subject"
-            properties.update(
-                {
-                    "subject_refs": ref_array(purpose, 1),
-                    "predicate": {
-                        **bounded_text,
-                        "description": (
-                            "one atomic visible predicate applied independently to every subject; the result is "
-                            "true, false, or unknown per subject, never a count or task answer"
-                        ),
-                    },
-                }
-            )
-            required.extend(("subject_refs", "predicate"))
-        elif purpose == ObservationPurpose.TARGET_DISAMBIGUATION.value:
-            purpose_schema["description"] = "choose among known visually ambiguous candidates"
-            properties.update(
-                {
-                    "candidate_refs": ref_array(purpose, 2),
-                    "selection_criterion": {
-                        **bounded_text,
-                        "description": "one visible criterion that distinguishes the intended candidate",
-                    },
-                }
-            )
-            required.extend(("candidate_refs", "selection_criterion"))
-        elif purpose == ObservationPurpose.POINT_GROUNDING.value:
-            purpose_schema["description"] = (
-                "locate one already-decided visible target that has no executable current ref"
-            )
-            properties["target_description"] = {
+            "public_intent": {
+                "type": "string",
+                "description": "optional short user-visible intent",
+                "minLength": 1,
+                "maxLength": 240,
+            },
+            "entity_query": {
                 **bounded_text,
-                "description": (
-                    "one specific visible target whose executable ref or point is missing, especially after "
-                    "find_controls returns empty; not a question, count, text read, property classification, or "
-                    "candidate choice"
-                ),
-            }
-            required.append("target_description")
-        elif purpose == ObservationPurpose.TEXT_IN_IMAGE.value:
-            purpose_schema["description"] = "read text that exists only in pixels"
-            properties.update(
-                {
-                    "subject_refs": ref_array(purpose, 1),
-                    "text_query": {
-                        **bounded_text,
-                        "description": (
-                            "specific pixel-only text to transcribe independently from each supplied subject; "
-                            "never a question about the image"
-                        ),
-                    },
-                }
-            )
-            required.extend(("subject_refs", "text_query"))
-        elif purpose == ObservationPurpose.SPATIAL_RELATIONSHIP.value:
-            purpose_schema["description"] = "classify one visible relation among known subjects"
-            properties.update(
-                {
-                    "subject_refs": ref_array(purpose, 2),
-                    "relation": {
-                        **bounded_text,
-                        "description": "one atomic visible spatial relation among the supplied subjects",
-                    },
-                }
-            )
-            required.extend(("subject_refs", "relation"))
-        elif purpose == ObservationPurpose.VISUAL_CHANGE.value:
-            purpose_schema["description"] = "compare a known subject across Runtime-owned frames"
-            properties.update(
-                {
-                    "subject_refs": ref_array(purpose, 1),
-                    "change_predicate": {
-                        **bounded_text,
-                        "description": "one atomic visible change to check across admitted before/after frames",
-                    },
-                }
-            )
-            required.extend(("subject_refs", "change_predicate"))
-        else:  # pragma: no cover - guarded by the typed exposure set
-            raise ValueError(f"unsupported dynamic observation purpose: {purpose}")
-        variants.append(_object_schema(properties, tuple(required)))
-    if len(variants) == 1:
-        return variants[0]
-    return {"type": "object", "oneOf": variants}
+                "description": ("entity_discovery only: visible entities/regions to enumerate; pair with max_results"),
+            },
+            "max_results": {"type": "integer", "minimum": 1, "maximum": 32},
+            "subject_refs": ref_array,
+            "predicate": {
+                **bounded_text,
+                "description": "visual_property only: one atomic predicate for every subject_ref",
+            },
+            "candidate_refs": candidate_array,
+            "selection_criterion": {
+                **bounded_text,
+                "description": "target_disambiguation only: one visible candidate criterion",
+            },
+            "target_description": {
+                **bounded_text,
+                "description": "point_grounding only: one decided visible target lacking an executable ref",
+            },
+            "text_query": {
+                **bounded_text,
+                "description": "text_in_image only: specific pixel-only text to transcribe",
+            },
+            "relation": {
+                **bounded_text,
+                "description": "spatial_relationship only: relation among at least two subject_refs",
+            },
+            "change_predicate": {
+                **bounded_text,
+                "description": "visual_change only: atomic change across Runtime-owned frames",
+            },
+        },
+        ("purpose",),
+    )
 
 
 def _observation_query_id(
@@ -1539,17 +1489,7 @@ _COMPATIBILITY_AGENT_PURPOSES = frozenset(
     }
 )
 
-_DYNAMIC_VISUAL_PURPOSES = frozenset(
-    {
-        ObservationPurpose.ENTITY_DISCOVERY.value,
-        ObservationPurpose.TARGET_DISAMBIGUATION.value,
-        ObservationPurpose.VISUAL_PROPERTY.value,
-        ObservationPurpose.SPATIAL_RELATIONSHIP.value,
-        ObservationPurpose.TEXT_IN_IMAGE.value,
-        ObservationPurpose.POINT_GROUNDING.value,
-        ObservationPurpose.VISUAL_CHANGE.value,
-    }
-)
+_DYNAMIC_VISUAL_PURPOSES = frozenset(purpose.value for purpose in _DYNAMIC_EVIDENCE_REQUIRED_FIELDS)
 
 
 def _countable_child_groups(snapshot: ActorWorldSnapshot) -> Mapping[str, int]:

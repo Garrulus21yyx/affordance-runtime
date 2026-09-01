@@ -126,11 +126,18 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
         recovery_attempt=2,
         epoch_id="recovery:7:" + "e" * 32,
         evidence_revision=3,
+        monitor_state={
+            "cycle_digest": "sha256:" + "f" * 64,
+            "cycle_period": 2,
+            "cycle_member_digests": ("sha256:" + "1" * 64, "sha256:" + "2" * 64),
+        },
     )
 
     restored = _restore_recovery_signal(_recovery_signal_payload(signal))
 
     assert restored == signal
+    assert restored is not None
+    assert restored.monitor_state == signal.monitor_state
 
 
 def test_legacy_recovery_closure_field_is_ignored_after_one_shot_migration() -> None:
@@ -311,9 +318,7 @@ def test_checkpoint_v6_without_delivery_receipts_restores_an_empty_novelty_windo
     raw["digest"] = digest
     raw["checkpoint_id"] = f"runtime-checkpoint:{digest}"
 
-    restored = RuntimeCheckpoint.from_json(
-        json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    )
+    restored = RuntimeCheckpoint.from_json(json.dumps(raw, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
 
     assert restored.schema_version == "affordance-runtime.checkpoint.v6"
     assert restored.restore_run_facts().delivery_store == ObservationDeliveryStore()

@@ -8,12 +8,19 @@ admitted prefix, or exposed through generic continuation tools.
 
 ### 2026-09-01 one-shot decision-feedback convergence — provider-free implemented, live-open
 
-Recovery is not a second reasoning role or a persistent sub-loop. `EpisodeMonitor` owns only mechanical facts about
-the latest committed transition. When those facts prove repetition, no effect, oscillation, or an evidence/control
-stall, it emits one bounded signal for exactly the next `ActionPolicy` decision. That decision consumes the signal.
-If its resulting transition stalls again, Monitor may create a new signal with a new identity from that transition;
-it never carries, revises, or waits to close the old signal. Exact attempts proved unavailable are still rejected by
-Runtime before dispatch, and repeating such a prohibited attempt blocks normally.
+Recovery is not a second reasoning role or persistent semantic plan. `EpisodeMonitor` owns one bounded mechanical
+transition window across every committed decision type, including GUI dispatch, `read_region`,
+`search_page_content`, `find_controls`, observation requests, and typed rejections. A transition identity contains
+the ref-free attempted operation and its owner-observed result World. This makes mixed cycles such as
+`read -> activate -> read -> activate` visible without interpreting the task.
+
+The first repeated transition-result or short mixed cycle emits one bounded signal for exactly the next
+`ActionPolicy` decision. Consuming that model-visible signal does not erase Monitor's private cycle identity. A
+transition-result outside the cycle is the mechanical escape condition; re-entering a member after the deliberate
+decision blocks with `control_stalled`. The identity survives pause/checkpoint restore. A repeated operation that
+produces a genuinely new result is outside the old cycle and remains legal. Exact attempts proved unavailable are
+still rejected by Runtime before dispatch. `local_postcondition=satisfied` records only the requested local value; it
+is operational progress only with an observed semantic change and never becomes task-progress authority.
 
 Every decision now receives one causally ordered slice:
 
@@ -33,18 +40,29 @@ fresh transition, and any Harness summary remain. This prevents stale self-narra
 World facts without creating a new progress store or memory authority.
 
 Ordinary decisions use the configured Flash route. Only a fresh Monitor signal selects the existing profile named
-`deliberate`, which leases the configured Pro route and a larger output budget for one decision. Provider thinking
-remains disabled and a tool is required: the system does not depend on exposed chain-of-thought, which DeepSeek may
-emit without a usable ToolCall. Here reflection means revising the next semantic action from explicit contradictory
-transition facts, not generating a reasoning transcript. Completed collection delivery is ordinary; evidence review
-is part of the normal ActionPolicy decision and does not independently upgrade the model.
+`deliberate`, which leases the configured Pro route, enables provider reasoning, and raises the output budget for one
+decision. At the DeepSeek transport owner, thinking requests omit `tool_choice`; the same ActionPolicy output
+validator still requires exactly one current ToolCall. A length-truncated, text-only, or otherwise incomplete
+deliberate response receives at most one complete same-context output retry. `reasoning_content` remains in the
+provider transcript required by the SDK exchange, while Runtime state is still only typed ToolCall/result/World
+facts. Completed collection delivery is ordinary; evidence review does not independently upgrade the model.
 
-Ordinary and escalated calls compile the same ToolCatalog. The removed `recovery_basis` schema was a model-authored
-parallel state and could only force a label, not prove reassessment. There is no reflector, recovery planner, mutable
-progress record, second history, or special recovery tool algebra. Native `TaskEvaluator` remains the only terminal
-authority. Provider-free tests cover one-shot consumption, new-epoch creation from a later stall, exact-replay
-prohibition, ordinary-after-consumption routing, shared tool schemas, causal prompt placement, and settled-narration
-expiry. Live benchmark closure remains open and requires separate authorization.
+Ordinary and escalated calls compile the same ToolCatalog. Existing dynamic GUI operation compilation and private
+current-ref resolution remain authoritative. Local capabilities are exposed from their actual current definition
+domain: page search requires a readable region inventory, and `find_controls` appears only when complete ActionSpace
+contains routes omitted from the delivered action prefix. Tiny deterministic `list_regions` remains a stable
+exploration primitive. Wide `ask_user` and `request_evidence` unions are represented as compact discriminated
+grammars; their existing binding owners enforce the exact discriminator-specific field set and current ref domain.
+Representation recovery preserves such a compact grammar rather than deleting its conditionally required fields.
+`submit_final_response` remains owned by the current final-response codec and is not narrowed by task heuristics.
+
+The removed `recovery_basis` schema was a model-authored parallel state and could only force a label, not prove
+reassessment. There is no reflector, recovery planner, mutable progress record, second history, second detector,
+alternate World, or special recovery tool algebra. Native `TaskEvaluator` remains the only terminal authority.
+Provider-free tests cover mixed-cycle phase independence, one-deliberation blocking, novel-result escape,
+pause/restore, exact-replay prohibition, deliberate provider wire behavior, bounded complete output retry, compact
+schema binding, causal prompt placement, and semantic-unit cursor delivery. Live benchmark closure remains open and
+requires separate authorization.
 
 ### Historical: 2026-08-30 persistent recovery epoch design — superseded, non-normative
 
