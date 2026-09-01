@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Affordance Runtime 源码级执行链路：BrowserGym、Playwright、fresh World、E-ref、动态工具、PydanticAI、上下文压缩与用户控制。">
+  <meta name="theme-color" content="#081525">
+  <title>实现链路逐层拆解 · Affordance Runtime</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/interview.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="site-top">
+    <div class="top-inner">
+      <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>IMPLEMENTATION WALKTHROUGH</small></span></a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航">
+        <a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html" aria-current="page">实现链路</a><a href="interview-guide.html">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="hero compact implementation-hero">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow">Source-level path · object by object · owner by owner</div>
+        <h1>一个任务到底<br>怎样跑过整个 <em>Harness</em></h1>
+        <p class="lede">不是“模型看 DOM 然后点一下”的示意图，而是从自然语言入口开始，沿着 TaskGoal、BrowserGym/Playwright、fresh World、E-ref、动态 ToolCatalog、PydanticAI、Binder、Executor、Evaluator、Monitor 与用户控制边界，把真实对象如何产生、过期和闭合讲清楚。</p>
+        <div class="status-strip"><span class="status-chip verified">24 个实现节点</span><span class="status-chip live">源码固定到 e4a57a5a</span><span class="status-chip open">业务泛化仍开放</span></div>
+      </div>
+      <div class="hero-console" aria-label="真实对象链路示意">
+        <div class="console-head"><i></i><i></i><i></i></div>
+        <div class="console-body">
+          <p><b>input</b> NaturalLanguageTaskRequest</p>
+          <p><b>authority</b> TaskGoal(revision=1)</p>
+          <p><b>capture</b> BrowserGym raw + verifier probe</p>
+          <p><b>public</b> WorldObservation → E/N/F/R refs</p>
+          <p><b>delivery</b> ModelTurnDelivery + Manifest</p>
+          <p><b>protocol</b> CanonicalProviderEnvelope</p>
+          <p><b>decision</b> one current ToolCall</p>
+          <p><b>private</b> action_id → binding → BID</p>
+          <p><b>closure</b> receipt + fresh World + evaluation</p>
+          <p class="warn">then invalidate every old executable ref</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-grid wide">
+    <aside class="side-nav" aria-label="本页目录">
+      <p class="side-nav-label">源码级链路</p>
+      <ol>
+        <li><a href="#map">01 一屏对象图</a></li>
+        <li><a href="#ingress">02 自然对话入口</a></li>
+        <li><a href="#goal">03 目标拆解</a></li>
+        <li><a href="#browser">04 BrowserGym / Playwright</a></li>
+        <li><a href="#world">05 Raw → fresh World</a></li>
+        <li><a href="#refs">06 E-ref 与私有绑定</a></li>
+        <li><a href="#catalog">07 动态工具</a></li>
+        <li><a href="#context">08 Context 与 token</a></li>
+        <li><a href="#pydantic">09 为什么 PydanticAI</a></li>
+        <li><a href="#loop">10 决策与执行闭环</a></li>
+        <li><a href="#memory">11 短期记忆与进展</a></li>
+        <li><a href="#control">12 用户参与和撤回</a></li>
+        <li><a href="#evidence">13 全部评测证据</a></li>
+        <li><a href="#reading">14 源码阅读顺序</a></li>
+      </ol>
+      <div class="side-nav-meta">THIS PAGE IS DERIVED<br>design: architecture.md<br>status: benchmark.md<br>code: e4a57a5a<br>baseline: 2026-09-02</div>
+    </aside>
+
+    <main id="content">
+      <section id="map">
+        <p class="section-kicker">01 · The whole object graph</p>
+        <h2>先看一屏：24 个对象，只有一条可 dispatch 链</h2>
+        <p class="section-intro">横向是一次任务的因果顺序，纵向是 authority。每次成功执行后，链路从 fresh World 重新开始，而不是沿用旧元素。</p>
+        <div class="object-map" role="img" aria-label="自然语言任务到任务评估的对象链路">
+          <div class="object-lane"><span>User / Shell</span><b>① user turn</b><i>→</i><b>② PublicSessionCommand</b><i>→</i><b>pause / revise / takeover</b></div>
+          <div class="object-lane"><span>Runtime</span><b>③ NaturalLanguageTaskRequest</b><i>→</i><b>④ TaskGoal</b><i>→</i><b>⑤ GoalPlan?</b><i>→</i><b>⑪ ActionSpace</b></div>
+          <div class="object-lane"><span>Surface</span><b>⑥ BrowserGym reset/capture</b><i>→</i><b>⑦ raw AX/DOM/screenshot</b><i>→</i><b>⑧ SurfaceObservation</b></div>
+          <div class="object-lane"><span>World</span><b>⑨ WorldObservation</b><i>→</i><b>⑩ E/N/F/R projection</b><i>→</i><b>⑫ DeliveryPlan</b></div>
+          <div class="object-lane"><span>Model boundary</span><b>⑬ ModelTurnDelivery</b><i>+</i><b>⑭ ToolCatalog</b><i>→</i><b>⑮ ProviderEnvelope</b><i>→</i><b>⑯ ToolCall</b></div>
+          <div class="object-lane"><span>Execution</span><b>⑰ SelectAction</b><i>→</i><b>⑱ AdmittedSelection</b><i>→</i><b>⑲ BoundActionRequest</b><i>→</i><b>⑳ BrowserGym action</b></div>
+          <div class="object-lane"><span>Closure</span><b>㉑ Dispatch receipt</b><i>+</i><b>㉒ fresh post-World</b><i>→</i><b>㉓ ActionOutcome</b><i>+</i><b>㉔ TaskEvaluation / StepResult</b></div>
+        </div>
+        <div class="callout"><strong>面试时先说这句</strong>模型只拥有第 16 步“从当轮已交付工具中提出一个调用”；它不拥有第 7 步原始浏览器句柄、第 10 步 ref 分配、第 18 步合法性、第 19 步 binding、第 21 步 dispatch 真值或第 24 步任务成功。</div>
+      </section>
+
+      <section id="ingress">
+        <p class="section-kicker">02 · Natural conversation ingress</p>
+        <h2>用户说一句话后，不是直接塞进 Agent prompt</h2>
+        <p class="section-intro">自然语言、权限、并发 currentness 和公开进展分别有不同对象。Shell 可以是网页 UI、CLI 或 API；它们都必须通过同一个 <code>TargetRuntimeSession</code>。</p>
+        <div class="trace-stack">
+          <details class="trace-step" open>
+            <summary><span>01</span><b>自然语言变成版本化公开命令</b><em>PublicSessionCommand</em></summary>
+            <div class="trace-body">
+              <p><code>TargetRuntimeSession.start(instruction)</code> 创建 <code>NaturalLanguageTaskRequest</code>。v3 入口还要求 <code>command_id + expected_task_revision + expected_run_status</code>，同 ID 同 payload 可幂等返回；同 ID 不同 payload 是冲突。这样浏览器 UI 的旧按钮、重复网络请求或多个前端不会静默覆盖当前 run。</p>
+              <div class="io-grid"><div><small>IN</small><code>"去 GitLab 找前三位 contributor 的邮箱"</code></div><div><small>OUT</small><code>NaturalLanguageTaskRequest(request_id, instruction, boundary, revision=1)</code></div></div>
+              <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/public_session.py">app/public_session.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/task/intake.py">task/intake.py</a></p>
+            </div>
+          </details>
+          <details class="trace-step" open>
+            <summary><span>02</span><b>自然语言只描述意图，效果权限来自 typed boundary</b><em>ThinTaskIntake</em></summary>
+            <div class="trace-body">
+              <p><code>ThinTaskIntake.compile</code> 不做网页规划，也不从文字猜授权。默认 <code>TaskBoundary</code> 是 <code>READ_ONLY</code>；如果任务会产生外部效果，调用方必须显式提供 <code>allowed_effects</code> 与 risk profile。allowed/forbidden 冲突直接 policy reject；非只读却没声明允许效果则进入 <code>TaskInputRequired</code>。</p>
+              <pre><code>natural text + stable boundary
+ request identity + revision
+ constraints / allowed effects / success criteria / budget
+ material inputs / evaluation spec / risk / requested outputs
+→ TaskGoal  # 唯一目标 authority</code></pre>
+              <p>这解释了为什么“用户说让我付款”不能仅靠 prompt 获得付款权限：语义理解与能力授权是两条链。</p>
+            </div>
+          </details>
+          <details class="trace-step">
+            <summary><span>03</span><b>公开事件与进度是投影，不是第二个状态机</b><em>RuntimeSessionSnapshot</em></summary>
+            <div class="trace-body"><p>Session 对外发布 <code>PublicRuntimeSessionSnapshot</code> 与有 cursor 的事件流。每个 committed <code>StepResult</code> 被投影成 <code>PublicProgressStep(step, status, label)</code>；例如 “Checked the current page” 或 “Completed an interaction”。它适合 UI 展示，但不参与下一动作合法性，也不冒充 GoalPlan item completion。</p><p>公开 feed 还区分 UserTurn、GoalAccepted、RuntimeActivity、EvidenceSummary、InteractionRequested、RevisionApplied、ConfirmationRequired、Completion 和 Failure。Shell 只是 renderer；Runtime 仍是状态 owner。</p></div>
+          </details>
+        </div>
+      </section>
+
+      <section id="goal">
+        <p class="section-kicker">03 · Goal compilation</p>
+        <h2>任务如何拆解：一次静态编译，不是每步 planner</h2>
+        <div class="cards two">
+          <article class="card cyan"><span class="tag verified">Authoritative</span><h3>TaskGoal</h3><p>完整用户意图、稳定限制、允许效果、输入、成功标准、输出和 revision。它可以被用户修订，但不能被 GoalPlan、网页或模型 prose 改写。</p></article>
+          <article class="card"><span class="tag live">Advisory</span><h3>GoalPlan</h3><p>GoalCompiler 在 task start 或 revision 各调用一次；最多 8 项，每项只有 id、objective、done_when、depends_on、final。没有 mutable status、frontier 或成就账本。</p></article>
+        </div>
+        <div class="contract-strip">
+          <div><b>Ready</b><span>校验唯一 ID、依赖存在、DAG、最多一个 final</span></div>
+          <div><b>NotRequired</b><span>短任务直接进入普通 loop</span></div>
+          <div><b>NeedsInput</b><span>只有缺用户事实才 waiting_user</span></div>
+          <div><b>Unsupported / Failed</b><span>记录 unavailable，普通 loop 继续</span></div>
+        </div>
+        <p>ActionPolicy 每一轮根据 <code>TaskGoal + static GoalPlan + fresh World</code> 自己判断现在该推进哪项。Runtime 不计算 “3/5 完成”，因为那会把开放世界语义偷偷变成另一个规则引擎。用户 revision 会让旧 plan 整体失效；URL 或 layout 变化不会触发自动 recompile。</p>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/goal_compiler.py">model/goal_compiler.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/goals/plan.py">goals/plan.py</a></p>
+      </section>
+
+      <section id="browser">
+        <p class="section-kicker">04 · Browser ownership</p>
+        <h2>BrowserGym 和 Playwright 到底各做什么</h2>
+        <p class="section-intro">两者不是二选一。BrowserGym 是 benchmark/environment contract；Playwright 是它下面的真实浏览器与页面时序工具。项目在中间加的是 owner-thread、因果稳定屏障和统一 SurfaceAdapter，不是自造浏览器自动化框架。</p>
+        <div class="layer-stack">
+          <div class="layer"><span>Model</span><b>只见语义工具 + E-ref</b><p>没有 Page、Locator、selector、BID 或坐标。</p></div>
+          <div class="layer"><span>Runtime</span><b>BrowserGymSurfaceAdapter</b><p>把 raw observation 投影成 Surface/World，把 BoundActionRequest 转为 BrowserGym action。</p></div>
+          <div class="layer"><span>BrowserGym</span><b>Gym reset / step / reward / task state</b><p>提供 benchmark 注册、标准 action、AX/DOM/screenshot observation、native task evaluator。</p></div>
+          <div class="layer"><span>Playwright</span><b>真实 page、navigation、DOM quiet、live probe</b><p>运行在 BrowserGym 专属同步 owner thread；句柄不跨线程、不进模型。</p></div>
+        </div>
+        <div class="trace-stack">
+          <details class="trace-step" open>
+            <summary><span>04</span><b>专属线程封住同步 Playwright 生命周期</b><em>ThreadBoundBrowserGym</em></summary>
+            <div class="trace-body"><p>BrowserGym 0.14 默认缓存 process-global synchronous Playwright。多个环境会复用错误 greenlet，关闭一个环境也可能停掉另一个。<code>ThreadBoundBrowserGym</code> 用 queue + <code>Future</code> 把 <code>reset / capture_current / currentness_probe / causal_step / session_health / close</code> 全部固定到一个 daemon owner thread，并把 BrowserGym 的全局 getter 改为 thread-local。</p><p><code>gym.make(task_id, headless=..., tags_to_mark="all")</code> 仍是环境创建者；<code>tags_to_mark="all"</code> 让 SVG 子元素也获得私有 BID，减少坐标猜测。任何 Page、Locator 或 DOM handle 都不穿过线程边界。</p></div>
+          </details>
+          <details class="trace-step" open>
+            <summary><span>05</span><b>dispatch 一次，再等到可证明的 causal stable post-state</b><em>_causal_step</em></summary>
+            <div class="trace-body">
+              <ol><li>在 authoritative page 上监听 navigation request、main-frame commit、DOMContentLoaded，并安装 MutationObserver。</li><li>只调用一次 <code>environment.step(action)</code>；记录 dispatch returned 时间。</li><li>若可能导航，给 450ms start grace；开始后最多等 5s commit / DOMContentLoaded。</li><li>在最终 page/document 上等待 DOM 连续 80ms quiet，最多 1.5s。</li><li>只有 stable 才调用 BrowserGym <code>_get_obs()</code>；pending/unstable 返回 typed transition，绝不把中间 DOM 当 fresh World。</li></ol>
+              <pre><code>BrowserGymStepTransition = {
+  raw | None, reward, terminated, truncated, info,
+  trace: before_url → after_url,
+         document_epoch, navigation timestamps,
+         STABLE_* | NAVIGATION_PENDING | ACQUISITION_UNSTABLE
+}</code></pre>
+              <p>这就是 <code>dispatch → causal stable World → StepResult</code> 的物理基础。普通 <code>capture_current</code> 不能覆盖一笔尚未闭合的导航，因为那会把“后来看到的任意页面”伪装成该 action 的因果 post-state。</p>
+            </div>
+          </details>
+          <details class="trace-step">
+            <summary><span>06</span><b>Playwright 只补物理事实，不改任务语义</b><em>private control properties</em></summary>
+            <div class="trace-body"><p>BrowserGym 一次性捕获 AX/DOM。后端再用一个 browser-side bulk pass 为 BID 补充 attached、visible、enabled、readonly、editable、selected、active、focusable、bbox、options、gesture、navigation potential 等事实。大页面不会按每个 AX node 做一个 locator round trip。</p><p>这些仍是 private source facts。颜色只归一到有限 color family；并不会在 adapter 里推断“用户要点红色按钮”。页面语义、目标相关性和路线选择仍交给 ActionPolicy/VLM。</p><p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/backend.py">surfaces/browsergym/backend.py</a></p></div>
+          </details>
+        </div>
+      </section>
+
+      <section id="world">
+        <p class="section-kicker">05 · Raw observation to fresh World</p>
+        <h2>Adapter 如何把浏览器变成统一世界</h2>
+        <div class="sequence dense">
+          <div class="actor">BrowserGym</div><div class="event"><b>raw frame</b>：AX tree、DOMSnapshot extras、screenshot、focused element、task/reward/verifier facts。</div>
+          <div class="actor">SurfaceAdapter</div><div class="event"><b>projection</b>：<code>project_browsergym_observation</code> 生成 source observation + private binding rows；source revision、page identity、document epoch 与 capture frame 保留 lineage。</div>
+          <div class="actor">Orchestrator</div><div class="event"><b>selection</b>：按 <code>ObservationNeed</code> 选 structural source；只有 residual visual purpose 才激活 VLM source。同一物理环境可用 grouped acquisition 保证同帧。</div>
+          <div class="actor">WorldFusion</div><div class="event"><b>fusion</b>：合并 source targets/facts/topology，保留 provenance 与冲突；不在 Fusion 中猜网页业务。</div>
+          <div class="actor">World owner</div><div class="event"><b>fresh WorldObservation</b>：新的 observation_id 成为唯一当前 GUI authority；上一 World 的 executable ref 立即失效。</div>
+        </div>
+        <h3>为什么 VLM 是必要时开启，而不是“失败兜底”</h3>
+        <p><code>ObservationOrchestrator</code> 先用 structural baseline 满足 need。只有请求明确需要 visual property、target disambiguation、point grounding、text in image、spatial relation 或 visual change，并且当前 visual provider 宣告该能力，才产生 visual offer。VLM 输出的是 typed source evidence / proposal，再进入同一个 Fusion；它不能直接 click，也不会因为 “重复了三次” 自动接管。</p>
+        <div class="callout warning"><strong>“尽量无损”的准确含义</strong>Source → World 的公开语义骨架和 source topology 要保真；模型请求不可能把大型页面全文全量复制进去，所以 delivery 使用可恢复压缩：PageMap 展开当前 salient regions，折叠重复 collection，公开 coverage，并提供 read_region / search / list / cursor 取回完整 Record。省略必须可见、可追索，不能静默截断。</div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/environment.py">surfaces/browsergym/environment.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/world/orchestrator.py">world/orchestrator.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/world/fusion.py">world/fusion.py</a></p>
+      </section>
+
+      <section id="refs">
+        <p class="section-kicker">06 · Public refs and private binding</p>
+        <h2>E-ref 不是 selector：它要经过四次转换才执行</h2>
+        <div class="ref-flow">
+          <div><span>PUBLIC</span><b><code>E7</code></b><p>这一 fresh Context 中第 7 个 executable public target。</p></div><i>→ Catalog resolver</i>
+          <div><span>PRIVATE</span><b><code>action_id</code></b><p>当前 ActionSpace 的语义 route identity。</p></div><i>→ ActionBinder</i>
+          <div><span>PRIVATE</span><b><code>ActionBinding</code></b><p>surface、source observation、executor、binding payload。</p></div><i>→ Surface store</i>
+          <div><span>SURFACE</span><b><code>BID / tab / viewport</code></b><p>BrowserGym 私有节点或 browser-context route。</p></div><i>→ execution.py</i>
+          <div><span>WIRE</span><b><code>click("42")</code></b><p>最终 BrowserGym action string。</p></div>
+        </div>
+        <div class="cards two">
+          <article class="card cyan"><h3>E / N / F / R</h3><p><b>E</b> executable target；<b>N</b> readonly node；<b>F</b> fact；<b>R</b> region。<code>CanonicalPublicWorldProjection</code> 按稳定 structural ordering 分配，遇到不可区分的 executable target fail-closed。</p></article>
+          <article class="card amber"><h3>Context-local lease</h3><p><code>context_id</code> 绑定 task revision、observation、ActionSpace、page、generation、GoalPlan 和 catalog digest。下一 fresh World 会重新分配；历史里的 E7 只是旧事实叙述，不再有执行权。</p></article>
+        </div>
+        <details class="trace-step" open><summary><span>07</span><b>Canonical projection 分配公开 ref，同时保留私有 resolver</b><em>CanonicalPublicWorldProjection</em></summary><div class="trace-body"><p>公开 target record 只有 ref、structural slot、role、label、public state、relations、verbs 和 provenance。同一个对象里私下保存 <code>private_target_resolver[E7] → canonical target_id</code>、fact resolver 和 region resolver，但这些 map 不序列化给 provider。</p></div></details>
+        <details class="trace-step" open><summary><span>08</span><b>Catalog resolver 把 E-ref 解析成当前 action_id</b><em>PrivateResolutionEntry</em></summary><div class="trace-body"><p>普通 target operation 暴露 <code>target.ref</code>；drag/drop 暴露 source/destination 两个 E-ref；browser-context operation 没有 E-ref，因为当前只有一个 private browser owner。Resolver 同时验证 operation、selector domain 和业务参数 schema，然后产生 <code>SelectAction(context_id, action_id, ...)</code>。</p></div></details>
+        <details class="trace-step"><summary><span>09</span><b>Binder 只接受已经 admission 的语义 selection</b><em>BoundActionRequest</em></summary><div class="trace-body"><p><code>ActionBinder.bind_for_execution</code> 用 <code>RouteSelector</code> 从 fresh World 选择唯一 deterministic <code>ActionBinding</code>，构造 <code>ActionIntent</code>，再派生 post-action verification needs。Surface 在 dispatch 前还会 live currentness probe；BID 已消失则 <code>NOT_SENT / STALE_BINDING</code>，不会靠旧 ref 猜。</p><p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/canonical_world_projection.py">canonical_world_projection.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/binder.py">actions/binder.py</a></p></div></details>
+      </section>
+
+      <section id="catalog">
+        <p class="section-kicker">07 · Dynamic tools</p>
+        <h2>动态 ToolCatalog 是当前世界的可执行切片</h2>
+        <p class="section-intro">模型不发明工具，Core Loop 也不拼 schema。Registry 定义稳定语义词汇，ActionSpace 描述当前世界全部合法 action，DeliveryManifest 说明本轮真正交付了哪些 route；三者在模型边界编译成一次性 Catalog。</p>
+        <div class="formula-box"><span>Stable Registry</span><i>∩</i><span>fresh ActionSpace</span><i>∩</i><span>DeliveryManifest</span><b>= disposable ToolCatalog(context_id)</b></div>
+        <div class="cards two">
+          <article class="card cyan"><h3>完整私有 ActionSpace</h3><p><code>ActionSpaceBuilder</code> 从 TaskGoal、fresh World、permissions 和 capability routes 生成当前全部语义 option。每项拥有 private action_id、operation、target、typed args 与 route；它是 Runtime admission authority，不因为 token 不够就消失。</p></article>
+          <article class="card amber"><h3>有界公开 Delivery</h3><p><code>ActionDeliveryPlan</code> 选 base actions、当前 Top-K candidates、显式搜索命中和目的地，并写出 coverage/omission。模型只能调用 manifest 已交付 route；没交付不等于世界中不存在，可以先 read/search/find/page。</p></article>
+        </div>
+        <h3>稳定工具族与 GUI 工具族如何组合</h3>
+        <div class="tool-pills" aria-label="稳定本地工具列表"><span>request_evidence</span><span>count_children</span><span>read_region</span><span>search_page_content</span><span>list_regions</span><span>find_controls</span><span>submit_final_response</span><span>ask_user</span><span>wait</span><span>abort</span></div>
+        <p>上面是闭合的本地操作词汇；Registry 拥有名称、描述、参数 JSON Schema、风险和执行类型。GUI operation 则按当前 capability 动态出现，例如 <code>click(target.ref)</code>、<code>fill(target.ref, text)</code>、<code>drag(source.ref, destination.ref)</code>、browser-context navigation。模型看到的是语义参数和 E-ref，不见 action_id、BID 或 selector。</p>
+        <div class="trace-stack">
+          <details class="trace-step" open><summary><span>10</span><b>先构造 DeliveryPlan，再编译 schema</b><em>GroundedToolCatalogCompiler</em></summary><div class="trace-body"><p>Delivery planner 先保证 active form、当前交互对象、必要 destination 和目标 action 的原子前缀；再用剩余预算拓宽候选。Compiler 针对每个 operation 取 Registry schema，并用当前 resolver rows 收窄 ref domain。target-atomic obligation 不能只交付 target 文本却丢掉对应 tool route。</p></div></details>
+          <details class="trace-step" open><summary><span>11</span><b>调用时做第二次 current catalog resolution</b><em>private resolver</em></summary><div class="trace-body"><p>PydanticAI 返回 tool name、arguments 和 tool_call_id。Bridge 先确认恰好一个 current tool；Catalog resolver 再校验该名字确实属于当前 context、E-ref 属于该 operation 的可选域、参数通过 Registry schema，最后才生成 <code>SelectAction</code> 或本地 closed decision。过期 ref 不能因为字符串还长得像 E7 而执行。</p></div></details>
+        </div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/action_space.py">actions/action_space.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/grounded_tool_catalog.py">grounded_tool_catalog.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/grounded_tool_compiler.py">grounded_tool_compiler.py</a></p>
+      </section>
+
+      <section id="context">
+        <p class="section-kicker">08 · Context assembly and token admission</p>
+        <h2>上下文分四层：事实完整性与模型可见性不混在一起</h2>
+        <div class="budget-pipeline">
+          <div><span>A</span><b>AgentContext</b><small>Runtime 完整事实</small></div><i>→ project</i>
+          <div><span>B</span><b>ModelTurnDelivery</b><small>压缩世界 + manifest</small></div><i>→ compile</i>
+          <div><span>C</span><b>ToolCatalog</b><small>当前 schema + resolver</small></div><i>→ bind</i>
+          <div><span>D</span><b>ProviderEnvelope</b><small>最终物理请求</small></div>
+        </div>
+        <div class="table-wrap"><table class="compare-table"><thead><tr><th>层</th><th>具体包含</th><th>谁能看</th><th>省略/过期策略</th></tr></thead><tbody>
+          <tr><td>AgentContext</td><td>TaskGoal、GoalPlan、fresh World、canonical refs、完整 ActionSpace、workspace、last StepResult、control feedback、final codec</td><td>Runtime / policy boundary</td><td>同一 observation 的昂贵 projection 只构造一次；World 更新则整个 context 过期</td></tr>
+          <tr><td>ModelTurnDelivery</td><td>ActorWorld PageMap、ActiveView、collection folds、coverage、ActionDeliveryPlan、可选 screenshot、deferred ToolReturn</td><td>模型</td><td>重复项折叠；未交付范围显式写出，可用 R-ref/read/search/cursor 恢复</td></tr>
+          <tr><td>ToolCatalog</td><td>本轮允许工具 schema、已交付 E-ref 的 private resolver、catalog digest</td><td>模型看 schema；Runtime 看 resolver</td><td>只在该 context 有效；未交付 route 不可调用</td></tr>
+          <tr><td>ProviderEnvelope</td><td>system、current user JSON、官方 history、deferred result、media bytes/digest、tools、settings、output contract、reserves</td><td>provider transport</td><td>对最终物理 envelope 做 admission，而不是只估 prompt 字符串</td></tr>
+        </tbody></table></div>
+        <h3>页面压缩：保留结构骨架，把重复内容变成可取回记录</h3>
+        <div class="cards two">
+          <article class="card"><h3>PageMap + ActiveView</h3><p>当前页面、focus、active dialog/form、salient region、可执行 targets 和关键事实优先展开；结构顺序、父子关系、region membership、状态和 provenance 保留。<code>lossless_public=True</code> 指 public World 投影不静默丢掉已支持的语义类型。</p></article>
+          <article class="card cyan"><h3>Collection folds + coverage</h3><p>大型列表、表格、重复 card 保存为完整内部 Record 集合；prompt 只给代表项、数量、边界和 <code>R*</code> region。<code>read_region/search_page_content/list_regions</code> 返回分页 typed result，并通过下一轮 DeferredToolReturn 进入上下文。</p></article>
+        </div>
+        <p>所以“尽量无损”不是声称 LLM 看到了全部 40,000 个节点；它是三个可验证承诺：统一 World 的语义 skeleton 不因 provider 限制被破坏；delivery 的每个 omission 都有 coverage 表述；被折叠的完整记录仍能通过稳定本地工具检索。静默字符串截断违反合同。</p>
+        <h3>TurnPacker 怎样在预算内逐步装箱</h3>
+        <ol class="flow-list">
+          <li><b>计算硬上限</b><span><code>context_window − max_output − protocol_reserve − safety_margin</code>。默认 profile 约 67k context、1,024 output、2,048 protocol reserve、1,024 safety，均可由 provider/profile 调整。</span></li>
+          <li><b>装入不可拆原子组</b><span>task/plan anchor、fresh World identity、active interaction、current target route、完整 tool call/result pairing 与未解决 suffix。</span></li>
+          <li><b>按 obligation 扩大 breadth</b><span>先 Top-5 与 hard minimum，再按目标相关度加入更多 regions/candidates/destinations；不拆 active form bundle。</span></li>
+          <li><b>编译完整 Catalog 与 Envelope</b><span>schema 本身、图片 tile、history、settings、provider overhead 和输出 reserve 全部计入；保守估算以 UTF-8/3 和 media tiles 为基础。</span></li>
+          <li><b>超限则结构化降级或 typed fail</b><span>缩减可恢复 breadth，而非破坏 current obligation；即使最小合法包也放不下则 request admission 明确拒绝。</span></li>
+        </ol>
+        <div class="budget-meter"><div style="--w: 12%"><b>anchors</b></div><div style="--w: 22%"><b>fresh world</b></div><div style="--w: 18%"><b>tools</b></div><div style="--w: 30%"><b>history</b></div><div style="--w: 18%"><b>reserve</b></div></div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/model_turn_delivery.py">model_turn_delivery.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/compact_world_renderer.py">compact_world_renderer.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/turn_packer.py">turn_packer.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/request_admission.py">request_admission.py</a></p>
+      </section>
+
+      <section id="pydantic">
+        <p class="section-kicker">09 · PydanticAI boundary</p>
+        <h2>为什么用 PydanticAI：借协议能力，不交出控制权</h2>
+        <div class="branch-grid">
+          <article><span>它负责</span><h3>provider / SDK plumbing</h3><p>typed message history、不同 provider 适配、tool schema 编码、tool_call_id、<code>DeferredToolRequests</code>、multimodal parts、stream/usage、官方消息序列化、有限 model retry 与 <code>capture_run_messages</code>。</p></article>
+          <article><span>它不负责</span><h3>Runtime semantics</h3><p>不决定网页有什么、哪个 ref 当前、动作是否合法、是否需确认、如何绑定 BID、dispatch 是否发生、UI effect 是否成立、任务是否完成，也不把 provider history 当世界真相。</p></article>
+        </div>
+        <p>项目使用 <code>pydantic-ai-harness==0.25.0</code>，因为这些 transport/message/tool-protocol 细节自己重写会产生大量跨 provider 漏洞；但 Bridge 外仍保留当前 Catalog 校验、one-current-call contract 和 Runtime evaluator。其设计重点是明确 boundary，不是用框架替代 Agent architecture。</p>
+        <div class="trace-stack">
+          <details class="trace-step" open><summary><span>12</span><b>CanonicalProviderEnvelope 冻结一次物理请求</b><em>content-addressed boundary</em></summary><div class="trace-body"><p>Binder 把 provider/model/profile identity、唯一 instruction、current user JSON、官方 history、pending deferred result、media 的实际 bytes/digest、tools、model settings、output contract、token reserves 全部绑定并 hash。Trace 记录的是这个 owner 已发出的 envelope，而不是事后从日志猜 prompt。</p></div></details>
+          <details class="trace-step" open><summary><span>13</span><b>GUI 工具一律 deferred，Runtime 执行</b><em>DeferredToolRequests</em></summary><div class="trace-body"><p>普通 action request 使用 <code>tool_choice=auto</code>、<code>parallel_tool_calls=false</code>、temperature 0。Output validator 拒绝 text-only 成功；Bridge 要求恰好一个当前 tool call。若 provider 仍返回多个调用、未知工具或坏 schema，做有界 protocol/schema repair，仍不合法就 typed fail-closed。</p><p>合法调用不会被 PydanticAI 自动执行：它作为 DeferredToolRequest 返回。Runtime Catalog resolver、admission、risk、Binder、Executor 走完后，typed ToolReturn 才在下一轮交回 SDK history。</p></div></details>
+        </div>
+        <h3>Harness summarization 何时发生，什么保留</h3>
+        <div class="table-wrap"><table class="owner-table"><thead><tr><th>阶段</th><th>规则</th><th>准确性保障</th></tr></thead><tbody>
+          <tr><td>先投影过期历史</td><td>旧 World prompt/media 删除，因为 current user request 已携带 fresh World；已闭合 ToolCall/ToolReturn 保留配对和业务结果，但移除 typed ephemeral ref path；未解决 tool suffix 完整保留。</td><td>当前环境事实从不靠摘要恢复；旧 E-ref 不能继续拥有执行语义。</td></tr>
+          <tr><td>触发 compaction</td><td>整请求压力达到可用预算 80%，或 history 达 50% 且至少可回收 15%；目标压至 30%，recent exact suffix 约占可用 history 12%，summary 输出上限 1,024。</td><td>阈值针对 provider envelope 的实际 token breakdown；不是按字符串长度拍脑袋。</td></tr>
+          <tr><td>SummarizingCompaction</td><td>preserve_first_user_message=true、incremental=true；摘要只能用 Completed outcomes、Verified facts、Failed strategies 三类。</td><td>结果值和来源优先；不把猜测提升为事实，不生成未来 todo，不保留临时 URL/ref。</td></tr>
+          <tr><td>边界验证</td><td>验证官方消息 topology、ToolCall/ToolReturn pairing、unresolved suffix 与 exact preserved suffix。</td><td>Harness 出错、发明 preserved message 或破坏配对时，回退原始 exact history；摘要失败不能污染控制流。</td></tr>
+        </tbody></table></div>
+        <div class="callout warning"><strong>它不是数学意义的无损摘要</strong>自然语言摘要会丢细节。这里保证的是：fresh World 不摘要、未解决调用 exact、工具配对闭合、业务输出优先、旧执行 ref 清除、摘要可验证且失败回退。面试时不要把它包装成“完全无损 memory”。</div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/canonical_provider_envelope.py">canonical_provider_envelope.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">pydantic_ai_bridge.py</a></p>
+      </section>
+
+      <section id="loop">
+        <p class="section-kicker">10 · One CoreAgentLoop</p>
+        <h2>一次 step 的真实路径：决策只是中点</h2>
+        <div class="sequence dense">
+          <div class="actor">Initialize</div><div class="event"><b>reset → first fresh World → one GoalCompiler call</b>；建立唯一 RunState，不创建 Planner/Worker 第二 loop。</div>
+          <div class="actor">Context</div><div class="event">若 observation/task revision 变化，重建 ActionSpace、canonical projection、region index、AgentContext、DeliveryPlan 和 Catalog。</div>
+          <div class="actor">Policy</div><div class="event">用 TaskGoal + GoalPlan + fresh World + bounded history + current tools 产生一个 closed decision；返回的 context_id 必须仍当前。</div>
+          <div class="actor">Resolve</div><div class="event">ToolCall → Catalog resolver → <code>SelectAction</code>；或直接成为 observation/read/search/wait/final/ask/abort 分支。</div>
+          <div class="actor">Gate</div><div class="event">ActionSpace admission → replay guard → RiskPolicy/confirmation → Binder → environment currentness/live probe。</div>
+          <div class="actor">Dispatch</div><div class="event">Executor 只发送一次 bound request；receipt 区分 <code>NOT_SENT</code>、<code>SENT</code>、<code>SENT_UNKNOWN</code>，未知副作用不盲重试。</div>
+          <div class="actor">Observe</div><div class="event">同一 execution outcome 内取得 causal stable post-World；ActionEvaluator 只判断局部效果，TaskEvaluator/native verifier 判断整任务。</div>
+          <div class="actor">Commit</div><div class="event">构造闭合 <code>StepResult</code>，然后才更新 workspace、Monitor、history checkpoint、observation delivery 和公开 progress。</div>
+        </div>
+        <h3>Policy 能返回的闭合代数</h3>
+        <div class="tool-pills decisions"><span>SelectAction</span><span>RequestObservation</span><span>RequestActionPage / find</span><span>LocalToolResult / read / search</span><span>Wait</span><span>FinalResponse</span><span>AskUser</span><span>Abort</span></div>
+        <p><b>RequestObservation</b> 只要求 Surface/Fusion 补证据；<b>LocalToolResult</b> 读内部完整 records，不 dispatch；<b>AskUser</b> 只在缺少用户拥有的事实时进入 waiting_user；<b>FinalResponse</b> 仍不能自行宣布 native task 成功；<b>SelectAction</b> 才进入 bind/execute。</p>
+        <div class="trace-stack">
+          <details class="trace-step" open><summary><span>14</span><b>语义选择先过 action admission</b><em>AdmittedSelection</em></summary><div class="trace-body"><p>验证 action_id 属于当前完整 ActionSpace、目标和参数未被 provider 改写、operation 与当前 catalog 一致；ReplayGuard 检查近期相同 outcome identity，RiskPolicy 根据 typed effect/risk 决定直接放行、请求用户确认或拒绝。</p></div></details>
+          <details class="trace-step" open><summary><span>15</span><b>Binder 与 live currentness 后才允许 dispatch</b><em>BoundActionRequest</em></summary><div class="trace-body"><p>Binder 解析私有 route 并派生 postcondition needs。Surface 比对 world/source revision、page identity、document epoch，并用 Playwright live probe 确认 BID attached/visible/enabled/editable。失败发生在 dispatch 前就是 <code>NOT_SENT</code>，可以 fresh observe 后重新推理。</p></div></details>
+          <details class="trace-step" open><summary><span>16</span><b>结果由 fresh post-World 闭合</b><em>ActionOutcome + TaskEvaluation</em></summary><div class="trace-body"><p>dispatch 成功不是效果成功。ActionEvaluator 对比 before/after World 和 binding-owned postcondition，生成 local APPLIED/NO_CHANGE/REGRESSED/UNKNOWN 等 outcome；TaskEvaluator 或 BrowserGym native verifier 单独决定 SUCCEEDED/CONTINUE/FAILED。最后 StepResult 把 decision、receipt、post-World、effect、task evaluation 和 lineage 一次提交。</p></div></details>
+        </div>
+        <div class="callout"><strong>为什么普通 DeepSeek Flash 也可能做长链任务</strong>不是因为 Runtime 替模型写了网站规则，而是把每轮问题缩成：在 fresh、typed、可恢复展开的公共世界中，从当前合法工具里选一个语义动作。确定性的 currentness、binding、权限、dispatch truth、局部效果和终止由 Harness 兜住；开放世界理解、分解和选择仍由通用模型承担。</div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/core_loop.py">agent/core_loop.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/admission.py">actions/admission.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/task_evaluator.py">browsergym/task_evaluator.py</a></p>
+      </section>
+
+      <section id="memory">
+        <p class="section-kicker">11 · Memory and progress</p>
+        <h2>没有一个叫“Memory”的万能桶：五层各自有边界</h2>
+        <div class="memory-stack">
+          <div><span>NOW</span><b>fresh WorldObservation</b><p>唯一当前环境 authority。它回答“现在页面是什么”，不能由摘要或进度替代。</p></div>
+          <div><span>RECENT</span><b>AgentWorkspace</b><p>最多 8 个 detailed steps、24 个 semantic events、每个 activity family 一条 summary；内容 ref-free，只支持短期策略连续性。</p></div>
+          <div><span>MODEL</span><b>PydanticAI official history</b><p>保存用户/模型/tool exchange；过期 current-state 句柄被投影，pair-safe prefix 可由 Harness 总结，unresolved suffix exact。</p></div>
+          <div><span>CONTROL</span><b>Monitor + ObservationDeliveryStore</b><p>Monitor 保留最多 16 个近期 transition/result identity；delivery store 最多 64 个本地结果 digest receipt，只判断 novelty/stall，不保存 result body 供模型当记忆。</p></div>
+          <div><span>PUBLIC</span><b>Session event feed + PublicProgressStep</b><p>把 committed StepResult 变成用户能理解的活动标签和状态。它是 display projection，不反馈成第二个计划状态。</p></div>
+        </div>
+        <h3>“进展”在系统里到底怎样表达</h3>
+        <div class="table-wrap"><table class="compare-table"><thead><tr><th>问题</th><th>权威答案</th><th>不该用什么回答</th></tr></thead><tbody>
+          <tr><td>用户究竟要什么？</td><td>最新 revision 的 TaskGoal</td><td>旧聊天摘要、GoalPlan prose</td></tr>
+          <tr><td>页面现在是什么？</td><td>fresh WorldObservation</td><td>上一步截图、旧 E-ref、public progress</td></tr>
+          <tr><td>刚才动作有没有局部效果？</td><td>ActionOutcome + dispatch receipt + before/after World</td><td>模型说 “done”、DOM ID churn</td></tr>
+          <tr><td>任务是否完成？</td><td>TaskEvaluator / native verifier</td><td>GoalPlan item 打勾、Monitor 无 stall</td></tr>
+          <tr><td>最近路线是否在震荡？</td><td>EpisodeMonitor 的同失败中心/transition identities</td><td>不断清零的 recovery method 计数</td></tr>
+          <tr><td>用户 UI 显示到哪了？</td><td>committed StepResult 的 PublicProgressStep/event feed</td><td>把展示文案反喂给控制流</td></tr>
+        </tbody></table></div>
+        <p>这就是为什么项目不维护 mutable milestone/todo：开放网页上的 “目标已满足” 往往只能由每轮 fresh World + model 语义重新判断，或由 native evaluator 终止。若 Runtime 自己缓存 item status，就会在页面变化、用户修订或先前误判后形成第二真相。</p>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/workspace.py">agent/workspace.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/monitor.py">agent/monitor.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/observation_delivery.py">observation_delivery.py</a></p>
+      </section>
+
+      <section id="control">
+        <p class="section-kicker">12 · Human-in-the-loop control</p>
+        <h2>暂停、取消、修改、接管、返回、撤销不是同一个按钮</h2>
+        <p class="section-intro">用户控制通过版本化 command 进入 <code>TargetRuntimeSession</code>。Runtime 在明确 safe boundary 承认它，而不是异步杀线程；每种操作都有不同的 temporal contract。</p>
+        <div class="table-wrap"><table class="control-matrix"><thead><tr><th>用户操作</th><th>Runtime 做什么</th><th>过去效果</th><th>继续条件</th></tr></thead><tbody>
+          <tr><td>Pause</td><td>登记 cooperative request，在 BEFORE_POLICY / AFTER_POLICY / BEFORE_DISPATCH / AFTER_DISPATCH / AFTER_CAPTURE / AFTER_EVALUATION 等边界提交 checkpoint。</td><td>保留</td><td>resume 消费同一暂停状态；pending tool exchange 必须闭合。</td></tr>
+          <tr><td>Cancel</td><td>在最近 safe boundary 终止未来动作，状态成为 cancelled；若覆盖 pending pause，产生 typed superseded outcome。</td><td>不回滚</td><td>run 终止。取消只保证“不再做”，不声称“从没做过”。</td></tr>
+          <tr><td>Revise</td><td>先 durable pause；最多 6 turns / 16KiB 的 revision conversation 连同 current TaskGoal、pending question/confirmation 编译成完整 replacement proposal。</td><td>先 reconciliation</td><td>新 TaskGoal revision + fresh World + 新 GoalPlan；旧 plan/ref/context 全失效。</td></tr>
+          <tr><td>Take over</td><td>到 durable pause，消费 checkpoint，把 control owner 改为 USER，签发 process-local input lease。</td><td>保留</td><td>只有持有精确 lease 的 surface input 才接收。</td></tr>
+          <tr><td>Return control</td><td>先撤销旧 user lease，再 capture fresh World；捕获成功后才恢复 Agent。</td><td>以 fresh World 为准</td><td>若捕获失败，生成新 lease 并维持 manual control，旧 lease 永不复活。</td></tr>
+          <tr><td>Undo / 撤回效果</td><td>不是通用时间倒流。只有 ActionSpace/EffectReconciliation 暴露可证明 compensation 时执行新的反向 action。</td><td>显式补偿</td><td>irreversible / unknown / unsupported 返回 typed needs-input/unsupported，不能伪造 rollback。</td></tr>
+        </tbody></table></div>
+        <h3>用户修改目标的完整分支</h3>
+        <div class="ref-flow control-flow">
+          <div><span>USER</span><b>revise_task</b><p>携带 command_id 与 expected revision/checkpoint。</p></div><i>→ pause</i>
+          <div><span>COMPILER</span><b>replacement TaskGoal</b><p>澄清对话只能补用户事实，不直接 patch 旧 GoalPlan。</p></div><i>→ reconcile</i>
+          <div><span>RUNTIME</span><b>effect disposition</b><p>保留、补偿、needs input、unknown 或 unsupported。</p></div><i>→ recapture</i>
+          <div><span>WORLD</span><b>fresh revision context</b><p>新 World、新 plan、新 catalog，旧执行句柄失效。</p></div>
+        </div>
+        <div class="callout danger"><strong>不能承诺通用 undo</strong>网页动作可能发邮件、付款、提交表单或触发远端 side effect。Browser snapshot 回退不了真实世界；最安全的合同是：dispatch truth 可追踪、取消阻止未来动作、可逆效果通过显式 compensation，未知/不可逆效果要求用户决策。</div>
+        <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/run_control.py">agent/run_control.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/public_session.py">app/public_session.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/task/revision.py">task/revision.py</a></p>
+      </section>
+
+      <section id="evidence">
+        <p class="section-kicker">13 · Evidence atlas</p>
+        <h2>不是只看 316 / 798：每一组任务打的是不同合同</h2>
+        <p class="section-intro">下面按“暴露了哪个跨层不变量”组织历史证据，而不是列一个漂亮总分。最新权威状态仍以 <a href="benchmark.md">benchmark.md</a> 为准。</p>
+        <div class="evidence-atlas">
+          <article><span>Provider-free</span><h3>2,284 passed / 19 skipped</h3><p>owner algebra、typed ports、properties、integration gates 的当前基线；另有一个已知缺失 archived fixture。它证明实现合同，不等于 live WebArena 泛化分数。</p></article>
+          <article><span>W1b · 0 / 7 / 21 / 27 / 44</span><h3>输入表示、provider budget、集合完备、导航 recapture</h3><p>接受证据包括 Task0 run2 35 calls、Task7 run2 7 calls 且两次 live compaction、Task21 run13 10 calls、Task27/44 controls；后续 Task21 语义方差说明 cohort 不能永久“一次过即关闭”。</p></article>
+          <article><span>Task266 · run 1–40</span><h3>大页面与长链压力主线</h3><p>依次暴露 owner-thread liveness、screenshot/media、public ref capacity、browser-context route、recall、currentness、多 tool call、history projection、Harness compaction、delivery minimum。run37 与 run40 是成功证据，不抹掉前序反例。</p></article>
+          <article><span>W2 · 268 / 740 / 759</span><h3>完整跨站链和 final codec</h3><p>Task268 run3 native success；Task740 run1、run6/7/8 多轮验证 Wiki→OSRM、semantic churn、history efficiency；Task759 run3 验证 NAVIGATE/SUCCESS codec。效率在不同路径仍有真实方差。</p></article>
+          <article><span>Task388</span><h3>collection/candidate convergence</h3><p>run9 native accepted；后续 fresh review 删除了证据不足的 collection-navigation association。结论是“该 run 接受，但那个抽象被回滚”，不是为结果保留错误架构。</p></article>
+          <article><span>Diagnostic ten</span><h3>6 / 10，且成功成本差异大</h3><p>418/435/553/598/321/343 success；545/66 暴露 Surface alias；214 暴露视觉/生命周期路线；425 暴露 source/entity 与 provider output；成功任务也可耗 20–77 calls。</p></article>
+          <article><span>Task554</span><h3>Commit / recovery / history / candidate / final</h3><p>多轮 live 与 provider-free 修复推动 recovery owner、immediate ToolReturn、candidate delivery、final response；但 empirical closure 仍开放，不能靠局部 gate 替代 fresh run。</p></article>
+          <article><span>Task316 + Task798</span><h3>最新 failure-center 反例</h3><p>316 在 post-change run 11 steps / 122.8s native done；798 18 steps / 107.2s 到 control_stalled。共同反例是不同 recovery method 曾洗掉同一失败中心累计状态；owner repair 已实现，但 798 业务选择验收仍开放。</p></article>
+        </div>
+        <div class="callout warning"><strong>面试时怎样诚实说结果</strong>“我们有 accepted live witnesses 和 2,284 项 provider-free gates，但 broader held-out generalization 仍开放。测试用于保护统一合同，benchmark 用于反驳架构假设；每个失败都必须先分类为 environment/provider/case/reporting，不能把 serialization 崩溃算 GUI case failure。”</div>
+      </section>
+
+      <section id="reading">
+        <p class="section-kicker">14 · Source reading order</p>
+        <h2>面试前按这 12 个文件读，能串起整条链</h2>
+        <ol class="source-list">
+          <li><time>01 · contract</time><span><a href="architecture.md">docs/architecture.md</a> — 先记 authority、owner 和对象代数。</span></li>
+          <li><time>02 · status</time><span><a href="benchmark.md">docs/benchmark.md</a> — 区分 accepted witness、open gate 和历史反例。</span></li>
+          <li><time>03 · ingress</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/public_session.py">app/public_session.py</a> — 自然对话、事件、revision、takeover。</span></li>
+          <li><time>04 · loop</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/core_loop.py">agent/core_loop.py</a> — 每个 decision branch 和 commit 顺序。</span></li>
+          <li><time>05 · browser</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/backend.py">browsergym/backend.py</a> — BrowserGym/Playwright owner-thread 与 causal step。</span></li>
+          <li><time>06 · adapter</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/environment.py">browsergym/environment.py</a> — reset/capture/currentness/execute 到 source observation。</span></li>
+          <li><time>07 · world</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/world/orchestrator.py">world/orchestrator.py</a> — acquisition offers、Fusion 与 fresh identity。</span></li>
+          <li><time>08 · refs</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/canonical_world_projection.py">canonical_world_projection.py</a> — E/N/F/R 与 private resolver。</span></li>
+          <li><time>09 · delivery</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/agent/context/model_turn_delivery.py">model_turn_delivery.py</a> — ActorWorld、Manifest、atomic minimum。</span></li>
+          <li><time>10 · catalog</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/grounded_tool_compiler.py">grounded_tool_compiler.py</a> — Registry × current routes → tools。</span></li>
+          <li><time>11 · provider</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">pydantic_ai_bridge.py</a> — SDK history、deferred calls、repair、compaction。</span></li>
+          <li><time>12 · execution</time><span><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/actions/binder.py">actions/binder.py</a> + <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/surfaces/browsergym/execution.py">browsergym/execution.py</a> — 语义 action 到真实 dispatch。</span></li>
+        </ol>
+        <div class="callout"><strong>两分钟总述</strong>“我做的不是另一个浏览器 agent prompt，而是一个模型无关 GUI Harness。BrowserGym 提供 benchmark 环境，Playwright 在 owner thread 内提供真实页面和因果稳定性；SurfaceAdapter 把 DOM/AX/截图统一成 fresh World；Runtime 为当前世界生成 E-ref、完整 ActionSpace 和一次性 ToolCatalog；PydanticAI 只处理 provider/tool/history 协议，模型每轮选择一个语义工具；Binder 才解析 BID 并 dispatch；fresh post-World、effect projector 和 native evaluator 闭合结果。长任务靠可恢复 World 折叠、pair-safe Harness compaction 和有界短期 workspace，用户则可在 safe boundary 暂停、修订、接管或显式补偿。Runtime 管确定性，模型管开放世界语义。”</div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="footer"><div class="footer-inner"><p>本页是从当前源码、<a href="architecture.md">architecture.md</a> 与 <a href="benchmark.md">benchmark.md</a> 派生的实现讲解，不创建新的 architecture authority。源码链接固定到根因修复提交 <code>e4a57a5a</code>。</p><div class="footer-links"><a href="project-pitch.html">Pitch</a><a href="interview-guide.html">Guide</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
+  <script src="assets/interview.js"></script>
+</body>
+</html>

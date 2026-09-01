@@ -15,7 +15,7 @@
     <div class="top-inner">
       <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>INTERVIEW GUIDE</small></span></a>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
-      <nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="interview-guide.html" aria-current="page">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a></nav>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html" aria-current="page">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a></nav>
     </div>
   </header>
 
@@ -24,7 +24,7 @@
       <div>
         <div class="eyebrow">Interview field manual · searchable Q&amp;A</div>
         <h1>沿着一次任务<br>讲清<em>整个代码库</em></h1>
-        <p class="lede">不要背模块名。先说唯一 authority，再说对象如何穿过 owner 边界，最后用 trace、typed outcome 和 benchmark 证明。下面 57 个问题可以搜索，也可以按面试轮次展开。</p>
+        <p class="lede">不要背模块名。先说唯一 authority，再说对象如何穿过 owner 边界，最后用 trace、typed outcome 和 benchmark 证明。下面 70 个问题可以搜索，也可以按面试轮次展开。</p>
       </div>
       <div class="hero-console">
         <div class="console-head"><i></i><i></i><i></i></div>
@@ -42,7 +42,7 @@
 
   <div class="page-grid wide">
     <aside class="side-nav" aria-label="问答分组">
-      <p class="side-nav-label">57 个问题</p>
+      <p class="side-nav-label">70 个问题</p>
       <ol>
         <li><a href="#opening">01 开场与定位</a></li>
         <li><a href="#repository">02 代码库结构</a></li>
@@ -55,7 +55,8 @@
         <li><a href="#evaluation">09 验证与评测</a></li>
         <li><a href="#sota">10 SOTA 与取舍</a></li>
         <li><a href="#hardening">11 安全与恢复</a></li>
-        <li><a href="#drill">12 追问与反问</a></li>
+        <li><a href="#implementation">12 实现细节</a></li>
+        <li><a href="#drill">13 追问与反问</a></li>
       </ol>
       <div class="side-nav-meta">答题原则<br>先 owner<br>再 contract<br>再 evidence<br>最后 trade-off</div>
     </aside>
@@ -178,8 +179,27 @@
         <details class="qa"><summary>Q57：DOM、视觉和 BrowserGym 互相冲突怎么办？</summary><div class="answer"><p>WorldFusion 保留每个 source 的 observation/revision/lineage，并按 predicate contract 输出显式 ObservationConflict；冲突字段不会被任意覆盖。ActionSpace 去掉 conflicted target/route，unified grounding 对 material unresolved conflict fail-closed，必要时再请求有针对性的证据。已实现的是冲突可见与不执行，不能把它夸成所有语义字段都已完成完美仲裁。</p></div></details>
       </section>
 
+      <section class="qa-group" id="implementation">
+        <p class="section-kicker">12 · Implementation details</p><h2>BrowserGym、E-ref、Context 与用户入口</h2>
+        <p>下面是最容易被追问“具体怎么做”的实现题。完整对象图与源码链接见 <a href="implementation-walkthrough.html">实现链路逐层拆解</a>。</p>
+
+        <details class="qa"><summary>Q58：BrowserGym 和 Playwright 的分工到底是什么？</summary><div class="answer"><p>BrowserGym 是环境和 benchmark contract：<code>gym.make/reset/step</code>、标准 action/observation、reward、terminated 与 native task state。Playwright 是 BrowserGym 下方的真实浏览器 owner：Page、导航事件、DOMContentLoaded、MutationObserver/DOM quiet 和 dispatch 前 live probe。<code>ThreadBoundBrowserGym</code> 把同步 Playwright 全部固定到一个 owner thread，Page/Locator 不跨线程；SurfaceAdapter 只把 typed raw/transition 转成统一 World。</p></div></details>
+        <details class="qa"><summary>Q59：一次 raw BrowserGym observation 怎样变成 fresh World？</summary><div class="answer"><p>BrowserGym 给 AX tree、DOMSnapshot extras、screenshot、focus、reward/verifier facts；adapter 投影为 source observation，同时建立不公开的 BID binding rows。ObservationAcquisitionCoordinator 按 typed need 选择 structural/visual offers，WorldFusion 合并 targets/facts/topology 并保存 lineage。只有导航和最终文档达到 causal stable 后产生新 observation_id；该 World 才成为当前环境 authority，旧 executable refs 同时失效。</p></div></details>
+        <details class="qa"><summary>Q60：E-ref 从模型输出到真实点击经过什么？</summary><div class="answer"><p><code>E7</code> 只是本 context 第七个公开 executable target，不是 selector。Catalog resolver 先把 <code>operation + E7 + args</code> 解析为当前 private action_id；ActionSpace admission 验证；Binder 用 RouteSelector 取当前 ActionBinding；Surface binding store 再解析 BID/tab/viewport；execution module 才生成 BrowserGym action。dispatch 前还做 source revision、page/document epoch 与 live attached/visible/enabled probe。</p></div></details>
+        <details class="qa"><summary>Q61：动态工具是怎样生成的？</summary><div class="answer"><p>公式是 <code>stable Registry ∩ fresh ActionSpace ∩ DeliveryManifest</code>。Registry 拥有 operation 名称与 schema；ActionSpace 是当前全部合法语义 action；Manifest 是本轮交付给模型的候选和 atomic obligations。GroundedToolCatalogCompiler 把它们编成一次性 PydanticAI ToolSpec 与 private resolver。模型不能发明 tool，也不能调用未交付 route；没看到的目标可用 find/read/search/page 恢复。</p></div></details>
+        <details class="qa"><summary>Q62：为什么 ActionDeliveryPlan 不直接给所有 action？</summary><div class="answer"><p>大型页面的 target 和每个 target 对应 schema 会让请求爆炸，但 Runtime 又不能因为 prompt 装不下就修改事实。于是完整 ActionSpace 留在私有层；DeliveryPlan 先保证 active form、当前 interaction、目标与 destination 的原子 minimum，再给 Top-K 和目标相关 breadth，并显式发布 coverage。模型可检索未展开记录，所以是有损但可恢复的 delivery，不是静默截断。</p></div></details>
+        <details class="qa"><summary>Q63：ActionPolicy 每轮上下文具体包含什么？</summary><div class="answer"><p>AgentContext 包含版本化 TaskGoal、静态 GoalPlan、fresh World/canonical refs、完整 ActionSpace、workspace、last StepResult、Monitor/control feedback 与 final codec。模型侧 ModelTurnDelivery 只投影 ActorWorld、coverage、Manifest、selected routes、可选 media 和 pending ToolReturn；随后再加 current ToolCatalog、官方 PydanticAI history、model settings/output contract，CanonicalProviderEnvelope 对完整物理内容 hash 和 admission。</p></div></details>
+        <details class="qa"><summary>Q64：怎么避免网页和历史把 token 撑爆？</summary><div class="answer"><p>页面侧用 PageMap/ActiveView 保留语义 skeleton，重复列表折成完整内部 Records + R-ref/cursor；TurnPacker 原子装入当前 hard minimum，再按 budget 扩 breadth。历史侧先删旧 World/media 和旧 operational refs，保持 tool pair/unresolved suffix；整请求 80% 压力或 history 50% 且可回收 15% 时用 Harness compact 到 30%，保留约 12% exact suffix。最终 admission 计算 system、history、tools、images、provider overhead 和 output reserve，不只数文字。</p></div></details>
+        <details class="qa"><summary>Q65：为什么用 PydanticAI，不直接调 DeepSeek API？</summary><div class="answer"><p>它统一 provider message/tool protocol、typed history、tool_call_id、DeferredToolRequests、multimodal parts、usage、retry 与消息 checkpoint，避免项目重复实现易错 transport。它不拥有 Runtime semantics：Bridge 仍要求一个 current tool call，Catalog/admission/risk/Binder/Executor/Evaluator 都在框架外。换 provider 时复用 Harness，换的是模型适配，不是 World 与执行真值。</p></div></details>
+        <details class="qa"><summary>Q66：Harness summarization 能说“无损”吗？</summary><div class="answer"><p>不能。自然语言摘要不是数学无损。可承诺的是 fresh World 从不摘要，first user anchor、unresolved tool suffix、ToolCall/ToolReturn pairing 和 recent exact suffix 保留；摘要只写 Completed outcomes、Verified facts、Failed strategies，优先 exact output values，删除旧 E/R/N/F operational handles；输出 topology 校验失败就回退 exact input history。</p></div></details>
+        <details class="qa"><summary>Q67：短期记忆和进展分别放在哪里？</summary><div class="answer"><p>fresh World 保存“现在”；AgentWorkspace 保存最多 8 detailed steps、24 semantic events 和每 activity family 一条 ref-free summary；官方 SDK history 保存模型交换；Monitor 保存最多 16 个 transition/result identities；ObservationDeliveryStore 只保留 64 个 digest receipts；PublicProgressStep/Event feed 只用于 UI。没有 mutable GoalPlan status，任务完成只归 TaskEvaluator/native verifier。</p></div></details>
+        <details class="qa"><summary>Q68：自然对话入口怎样避免直接变成 prompt 权限？</summary><div class="answer"><p>Shell 把文字包装成带 command_id、expected revision/status/checkpoint 的 PublicSessionCommand。ThinTaskIntake 编译 TaskGoal，但 allowed effects 来自调用方显式 typed TaskBoundary，默认 READ_ONLY，不从“请帮我付款”这种文字推断授权。缺用户事实才 AskUser；provider/schema failure 不能伪装成 waiting_user。公开事件是 Runtime 状态投影，不反过来控制 loop。</p></div></details>
+        <details class="qa"><summary>Q69：用户暂停、修改、中止、接管和撤回分别怎样实现？</summary><div class="answer"><p>Pause/Cancel 由 CooperativeRunControl 在明确 safe boundary 承认；cancel 阻止未来 action，但不撤销已发生效果。Revise 先 durable pause，用最多 6 turns/16KiB 对话编译完整 replacement TaskGoal，再做 effect reconciliation、fresh capture 和新 GoalPlan。Takeover 发 process-local input lease；return 先撤 lease 再 capture。Undo 只有在 ActionSpace 提供可证明 compensation 时才作为新 action 执行，未知或不可逆效果 typed fail/needs input。</p></div></details>
+        <details class="qa"><summary>Q70：除了 Task316/798，还有哪些测试真正塑造了架构？</summary><div class="answer"><p>W1b 0/7/21/27/44 打输入表示、provider budget、集合完备与 recapture；Task266 40 轮历史打大页、media、ref capacity、dynamic tools、currentness 与 compaction；W2 268/740/759 打跨站路线、semantic churn、final codec 和效率；Task388 促成 collection/candidate review；diagnostic-ten 是 6/10，暴露 alias、视觉路线、effect certainty 和 provider output；Task554 持续打 recovery/history/candidate/final。2,284 provider-free tests 保护合同，但 broader live generalization 仍开放。</p></div></details>
+      </section>
+
       <section class="qa-group" id="drill">
-        <p class="section-kicker">12 · Final drill</p><h2>临场追问与 10 分钟检查表</h2>
+        <p class="section-kicker">13 · Final drill</p><h2>临场追问与 10 分钟检查表</h2>
         <div class="cards two">
           <article class="card"><h3>如果被问“最难的 bug”</h3><p>讲 Task798/316 failure center。必须说出 symptom、trigger、immediate mechanism、shared root cause、owner repair、property tests、live result和仍开放 acceptance。</p></article>
           <article class="card cyan"><h3>如果被问“你做了什么”</h3><p>从 owner-first architecture、typed contracts、trace causal analysis、property/state-machine tests、BrowserGym live evidence和 Pages/Console表达闭环回答，不只说“写 prompt”。</p></article>
@@ -201,7 +221,7 @@
     </main>
   </div>
 
-  <footer class="footer"><div class="footer-inner"><p>本指南是派生的口述材料。遇到数字、实现状态或开放问题，以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 和当前源码为准。</p><div class="footer-links"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
+  <footer class="footer"><div class="footer-inner"><p>本指南是派生的口述材料。遇到数字、实现状态或开放问题，以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 和当前源码为准。</p><div class="footer-links"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="https://github.com/Garrulus21yyx/affordance-runtime">GitHub</a></div></div></footer>
   <script src="assets/interview.js"></script>
 </body>
 </html>
