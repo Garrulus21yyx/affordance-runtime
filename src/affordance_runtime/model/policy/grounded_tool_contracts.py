@@ -27,7 +27,6 @@ class GroundedToolResolutionCode(StrEnum):
     MULTIPLE_CALLS = "multiple_tool_calls"
     UNKNOWN_OPERATION = "unknown_operation"
     INVALID_ARGUMENTS = "invalid_tool_arguments"
-    RECOVERY_CONTRACT_VIOLATION = "recovery_contract_violation"
     STALE_CATALOG = "stale_tool_catalog"
     GROUNDING_GAP = "tool_grounding_gap"
     DESTINATION_UNAVAILABLE = "destination_unavailable"

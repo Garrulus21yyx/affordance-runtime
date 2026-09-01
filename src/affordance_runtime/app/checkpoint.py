@@ -36,7 +36,6 @@ from affordance_runtime.agent.interactions import (
     restore_interaction_request_public_value,
 )
 from affordance_runtime.agent.recovery import (
-    RecoveryClosureCondition,
     RecoveryKind,
     RecoverySignal,
 )
@@ -902,7 +901,6 @@ def _recovery_signal_payload(signal: RecoverySignal | None) -> dict[str, object]
         return None
     return {
         "kind": signal.kind.value,
-        "closure_condition": signal.closure_condition.value,
         "epoch_id": signal.epoch_id,
         "stable_signature": signal.stable_signature,
         "evidence_revision": signal.evidence_revision,
@@ -933,14 +931,6 @@ def _restore_recovery_signal(payload: object) -> RecoverySignal | None:
         RecoveryKind(str(value["kind"])),
         str(value["stable_signature"]),
         dict(_mapping(value.get("observed_evidence", {}))),
-        closure_condition=RecoveryClosureCondition(
-            str(
-                value.get(
-                    "closure_condition",
-                    RecoveryClosureCondition.OPERATIONAL_EFFECT.value,
-                )
-            )
-        ),
         attempted_modes=tuple(_string_sequence(value.get("attempted_modes", []))),
         prohibited_attempt_signatures=prohibited,
         human_instruction=str(value.get("human_instruction", "")),

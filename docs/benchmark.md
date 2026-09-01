@@ -2,30 +2,31 @@
 
 ## Current status
 
-### 2026-08-31 recovery-decision contract — provider-free implementation, live-open
+### 2026-09-01 one-shot recovery convergence — provider-free implementation, live-open
 
 The ten-case [`diagnostic10c` cohort](../evidence/live/webarena-diagnostic10c-deepseek-flash-pro-20260831-bb0cbe83/all10-run3/summary.json)
 completed 10/10 executions but passed only Tasks 416, 735, and 375. The shared
-failure is downstream of Monitor: Monitor detected repeated/no-effect routes and Runtime rejected some exact replays,
-but the recovery phase still sent DeepSeek `thinking=false`, `tool_choice=required`, and accepted one ToolCall without
-requiring an observable reassessment. Switching Flash to Pro therefore changed the model route but not the recovery
-decision contract. Task735's eventual success after 29 policy calls and eight recoveries is further evidence that the
-old contract did not reliably converge.
+failure is downstream of Monitor: stale recovery epochs and completed model narration outlived the transition that
+created them, while the latest action/effect was duplicated or separated from fresh World. A special recovery schema
+could force the model to label its ToolCall but could not make that label evidence-backed. Automatic collection
+review also escalated calls that normal ActionPolicy context should already resolve. Switching Flash to Pro therefore
+changed the route and budget without closing the decision-information lifecycle. Task735's eventual success after 29
+policy calls and eight recoveries is evidence of that non-convergence.
 
-The owner-level implementation now leaves ordinary turns unchanged and strengthens only the recovery ToolCatalog.
-Every recovery ToolCall must contain one compact, typed `recovery_basis`: a closed decision atom coupling whole-task
-support with continue/change/submit/stop, plus one bounded `remaining_gap` unless the task is supported for
-submission. ToolCatalog validates that relation and strips the basis before the existing binding/execution path;
-official PydanticAI history retains it for the existing Harness compactor. Missing basis receives the existing single
-boundary-repair opportunity and otherwise becomes a typed same-call, zero-dispatch rejection. No prompt example,
-task/site selector, progress memory, second policy call, reflector, semantic Monitor, or Runtime answer rule was
-added.
+The owner-level implementation now gives every ActionPolicy call fresh World with the exact previous transition
+adjacent to it. Monitor feedback is valid for exactly one decision; a later stall creates a new signal from the later
+transition rather than extending the old epoch. Completed response narration/private thinking expires after Runtime
+pairs the ToolCall with its result. Harness remains the sole history compactor. Ordinary and escalated calls share one
+ToolCatalog; `recovery_basis`, collection-triggered evidence review, a reflector, progress memory, and a second policy
+loop are absent. Flash handles ordinary calls. A fresh Monitor signal leases Pro once through the existing
+`deliberate` profile, with thinking disabled and one required ToolCall; the larger model must choose from the explicit
+causal slice rather than emit an unbounded reasoning transcript.
 
-Provider-free evidence currently proves schema isolation between ordinary and recovery calls; terminal/nonterminal
-decision consistency; no leakage into executable action parameters; retention in official PydanticAI history; and
-bounded failure/repair behavior. This is not live closure. A separately authorized held-out cohort must show fewer
-recovery-to-new-route calls, fewer no-effect actions and reinspection loops, and no regression in native success before
-the recovery mechanism can be called converged.
+Provider-free evidence covers signal consumption and new-event reissue, exact replay rejection, return to ordinary
+routing after any consumed signal, causal `previous_transition` placement, removal of settled self-narration, and an
+identical public tool contract across phases. This is not live closure. A separately authorized held-out cohort must
+show fewer recovery calls, fewer no-effect/reinspection loops, correct necessary verification, and no native-success
+regression before the mechanism can be called converged.
 
 Task142 and Task113 are independent upstream World-contract witnesses. The provider-free World follow-up now verifies
 row-aligned table records across one-unit delivery pages and normalizes native same-name HTML radios at the

@@ -308,21 +308,8 @@ def _recovery_tool_response(
     call_id: str,
     *,
     finish_reason: str = "stop",
-    decision: str = "change_contradicted",
-    remaining_gap: str = "The previous route did not produce the required task evidence.",
 ) -> ModelResponse:
-    return _atomic_tool_response(
-        tool_name,
-        {
-            **arguments,
-            "recovery_basis": {
-                "decision": decision,
-                **({"remaining_gap": remaining_gap} if remaining_gap else {}),
-            },
-        },
-        call_id,
-        finish_reason=finish_reason,
-    )
+    return _atomic_tool_response(tool_name, arguments, call_id, finish_reason=finish_reason)
 
 
 def _policy(model) -> ModelBackedAgentPolicy:
@@ -445,14 +432,7 @@ def test_deepseek_atomic_recovery_retries_one_complete_decision_without_thinking
                                 "type": "function",
                                     "function": {
                                         "name": "list_regions",
-                                        "arguments": json.dumps(
-                                            {
-                                                "recovery_basis": {
-                                                    "decision": "change_contradicted",
-                                                    "remaining_gap": "The previous route did not produce evidence.",
-                                                }
-                                            }
-                                        ),
+                                        "arguments": json.dumps({}),
                                     },
                             }
                         ],
@@ -557,14 +537,7 @@ def test_deepseek_deliberate_length_fallback_uses_same_world_and_required_tool_w
                                 "type": "function",
                                     "function": {
                                         "name": "list_regions",
-                                        "arguments": json.dumps(
-                                            {
-                                                "recovery_basis": {
-                                                    "decision": "change_contradicted",
-                                                    "remaining_gap": "The previous route did not produce evidence.",
-                                                }
-                                            }
-                                        ),
+                                        "arguments": json.dumps({}),
                                     },
                             }
                         ],
@@ -1246,9 +1219,9 @@ def test_next_provider_request_closes_gui_call_with_effect_and_recent_trajectory
         }
         current_prompt = next(part for part in recorded["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
         current = json.loads(current_prompt["content"][0]["content"])
-        assert set(current) == {"observation", "recent_trajectory"}
-        assert current["recent_trajectory"][-1]["result"]["transition"]["observed_change"] == "unchanged"
-        assert "target_ref" not in json.dumps(current["recent_trajectory"])
+        assert set(current) == {"observation", "previous_transition"}
+        assert current["previous_transition"]["result"]["transition"]["observed_change"] == "unchanged"
+        assert "target_ref" not in json.dumps(current["previous_transition"])
 
     asyncio.run(scenario())
 
@@ -1298,25 +1271,13 @@ def test_runtime_rejection_closes_exact_replay_as_same_call_tool_return() -> Non
         assert state.status is RunStatus.BLOCKED
         assert state.execution_count == 2
         assert environment.execute_calls == 2
-        assert scripted.calls == 4
+        assert scripted.calls == 3
         assert state.last_step is not None
         assert isinstance(state.last_step.decision, ToolRejectedResult)
         assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
         assert state.last_step.execution_receipts is None
 
-        recorded = normalize_recorded_provider_input(scripted.records[3])
-        parts = tuple(part for message in recorded["messages"] for part in message["parts"])
-        rejected_call = next(
-            part for part in parts if part["part_kind"] == "tool-call" and part["tool_call_id"] == "recording-call:3"
-        )
-        rejected_return = next(
-            part for part in parts if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
-        )
-        assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
-        assert rejected_return["tool_name"] == rejected_call["tool_name"]
-        assert rejected_return["content"]["kind"] == "prohibited_attempt_rejected"
-        assert rejected_return["content"]["dispatch"] == "not_sent"
-        assert rejected_return["content"]["transport_success"] is False
+        assert state.last_step.decision.tool_call_id == "recording-call:3"
 
     asyncio.run(scenario())
 
@@ -1337,8 +1298,6 @@ def test_runtime_rejection_closes_exact_local_replay_as_same_call_tool_return() 
                     "abort",
                     {"reason": "local replay rejection observed", "category": "user_request"},
                     "recording-call:4",
-                    decision="stop_route_exhausted",
-                    remaining_gap="The exact local route is prohibited and no supported route remains.",
                 ),
             ]
         )
@@ -1355,30 +1314,19 @@ def test_runtime_rejection_closes_exact_local_replay_as_same_call_tool_return() 
             episode_monitor=EpisodeMonitor(),
         ).run_task(environment, shared_task())
 
-        assert state.status is RunStatus.CANCELLED
+        assert state.status is RunStatus.BLOCKED
         assert state.execution_count == 0
         assert environment.execute_calls == 0
-        assert scripted.calls == 4
-
-        recorded = normalize_recorded_provider_input(scripted.records[3])
-        parts = tuple(part for message in recorded["messages"] for part in message["parts"])
-        rejected_call = next(
-            part for part in parts if part["part_kind"] == "tool-call" and part["tool_call_id"] == "recording-call:3"
-        )
-        rejected_return = next(
-            part for part in parts if part["part_kind"] == "tool-return" and part["tool_call_id"] == "recording-call:3"
-        )
-        assert rejected_return["tool_call_id"] == rejected_call["tool_call_id"]
-        assert rejected_return["tool_name"] == rejected_call["tool_name"]
-        assert rejected_return["content"]["kind"] == "prohibited_attempt_rejected"
-        assert rejected_return["content"]["failure_kind"] == "recovery_prohibited_attempt_replay"
-        assert rejected_return["content"]["dispatch"] == "not_sent"
-        assert rejected_return["content"]["world_changed"] is False
+        assert scripted.calls == 3
+        assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.tool_call_id == "recording-call:3"
+        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
 
     asyncio.run(scenario())
 
 
-def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() -> None:
+def test_diagnostic_read_consumes_gui_recovery_and_next_action_policy_is_ordinary() -> None:
     class VerifiedNoEffectProjector:
         async def evaluate(self, task, before, request, result, after, public_world_delta):
             del task, result, public_world_delta
@@ -1403,8 +1351,6 @@ def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() 
                     "abort",
                     {"reason": "stop after recovery inspection", "category": "user_request"},
                     "recording-call:4",
-                    decision="stop_route_exhausted",
-                    remaining_gap="No safe route remains after inspecting the current World.",
                 ),
             ]
         )
@@ -1429,18 +1375,12 @@ def test_diagnostic_read_keeps_gui_recovery_and_next_action_policy_deliberate() 
         assert state.status is RunStatus.CANCELLED
         assert environment.execute_calls == 2
         assert scripted.calls == 4
-        assert [settings["max_tokens"] for settings in scripted.model_settings] == [
-            1024,
-            1024,
-            4096,
-            4096,
-        ]
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [1024, 1024, 4096, 1024]
         fourth = normalize_recorded_provider_input(scripted.records[3])
         current_prompt = next(part for part in fourth["messages"][-1]["parts"] if part["part_kind"] == "user-prompt")
         current = json.loads(current_prompt["content"][0]["content"])
-        assert current["control_feedback"]["kind"] == "control_stall"
-        assert current["control_feedback"]["epoch_id"].startswith("recovery:1:")
-        assert current["recent_trajectory"][-1]["action"]["tool"] == "list_regions"
+        assert "control_feedback" not in current
+        assert current["previous_transition"]["action"]["tool"] == "list_regions"
 
     asyncio.run(scenario())
 
@@ -2727,7 +2667,7 @@ def test_control_boundary_closes_pending_pydantic_history_before_another_model_t
     asyncio.run(scenario())
 
 
-def test_exact_model_reasoning_and_call_identities_survive_into_the_next_turn() -> None:
+def test_settled_model_narration_expires_while_call_identities_survive() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-history", False)
@@ -2804,14 +2744,6 @@ def test_exact_model_reasoning_and_call_identities_survive_into_the_next_turn() 
         prior_response = next(message for message in recorded["messages"] if message["kind"] == "response")
         assert prior_response["parts"] == (
             {
-                "part_kind": "thinking",
-                "content": retained.parts[0].content,
-            },
-            {
-                "part_kind": "text",
-                "content": retained.parts[1].content,
-            },
-            {
                 "part_kind": "tool-call",
                 "tool_name": "list_regions",
                 "arguments": {},
@@ -2825,7 +2757,8 @@ def test_exact_model_reasoning_and_call_identities_survive_into_the_next_turn() 
             },
         )
         physical = json.dumps(recorded, sort_keys=True)
-        assert "private deliberation" in physical
+        assert "private deliberation" not in physical
+        assert progress not in physical
         assert discarded_id in physical
         assert "unneeded recheck" not in physical
         assert "Not executed" in physical
@@ -2836,7 +2769,7 @@ def test_exact_model_reasoning_and_call_identities_survive_into_the_next_turn() 
     asyncio.run(scenario())
 
 
-def test_action_narration_remains_while_only_the_fresh_world_prompt_is_sent() -> None:
+def test_only_unsettled_action_narration_remains_with_the_fresh_world_prompt() -> None:
     async def scenario() -> None:
         task = shared_task()
         world = shared_world("progress-carry-forward", False)
@@ -2902,7 +2835,7 @@ def test_action_narration_remains_while_only_the_fresh_world_prompt_is_sent() ->
         assert len(history) == 4
         assert isinstance(history[0], ModelRequest)
         assert isinstance(history[1], ModelResponse)
-        assert [part.content for part in history[1].parts if isinstance(part, TextPart)] == [progress]
+        assert [part.content for part in history[1].parts if isinstance(part, TextPart)] == []
         assert isinstance(history[2], ModelRequest)
         assert (
             sum(
@@ -2921,7 +2854,9 @@ def test_action_narration_remains_while_only_the_fresh_world_prompt_is_sent() ->
             if isinstance(part, UserPromptPart) and isinstance(part.content, str)
         )
         assert sum(set(payload) == {"task", "goal_plan"} for payload in prompt_payloads) == 1
-        assert sum(set(payload) == {"observation"} for payload in prompt_payloads) == 1
+        decision_prompt = next(payload for payload in prompt_payloads if "observation" in payload)
+        assert set(decision_prompt) == {"observation"}
+        assert "recent_trajectory" not in decision_prompt
         assert isinstance(history[-1], ModelResponse)
         assert [part.content for part in history[-1].parts if isinstance(part, TextPart)] == [
             "I will switch back to the Portland tab now."
@@ -2933,8 +2868,9 @@ def test_action_narration_remains_while_only_the_fresh_world_prompt_is_sent() ->
                 if isinstance(message, ModelResponse)
                 for part in message.parts
             )
-            == 2
+            == 1
         )
+        assert progress not in json.dumps(history, default=str)
         assert "hidden tool-only deliberation" in json.dumps(history, default=str)
         assert "switch back to the Portland tab" in json.dumps(history, default=str)
         assert "switch back to the Portland tab" in json.dumps(
@@ -3259,8 +3195,14 @@ def test_history_projection_bounds_repeated_prose_and_conserves_calls_results_an
     assert tuple(part.content for part in projected_returns) == tuple(
         sanitize_history_value(part.content) for part in original_returns
     )
-    assert stable_conclusion in projected_text
-    assert projected_text.count(repeated_narration) == 1
+    pending_response = next(
+        message
+        for message in reversed(original_tuple)
+        if isinstance(message, ModelResponse)
+    )
+    assert projected_text == tuple(
+        part.content for part in pending_response.parts if isinstance(part, TextPart)
+    )
     assert projected_thinking.count(repeated_reasoning) == 1
     assert projected[-1] == original_tuple[-1]
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
@@ -3336,7 +3278,7 @@ def test_history_projection_expires_only_closed_private_reasoning_with_public_co
     assert tuple(part.content for part in projected_returns) == tuple(
         sanitize_history_value(part.content) for part in original_returns
     )
-    assert projected_text == tuple(f"conclusion {index}: continue toward Acadia" for index in range(turns))
+    assert projected_text == (f"conclusion {turns - 1}: continue toward Acadia",)
     assert projected_thinking == (f"step {turns - 1}: inspect the fresh World",)
     assert projected[-1] == original[-1]
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
@@ -3347,7 +3289,7 @@ def test_history_projection_expires_only_closed_private_reasoning_with_public_co
     canonical_envelope_module._project_pydantic_history(projected)
 
 
-def test_history_projection_keeps_closed_tool_only_reasoning_until_semantic_compaction() -> None:
+def test_history_projection_expires_closed_tool_only_reasoning() -> None:
     original = list(_official_history_with_pending_actions(3))
     first_response = original[1]
     assert isinstance(first_response, ModelResponse)
@@ -3367,7 +3309,7 @@ def test_history_projection_keeps_closed_tool_only_reasoning_until_semantic_comp
         if isinstance(message, ModelResponse)
         and any(isinstance(part, ToolCallPart) and part.tool_call_id == "call:0" for part in message.parts)
     )
-    assert any(isinstance(part, ThinkingPart) for part in first_projected.parts)
+    assert not any(isinstance(part, ThinkingPart) for part in first_projected.parts)
     canonical_envelope_module._project_pydantic_history(projected)
 
 
@@ -3530,8 +3472,7 @@ def test_history_projection_degrounds_closed_same_world_read_and_keeps_pending_c
     assert projected_search.content == {"items": ({"label": "More results"},)}
     completed_response = projected[0]
     assert isinstance(completed_response, ModelResponse)
-    assert isinstance(completed_response.parts[0], TextPart)
-    assert completed_response.parts[0].content == "Use E6 More results."
+    assert isinstance(completed_response.parts[0], ToolCallPart)
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
         "activate",
         {"target": "E6"},
@@ -3605,9 +3546,7 @@ def test_history_projection_preserves_ref_shaped_business_values(
     assert tuple(part.content for part in closed_return.parts if isinstance(part, ToolReturnPart)) == (
         {"entered_text": business_value, "status": "stable"},
     )
-    closed_prose = tuple(part.content for part in closed_response.parts if isinstance(part, TextPart))
-    assert business_value in closed_prose[0]
-    assert selector_ref in closed_prose[0]
+    assert not any(isinstance(part, TextPart) for part in closed_response.parts)
     assert pydantic_bridge._pending_call_from_history(projected) == ToolCall(
         "search_page_content",
         {"query": business_value},
@@ -4911,8 +4850,16 @@ def test_pending_official_exchange_survives_pre_provider_capacity_rejection(monk
         assert second.attempts == ()
         assert policy.port.last_model_call_count == 0
         assert scripted.calls == 1
-        assert policy.port.message_history is history_before
-        assert policy.port.message_history == history_before
+        assert policy.port.message_history is not history_before
+        assert pydantic_bridge._pending_call_from_history(policy.port.message_history) == ToolCall(
+            "list_regions",
+            {},
+            first.output.decision.tool_call_id,
+        )
+        settled_response = next(
+            message for message in policy.port.message_history if isinstance(message, ModelResponse)
+        )
+        assert not any(isinstance(part, (TextPart, ThinkingPart)) for part in settled_response.parts)
 
     asyncio.run(scenario())
 
@@ -5113,7 +5060,7 @@ def test_deliberate_output_retry_keeps_one_model_lease() -> None:
     asyncio.run(scenario())
 
 
-def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_boundary() -> None:
+def test_native_action_policy_keeps_collection_evidence_review_ordinary() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(["first_gui_action"])
         policy = _policy(scripted.build())
@@ -5175,11 +5122,11 @@ def test_native_action_policy_uses_one_bounded_review_at_a_collection_evidence_b
         )
 
         assert result.output is not None
-        assert result.attempts[0].phase == "deliberate"
-        assert result.attempts[0].trigger == "evidence_review"
+        assert result.attempts[0].phase == "ordinary"
+        assert result.attempts[0].trigger == "ordinary"
         assert result.attempts[0].thinking_requested == "disabled"
-        assert result.attempts[0].max_output_tokens == 2048
-        assert [settings["max_tokens"] for settings in scripted.model_settings] == [2048]
+        assert result.attempts[0].max_output_tokens == 1024
+        assert [settings["max_tokens"] for settings in scripted.model_settings] == [1024]
 
     asyncio.run(scenario())
 
@@ -5240,7 +5187,7 @@ def test_native_action_policy_deliberates_for_a_new_later_recovery_event() -> No
     asyncio.run(scenario())
 
 
-def test_deepseek_atomic_recovery_records_typed_basis_without_hidden_reasoning() -> None:
+def test_deepseek_atomic_recovery_records_one_tool_call_without_hidden_reasoning() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
             [
@@ -5248,12 +5195,7 @@ def test_deepseek_atomic_recovery_records_typed_basis_without_hidden_reasoning()
                     parts=[
                         ToolCallPart(
                             "list_regions",
-                            {
-                                "recovery_basis": {
-                                    "decision": "change_contradicted",
-                                    "remaining_gap": "The previous route did not reveal the required control.",
-                                }
-                            },
+                            {},
                             "recording-call:deliberate",
                         ),
                     ],
@@ -5306,9 +5248,7 @@ def test_deepseek_atomic_recovery_records_typed_basis_without_hidden_reasoning()
         assert attempt.transcript["llm.token_count.reasoning"] == 0
         assert attempt.transcript["llm.token_count.final_content"] == 8
         official_history = ModelMessagesTypeAdapter.dump_json(list(port.message_history)).decode()
-        assert '"recovery_basis"' in official_history
-        assert '"decision":"change_contradicted"' in official_history
-        assert not hasattr(result.output.decision, "recovery_basis")
+        assert '"recovery_basis"' not in official_history
 
     asyncio.run(scenario())
 
@@ -5333,12 +5273,7 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
                     parts=[
                         ToolCallPart(
                             "list_regions",
-                            {
-                                "recovery_basis": {
-                                    "decision": "change_contradicted",
-                                    "remaining_gap": "The previous route did not reveal the required control.",
-                                }
-                            },
+                            {},
                             "recording-call:deliberate-retry",
                         ),
                     ],
@@ -5401,13 +5336,10 @@ def test_deepseek_atomic_recovery_retries_one_incomplete_response() -> None:
     asyncio.run(scenario())
 
 
-def test_recovery_call_without_basis_fails_closed_after_one_boundary_repair() -> None:
+def test_recovery_call_uses_the_ordinary_tool_contract_without_boundary_repair() -> None:
     async def scenario() -> None:
         scripted = ScriptedModel(
-            [
-                _atomic_tool_response("list_regions", {}, "recording-call:basis-missing"),
-                _recovery_tool_response("list_regions", {}, "recording-call:basis-repaired"),
-            ]
+            [_atomic_tool_response("list_regions", {}, "recording-call:ordinary-contract")]
         )
         policy = _policy(scripted.build())
         task = shared_task()
@@ -5429,18 +5361,13 @@ def test_recovery_call_without_basis_fails_closed_after_one_boundary_repair() ->
         result = await policy.port.generate(ModelDecisionRequest("request:recovery-basis-repair", context))
 
         assert result.failure is None and result.output is not None
-        assert [attempt.phase for attempt in result.attempts] == [
-            "deliberate",
-            "representation_repair",
-        ]
-        assert isinstance(result.output.decision, ToolRejectedResult)
-        assert result.output.decision.result["kind"] == "invalid_tool_arguments"
-        assert result.output.decision.result["dispatch"] == "not_sent"
+        assert [attempt.phase for attempt in result.attempts] == ["deliberate"]
+        assert isinstance(result.output.decision, ReadRegionResult)
         assert result.diagnostics["tool_resolution_code"] == "accepted"
         official_history = ModelMessagesTypeAdapter.dump_json(list(policy.port.message_history)).decode()
-        assert "recording-call:basis-missing" in official_history
+        assert "recording-call:ordinary-contract" in official_history
         assert '"recovery_basis"' not in official_history
-        assert result.output.decision.tool_call_id == "recording-call:basis-missing"
+        assert result.output.decision.tool_call_id == "recording-call:ordinary-contract"
 
     asyncio.run(scenario())
 
@@ -5562,12 +5489,7 @@ def test_deepseek_atomic_recovery_discards_truncation_and_retries_complete_decis
         assert len(recovery_prompt.encode("utf-8")) <= pydantic_bridge._ATOMIC_RECOVERY_PROMPT_MAX_BYTES
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
-            {
-                "recovery_basis": {
-                    "decision": "change_contradicted",
-                    "remaining_gap": "The previous route did not produce the required task evidence.",
-                }
-            },
+            {},
             "recording-call:2",
         )
         official_history = json.dumps(port.message_history, default=str)
@@ -6080,12 +6002,7 @@ def test_pending_tool_return_is_delivered_once_when_atomic_recovery_retry_succee
         assert [attempt.thinking_effective for attempt in second.attempts] == ["disabled", "disabled"]
         assert pydantic_bridge._pending_call_from_history(port.message_history) == ToolCall(
             "list_regions",
-            {
-                "recovery_basis": {
-                    "decision": "change_contradicted",
-                    "remaining_gap": "The previous route did not produce the required task evidence.",
-                }
-            },
+            {},
             "recording-call:3",
         )
         # OpenAI-compatible requests are stateless: both physical requests
@@ -6322,8 +6239,6 @@ def test_pydantic_ai_rejects_repair_that_invents_missing_semantic_content() -> N
                     "ask_user",
                     {"question": "Which value?", "requested_fields": ["value"]},
                     "recording-call:3",
-                    decision="continue_incomplete",
-                    remaining_gap="The task requires a value only the user can provide.",
                 ),
             ]
         )

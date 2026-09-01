@@ -133,14 +133,14 @@ def test_recovery_kind_without_epoch_identity_cannot_enable_deliberate_mode() ->
     assert profile.thinking_mode == "disabled"
 
 
-def test_closed_collection_with_new_information_leases_one_bounded_evidence_review() -> None:
+def test_closed_collection_with_new_information_stays_in_the_ordinary_policy() -> None:
     profile = ActionPolicyReasoningPolicy(deliberate_max_tokens=4096).select(
         _context(last_step=_collection_read_step(), information_delta="new_information")
     )
 
-    assert profile.phase is ActionPolicyInvocationPhase.DELIBERATE
-    assert profile.trigger is ActionPolicyInvocationTrigger.EVIDENCE_REVIEW
-    assert profile.max_output_tokens == 2048
+    assert profile.phase is ActionPolicyInvocationPhase.ORDINARY
+    assert profile.trigger is ActionPolicyInvocationTrigger.ORDINARY
+    assert profile.max_output_tokens == 1024
     assert profile.thinking_mode == "disabled"
 
 

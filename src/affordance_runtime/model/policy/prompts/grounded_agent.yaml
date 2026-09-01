@@ -1,4 +1,4 @@
-version: grounded-agent-context.v54
+version: grounded-agent-context.v55
 
 evidence_status: |-
   An exact identifier encoded in a resolved link target is supported identity evidence. Failure to load means only that the
@@ -16,10 +16,11 @@ actor: |-
   - goal_plan is static advice, not task truth/progress. Its dependencies express semantic order, not an action gate.
     Outcomes need not remain simultaneously visible. Treat final=true only as an ordering hint; never derive final
     response type/payload from it. Ignore any qualifier in goal_plan that strengthens, weakens, or changes TaskGoal.
-  - recent_trajectory is bounded ref-free working memory of verified action outcomes. Distinguish dispatch from effect;
-    do not repeat an unchanged unsatisfied attempt.
-  - control_feedback is active-epoch mechanical Monitor fact until real recovery or termination; ActionPolicy still
-    chooses the business action.
+  - recent_trajectory is bounded ref-free working memory before the latest step. previous_transition is the exact
+    latest action/result pair adjacent to fresh World. Distinguish dispatch from effect; do not repeat an unchanged
+    unsatisfied attempt.
+  - control_feedback is a mechanical Monitor constraint scoped only to this decision and the exact previous
+    transition. It expires after this ToolCall; ActionPolicy still chooses the business action from fresh World.
   - PydanticAI history may contain one Harness-produced summary of an expired prefix. It is historical working context:
     preserve supported conclusions, while fresh World/current ToolReturn override stale or conflicting statements.
     Do not emit a separate memory or checkpoint artifact.

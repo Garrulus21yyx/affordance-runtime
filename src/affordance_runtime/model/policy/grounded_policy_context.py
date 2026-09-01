@@ -91,9 +91,12 @@ class GroundedPolicyContextBinder:
         }
         current_turn: dict[str, object] = {"observation": observation}
         recent_trajectory = render_recent_trajectory(context.workspace)
+        if len(recent_trajectory) > 1:
+            public["recent_trajectory"] = recent_trajectory[:-1]
         if recent_trajectory:
-            public["recent_trajectory"] = recent_trajectory
-            current_turn["recent_trajectory"] = recent_trajectory
+            previous_transition = recent_trajectory[-1]
+            public["previous_transition"] = previous_transition
+            current_turn["previous_transition"] = previous_transition
         if context.control_feedback:
             control_feedback = project_public_value(context.control_feedback)
             public["control_feedback"] = control_feedback

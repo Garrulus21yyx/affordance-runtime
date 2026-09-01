@@ -696,7 +696,7 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
                 assert context.last_step is not None
                 assert context.last_step.action_page_result is not None
                 assert context.last_step.action_page_result.matches
-                assert context.control_feedback["kind"] == "control_stall"
+                assert context.control_feedback == {}
                 option = next(item for item in context.complete_actions if item.operation == "activate")
                 return SelectAction(
                     context.context_id,
@@ -733,13 +733,11 @@ def test_recovery_delivers_a_distinct_control_result_to_the_next_policy_turn() -
     asyncio.run(scenario())
 
 
-def test_exact_local_result_replay_is_rejected_under_the_same_recovery_epoch() -> None:
+def test_exact_local_result_replay_requires_a_fresh_signal_after_a_different_route() -> None:
     @dataclass
     class LocalReplayPolicy:
         turns: int = 0
         rejected: ToolRejectedResult | None = None
-        recovery_epoch: str = ""
-        prohibited: tuple[object, ...] = ()
 
         @staticmethod
         def original(context, call_id: str) -> SearchPageContentResult:
@@ -771,15 +769,11 @@ def test_exact_local_result_replay_is_rejected_under_the_same_recovery_epoch() -
                     "provider-call:local-different",
                 )
             if self.turns == 4:
-                assert context.control_feedback["kind"] == "control_stall"
+                assert context.control_feedback == {}
                 return self.original(context, "provider-call:local-hard-replay")
             if self.turns == 5:
-                assert context.last_step is not None
-                assert isinstance(context.last_step.decision, ToolRejectedResult)
-                self.rejected = context.last_step.decision
-                self.recovery_epoch = str(context.control_feedback["epoch_id"])
-                self.prohibited = tuple(context.control_feedback["prohibited_attempt_signatures"])
-                return Abort(context.context_id, "rejection observed", AbortCategory.USER_REQUEST)
+                assert len(context.control_feedback["prohibited_attempt_signatures"]) == 1
+                return self.original(context, "provider-call:local-rejected-replay")
             raise AssertionError("local replay test exceeded its bounded sequence")
 
     async def scenario() -> None:
@@ -796,24 +790,19 @@ def test_exact_local_result_replay_is_rejected_under_the_same_recovery_epoch() -
 
         state = await runtime.run_task(environment, _task())
 
-        assert state.status is RunStatus.CANCELLED
+        assert state.status is RunStatus.BLOCKED
         assert policy.turns == 5
         assert environment.execute_calls == 0
-        assert policy.rejected is not None
-        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
-        assert policy.rejected.result["failure_kind"] == "recovery_prohibited_attempt_replay"
-        assert policy.rejected.result["dispatch"] == "not_sent"
-        assert policy.rejected.result["epoch_id"] == policy.recovery_epoch
-        assert policy.rejected.rejected_attempt_signature is not None
-        assert any(
-            item["parameter_digest"] == policy.rejected.rejected_attempt_signature.parameter_digest
-            for item in policy.prohibited
-        )
+        assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
+        assert state.last_step.decision.result["failure_kind"] == "recovery_prohibited_attempt_replay"
+        assert state.last_step.decision.result["dispatch"] == "not_sent"
 
     asyncio.run(scenario())
 
 
-def test_ajax_world_churn_cannot_release_or_replay_a_no_information_route() -> None:
+def test_ajax_world_change_consumes_the_signal_before_the_next_decision() -> None:
     @dataclass
     class AjaxCollectionPolicy:
         turns: int = 0
@@ -833,7 +822,7 @@ def test_ajax_world_churn_cannot_release_or_replay_a_no_information_route() -> N
                     },
                     f"provider-call:ajax-read-{self.turns}",
                 )
-            if self.turns in {3, 4}:
+            if self.turns == 3:
                 option = next(
                     item
                     for item in context.complete_actions
@@ -844,11 +833,9 @@ def test_ajax_world_churn_cannot_release_or_replay_a_no_information_route() -> N
                     option.action_id,
                     tool_call_id=f"provider-call:ajax-page-2-{self.turns}",
                 )
-            if self.turns == 5:
-                assert context.last_step is not None
-                assert isinstance(context.last_step.decision, ToolRejectedResult)
-                self.rejected = context.last_step.decision
-                return Abort(context.context_id, "replay rejected", AbortCategory.USER_REQUEST)
+            if self.turns == 4:
+                assert context.control_feedback == {}
+                return Abort(context.context_id, "changed route observed", AbortCategory.USER_REQUEST)
             raise AssertionError("AJAX collection witness exceeded its bounded sequence")
 
     async def scenario() -> None:
@@ -874,12 +861,9 @@ def test_ajax_world_churn_cannot_release_or_replay_a_no_information_route() -> N
         state = await runtime.run_task(environment, _route_task())
 
         assert state.status is RunStatus.CANCELLED
-        assert policy.turns == 5
+        assert policy.turns == 4
         assert environment.execute_calls == 1
-        assert policy.rejected is not None
-        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
-        assert policy.rejected.result["failure_kind"] == "recovery_prohibited_attempt_replay"
-        assert policy.rejected.result["dispatch"] == "not_sent"
+        assert policy.rejected is None
 
     asyncio.run(scenario())
 
@@ -916,13 +900,14 @@ def test_exact_control_discovery_replay_is_rejected_without_dispatch() -> None:
 
         state = await runtime.run_task(environment, _task())
 
-        assert state.status is RunStatus.CANCELLED
-        assert policy.turns == 4
+        assert state.status is RunStatus.BLOCKED
+        assert policy.turns == 3
         assert environment.execute_calls == 0
-        assert policy.rejected is not None
-        assert policy.rejected.tool_name == "find_controls"
-        assert policy.rejected.result["kind"] == "prohibited_attempt_rejected"
-        assert policy.rejected.result["dispatch"] == "not_sent"
+        assert state.last_step is not None
+        assert isinstance(state.last_step.decision, ToolRejectedResult)
+        assert state.last_step.decision.tool_name == "find_controls"
+        assert state.last_step.decision.result["kind"] == "prohibited_attempt_rejected"
+        assert state.last_step.decision.result["dispatch"] == "not_sent"
 
     asyncio.run(scenario())
 
@@ -1041,8 +1026,7 @@ def test_confirmation_dispatch_cannot_drop_an_active_recovery_epoch() -> None:
 
         assert policy.turns == 2
         assert policy.seen_feedback is not None
-        assert policy.seen_feedback["epoch_id"] == "recovery:1:confirmation"
-        assert policy.seen_feedback["evidence_revision"] > 1
+        assert policy.seen_feedback == {}
         assert policy.seen_postcondition == LocalPostconditionStatus.UNSATISFIED.value
         assert environment.execute_calls == 1
         assert state.status is RunStatus.CANCELLED
@@ -1953,10 +1937,10 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         snapshot = snapshot_episode(state, episode_monitor=monitor)
 
         assert state.status is RunStatus.BLOCKED
-        # Two no-effect Enter dispatches trigger recovery. The next two exact
-        # policy replays are both rejected before dispatch: the first returns
-        # one bounded fallback turn, and the second closes the stalled run.
-        assert policy.turns == 5
+        # Two no-effect Enter dispatches trigger one next-decision constraint.
+        # Repeating that exact attempt is rejected before dispatch and closes
+        # the stalled run without another policy turn.
+        assert policy.turns == 4
         assert environment.execute_calls == 3
         assert [item.intent.semantic_action for item in environment.dispatched_requests] == [
             "type_text",
@@ -1970,10 +1954,10 @@ def test_same_no_effect_element_enter_is_physically_sent_at_most_twice() -> None
         assert state.last_step.execution_receipts is None
         assert state.last_step.feedback == "episode_monitor_blocked:control_stalled"
         assert state.workspace.recent_steps[-1].reason == "episode_monitor_blocked:control_stalled"
-        assert monitor.same_attempt_streak == 4
-        assert monitor.no_progress_count == 4
-        assert snapshot.same_attempt_streak == 4
-        assert snapshot.no_progress_count == 4
+        assert monitor.same_attempt_streak == 3
+        assert monitor.no_progress_count == 3
+        assert snapshot.same_attempt_streak == 3
+        assert snapshot.no_progress_count == 3
         assert snapshot.latest_semantic_attempt_key_digest.startswith("sha256:")
         assert snapshot.latest_control_reason_code == "control_stalled"
         assert snapshot.latest_control_owner == "episode_monitor"
@@ -2057,7 +2041,7 @@ def test_recovery_prohibits_exact_observation_request_before_provider_activation
 
         assert state.status is RunStatus.BLOCKED
         assert observe_calls == ["first visible route", "second visible route"]
-        assert policy.turns == 4
+        assert policy.turns == 3
         assert environment.capture_calls == 0
         assert state.last_step is not None
         assert isinstance(state.last_step.decision, ToolRejectedResult)

@@ -851,7 +851,7 @@ def test_context_delivers_only_the_workspace_latest_eight_detailed_steps() -> No
     assert context.current_step_index == 10
 
 
-def test_policy_current_turn_projects_only_bounded_ref_free_trajectory() -> None:
+def test_policy_places_only_the_latest_transition_beside_the_fresh_world() -> None:
     observation = fused_world("world:policy-history", surface="dom")
     task = TaskGoal("policy-history", "Inspect recent steps")
     steps = tuple(AgentTurnView("abort", reason=f"step:{index}") for index in range(4))
@@ -872,9 +872,15 @@ def test_policy_current_turn_projects_only_bounded_ref_free_trajectory() -> None
         delivery,
     )
 
-    trajectory = sections["current_turn"]["recent_trajectory"]
-    assert tuple(item["result"]["reason"] for item in trajectory) == tuple(f"step:{index}" for index in range(4))
-    assert sections["public"]["recent_trajectory"] == trajectory
+    previous = sections["current_turn"]["previous_transition"]
+    assert previous["result"]["reason"] == "step:3"
+    assert sections["public"]["previous_transition"] == previous
+    assert tuple(item["result"]["reason"] for item in sections["public"]["recent_trajectory"]) == (
+        "step:0",
+        "step:1",
+        "step:2",
+    )
+    assert "recent_trajectory" not in sections["current_turn"]
     assert "current_activity" not in sections["current_turn"]
     assert "current_activity" not in sections["public"]
     assert "semantic_events" not in sections["current_turn"]

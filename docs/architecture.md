@@ -6,7 +6,50 @@ The current production target is a thin, single-loop GUI agent. The former gener
 longer part of the architecture: local tool results are not copied into a Store-owned public inventory, repacked as an
 admitted prefix, or exposed through generic continuation tools.
 
-### 2026-08-30 single-owner action-outcome and recovery convergence
+### 2026-09-01 one-shot decision-feedback convergence — provider-free implemented, live-open
+
+Recovery is not a second reasoning role or a persistent sub-loop. `EpisodeMonitor` owns only mechanical facts about
+the latest committed transition. When those facts prove repetition, no effect, oscillation, or an evidence/control
+stall, it emits one bounded signal for exactly the next `ActionPolicy` decision. That decision consumes the signal.
+If its resulting transition stalls again, Monitor may create a new signal with a new identity from that transition;
+it never carries, revises, or waits to close the old signal. Exact attempts proved unavailable are still rejected by
+Runtime before dispatch, and repeating such a prohibited attempt blocks normally.
+
+Every decision now receives one causally ordered slice:
+
+```text
+TaskGoal + static GoalPlan
++ Harness-owned compressed history
++ fresh World (lossless semantic skeleton; bounded details carry coverage/cursor)
++ previous_transition (intent/action + dispatch/effect + affected fresh semantic unit)
++ optional one-shot Monitor constraint
++ current ToolCatalog
+-> the single ActionPolicy -> exactly one ToolCall
+```
+
+`previous_transition` is adjacent to fresh World and is not duplicated in `recent_trajectory`. Once Runtime has paired
+a ToolCall with its result, the response's free-form text and private thinking expire; the typed ToolCall, ToolReturn,
+fresh transition, and any Harness summary remain. This prevents stale self-narration from competing with current
+World facts without creating a new progress store or memory authority.
+
+Ordinary decisions use the configured Flash route. Only a fresh Monitor signal selects the existing profile named
+`deliberate`, which leases the configured Pro route and a larger output budget for one decision. Provider thinking
+remains disabled and a tool is required: the system does not depend on exposed chain-of-thought, which DeepSeek may
+emit without a usable ToolCall. Here reflection means revising the next semantic action from explicit contradictory
+transition facts, not generating a reasoning transcript. Completed collection delivery is ordinary; evidence review
+is part of the normal ActionPolicy decision and does not independently upgrade the model.
+
+Ordinary and escalated calls compile the same ToolCatalog. The removed `recovery_basis` schema was a model-authored
+parallel state and could only force a label, not prove reassessment. There is no reflector, recovery planner, mutable
+progress record, second history, or special recovery tool algebra. Native `TaskEvaluator` remains the only terminal
+authority. Provider-free tests cover one-shot consumption, new-epoch creation from a later stall, exact-replay
+prohibition, ordinary-after-consumption routing, shared tool schemas, causal prompt placement, and settled-narration
+expiry. Live benchmark closure remains open and requires separate authorization.
+
+### Historical: 2026-08-30 persistent recovery epoch design — superseded, non-normative
+
+The remainder of this dated section records the prior design and evidence only. Its persistent epoch,
+collection-evidence lease, and `recovery_basis` contracts are not current behavior.
 
 This section supersedes the later chronological sections that describe `StrategyRevision` as an active component.
 The failed Task554

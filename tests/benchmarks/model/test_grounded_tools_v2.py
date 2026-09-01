@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
@@ -132,17 +131,11 @@ def _delivery(context, *, include_images: bool = False):
     return build_model_turn_delivery(context, include_images=include_images)
 
 
-def _compile_catalog(
-    context,
-    phase=GroundedToolPhase.ACTION_SELECTION,
-    *,
-    require_recovery_basis: bool = False,
-):
+def _compile_catalog(context, phase=GroundedToolPhase.ACTION_SELECTION):
     return compile_grounded_tool_catalog(
         context,
         phase,
         _delivery(context),
-        require_recovery_basis=require_recovery_basis,
     )
 
 
@@ -1451,147 +1444,32 @@ def test_final_response_tool_accepts_content_without_world_fact_lineage() -> Non
     assert blank.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
-def test_recovery_catalog_requires_one_call_local_basis_and_strips_it_before_binding() -> None:
+def test_monitor_feedback_does_not_fork_the_public_tool_contract() -> None:
     context = _context()
     ordinary = _compile_catalog(context)
-    recovery = _compile_catalog(context, require_recovery_basis=True)
-
-    assert ordinary.catalog_id != recovery.catalog_id
-
-    with pytest.raises(GroundedToolResolutionError) as missing:
-        _resolve_catalog_call(
-            recovery,
-            ToolCall("list_regions", {}),
-            expected_context_id=context.context_id,
-        )
-    assert missing.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
     resolution = _resolve_catalog_call(
-        recovery,
-        ToolCall(
-            "list_regions",
-            {
-                "recovery_basis": {
-                    "decision": "change_contradicted",
-                    "remaining_gap": "The previous route did not expose a usable control.",
-                }
-            },
-        ),
+        ordinary,
+        ToolCall("list_regions", {}),
         expected_context_id=context.context_id,
     )
     assert isinstance(resolution.decision, ReadRegionResult)
-    assert "recovery_basis" not in resolution.decision.result
 
-    activated = _resolve_catalog_call(
-        recovery,
-        ToolCall(
-            "activate",
-            {
-                "target": "E3",
-                "recovery_basis": {
-                    "decision": "change_incomplete",
-                    "remaining_gap": "The login action has not yet produced the requested authenticated state.",
-                },
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(activated.decision, SelectAction)
-    assert "recovery_basis" not in activated.decision.parameters
-
-
-def test_recovery_catalog_strengthens_every_root_branch_without_changing_tool_vocabulary() -> None:
-    def root_branches(schema):
-        variants = tuple(
-            item
-            for keyword in ("oneOf", "anyOf")
-            for item in schema.get(keyword, ())
-            if isinstance(item, Mapping)
-        )
-        return tuple(branch for item in variants for branch in root_branches(item)) if variants else (schema,)
-
-    context = _context()
-    ordinary = _compile_catalog(context)
-    recovery = _compile_catalog(context, require_recovery_basis=True)
-
-    assert tuple(item.name for item in ordinary.specs) == tuple(item.name for item in recovery.specs)
-    for ordinary_spec, recovery_spec in zip(ordinary.specs, recovery.specs, strict=True):
-        assert ordinary_spec.ephemeral_argument_paths == recovery_spec.ephemeral_argument_paths
-        assert all("recovery_basis" not in branch["properties"] for branch in root_branches(ordinary_spec.input_schema))
-        assert all(
-            "recovery_basis" in branch["properties"] and "recovery_basis" in branch["required"]
-            for branch in root_branches(recovery_spec.input_schema)
-        )
-
-
-def test_recovery_catalog_closes_evidence_to_terminal_operation_consistency() -> None:
-    context = _context()
-    recovery = _compile_catalog(context, require_recovery_basis=True)
-
-    with pytest.raises(GroundedToolResolutionError) as unsupported_nonterminal:
+    with pytest.raises(GroundedToolResolutionError) as invented_side_channel:
         _resolve_catalog_call(
-            recovery,
+            ordinary,
             ToolCall(
                 "list_regions",
                 {
                     "recovery_basis": {
-                        "decision": "submit_supported",
+                        "decision": "change_incomplete",
+                        "remaining_gap": "invented model-side state",
                     }
                 },
             ),
             expected_context_id=context.context_id,
         )
-    assert unsupported_nonterminal.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-
-    with pytest.raises(GroundedToolResolutionError) as unresolved_submission:
-        _resolve_catalog_call(
-            recovery,
-            ToolCall(
-                "submit_final_response",
-                {
-                    "content": "premature",
-                    "recovery_basis": {
-                        "decision": "continue_incomplete",
-                        "remaining_gap": "The requested value has not been observed.",
-                    },
-                },
-            ),
-            expected_context_id=context.context_id,
-        )
-    assert unresolved_submission.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
-
-    with pytest.raises(GroundedToolResolutionError) as inconsistent_supported:
-        _resolve_catalog_call(
-            recovery,
-            ToolCall(
-                "submit_final_response",
-                {
-                    "content": "claimed complete",
-                    "recovery_basis": {
-                        "decision": "submit_supported",
-                        "remaining_gap": "A claimed gap contradicts supported submission.",
-                    },
-                },
-            ),
-            expected_context_id=context.context_id,
-        )
-    assert inconsistent_supported.value.code is GroundedToolResolutionCode.RECOVERY_CONTRACT_VIOLATION
-
-    submitted = _resolve_catalog_call(
-        recovery,
-        ToolCall(
-            "submit_final_response",
-            {
-                "content": "supported answer",
-                "recovery_basis": {
-                    "decision": "submit_supported",
-                },
-            },
-        ),
-        expected_context_id=context.context_id,
-    )
-    assert isinstance(submitted.decision, FinalResponse)
-    assert submitted.decision.content == "supported answer"
+    assert invented_side_channel.value.code is GroundedToolResolutionCode.INVALID_ARGUMENTS
 
 
 def test_final_response_codec_guidance_is_owned_by_the_tool_contract_not_task_projection() -> None:
@@ -2230,8 +2108,10 @@ def test_readable_matches_attach_current_grounding_without_changing_discovery_au
     assert recovery.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert recovery.recovery_signal is not None
     assert recovery.recovery_signal.kind is RecoveryKind.CONTROL_STALL
-    blocked = monitor.evaluate(local_step, findings_digest)
-    assert blocked.recommendation is EpisodeMonitorRecommendation.BLOCK
+    replay = monitor.evaluate(local_step, findings_digest)
+    assert replay.recommendation is EpisodeMonitorRecommendation.RECOVER
+    assert replay.recovery_signal is not None
+    assert replay.recovery_signal.epoch_id != recovery.recovery_signal.epoch_id
 
 
 def test_cumulative_provider_usage_is_delta_counted_across_physical_attempts() -> None:

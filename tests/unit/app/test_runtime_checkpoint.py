@@ -21,7 +21,6 @@ from affordance_runtime.agent.context.observation_delivery import (
 from affordance_runtime.agent.policy import AgentDecisionPorts
 from affordance_runtime.agent.recovery import (
     EpisodeMonitorRecommendation,
-    RecoveryClosureCondition,
     RecoveryKind,
     RecoverySignal,
 )
@@ -122,7 +121,6 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
         RecoveryKind.EFFECT_STALL,
         "effect_stall:sha256:" + "d" * 64,
         {"dispatch": "sent", "observed_change": "unchanged"},
-        closure_condition=RecoveryClosureCondition.NEW_INFORMATION,
         attempted_modes=("activate", "read_region"),
         prohibited_attempt_signatures=(prohibited,),
         recovery_attempt=2,
@@ -135,7 +133,7 @@ def test_recovery_signal_checkpoint_round_trip_preserves_epoch_and_failed_set() 
     assert restored == signal
 
 
-def test_legacy_recovery_without_closure_condition_restores_bounded_operational_default() -> None:
+def test_legacy_recovery_closure_field_is_ignored_after_one_shot_migration() -> None:
     signal = RecoverySignal(
         RecoveryKind.CONTROL_STALL,
         "control_stall:legacy-closure",
@@ -144,12 +142,11 @@ def test_legacy_recovery_without_closure_condition_restores_bounded_operational_
     )
     payload = _recovery_signal_payload(signal)
     assert payload is not None
-    payload.pop("closure_condition")
+    payload["closure_condition"] = "new_information"
 
     restored = _restore_recovery_signal(payload)
 
-    assert restored is not None
-    assert restored.closure_condition is RecoveryClosureCondition.OPERATIONAL_EFFECT
+    assert restored == signal
 
 
 @pytest.mark.asyncio
@@ -270,7 +267,7 @@ async def test_checkpoint_restore_preserves_cross_world_novelty_and_active_recov
     )
     assert monitor_transition.recommendation is EpisodeMonitorRecommendation.RECOVER
     assert monitor_transition.recovery_signal is not None
-    assert monitor_transition.recovery_signal.epoch_id == recovery.epoch_id
+    assert monitor_transition.recovery_signal.epoch_id != recovery.epoch_id
 
 
 def test_checkpoint_v6_without_delivery_receipts_restores_an_empty_novelty_window() -> None:

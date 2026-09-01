@@ -29,7 +29,6 @@ from affordance_runtime.agent.context.contracts import (
     HISTORY_CANONICAL_METADATA_KEY,
     HISTORY_RETURN_PATHS_METADATA_KEY,
     sanitize_history_arguments,
-    sanitize_history_prose,
 )
 from affordance_runtime.agent.context.failures import (
     ModelFailure,
@@ -1120,6 +1119,13 @@ class PydanticAIGroundedDecisionPort:
                     _failure(ModelFailureKind.INTERNAL_ERROR, "pending_tool_result_unavailable"),
                     request,
                 )
+            if pending_call is not None:
+                history_messages = _strip_settled_tool_response_prose(
+                    history_messages,
+                    pending_call.call_id,
+                )
+                if history_messages != self.message_history:
+                    object.__setattr__(self, "message_history", history_messages)
         identity = CanonicalProviderIdentity(
             invocation_model.provider_id,
             invocation_model.model_id,
@@ -2895,6 +2901,8 @@ def _normalize_pydantic_history_for_current_task(
             if payload is None or "observation" not in payload:
                 continue
             current_turn = {"observation": payload["observation"]}
+            if payload.get("previous_transition"):
+                current_turn["previous_transition"] = payload["previous_transition"]
             if payload.get("control_feedback"):
                 current_turn["control_feedback"] = payload["control_feedback"]
             current_text = json.dumps(current_turn, ensure_ascii=False, separators=(",", ":"))
@@ -2978,7 +2986,6 @@ def _project_expired_history(
         max_estimated_tokens=max_estimated_tokens,
     )
     projected = _deground_completed_tool_exchanges(folded)
-    projected = _strip_completed_private_reasoning(projected)
     return _deduplicate_expired_model_prose(
         projected,
         max_estimated_tokens=max_estimated_tokens,
@@ -2999,14 +3006,7 @@ def _deground_completed_tool_exchanges(
 
     if not messages:
         return messages
-    from pydantic_ai.messages import (
-        ModelRequest,
-        ModelResponse,
-        TextPart,
-        ThinkingPart,
-        ToolCallPart,
-        ToolReturnPart,
-    )
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ThinkingPart, ToolCallPart, ToolReturnPart
 
     completed = _completed_tool_exchanges(messages)
     if not completed:
@@ -3044,9 +3044,11 @@ def _deground_completed_tool_exchanges(
                         )
                     )
                 elif isinstance(part, (TextPart, ThinkingPart)):
-                    content = sanitize_history_prose(str(part.content))
-                    if content:
-                        parts.append(replace(part, content=content))
+                    # Once Runtime has paired this response with its result,
+                    # the ToolCall is the durable decision and the ToolReturn /
+                    # fresh transition own facts.  Model narration is a stale
+                    # hypothesis, not a second history authority.
+                    continue
                 else:
                     parts.append(part)
             metadata = dict(message.metadata or {})
@@ -3081,6 +3083,30 @@ def _deground_completed_tool_exchanges(
             continue
         projected.append(message)
     return _canonicalize_compaction_summaries(tuple(projected))
+
+
+def _strip_settled_tool_response_prose(
+    messages: tuple[object, ...],
+    tool_call_id: str,
+) -> tuple[object, ...]:
+    """Expire narration as soon as Runtime has a result for one pending call."""
+
+    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart, ToolCallPart
+
+    projected = list(messages)
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, ModelResponse) or not any(
+            isinstance(part, ToolCallPart) and part.tool_call_id == tool_call_id
+            for part in message.parts
+        ):
+            continue
+        parts = tuple(part for part in message.parts if not isinstance(part, (TextPart, ThinkingPart)))
+        if not parts:
+            raise ValueError("settled tool response lost its ToolCall")
+        projected[index] = replace(message, parts=parts)
+        return tuple(projected)
+    raise ValueError("settled tool response is unavailable")
 
 
 def _response_history_argument_paths(
@@ -3181,37 +3207,6 @@ def _canonical_compaction_summary(content: str) -> str:
     else:
         return content
     return _HISTORY_COMPACTION_SUMMARY_PREFIX + body
-
-
-def _strip_completed_private_reasoning(
-    messages: tuple[object, ...],
-) -> tuple[object, ...]:
-    """Keep public conclusions while expiring private reasoning from closed exchanges.
-
-    The response whose ToolReturn will be delivered on the next physical call
-    remains byte-for-byte exact.  Older responses are eligible only after a
-    same-ID ToolReturn has closed their tool exchange, and only when their own
-    public text already carries the model-visible conclusion.  Tool-only
-    reasoning therefore remains available until Harness can summarize it.
-    """
-
-    if not messages:
-        return messages
-    from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
-
-    completed_response_ids = {id(response) for response, _returns in _completed_tool_exchanges(messages)}
-    if not completed_response_ids:
-        return messages
-    projected = list(messages)
-    for index, message in enumerate(messages):
-        if not isinstance(message, ModelResponse) or id(message) not in completed_response_ids:
-            continue
-        if not any(isinstance(part, TextPart) and part.content.strip() for part in message.parts):
-            continue
-        parts = tuple(part for part in message.parts if not isinstance(part, ThinkingPart))
-        if parts != tuple(message.parts):
-            projected[index] = replace(message, parts=parts)
-    return tuple(projected)
 
 
 def _deduplicate_expired_model_prose(
@@ -3951,12 +3946,10 @@ def _pydantic_atomic_recovery_prompt(
             "atomic_recovery_decision": {
                 "retry": complete_retry,
                 "instruction": (
-                    "Return exactly one complete offered ToolCall and no explanatory text. Fill its required "
-                    "recovery_basis from the same fresh World, exact recent outcomes, stable Harness summary, "
-                    "and active recovery facts. Its decision atom couples supported evidence to submission, "
-                    "exhausted routes to stopping, and unresolved or contradicted evidence to continued or changed action. "
-                    "The ToolCall is the entire bounded recovery decision; do not create a second plan or repeat "
-                    "an exact failed attempt."
+                    "Return exactly one complete offered ToolCall and no explanatory text. Reassess from the same "
+                    "fresh World, exact previous transition, stable Harness summary, and one-shot Monitor facts. "
+                    "Submit when evidence is sufficient, stop when no supported route remains, otherwise choose "
+                    "one materially new current action. Do not create a second plan or repeat an exact failed attempt."
                 ),
             }
         },
@@ -4064,9 +4057,9 @@ def _action_policy_physical_settings(
     settings = dict(envelope.model_settings)
     if require_action:
         # DeepSeek rejects required tool choice while thinking is enabled.
-        # Recovery therefore externalizes one bounded decision summary beside
-        # the required ToolCall instead of opening an unbounded hidden-thinking
-        # channel.  The semantic envelope and fresh World remain unchanged.
+        # The one-shot escalated call therefore chooses directly from its
+        # causal decision slice and must return the required ToolCall instead
+        # of opening an unbounded hidden-thinking channel.
         if envelope.identity.provider_id in {"zhipu", "aliyun", "deepseek"}:
             settings["thinking"] = False
         else:
