@@ -148,8 +148,9 @@
         <p class="section-kicker">04 · End-to-end code path</p>
         <h2>从用户一句话到任务终止的完整链路</h2>
         <div class="callout"><strong>这一节是面试叙事版</strong>要看 BrowserGym/Playwright 分工、raw observation、E-ref binding、动态 ToolCatalog、PydanticAI envelope、Harness compaction 与用户控制的逐对象源码版，请打开 <a href="implementation-walkthrough.html">实现链路逐层拆解 →</a></div>
+        <div class="callout"><strong>Chatbox 不等于 Planner</strong>Outer 读取 bounded recent turns，只输出 <code>objective / constraints / material_inputs</code>，用于解决指代、修订和用户事实；它没有 steps、selector、page state 或 progress。Benchmark 已经提供完整 instruction，因此跳过对话解析，但两条入口进入 TaskGoal 后都调用同一个 Runtime GoalCompiler，不按来源旁路。</div>
         <ol class="flow-list">
-          <li><b>1. Session 接收有 currentness 的命令。</b><span><code>PublicSessionCommand</code> 带 <code>command_id + expected_task_revision + expected_run_status</code>；重复 ID 同 payload 幂等，不同 payload 冲突。入口不是随便调一个 runtime 方法。</span></li>
+          <li><b>1. Outer 规范化用户意图，Session 接收有 currentness 的命令。</b><span>Chatbox 先生成 intake-only <code>GuiTaskIntake</code>；随后 <code>PublicSessionCommand</code> 带 <code>command_id + expected_task_revision + expected_run_status</code>。Benchmark 从完整 instruction 直接进入同一 Session/Intake 边界；重复 ID 同 payload 幂等，不同 payload 冲突。</span></li>
           <li><b>2. Intake 建立 TaskGoal。</b><span><code>TaskGoal</code> 保存 instruction、constraints、allowed/forbidden effects、success criteria、requested outputs、risk profile、budget 和 revision；它描述“要什么”，不描述 selector 或步骤。</span></li>
           <li><b>3. Composition 组装唯一 Runtime。</b><span><code>compose_target_runtime_from_environment</code> 创建 model roles、ActionSpaceBuilder、Binder、ContextBuilder、RiskPolicy、GoalCompiler、TaskRevisionCompiler、EpisodeMonitor 和 CooperativeRunControl，注入同一个 <code>TargetRuntime</code>。</span></li>
           <li><b>4. Environment reset 产出初始 World。</b><span><code>ObservationAcquisitionCoordinator</code> 根据 typed need 选择 source；各 SurfaceAdapter 把 DOM/BrowserGym/visual/WoT/HTTP 投影为统一 contract，Fusion 保存 source lineage，不让 CoreLoop 解析 provider 协议。</span></li>
