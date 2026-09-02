@@ -1,17 +1,14 @@
-"""Versioned public session boundary over the single TargetRuntime loop."""
+"""单一 TargetRuntime 循环之上的版本化公共 Session 边界。"""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import inspect
-import json
 import secrets
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
-from enum import StrEnum
-from typing import Literal, Protocol, TypeAlias, cast
+from datetime import datetime
+from typing import cast
 
 from affordance_runtime.actions.reconciliation import (
     EffectReconciliation,
@@ -19,28 +16,16 @@ from affordance_runtime.actions.reconciliation import (
     EffectRevisionDisposition,
     assess_effect_revision,
 )
-from affordance_runtime.agent.decisions import FinalResponse, RequestObservation, SelectAction
 from affordance_runtime.agent.interactions import (
-    BooleanFieldValue,
-    DateFieldValue,
-    DecimalFieldValue,
     FreeTextResponse,
-    IntegerFieldValue,
-    InteractionAdmissionCode,
-    InteractionField,
-    InteractionOption,
     InteractionRequest,
     InteractionResponse,
-    MultiSelectionResponse,
-    PublicArtifact,
-    SingleSelectionResponse,
     StructuredFieldsResponse,
     TextFieldValue,
     admit_interaction_response,
     interaction_response_public_value,
 )
-from affordance_runtime.agent.observability import FanoutRunTraceSink, NullRunTraceSink
-from affordance_runtime.agent.policy import PolicyFailure
+from affordance_runtime.agent.observability import FanoutRunTraceSink
 from affordance_runtime.agent.run_control import (
     RunControlAdmissionKind,
     RunControlKind,
@@ -48,13 +33,8 @@ from affordance_runtime.agent.run_control import (
 )
 from affordance_runtime.agent.run_state import RunState, RunStatus, StepResult
 from affordance_runtime.evaluation.contracts import (
-    EvidenceMethod,
-    LocalPostconditionStatus,
     TaskEvaluationStatus,
-    TaskOutcomeKind,
 )
-from affordance_runtime.execution.contracts import ExecutionCompletion
-from affordance_runtime.risk.contracts import RiskAssessment
 from affordance_runtime.task.contracts import TaskGoal
 from affordance_runtime.task.intake import (
     NaturalLanguageTaskRequest,
@@ -65,20 +45,6 @@ from affordance_runtime.task.intake import (
     TaskPolicyRejected,
     TaskUnsupported,
 )
-from affordance_runtime.task.revision import (
-    REVISION_CONVERSATION_MAX_TEXT_BYTES,
-    RevisionConversationContext,
-    RevisionConversationTurn,
-    RevisionFailed,
-    RevisionNeedsInput,
-    RevisionNewTaskSuggested,
-    RevisionNoChange,
-    RevisionReady,
-    RevisionUnsupported,
-    revision_outcome_code,
-)
-from affordance_runtime.world.environment import WorldEnvironment
-from affordance_runtime.world.observation_outcomes import ObservationQueryDisposition
 
 from .checkpoint import (
     RuntimeCheckpoint,
@@ -88,825 +54,179 @@ from .checkpoint import (
     RuntimeCheckpointRevisionOutcome,
     RuntimeCheckpointStore,
 )
+
+# 兼容门面：外部调用方继续从 ``app.public_session`` 导入公共合同；
+# 合同定义本身由 public_session_contracts 拥有，不能在此复制一份。
+from .public_session_contracts import (
+    BASE_PUBLIC_SESSION_CAPABILITIES,
+    PUBLIC_SESSION_CAPABILITIES,
+    PUBLIC_SESSION_SCHEMA_VERSION,
+    PUBLIC_SESSION_V3_SCHEMA_VERSION,
+    LiveCheckpointAdmission,
+    LiveCheckpointConflict,
+    LiveCheckpointCurrent,
+    LiveCheckpointUnavailable,
+    PublicAgentIntent,
+    PublicArtifact,
+    PublicCommandAccepted,
+    PublicCommandAdmission,
+    PublicCommandConflict,
+    PublicCommandRejected,
+    PublicCommandUnsupported,
+    PublicCompletion,
+    PublicCompletionBlock,
+    PublicConfirmationRequired,
+    PublicConflictCode,
+    PublicControlOutcome,
+    PublicEffectReconciliation,
+    PublicEvidenceSummary,
+    PublicFailure,
+    PublicFeedSource,
+    PublicGoalAccepted,
+    PublicInteractionRequest,
+    PublicInteractionRequested,
+    PublicPendingConfirmation,
+    PublicProgressStep,
+    PublicRejectedCode,
+    PublicRevisionApplied,
+    PublicRevisionConversationContext,
+    PublicRevisionConversationTurn,
+    PublicRuntimeActivity,
+    PublicRuntimeRecoveryInspector,
+    PublicRuntimeSessionEvent,
+    PublicRuntimeSessionFactory,
+    PublicRuntimeSessionHandle,
+    PublicRuntimeSessionSnapshot,
+    PublicSessionCapability,
+    PublicSessionCommand,
+    PublicSessionCommandCapability,
+    PublicSessionCommandKind,
+    PublicSessionConflict,
+    PublicSessionControlOwner,
+    PublicSessionOpenError,
+    PublicSessionOpenStage,
+    PublicSessionStatus,
+    PublicTaskRequestFactory,
+    PublicTaskRevisionCommand,
+    PublicUnsupportedCode,
+    PublicUserTurn,
+    RecoverableCheckpoint,
+    RecoveryInspectionFailed,
+    RecoveryInspectionUnavailable,
+    RecoveryInspectionUnsupported,
+    RuntimeEnvironmentFactory,
+    RuntimeEnvironmentLease,
+    RuntimeEnvironmentReconnectFactory,
+    RuntimeRecovered,
+    RuntimeRecoveryAttempt,
+    RuntimeRecoveryConflict,
+    RuntimeRecoveryFailed,
+    RuntimeRecoveryInspection,
+    RuntimeRecoveryUnavailable,
+    TargetRuntimeFactory,
+    default_public_task_request,
+    public_interaction_response_from_value,
+)
+from .public_session_projection import (
+    _action_feed_sources,
+    _completion,
+    _control_feed_sources,
+    _convert_public_session_conflict,
+    _feed_source,
+    _interaction_response_text,
+    _public_confirmation,
+    _public_effect_reconciliation,
+    _public_interaction_request,
+    _public_status,
+    _revision_feed_diff,
+    _revision_pause_command_id,
+    _revision_rejection,
+    _SessionProjectionSink,
+    _step_feed_sources,
+    _takeover_pause_command_id,
+    _v3_command_capabilities,
+)
 from .runtime import TargetRuntime, TargetRuntimeRunOutcome
 
-PUBLIC_SESSION_SCHEMA_VERSION = "affordance-runtime.session.v2"
-PUBLIC_SESSION_V3_SCHEMA_VERSION = "affordance-runtime.session.v3"
-# Revision command identity is an independently versioned, durable wire fact.  The
-# Phase 7 snapshot projection is additive and must not change digests already
-# stored for the unchanged Phase 6 revision command payload.
-_PUBLIC_REVISION_COMMAND_DIGEST_VERSION = "affordance-runtime.session.v1"
-PublicRevisionConversationContext = RevisionConversationContext
-PublicRevisionConversationTurn = RevisionConversationTurn
-
-
-class PublicSessionStatus(StrEnum):
-    IDLE = "idle"
-    RUNNING = "running"
-    PAUSED = "paused"
-    WAITING_USER = "waiting_user"
-    WAITING_CONFIRMATION = "waiting_confirmation"
-    DONE = "done"
-    BLOCKED = "blocked"
-    CANCELLED = "cancelled"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class PublicTaskRevisionCommand:
-    """Complete Runtime-owned revision command and its canonical identity."""
-
-    command_id: str
-    expected_task_revision: int
-    expected_run_status: PublicSessionStatus
-    expected_checkpoint_id: str | None
-    text: str
-    conversation: RevisionConversationContext
-
-    def __post_init__(self) -> None:
-        if (
-            not self.command_id.strip()
-            or len(self.command_id) > 128
-            or type(self.expected_task_revision) is not int
-            or self.expected_task_revision < 0
-            or not isinstance(self.expected_run_status, PublicSessionStatus)
-            or (
-                self.expected_checkpoint_id is not None
-                and (
-                    len(self.expected_checkpoint_id) > 200
-                    or not self.expected_checkpoint_id.startswith("runtime-checkpoint:")
-                )
-            )
-            or not self.text.strip()
-            or len(self.text) > 8000
-            or len(self.text.encode("utf-8")) > REVISION_CONVERSATION_MAX_TEXT_BYTES
-            or not isinstance(self.conversation, RevisionConversationContext)
-            or self.conversation.latest_turn.text != self.text
-        ):
-            raise ValueError("public task revision command is invalid")
-
-    @property
-    def payload_digest(self) -> str:
-        payload = {
-            "expected_checkpoint_id": self.expected_checkpoint_id,
-            "expected_run_status": self.expected_run_status.value,
-            "expected_task_revision": self.expected_task_revision,
-            "kind": "revise_task",
-            "schema_version": _PUBLIC_REVISION_COMMAND_DIGEST_VERSION,
-            "conversation": {
-                "latest_turn_id": self.conversation.latest_turn_id,
-                "turns": [
-                    {
-                        "role": turn.role,
-                        "text": turn.text,
-                        "turn_id": turn.turn_id,
-                    }
-                    for turn in self.conversation.turns
-                ],
-            },
-        }
-        canonical = json.dumps(
-            payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-class PublicSessionCapability(StrEnum):
-    START_TASK = "start_task"
-    ANSWER_QUESTION = "answer_question"
-    RESPOND_INTERACTION = "respond_interaction"
-    APPROVE_ACTION = "approve_action"
-    REJECT_ACTION = "reject_action"
-    CANCEL_TASK = "cancel_task"
-    PAUSE_TASK = "pause_task"
-    RESUME_TASK = "resume_task"
-    REVISE_TASK = "revise_task"
-    TAKE_OVER = "take_over"
-    RETURN_CONTROL = "return_control"
-    CLOSE_SESSION = "close_session"
-
-
-class PublicSessionCommandKind(StrEnum):
-    START_TASK = "start_task"
-    ANSWER_QUESTION = "answer_question"
-    RESPOND_INTERACTION = "respond_interaction"
-    APPROVE_ACTION = "approve_action"
-    REJECT_ACTION = "reject_action"
-    CANCEL_TASK = "cancel_task"
-    PAUSE_TASK = "pause_task"
-    RESUME_TASK = "resume_task"
-    REVISE_TASK = "revise_task"
-    TAKE_OVER = "take_over"
-    RETURN_CONTROL = "return_control"
-    CLOSE_SESSION = "close_session"
-
-
-@dataclass(frozen=True)
-class PublicSessionCommandCapability:
-    """State-correct unpublished v3 command capability and Runtime-owned refs."""
-
-    kind: PublicSessionCommandKind
-    interaction_ref: str | None = None
-    prompt: str = ""
-    summary: str = ""
-    risk: str = ""
-
-    def __post_init__(self) -> None:
-        interaction_kind = self.kind in {
-            PublicSessionCommandKind.ANSWER_QUESTION,
-            PublicSessionCommandKind.RESPOND_INTERACTION,
-            PublicSessionCommandKind.APPROVE_ACTION,
-            PublicSessionCommandKind.REJECT_ACTION,
-        }
-        if interaction_kind != (self.interaction_ref is not None):
-            raise ValueError("interaction capability ref placement is invalid")
-        if self.kind in {
-            PublicSessionCommandKind.ANSWER_QUESTION,
-            PublicSessionCommandKind.RESPOND_INTERACTION,
-        }:
-            if not self.prompt or self.summary or self.risk:
-                raise ValueError("answer capability presentation is invalid")
-        elif self.kind in {
-            PublicSessionCommandKind.APPROVE_ACTION,
-            PublicSessionCommandKind.REJECT_ACTION,
-        }:
-            if not self.summary or not self.risk or self.prompt:
-                raise ValueError("confirmation capability presentation is invalid")
-        elif self.prompt or self.summary or self.risk:
-            raise ValueError("non-interaction capability cannot carry presentation")
-
-
-@dataclass(frozen=True)
-class PublicSessionCommand:
-    """Closed Runtime-owned semantic command used by the v3 public boundary."""
-
-    command_id: str
-    kind: PublicSessionCommandKind
-    expected_task_revision: int
-    expected_run_status: PublicSessionStatus
-    task: str = ""
-    interaction_ref: str = ""
-    answer: str = ""
-    response: InteractionResponse | None = None
-    checkpoint_id: str = ""
-    control_lease_id: str = ""
-    revision: PublicTaskRevisionCommand | None = None
-
-    def __post_init__(self) -> None:
-        if (
-            not self.command_id.strip()
-            or len(self.command_id) > 128
-            or type(self.expected_task_revision) is not int
-            or self.expected_task_revision < 0
-            or not isinstance(self.expected_run_status, PublicSessionStatus)
-        ):
-            raise ValueError("public session command identity/currentness is invalid")
-        if self.kind is PublicSessionCommandKind.ANSWER_QUESTION:
-            object.__setattr__(self, "kind", PublicSessionCommandKind.RESPOND_INTERACTION)
-        if self.kind is PublicSessionCommandKind.RESPOND_INTERACTION and self.response is None and self.answer.strip():
-            object.__setattr__(self, "response", FreeTextResponse(self.interaction_ref, self.answer))
-            object.__setattr__(self, "answer", "")
-        required: dict[PublicSessionCommandKind, tuple[bool, ...]] = {
-            PublicSessionCommandKind.START_TASK: (bool(self.task.strip()),),
-            PublicSessionCommandKind.RESPOND_INTERACTION: (
-                bool(self.interaction_ref.strip()),
-                self.response is not None,
-            ),
-            PublicSessionCommandKind.APPROVE_ACTION: (bool(self.interaction_ref.strip()),),
-            PublicSessionCommandKind.REJECT_ACTION: (bool(self.interaction_ref.strip()),),
-            PublicSessionCommandKind.RESUME_TASK: (bool(self.checkpoint_id.strip()),),
-            PublicSessionCommandKind.RETURN_CONTROL: (bool(self.control_lease_id.strip()),),
-            PublicSessionCommandKind.REVISE_TASK: (self.revision is not None,),
-        }
-        if not all(required.get(self.kind, (True,))):
-            raise ValueError("public session command payload is incomplete")
-        if self.response is not None and (
-            self.kind is not PublicSessionCommandKind.RESPOND_INTERACTION
-            or self.response.request_id != self.interaction_ref
-        ):
-            raise ValueError("interaction response placement is invalid")
-        if self.kind is PublicSessionCommandKind.REVISE_TASK:
-            if self.revision is None or self.revision.command_id != self.command_id:
-                raise ValueError("public revision command identity is invalid")
-        elif self.revision is not None:
-            raise ValueError("only revise_task can carry a revision command")
-
-    @property
-    def payload_digest(self) -> str:
-        payload: dict[str, object] = {
-            "answer": self.answer,
-            "checkpoint_id": self.checkpoint_id,
-            "control_lease_id": self.control_lease_id,
-            "expected_run_status": self.expected_run_status.value,
-            "expected_task_revision": self.expected_task_revision,
-            "interaction_ref": self.interaction_ref,
-            "kind": self.kind.value,
-            "schema_version": PUBLIC_SESSION_V3_SCHEMA_VERSION,
-            "task": self.task,
-        }
-        if self.response is not None:
-            payload["response"] = interaction_response_public_value(self.response)
-        if self.revision is not None:
-            payload["revision_digest"] = self.revision.payload_digest
-        canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-PublicConflictCode: TypeAlias = Literal[
-    "stale_command",
-    "command_identity_reused",
-    "interaction_ref_mismatch",
-    "checkpoint_mismatch",
-    "checkpoint_already_consumed",
-    "session_closed",
-    "session_state_conflict",
-    "control_owner_conflict",
-    "control_lease_mismatch",
+# 该门面只重导出稳定公共合同；实现细节继续留在各 owner 模块。
+__all__ = [
+    "_action_feed_sources",
+    "BASE_PUBLIC_SESSION_CAPABILITIES",
+    "LiveCheckpointAdmission",
+    "LiveCheckpointConflict",
+    "LiveCheckpointCurrent",
+    "LiveCheckpointUnavailable",
+    "PUBLIC_SESSION_CAPABILITIES",
+    "PUBLIC_SESSION_SCHEMA_VERSION",
+    "PUBLIC_SESSION_V3_SCHEMA_VERSION",
+    "PublicAgentIntent",
+    "PublicArtifact",
+    "PublicCommandAccepted",
+    "PublicCommandAdmission",
+    "PublicCommandConflict",
+    "PublicCommandRejected",
+    "PublicCommandUnsupported",
+    "PublicCompletion",
+    "PublicCompletionBlock",
+    "PublicConfirmationRequired",
+    "PublicConflictCode",
+    "PublicControlOutcome",
+    "PublicEffectReconciliation",
+    "PublicEvidenceSummary",
+    "PublicFailure",
+    "PublicFeedSource",
+    "PublicGoalAccepted",
+    "PublicInteractionRequest",
+    "PublicInteractionRequested",
+    "PublicPendingConfirmation",
+    "PublicProgressStep",
+    "PublicRejectedCode",
+    "PublicRevisionApplied",
+    "PublicRevisionConversationContext",
+    "PublicRevisionConversationTurn",
+    "PublicRuntimeActivity",
+    "PublicRuntimeRecoveryInspector",
+    "PublicRuntimeSessionEvent",
+    "PublicRuntimeSessionFactory",
+    "PublicRuntimeSessionHandle",
+    "PublicRuntimeSessionSnapshot",
+    "PublicSessionCapability",
+    "PublicSessionCommand",
+    "PublicSessionCommandCapability",
+    "PublicSessionCommandKind",
+    "PublicSessionConflict",
+    "PublicSessionControlOwner",
+    "PublicSessionOpenError",
+    "PublicSessionOpenStage",
+    "PublicSessionStatus",
+    "PublicTaskRequestFactory",
+    "PublicTaskRevisionCommand",
+    "PublicUnsupportedCode",
+    "PublicUserTurn",
+    "RecoverableCheckpoint",
+    "RecoveryInspectionFailed",
+    "RecoveryInspectionUnavailable",
+    "RecoveryInspectionUnsupported",
+    "RuntimeEnvironmentFactory",
+    "RuntimeEnvironmentLease",
+    "RuntimeEnvironmentReconnectFactory",
+    "RuntimeRecovered",
+    "RuntimeRecoveryAttempt",
+    "RuntimeRecoveryConflict",
+    "RuntimeRecoveryFailed",
+    "RuntimeRecoveryInspection",
+    "RuntimeRecoveryUnavailable",
+    "TargetRuntimeFactory",
+    "TargetRuntimeSession",
+    "TargetRuntimeSessionFactory",
+    "default_public_task_request",
+    "public_interaction_response_from_value",
 ]
-PublicUnsupportedCode: TypeAlias = Literal["command_not_supported"]
-PublicRejectedCode: TypeAlias = Literal[
-    "command_processing_failed",
-    "command_persistence_failed",
-    "command_projection_failed",
-    "internal_contract_failure",
-    "interaction_response_invalid",
-]
-
-
-@dataclass(frozen=True)
-class PublicCommandAccepted:
-    kind: Literal["accepted"]
-    command_id: str
-    snapshot: PublicRuntimeSessionSnapshot
-
-
-@dataclass(frozen=True)
-class PublicCommandConflict:
-    kind: Literal["conflict"]
-    command_id: str
-    code: PublicConflictCode
-    snapshot: PublicRuntimeSessionSnapshot
-
-
-@dataclass(frozen=True)
-class PublicCommandUnsupported:
-    kind: Literal["unsupported"]
-    command_id: str
-    code: PublicUnsupportedCode
-    snapshot: PublicRuntimeSessionSnapshot
-
-
-@dataclass(frozen=True)
-class PublicCommandRejected:
-    kind: Literal["rejected"]
-    command_id: str
-    code: PublicRejectedCode
-    snapshot: PublicRuntimeSessionSnapshot
-
-
-PublicCommandAdmission: TypeAlias = (
-    PublicCommandAccepted | PublicCommandConflict | PublicCommandUnsupported | PublicCommandRejected
-)
-
-
-def public_interaction_response_from_value(
-    value: Mapping[str, object],
-) -> InteractionResponse:
-    """Convert the closed public wire value at the PublicSession boundary."""
-
-    try:
-        payload = dict(value)
-        kind = str(payload["kind"])
-        request_id = str(payload["request_id"])
-        if kind == "free_text" and set(payload) == {"kind", "request_id", "text"}:
-            return FreeTextResponse(request_id, str(payload["text"]))
-        if kind == "single_select" and set(payload) == {
-            "kind",
-            "request_id",
-            "option_id",
-        }:
-            return SingleSelectionResponse(request_id, str(payload["option_id"]))
-        if kind == "multi_select" and set(payload) == {
-            "kind",
-            "request_id",
-            "option_ids",
-        }:
-            values = payload["option_ids"]
-            if not isinstance(values, list | tuple):
-                raise TypeError("multi-select options must be a sequence")
-            return MultiSelectionResponse(request_id, tuple(str(item) for item in values))
-        if kind != "structured_fields" or set(payload) != {
-            "kind",
-            "request_id",
-            "values",
-        }:
-            raise ValueError("unsupported public interaction response kind")
-        raw_values = payload["values"]
-        if not isinstance(raw_values, list | tuple):
-            raise TypeError("structured interaction values must be a sequence")
-        values = tuple(_public_interaction_field_value(item) for item in raw_values)
-        return StructuredFieldsResponse(request_id, values)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError("public interaction response is invalid") from exc
-
-
-PUBLIC_SESSION_CAPABILITIES = frozenset(
-    item for item in PublicSessionCapability if item is not PublicSessionCapability.ANSWER_QUESTION
-)
-BASE_PUBLIC_SESSION_CAPABILITIES = PUBLIC_SESSION_CAPABILITIES - {
-    PublicSessionCapability.PAUSE_TASK,
-    PublicSessionCapability.RESUME_TASK,
-    PublicSessionCapability.REVISE_TASK,
-    PublicSessionCapability.TAKE_OVER,
-    PublicSessionCapability.RETURN_CONTROL,
-}
-
-
-class PublicSessionControlOwner(StrEnum):
-    AGENT = "agent"
-    USER = "user"
-
-
-@dataclass(frozen=True)
-class PublicInteractionRequest:
-    request_id: str
-    prompt: str
-    response_kind: str
-    fields: tuple[InteractionField, ...] = ()
-    options: tuple[InteractionOption, ...] = ()
-    public_intent: str = ""
-
-    @property
-    def interrupt_id(self) -> str:
-        return self.request_id
-
-    @property
-    def requested_fields(self) -> tuple[str, ...]:
-        return tuple(item.label for item in self.fields)
-
-
-@dataclass(frozen=True)
-class PublicPendingConfirmation:
-    interrupt_id: str
-    summary: str
-    risk: str
-
-
-@dataclass(frozen=True)
-class PublicCompletion:
-    outcome: Literal["success", "failure", "blocked", "cancelled"]
-    code: str
-    message: str
-    evidence_refs: tuple[str, ...] = ()
-    artifact: PublicArtifact | None = None
-
-
-@dataclass(frozen=True)
-class PublicUserTurn:
-    kind: Literal["user_turn"] = field(default="user_turn", init=False)
-    source_id: str
-    content: str
-
-    def __post_init__(self) -> None:
-        _validate_feed_text(self.source_id, self.content, 8_000)
-
-
-@dataclass(frozen=True)
-class PublicGoalAccepted:
-    kind: Literal["goal_accepted"] = field(default="goal_accepted", init=False)
-    source_id: str
-    task_revision: int
-    summary: str
-    constraints: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _validate_feed_text(self.source_id, self.summary, 8_000)
-        object.__setattr__(self, "constraints", tuple(self.constraints))
-        if self.task_revision < 1 or len(self.constraints) > 32 or any(
-            not item.strip() or len(item) > 1_000 for item in self.constraints
-        ):
-            raise ValueError("public goal feed source is invalid")
-
-
-@dataclass(frozen=True)
-class PublicAgentIntent:
-    kind: Literal["agent_intent"] = field(default="agent_intent", init=False)
-    source_id: str
-    content: str
-
-    def __post_init__(self) -> None:
-        _validate_feed_text(self.source_id, self.content, 240)
-
-
-@dataclass(frozen=True)
-class PublicRuntimeActivity:
-    kind: Literal["runtime_activity"] = field(default="runtime_activity", init=False)
-    source_id: str
-    status: Literal["started", "completed", "uncertain", "failed"]
-    label: str
-    evidence_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _validate_feed_text(self.source_id, self.label, 500)
-        _validate_public_refs(self.evidence_refs)
-
-
-@dataclass(frozen=True)
-class PublicEvidenceSummary:
-    kind: Literal["evidence_summary"] = field(default="evidence_summary", init=False)
-    source_id: str
-    evidence_kind: Literal["structural", "visual", "frame_change", "mixed", "unknown"]
-    status: Literal["observed", "partial", "unknown", "failed", "stale"]
-    message: str
-    confidence: float | None = None
-    evidence_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _validate_feed_text(self.source_id, self.message, 500)
-        if self.confidence is not None and not 0 <= self.confidence <= 1:
-            raise ValueError("public evidence confidence is invalid")
-        _validate_public_refs(self.evidence_refs)
-
-
-@dataclass(frozen=True)
-class PublicInteractionRequested:
-    kind: Literal["interaction_request"] = field(default="interaction_request", init=False)
-    source_id: str
-    request: PublicInteractionRequest
-
-    def __post_init__(self) -> None:
-        _validate_feed_source_id(self.source_id)
-        if not isinstance(self.request, PublicInteractionRequest):
-            raise TypeError("public interaction feed source must be typed")
-
-
-@dataclass(frozen=True)
-class PublicRevisionApplied:
-    kind: Literal["revision_applied"] = field(default="revision_applied", init=False)
-    source_id: str
-    task_revision: int
-    goal_description_changed: bool = False
-    added: tuple[str, ...] = ()
-    removed: tuple[str, ...] = ()
-    retained: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        _validate_feed_source_id(self.source_id)
-        if self.task_revision < 2 or type(self.goal_description_changed) is not bool:
-            raise ValueError("public revision feed source is invalid")
-        for name in ("added", "removed", "retained"):
-            values = tuple(getattr(self, name))
-            object.__setattr__(self, name, values)
-            if len(values) > 32 or any(not item.strip() or len(item) > 1_000 for item in values):
-                raise ValueError("public revision diff exceeds its bounds")
-
-
-@dataclass(frozen=True)
-class PublicConfirmationRequired:
-    kind: Literal["confirmation_required"] = field(default="confirmation_required", init=False)
-    source_id: str
-    confirmation: PublicPendingConfirmation
-
-    def __post_init__(self) -> None:
-        _validate_feed_source_id(self.source_id)
-        if not isinstance(self.confirmation, PublicPendingConfirmation):
-            raise TypeError("public confirmation feed source must be typed")
-
-
-@dataclass(frozen=True)
-class PublicCompletionBlock:
-    kind: Literal["completion"] = field(default="completion", init=False)
-    source_id: str
-    completion: PublicCompletion
-
-    def __post_init__(self) -> None:
-        _validate_feed_source_id(self.source_id)
-        if not isinstance(self.completion, PublicCompletion):
-            raise TypeError("public completion feed source must be typed")
-
-
-@dataclass(frozen=True)
-class PublicFailure:
-    kind: Literal["failure"] = field(default="failure", init=False)
-    source_id: str
-    code: str
-    message: str
-
-    def __post_init__(self) -> None:
-        _validate_feed_source_id(self.source_id)
-        if not self.code.strip() or len(self.code) > 128 or not self.message.strip() or len(self.message) > 2_000:
-            raise ValueError("public failure feed source is invalid")
-
-
-PublicFeedSource: TypeAlias = (
-    PublicUserTurn
-    | PublicGoalAccepted
-    | PublicAgentIntent
-    | PublicRuntimeActivity
-    | PublicEvidenceSummary
-    | PublicInteractionRequested
-    | PublicRevisionApplied
-    | PublicConfirmationRequired
-    | PublicCompletionBlock
-    | PublicFailure
-)
-_PUBLIC_FEED_SOURCE_TYPES = (
-    PublicUserTurn,
-    PublicGoalAccepted,
-    PublicAgentIntent,
-    PublicRuntimeActivity,
-    PublicEvidenceSummary,
-    PublicInteractionRequested,
-    PublicRevisionApplied,
-    PublicConfirmationRequired,
-    PublicCompletionBlock,
-    PublicFailure,
-)
-
-
-@dataclass(frozen=True)
-class PublicProgressStep:
-    step: int
-    status: str
-    label: str
-
-
-@dataclass(frozen=True)
-class PublicControlOutcome:
-    command_id: str
-    kind: Literal["pause", "revise", "take_over", "return_control"]
-    outcome: Literal[
-        "paused",
-        "failed",
-        "revised",
-        "needs_input",
-        "no_change",
-        "new_task_suggested",
-        "unsupported",
-        "effect_reconciliation_required",
-        "user_control_granted",
-        "user_control_returned",
-    ]
-    code: str
-    checkpoint_id: str | None = None
-    message: str = ""
-
-
-@dataclass(frozen=True)
-class PublicEffectReconciliation:
-    status: Literal["pending", "compensated", "needs_input"]
-    code: str
-    original_effect_ref: str
-    original_action: str
-    resource_ref: str
-    reversibility: Literal["reversible", "compensatable", "irreversible", "unknown"]
-    compensation_effect_ref: str = ""
-
-
-@dataclass(frozen=True)
-class PublicRuntimeSessionSnapshot:
-    session_id: str
-    expires_at: datetime
-    status: PublicSessionStatus
-    event_epoch: str
-    event_cursor: int
-    capabilities: frozenset[PublicSessionCapability] = BASE_PUBLIC_SESSION_CAPABILITIES
-    command_capabilities: tuple[PublicSessionCommandCapability, ...] = ()
-    task_id: str | None = None
-    task_revision: int = 0
-    task_text: str | None = None
-    pending_interaction: PublicInteractionRequest | None = None
-    pending_confirmation: PublicPendingConfirmation | None = None
-    completion: PublicCompletion | None = None
-    progress: tuple[PublicProgressStep, ...] = ()
-    checkpoint_id: str | None = None
-    resume_eligible: bool = False
-    last_control_outcome: PublicControlOutcome | None = None
-    effect_reconciliation: PublicEffectReconciliation | None = None
-    control_owner: PublicSessionControlOwner = PublicSessionControlOwner.AGENT
-    control_lease_id: str | None = None
-    schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
-
-    @property
-    def pending_question(self) -> PublicInteractionRequest | None:
-        """Read-only compatibility projection for pre-v4 Shell adapters."""
-
-        return self.pending_interaction
-
-
-@dataclass(frozen=True)
-class PublicRuntimeSessionEvent:
-    session_id: str
-    event_epoch: str
-    cursor: int
-    type: str
-    snapshot: PublicRuntimeSessionSnapshot
-    feed_sources: tuple[PublicFeedSource, ...] = ()
-    emitted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    schema_version: str = PUBLIC_SESSION_SCHEMA_VERSION
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "feed_sources", tuple(self.feed_sources))
-        expected_prefix = f"feed:{self.event_epoch}:{self.cursor}:"
-        if any(
-            not isinstance(source, _PUBLIC_FEED_SOURCE_TYPES)
-            or not source.source_id.startswith(expected_prefix)
-            for source in self.feed_sources
-        ):
-            raise ValueError("public event feed sources must match the event identity")
-
-
-class PublicSessionConflict(RuntimeError):
-    def __init__(self, code: str, snapshot: PublicRuntimeSessionSnapshot) -> None:
-        self.code = code
-        self.snapshot = snapshot
-        super().__init__(code)
-
-
-class PublicSessionOpenStage(StrEnum):
-    RUNTIME = "runtime"
-    ENVIRONMENT = "environment"
-    SESSION = "session"
-
-
-class PublicSessionOpenError(RuntimeError):
-    """Typed session-construction failure without leaking private resources."""
-
-    def __init__(self, stage: PublicSessionOpenStage, code: str) -> None:
-        self.stage = stage
-        self.code = code
-        super().__init__(f"{stage.value}:{code}")
-
-
-@dataclass(frozen=True)
-class RuntimeEnvironmentLease:
-    environment: WorldEnvironment
-    cleanup: Callable[[], object] | None = None
-    reconnect_reference: str = ""
-
-
-class RuntimeEnvironmentFactory(Protocol):
-    def __call__(self, session_id: str) -> RuntimeEnvironmentLease | Awaitable[RuntimeEnvironmentLease]: ...
-
-
-class RuntimeEnvironmentReconnectFactory(Protocol):
-    def __call__(
-        self, session_id: str, reconnect_reference: str
-    ) -> RuntimeEnvironmentLease | Awaitable[RuntimeEnvironmentLease]: ...
-
-
-class TargetRuntimeFactory(Protocol):
-    def __call__(self, session_id: str) -> TargetRuntime | Awaitable[TargetRuntime]: ...
-
-
-class PublicTaskRequestFactory(Protocol):
-    def __call__(self, session_id: str, instruction: str) -> NaturalLanguageTaskRequest: ...
-
-
-def default_public_task_request(session_id: str, instruction: str) -> NaturalLanguageTaskRequest:
-    return NaturalLanguageTaskRequest(session_id, instruction, TaskBoundary())
-
-
-class PublicRuntimeSessionHandle(Protocol):
-    async def snapshot(self) -> PublicRuntimeSessionSnapshot: ...
-    async def events(self, after: int) -> tuple[PublicRuntimeSessionEvent, ...]: ...
-    async def admits_surface_input(self, control_lease_id: str) -> bool: ...
-    async def inspect_live_checkpoint(self, checkpoint_id: str) -> LiveCheckpointAdmission: ...
-    async def start(self, instruction: str) -> PublicRuntimeSessionSnapshot: ...
-    async def respond(self, response: InteractionResponse) -> PublicRuntimeSessionSnapshot: ...
-
-    async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot: ...
-    async def confirm(self, interrupt_id: str, *, approved: bool) -> PublicRuntimeSessionSnapshot: ...
-    async def cancel(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
-    async def pause(self, command_id: str) -> PublicRuntimeSessionSnapshot: ...
-    async def resume(self, command_id: str, checkpoint_id: str) -> PublicRuntimeSessionSnapshot: ...
-    async def revise(self, command: PublicTaskRevisionCommand) -> PublicRuntimeSessionSnapshot: ...
-    async def take_over(
-        self,
-        command_id: str,
-        checkpoint_id: str = "",
-    ) -> PublicRuntimeSessionSnapshot: ...
-    async def return_control(self, command_id: str, control_lease_id: str) -> PublicRuntimeSessionSnapshot: ...
-    async def admit(self, command: PublicSessionCommand) -> PublicCommandAdmission: ...
-    async def close(self) -> None: ...
-
-
-class PublicRuntimeSessionFactory(Protocol):
-    async def open(self, session_id: str, expires_at: datetime) -> PublicRuntimeSessionHandle: ...
-    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection: ...
-    async def recover_typed(
-        self, session_id: str, checkpoint_id: str, expires_at: datetime
-    ) -> RuntimeRecoveryAttempt: ...
-    async def recover(
-        self, session_id: str, checkpoint_id: str, expires_at: datetime
-    ) -> PublicRuntimeSessionHandle: ...
-
-
-@dataclass(frozen=True)
-class RecoverableCheckpoint:
-    kind: Literal["recoverable_checkpoint"]
-    checkpoint_id: str
-
-
-@dataclass(frozen=True)
-class RecoveryInspectionUnavailable:
-    kind: Literal["recovery_inspection_unavailable"]
-    reason_code: Literal["checkpoint_not_found", "checkpoint_consumed", "checkpoint_unavailable"]
-
-
-@dataclass(frozen=True)
-class RecoveryInspectionUnsupported:
-    kind: Literal["recovery_inspection_unsupported"]
-    reason_code: Literal["checkpoint_store_unavailable", "recovery_reconnector_unavailable"]
-
-
-@dataclass(frozen=True)
-class RecoveryInspectionFailed:
-    kind: Literal["recovery_inspection_failed"]
-    reason_code: Literal["checkpoint_inspection_failed"]
-    retryable: bool = False
-
-
-RuntimeRecoveryInspection: TypeAlias = (
-    RecoverableCheckpoint | RecoveryInspectionUnavailable | RecoveryInspectionUnsupported | RecoveryInspectionFailed
-)
-
-
-class PublicRuntimeRecoveryInspector(Protocol):
-    async def inspect(self, session_id: str) -> RuntimeRecoveryInspection: ...
-
-
-@dataclass(frozen=True)
-class RuntimeRecovered:
-    kind: Literal["recovered"]
-    handle: PublicRuntimeSessionHandle
-
-
-@dataclass(frozen=True)
-class RuntimeRecoveryConflict:
-    kind: Literal["recovery_conflict"]
-    reason_code: Literal[
-        "checkpoint_already_resumed",
-        "checkpoint_already_revised",
-        "checkpoint_mismatch",
-    ]
-
-
-@dataclass(frozen=True)
-class RuntimeRecoveryUnavailable:
-    kind: Literal["recovery_unavailable"]
-    reason_code: Literal[
-        "checkpoint_not_found",
-        "checkpoint_unavailable",
-        "recovery_unsupported",
-        "environment_not_reconnectable",
-    ]
-
-
-@dataclass(frozen=True)
-class RuntimeRecoveryFailed:
-    kind: Literal["recovery_failed"]
-    reason_code: Literal[
-        "checkpoint_store_failed",
-        "runtime_factory_failed",
-        "environment_reconnect_failed",
-        "session_restore_failed",
-    ]
-    retryable: bool = False
-
-
-RuntimeRecoveryAttempt: TypeAlias = (
-    RuntimeRecovered | RuntimeRecoveryConflict | RuntimeRecoveryUnavailable | RuntimeRecoveryFailed
-)
-
-
-@dataclass(frozen=True)
-class LiveCheckpointCurrent:
-    kind: Literal["live_checkpoint_current"]
-    snapshot: PublicRuntimeSessionSnapshot
-
-
-@dataclass(frozen=True)
-class LiveCheckpointConflict:
-    kind: Literal["live_checkpoint_conflict"]
-    reason_code: Literal["checkpoint_mismatch"]
-
-
-@dataclass(frozen=True)
-class LiveCheckpointUnavailable:
-    kind: Literal["live_checkpoint_unavailable"]
-    reason_code: Literal["checkpoint_unavailable"]
-
-
-LiveCheckpointAdmission: TypeAlias = LiveCheckpointCurrent | LiveCheckpointConflict | LiveCheckpointUnavailable
 
 
 @dataclass
 class TargetRuntimeSession:
-    """Own the private resumable state; callers receive public values only."""
+    """持有唯一可恢复 Session 状态；调用方只能取得公共投影值。"""
 
     runtime: TargetRuntime
     lease: RuntimeEnvironmentLease
@@ -958,7 +278,7 @@ class TargetRuntimeSession:
         return self._project()
 
     async def admits_surface_input(self, control_lease_id: str) -> bool:
-        """Own exact live lease admission without exposing control semantics to Shell."""
+        """校验精确的 live lease；不把控制语义下放给 Shell。"""
 
         return (
             not self._closed
@@ -968,7 +288,7 @@ class TargetRuntimeSession:
         )
 
     async def admit(self, command: PublicSessionCommand) -> PublicCommandAdmission:
-        """Own v3 command identity, semantic admission, and closed outcome conversion."""
+        """统一拥有 v3 命令身份、语义准入和闭合结果转换。"""
 
         existing = self._command_admissions.get(command.command_id)
         if existing is not None:
@@ -1054,7 +374,7 @@ class TargetRuntimeSession:
         return tuple(event for event in self._events if event.cursor > after)
 
     async def inspect_live_checkpoint(self, checkpoint_id: str) -> LiveCheckpointAdmission:
-        """Admit an exact live recovery ref without consulting durable projection state."""
+        """直接校验 live recovery ref，不把持久投影视为当前状态。"""
 
         async with self._lock:
             snapshot = self._project()
@@ -1085,9 +405,7 @@ class TargetRuntimeSession:
             if isinstance(intake, ReadyTask):
                 self._admitted = intake
             self._status = PublicSessionStatus.RUNNING
-            source_factories = [
-                _feed_source(lambda source_id: PublicUserTurn(source_id, instruction))
-            ]
+            source_factories = [_feed_source(lambda source_id: PublicUserTurn(source_id, instruction))]
             if self._admitted is not None:
                 accepted = self._admitted.task
                 source_factories.append(
@@ -1149,7 +467,7 @@ class TargetRuntimeSession:
             return self._project()
 
     async def answer(self, interrupt_id: str, answer: str) -> PublicRuntimeSessionSnapshot:
-        """Compatibility adapter into the canonical free-text response contract."""
+        """把旧自由文本回答接入规范化 response 合同。"""
         pending_step = self._state.last_step if self._state is not None else None
         pending = pending_step.decision if pending_step is not None else None
         if (
@@ -1304,7 +622,7 @@ class TargetRuntimeSession:
         command_id: str,
         checkpoint_id: str = "",
     ) -> PublicRuntimeSessionSnapshot:
-        """Reach one durable pause and grant one process-local user control lease."""
+        """到达持久暂停边界后，签发一个进程内用户控制 lease。"""
 
         async with self._lock:
             self._require_agent_control()
@@ -1368,7 +686,7 @@ class TargetRuntimeSession:
         command_id: str,
         control_lease_id: str,
     ) -> PublicRuntimeSessionSnapshot:
-        """Revoke user input and resume only after a fresh owner-produced World."""
+        """撤销用户输入权，并且只在 owner 产出 fresh World 后恢复 Agent。"""
 
         async with self._lock:
             if self._closed:
@@ -1381,8 +699,7 @@ class TargetRuntimeSession:
                 raise PublicSessionConflict("user_control_return_unavailable", self._project())
             runtime = self._runtime_with_projection()
             state = self._state
-            # Revoke the user-input lease before producing the fresh World that
-            # will become authoritative for Agent continuation.
+            # 先撤销用户输入 lease，再采集供 Agent 继续执行的权威 fresh World。
             self._control_owner = PublicSessionControlOwner.AGENT
             self._control_lease_id = None
             self._control_return_in_progress = True
@@ -1398,8 +715,7 @@ class TargetRuntimeSession:
             except BaseException as exc:
                 self._control_return_in_progress = False
                 self._control_owner = PublicSessionControlOwner.USER
-                # Capture failure restores manual control with a new epoch;
-                # the revoked input lease can never become valid again.
+                # 采集失败时以新 epoch 恢复人工控制；旧 lease 永远不能再次生效。
                 self._control_lease_id = secrets.token_urlsafe(24)
                 code = str(getattr(exc, "reason_code", "")) or "user_control_currentness_unavailable"
                 self._last_control_outcome = PublicControlOutcome(
@@ -2015,9 +1331,7 @@ class TargetRuntimeSession:
         sources: tuple[Callable[[str], PublicFeedSource], ...] = ()
         if completion is not None:
             if completion.outcome in {"success", "cancelled"}:
-                sources = (
-                    lambda source_id: PublicCompletionBlock(source_id, completion),
-                )
+                sources = (lambda source_id: PublicCompletionBlock(source_id, completion),)
             else:
                 sources = (
                     lambda source_id: PublicFailure(
@@ -2057,8 +1371,7 @@ class TargetRuntimeSession:
         snapshot = self._project(event_cursor=cursor)
         factories = source_factories or _control_feed_sources(event_type, self._last_control_outcome)
         sources = tuple(
-            factory(f"feed:{self._event_epoch}:{cursor}:{ordinal}")
-            for ordinal, factory in enumerate(factories)
+            factory(f"feed:{self._event_epoch}:{cursor}:{ordinal}") for ordinal, factory in enumerate(factories)
         )
         self._events.append(
             PublicRuntimeSessionEvent(
@@ -2143,10 +1456,7 @@ class TargetRuntimeSession:
                             PublicSessionStatus.WAITING_CONFIRMATION,
                             PublicSessionStatus.PAUSED,
                         }
-                        and (
-                            status is not PublicSessionStatus.PAUSED
-                            or self._checkpoint_id is not None
-                        )
+                        and (status is not PublicSessionStatus.PAUSED or self._checkpoint_id is not None)
                     )
                     else set()
                 )
@@ -2264,7 +1574,7 @@ class TargetRuntimeSessionFactory:
         *,
         request_factory: PublicTaskRequestFactory | None = None,
     ) -> TargetRuntimeSession:
-        """Construct one session from deployment-owned resources without moving session authority."""
+        """用 deployment 拥有的资源构造 Session，但不转移 Session authority。"""
 
         selected_request_factory = request_factory or self.request_factory
         if not isinstance(runtime, TargetRuntime):
@@ -2291,7 +1601,7 @@ class TargetRuntimeSessionFactory:
             ) from exc
 
     async def inspect(self, session_id: str) -> RuntimeRecoveryInspection:
-        """Convert checkpoint truth and injected reconnectability exactly once."""
+        """只在这里把 checkpoint 事实和注入的重连能力转换一次。"""
 
         store = self.checkpoint_store
         if store is None:
@@ -2508,686 +1818,3 @@ async def _cleanup_environment_lease(lease: RuntimeEnvironmentLease) -> None:
     result = lease.cleanup()
     if inspect.isawaitable(result):
         await result
-
-
-def _convert_public_session_conflict(
-    command_id: str,
-    conflict: PublicSessionConflict,
-) -> PublicCommandAdmission:
-    """Exhaustively normalize legacy internal codes at the Runtime owner boundary."""
-
-    code = conflict.code
-    if code in {
-        "revision_needs_input",
-        "revision_no_change",
-        "revision_new_task_suggested",
-        "revision_unsupported",
-        "revision_failed",
-        "effect_reconciliation_required",
-        "effect_non_compensable",
-        "effect_reconciliation_unknown",
-        "effect_reconciliation_unsupported",
-    }:
-        return PublicCommandAccepted("accepted", command_id, conflict.snapshot)
-    conflict_codes: dict[str, PublicConflictCode] = {
-        "stale_command": "stale_command",
-        "command_identity_reused": "command_identity_reused",
-        "revision_command_conflict": "command_identity_reused",
-        "resume_command_conflict": "command_identity_reused",
-        "takeover_command_conflict": "command_identity_reused",
-        "interrupt_mismatch": "interaction_ref_mismatch",
-        "checkpoint_mismatch": "checkpoint_mismatch",
-        "checkpoint_already_resumed": "checkpoint_already_consumed",
-        "checkpoint_already_revised": "checkpoint_already_consumed",
-        "takeover_command_consumed": "checkpoint_already_consumed",
-        "session_closed": "session_closed",
-        "session_not_idle": "session_state_conflict",
-        "run_active": "session_state_conflict",
-        "run_not_active": "session_state_conflict",
-        "run_not_resumable": "session_state_conflict",
-        "run_not_revisable": "session_state_conflict",
-        "control_request_conflict": "session_state_conflict",
-        "user_control_return_unavailable": "session_state_conflict",
-        "user_control_active": "control_owner_conflict",
-        "user_control_not_active": "control_owner_conflict",
-        "control_lease_mismatch": "control_lease_mismatch",
-    }
-    if code in conflict_codes:
-        return PublicCommandConflict(
-            "conflict",
-            command_id,
-            conflict_codes[code],
-            conflict.snapshot,
-        )
-    if code in {
-        "pause_unavailable",
-        "resume_unavailable",
-        "revision_unavailable",
-        "takeover_unavailable",
-    }:
-        return PublicCommandUnsupported(
-            "unsupported",
-            command_id,
-            "command_not_supported",
-            conflict.snapshot,
-        )
-    if code in {
-        "pause_persistence_failed",
-        "resume_persistence_failed",
-        "revision_persistence_failed",
-        "takeover_persistence_failed",
-        "checkpoint_not_found",
-    }:
-        return PublicCommandRejected(
-            "rejected",
-            command_id,
-            "command_persistence_failed",
-            conflict.snapshot,
-        )
-    if code in {item.value for item in InteractionAdmissionCode}:
-        return PublicCommandRejected(
-            "rejected",
-            command_id,
-            "interaction_response_invalid",
-            conflict.snapshot,
-        )
-    if code in {
-        "control_boundary_failed",
-        "revision_pause_failed",
-        "takeover_pause_failed",
-        "user_control_currentness_unavailable",
-    }:
-        return PublicCommandRejected(
-            "rejected",
-            command_id,
-            "command_processing_failed",
-            conflict.snapshot,
-        )
-    return PublicCommandRejected(
-        "rejected",
-        command_id,
-        "internal_contract_failure",
-        conflict.snapshot,
-    )
-
-
-def _v3_command_capabilities(
-    *,
-    status: PublicSessionStatus,
-    checkpoint_store_available: bool,
-    checkpoint_id: str | None,
-    resume_eligible: bool,
-    pending_interaction: PublicInteractionRequest | None,
-    pending_confirmation: PublicPendingConfirmation | None,
-    control_owner: PublicSessionControlOwner,
-    control_return_in_progress: bool,
-    reconciliation_blocks_control: bool,
-    closed: bool,
-) -> tuple[PublicSessionCommandCapability, ...]:
-    if closed:
-        return ()
-    if control_return_in_progress:
-        return (PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION),)
-    if control_owner is PublicSessionControlOwner.USER:
-        return (
-            PublicSessionCommandCapability(PublicSessionCommandKind.RETURN_CONTROL),
-            PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION),
-        )
-
-    capabilities: list[PublicSessionCommandCapability] = []
-    if status is PublicSessionStatus.IDLE:
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.START_TASK))
-    if status in {
-        PublicSessionStatus.RUNNING,
-        PublicSessionStatus.WAITING_USER,
-        PublicSessionStatus.WAITING_CONFIRMATION,
-        PublicSessionStatus.PAUSED,
-    }:
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CANCEL_TASK))
-    if pending_interaction is not None and status is PublicSessionStatus.WAITING_USER:
-        capabilities.append(
-            PublicSessionCommandCapability(
-                PublicSessionCommandKind.RESPOND_INTERACTION,
-                interaction_ref=pending_interaction.request_id,
-                prompt=pending_interaction.prompt,
-            )
-        )
-    if pending_confirmation is not None and status is PublicSessionStatus.WAITING_CONFIRMATION:
-        for kind in (
-            PublicSessionCommandKind.APPROVE_ACTION,
-            PublicSessionCommandKind.REJECT_ACTION,
-        ):
-            capabilities.append(
-                PublicSessionCommandCapability(
-                    kind,
-                    interaction_ref=pending_confirmation.interrupt_id,
-                    summary=pending_confirmation.summary,
-                    risk=pending_confirmation.risk,
-                )
-            )
-    if checkpoint_store_available and status in {
-        PublicSessionStatus.RUNNING,
-        PublicSessionStatus.WAITING_USER,
-        PublicSessionStatus.WAITING_CONFIRMATION,
-    }:
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.PAUSE_TASK))
-    if (
-        checkpoint_store_available
-        and not reconciliation_blocks_control
-        and status
-        in {
-            PublicSessionStatus.RUNNING,
-            PublicSessionStatus.WAITING_USER,
-            PublicSessionStatus.WAITING_CONFIRMATION,
-            PublicSessionStatus.PAUSED,
-        }
-    ):
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.REVISE_TASK))
-    if status is PublicSessionStatus.PAUSED and resume_eligible and checkpoint_id is not None:
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.RESUME_TASK))
-    if (
-        checkpoint_store_available
-        and status
-        in {
-            PublicSessionStatus.RUNNING,
-            PublicSessionStatus.WAITING_USER,
-            PublicSessionStatus.WAITING_CONFIRMATION,
-            PublicSessionStatus.PAUSED,
-        }
-        and (status is not PublicSessionStatus.PAUSED or checkpoint_id is not None)
-    ):
-        capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.TAKE_OVER))
-    capabilities.append(PublicSessionCommandCapability(PublicSessionCommandKind.CLOSE_SESSION))
-    kinds = tuple(capability.kind for capability in capabilities)
-    if len(kinds) != len(set(kinds)):
-        raise AssertionError("Runtime v3 command capabilities must be unique by kind")
-    return tuple(capabilities)
-
-
-def _revision_pause_command_id(command_id: str) -> str:
-    digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
-    return f"revision-pause:{digest}"
-
-
-def _takeover_pause_command_id(command_id: str) -> str:
-    digest = hashlib.sha256(command_id.encode()).hexdigest()[:32]
-    return f"takeover-pause:{digest}"
-
-
-def _public_effect_reconciliation(
-    reconciliation: EffectReconciliation | None,
-) -> PublicEffectReconciliation | None:
-    if reconciliation is None:
-        return None
-    return PublicEffectReconciliation(
-        cast(
-            Literal["pending", "compensated", "needs_input"],
-            reconciliation.status.value,
-        ),
-        reconciliation.reason.value,
-        reconciliation.original_effect.effect_ref,
-        reconciliation.original_effect.semantic_action,
-        reconciliation.original_effect.resource_ref,
-        cast(
-            Literal["reversible", "compensatable", "irreversible", "unknown"],
-            reconciliation.original_effect.reversibility.value,
-        ),
-        (reconciliation.compensation_effect.effect_ref if reconciliation.compensation_effect is not None else ""),
-    )
-
-
-def _revision_rejection(
-    compiler: object,
-    intake: object,
-) -> tuple[str, str]:
-    if isinstance(intake, TaskInputRequired):
-        return "revision_needs_input", intake.question
-    if isinstance(intake, TaskPolicyRejected | TaskUnsupported):
-        return "revision_unsupported", intake.reason_code
-    if isinstance(
-        compiler,
-        RevisionNeedsInput | RevisionNoChange | RevisionNewTaskSuggested | RevisionUnsupported | RevisionFailed,
-    ):
-        message = compiler.question if isinstance(compiler, RevisionNeedsInput) else compiler.reason
-        return revision_outcome_code(compiler), message
-    if isinstance(compiler, RevisionReady):
-        return "revision_failed", "task_intake_failed"
-    return "revision_failed", "invalid_task_revision_outcome"
-
-
-@dataclass(frozen=True)
-class _SessionProjectionSink(NullRunTraceSink):
-    session: TargetRuntimeSession
-
-    def run_started(self, task: object, state: object) -> None:
-        if isinstance(task, TaskGoal) and isinstance(state, RunState):
-            self.session._observe_started(task, state)
-
-    def step_completed(self, step_number: int, result: object) -> None:
-        if isinstance(result, StepResult):
-            self.session._observe_step(step_number, result)
-
-    def run_paused(self, state: object) -> None:
-        if isinstance(state, RunState):
-            self.session._observe_paused(state)
-
-    def run_finished(self, state: object) -> None:
-        if isinstance(state, RunState):
-            self.session._observe_finished(state)
-
-    def run_resumed(self, kind: str, details: Mapping[str, object]) -> None:
-        del kind, details
-        self.session._observe_resumed()
-
-    def run_error(self, error: BaseException, state: object) -> None:
-        if isinstance(state, RunState):
-            self.session._observe_error(error, state)
-
-
-def _feed_source(
-    factory: Callable[[str], PublicFeedSource],
-) -> Callable[[str], PublicFeedSource]:
-    return factory
-
-
-def _public_interaction_field_value(
-    value: object,
-) -> TextFieldValue | IntegerFieldValue | DecimalFieldValue | BooleanFieldValue | DateFieldValue:
-    if not isinstance(value, Mapping):
-        raise TypeError("interaction field value must be an object")
-    payload = dict(value)
-    kind = str(payload.get("kind", ""))
-    field_id = str(payload.get("field_id", ""))
-    field_name = {
-        "text": "text",
-        "integer": "integer",
-        "decimal": "decimal_string",
-        "boolean": "boolean",
-        "date": "iso_date",
-    }.get(kind)
-    if field_name is None:
-        raise ValueError("interaction field value kind is unsupported")
-    if set(payload) != {"kind", "field_id", field_name}:
-        raise ValueError("interaction field value shape is invalid")
-    raw = payload[field_name]
-    if kind == "integer" and (type(raw) is not int):
-        raise TypeError("integer interaction field value is invalid")
-    if kind == "boolean" and (type(raw) is not bool):
-        raise TypeError("boolean interaction field value is invalid")
-    if kind == "text":
-        return TextFieldValue(field_id, str(raw))
-    if kind == "integer":
-        return IntegerFieldValue(field_id, raw)
-    if kind == "decimal":
-        return DecimalFieldValue(field_id, str(raw))
-    if kind == "boolean":
-        return BooleanFieldValue(field_id, raw)
-    return DateFieldValue(field_id, str(raw))
-
-
-def _validate_feed_source_id(source_id: str) -> None:
-    if not source_id.startswith("feed:") or len(source_id) > 256:
-        raise ValueError("public feed source identity is invalid")
-
-
-def _validate_feed_text(source_id: str, content: str, limit: int) -> None:
-    _validate_feed_source_id(source_id)
-    if not content.strip() or len(content) > limit:
-        raise ValueError("public feed source text is invalid")
-
-
-def _validate_public_refs(values: tuple[str, ...]) -> None:
-    if (
-        len(values) > 32
-        or len(set(values)) != len(values)
-        or any(not item.strip() or len(item) > 512 for item in values)
-    ):
-        raise ValueError("public feed evidence refs are invalid")
-
-
-def _public_interaction_request(request: InteractionRequest) -> PublicInteractionRequest:
-    return PublicInteractionRequest(
-        request.request_id,
-        request.prompt,
-        request.response_kind.value,
-        request.fields,
-        request.options,
-        request.public_intent,
-    )
-
-
-def _public_confirmation(risk: RiskAssessment) -> PublicPendingConfirmation:
-    if not isinstance(risk, RiskAssessment):
-        raise TypeError("pending confirmation requires a typed risk assessment")
-    return PublicPendingConfirmation(
-        f"confirmation:{risk.subject_id}",
-        risk.reason,
-        risk.risk.value,
-    )
-
-
-def _interaction_response_text(
-    request: InteractionRequest,
-    response: InteractionResponse,
-) -> str:
-    if isinstance(response, FreeTextResponse):
-        return response.text
-    options = {item.option_id: item.title for item in request.options}
-    if isinstance(response, SingleSelectionResponse):
-        return options[response.option_id]
-    if isinstance(response, MultiSelectionResponse):
-        return ", ".join(options[item] for item in response.option_ids)
-    fields = {item.field_id: item.label for item in request.fields}
-    rendered = []
-    for value in response.values:
-        if isinstance(value, TextFieldValue):
-            public_value = value.text
-        elif isinstance(value, IntegerFieldValue):
-            public_value = str(value.integer)
-        elif isinstance(value, DecimalFieldValue):
-            public_value = value.decimal_string
-        elif isinstance(value, BooleanFieldValue):
-            public_value = "true" if value.boolean else "false"
-        elif isinstance(value, DateFieldValue):
-            public_value = value.iso_date
-        else:  # pragma: no cover - InteractionResponse is a closed algebra
-            raise TypeError("unsupported interaction field response")
-        rendered.append(f"{fields[value.field_id]}: {public_value}")
-    return "; ".join(rendered)
-
-
-def _revision_feed_diff(
-    before: TaskGoal,
-    after: TaskGoal,
-    source_id: str,
-) -> PublicRevisionApplied:
-    before_items = _public_goal_conditions(before)
-    after_items = _public_goal_conditions(after)
-    before_set = set(before_items)
-    after_set = set(after_items)
-    return PublicRevisionApplied(
-        source_id,
-        after.revision,
-        before.instruction != after.instruction,
-        tuple(item for item in after_items if item not in before_set),
-        tuple(item for item in before_items if item not in after_set),
-        tuple(item for item in after_items if item in before_set),
-    )
-
-
-def _public_goal_conditions(task: TaskGoal) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            (
-                *task.constraints,
-                *(f"Allowed effect: {item}" for item in task.allowed_effects),
-                *(f"Forbidden effect: {item}" for item in task.forbidden_effects),
-                *(f"Requested output: {item}" for item in task.requested_outputs),
-            )
-        )
-    )
-
-
-def _step_feed_sources(
-    result: StepResult,
-) -> tuple[Callable[[str], PublicFeedSource], ...]:
-    sources: list[Callable[[str], PublicFeedSource]] = []
-    decision = result.decision
-    intent = str(getattr(decision, "public_intent", "")).strip()
-    if intent:
-        sources.append(_feed_source(lambda source_id: PublicAgentIntent(source_id, intent)))
-
-    if isinstance(decision, InteractionRequest):
-        request = _public_interaction_request(decision)
-        sources.append(
-            _feed_source(lambda source_id: PublicInteractionRequested(source_id, request))
-        )
-        return tuple(sources)
-
-    if result.confirmation is not None:
-        confirmation = _public_confirmation(result.confirmation)
-        sources.append(
-            _feed_source(
-                lambda source_id: PublicConfirmationRequired(source_id, confirmation)
-            )
-        )
-        return tuple(sources)
-
-    if isinstance(decision, RequestObservation) and result.observation_outcome is not None:
-        outcome = result.observation_outcome
-        status = {
-            ObservationQueryDisposition.OBSERVED: "observed",
-            ObservationQueryDisposition.PARTIAL: "partial",
-            ObservationQueryDisposition.UNKNOWN: "unknown",
-            ObservationQueryDisposition.FAILED: "failed",
-        }[outcome.disposition]
-        message = {
-            "observed": "Visual evidence was observed.",
-            "partial": "Some visual evidence could not be confirmed.",
-            "unknown": "The requested visual evidence could not be confirmed.",
-            "failed": "Visual evidence acquisition failed.",
-        }[status]
-        refs = outcome.evidence_refs
-        sources.append(
-            _feed_source(
-                lambda source_id: PublicEvidenceSummary(
-                    source_id,
-                    "visual",
-                    cast(
-                        Literal["observed", "partial", "unknown", "failed", "stale"],
-                        status,
-                    ),
-                    message,
-                    evidence_refs=refs,
-                )
-            )
-        )
-        return tuple(sources)
-
-    if isinstance(decision, SelectAction):
-        activity, evidence = _action_feed_sources(result)
-        sources.append(activity)
-        if evidence is not None:
-            sources.append(evidence)
-        return tuple(sources)
-
-    if isinstance(decision, PolicyFailure):
-        code = result.failure_code.value if result.failure_code is not None else decision.kind.value
-        sources.append(
-            _feed_source(
-                lambda source_id: PublicFailure(
-                    source_id,
-                    code,
-                    decision.reason,
-                )
-            )
-        )
-        return tuple(sources)
-
-    kind = getattr(getattr(decision, "kind", None), "value", "")
-    labels = {
-        "request_action_page": "Updated the available interface actions.",
-        "read_region": "Read more of the current interface.",
-        "search_page_content": "Searched the current interface content.",
-        "wait": "Waited for the interface to update.",
-    }
-    if kind in labels:
-        label = labels[kind]
-        sources.append(
-            _feed_source(
-                lambda source_id: PublicRuntimeActivity(
-                    source_id,
-                    "completed",
-                    label,
-                )
-            )
-        )
-    return tuple(sources)
-
-
-def _action_feed_sources(
-    result: StepResult,
-) -> tuple[
-    Callable[[str], PublicFeedSource],
-    Callable[[str], PublicFeedSource] | None,
-]:
-    outcome = result.action_outcome
-    if outcome is not None:
-        activity_status, message = {
-            LocalPostconditionStatus.SATISFIED: (
-                "completed",
-                "The interface change was confirmed.",
-            ),
-            LocalPostconditionStatus.UNSATISFIED: (
-                "failed",
-                "The requested interface change was not confirmed.",
-            ),
-            LocalPostconditionStatus.UNKNOWN: (
-                "uncertain",
-                "The interface action finished, but its effect could not be confirmed.",
-            ),
-            LocalPostconditionStatus.NOT_APPLICABLE: (
-                "completed",
-                "The interface action was completed.",
-            ),
-        }[outcome.local_postcondition]
-        refs = outcome.evidence_refs
-        def activity(source_id: str) -> PublicFeedSource:
-            return PublicRuntimeActivity(
-                source_id,
-                cast(Literal["started", "completed", "uncertain", "failed"], activity_status),
-                message,
-                refs,
-            )
-
-        if not refs:
-            return activity, None
-        evidence_kind = {
-            EvidenceMethod.STRUCTURAL: "structural",
-            EvidenceMethod.VISUAL_DIFF: "frame_change",
-            EvidenceMethod.NATIVE: "structural",
-            EvidenceMethod.NONE: "unknown",
-        }[outcome.evidence_method]
-        evidence_status = (
-            "unknown"
-            if outcome.local_postcondition is LocalPostconditionStatus.UNKNOWN
-            else "observed"
-        )
-        def evidence(source_id: str) -> PublicFeedSource:
-            return PublicEvidenceSummary(
-                source_id,
-                cast(
-                    Literal["structural", "visual", "frame_change", "mixed", "unknown"],
-                    evidence_kind,
-                ),
-                cast(Literal["observed", "partial", "unknown", "failed", "stale"], evidence_status),
-                (
-                    "The visible frame changed; its meaning was not semantically interpreted."
-                    if evidence_kind == "frame_change"
-                    else "Evidence was recorded for the interface action."
-                ),
-                evidence_refs=refs,
-            )
-
-        return activity, evidence
-
-    completion = (
-        result.execution_receipts.completion
-        if result.execution_receipts is not None
-        else None
-    )
-    status, label = {
-        ExecutionCompletion.COMPLETE: ("completed", "The interface action was completed."),
-        ExecutionCompletion.PARTIAL: ("uncertain", "The interface action completed only partially."),
-        ExecutionCompletion.UNKNOWN: ("uncertain", "The interface action result is uncertain."),
-        ExecutionCompletion.CANCELLED: ("failed", "The interface action was cancelled."),
-        None: ("failed", "The interface action was not executed."),
-    }[completion]
-    return (
-        lambda source_id: PublicRuntimeActivity(
-            source_id,
-            status,  # type: ignore[arg-type]
-            label,
-        ),
-        None,
-    )
-
-
-def _control_feed_sources(
-    event_type: str,
-    outcome: PublicControlOutcome | None,
-) -> tuple[Callable[[str], PublicFeedSource], ...]:
-    status, label = {
-        "RUN_STARTED": ("started", "Runtime is continuing the task."),
-        "CONTROL_REQUESTED": ("started", "A control change was requested."),
-        "RUN_PAUSED": ("completed", "The task is paused."),
-        "RUN_RESUMED": ("started", "The task resumed."),
-        "USER_CONTROL_GRANTED": ("completed", "Control was handed to you."),
-        "USER_CONTROL_REVOKED": ("started", "User control was returned for a fresh check."),
-        "USER_CONTROL_RETURNED": ("completed", "The Agent has control again."),
-        "USER_CONTROL_RETURN_FAILED": (
-            "failed",
-            "Control could not be returned because currentness was unavailable.",
-        ),
-        "CONTROL_FAILED": ("failed", "The requested control change failed."),
-    }.get(event_type, ("", ""))
-    if not status:
-        return ()
-    if outcome is not None and outcome.message:
-        label = outcome.message
-    return (
-        lambda source_id: PublicRuntimeActivity(
-            source_id,
-            status,  # type: ignore[arg-type]
-            label,
-        ),
-    )
-
-
-def _public_status(status: RunStatus) -> PublicSessionStatus:
-    return {
-        RunStatus.RUNNING: PublicSessionStatus.RUNNING,
-        RunStatus.PAUSED: PublicSessionStatus.PAUSED,
-        RunStatus.WAITING_USER: PublicSessionStatus.WAITING_USER,
-        RunStatus.WAITING_CONFIRMATION: PublicSessionStatus.WAITING_CONFIRMATION,
-        RunStatus.DONE: PublicSessionStatus.DONE,
-        RunStatus.BLOCKED: PublicSessionStatus.BLOCKED,
-        RunStatus.CANCELLED: PublicSessionStatus.CANCELLED,
-        RunStatus.FAILED: PublicSessionStatus.FAILED,
-    }[status]
-
-
-def _completion(state: RunState | None, status: PublicSessionStatus) -> PublicCompletion | None:
-    if state is None or status not in {
-        PublicSessionStatus.DONE,
-        PublicSessionStatus.BLOCKED,
-        PublicSessionStatus.CANCELLED,
-        PublicSessionStatus.FAILED,
-    }:
-        return None
-    if status is PublicSessionStatus.CANCELLED:
-        return PublicCompletion(
-            "cancelled",
-            "user_cancelled",
-            "Runtime cancelled the task at a safe execution boundary.",
-        )
-    evaluation = state.current_task_evaluation
-    outcome = evaluation.outcome if evaluation is not None else None
-    if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_SUCCESS:
-        last_decision = state.last_step.decision if state.last_step is not None else None
-        message = last_decision.content if isinstance(last_decision, FinalResponse) else evaluation.reason
-        artifact = state.last_step.public_artifact if state.last_step is not None else None
-        return PublicCompletion("success", outcome.code, message, outcome.evidence_refs, artifact)
-    if evaluation is not None and outcome is not None and outcome.kind is TaskOutcomeKind.TERMINAL_FAILURE:
-        return PublicCompletion("failure", outcome.code, evaluation.reason, outcome.evidence_refs)
-    failure = state.runtime_failure
-    if failure is not None:
-        return PublicCompletion("failure", failure.code, "Runtime could not complete the task.")
-    control = state.control_termination
-    if control is not None:
-        return PublicCompletion("blocked", str(control.kind), "Runtime stopped before completion.")
-    return PublicCompletion(
-        "blocked",
-        "runtime_blocked",
-        "The task stopped before completion.",
-    )
