@@ -23,7 +23,7 @@ Affordance Runtime 不是浏览器外面的一层 Prompt，而是一套完整的
 
 这让 DeepSeek V4 Flash 等通用模型可以复用同一套 Computer Use 基础设施，而不需要把网站规则、selector 或 benchmark case 写进 Prompt 和生产代码。
 
-## 项目亮点
+## 核心能力
 
 | 能力 | 系统级实现 |
 |---|---|
@@ -170,12 +170,13 @@ affordance-runtime run \
 
 </details>
 
-## 为什么这个项目适合系统设计面试
+## 项目亮点
 
-- 它不是单点模型调用，而是覆盖 **Agent、Context、Tool、Browser、State、Evaluation、HITL、Observability** 的完整系统。
-- 它把“模型推理能力”和“Runtime 确定性”分开，能讲清 authority、owner、typed contract 与 failure semantics。
-- 它处理了真实 GUI Agent 最难的 currentness、长上下文、动态工具、未知副作用和用户接管问题。
-- 它以跨任务、跨站点 benchmark 驱动架构演进，而不是靠 case-specific 规则堆成功率。
+- **完整 Agent Runtime**：以单一 `CoreAgentLoop` 连接 Goal、World、Context、Tool、Execution 和 Evaluation，模型负责认知，Runtime 负责控制。
+- **Context Engineering**：每轮基于 fresh World 重建上下文，通过动态 ToolCatalog、页面折叠、短期 Workspace 和 Harness compaction 支撑长链任务。
+- **语义工具执行链**：模型只选择公开语义动作，Runtime 完成 E-ref 解析、权限校验、私有 binding、BrowserGym dispatch 与 post-action verification。
+- **结构与视觉统一感知**：DOM/AX 负责低成本主路径，VLM 负责开放世界视觉推断，所有证据进入同一个 WorldFusion 和 lineage。
+- **可控、可验证的 Agent**：支持用户澄清、风险确认、暂停、修订、接管和归还控制，并以 ActionEffect、TaskEvaluator、Monitor 和 Trace 闭合运行结果。
 
 ## 深入阅读
 
