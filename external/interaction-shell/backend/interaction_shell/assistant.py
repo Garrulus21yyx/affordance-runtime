@@ -110,6 +110,17 @@ def _complete_gui_goal(goal: str) -> str:
     return f"{goal.strip()}\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
 
 
+def _public_gui_goal(runtime_goal: str) -> str:
+    """Project one delegated Runtime goal back to its user-visible form."""
+
+    normalized = runtime_goal.strip()
+    private_suffix = f"\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
+    # 认证兜底是 Runtime 的固定执行合同，不是用户输入，也不应泄露到公共会话摘要。
+    if normalized.endswith(private_suffix):
+        return normalized[: -len(private_suffix)].strip()
+    return normalized
+
+
 @dataclass(frozen=True)
 class PydanticAssistantTurnRunner:
     """Thin composition over PydanticAI and Harness; no routing state lives here."""

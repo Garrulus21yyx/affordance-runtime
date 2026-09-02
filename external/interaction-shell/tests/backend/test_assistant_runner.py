@@ -7,6 +7,7 @@ from interaction_shell.assistant import (
     GuiTaskResult,
     PydanticAssistantTurnRunner,
     _complete_gui_goal,
+    _public_gui_goal,
 )
 from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
@@ -155,3 +156,10 @@ def test_assistant_delegates_the_authentication_contingency_with_the_complete_gu
     assert _complete_gui_goal("Original goal") == (
         f"Original goal\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
     )
+
+
+def test_runtime_authentication_contingency_is_not_part_of_the_public_goal():
+    runtime_goal = _complete_gui_goal("在网页中完成用户要求的操作")
+
+    assert _public_gui_goal(runtime_goal) == "在网页中完成用户要求的操作"
+    assert _public_gui_goal("保留普通目标") == "保留普通目标"

@@ -16,6 +16,7 @@ from .assistant import (
     AssistantQuestion,
     AssistantTurnRunner,
     GuiTaskResult,
+    _public_gui_goal,
 )
 from .contracts import (
     Accepted,
@@ -33,6 +34,7 @@ from .contracts import (
     ControlOwner,
     FailureBlock,
     FeedBlock,
+    GoalAcceptedBlock,
     InteractionRequest,
     InteractionRequestBlock,
     Recovered,
@@ -593,7 +595,11 @@ class AssistantSessionPort:
 
     @staticmethod
     def _project_inner_block(block: FeedBlock) -> FeedBlock:
-        return block.model_copy(update={"block_id": f"gui:{block.block_id}"})
+        update: dict[str, object] = {"block_id": f"gui:{block.block_id}"}
+        if isinstance(block, GoalAcceptedBlock):
+            # 内部执行目标包含固定认证合同；公共投影只展示用户真正提交的目标。
+            update["summary"] = _public_gui_goal(block.summary)
+        return block.model_copy(update=update)
 
     def _project_inner_snapshot(
         self,

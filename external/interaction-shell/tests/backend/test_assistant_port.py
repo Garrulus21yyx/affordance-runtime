@@ -9,6 +9,7 @@ import pytest
 from interaction_shell.assistant import (
     AssistantQuestion,
     AssistantTurnResult,
+    _complete_gui_goal,
 )
 from interaction_shell.assistant_port import AssistantSessionPort
 from interaction_shell.contracts import (
@@ -355,6 +356,22 @@ async def test_gui_capability_is_lazy_and_returns_one_bounded_result_to_outer_ru
     assert completed.task_text == "gui:book the selected option"
     assert all(block.kind != "completion" or block.completion.code != "gui_done" for event in handle.events for block in event.feed_delta)
     assert any(block.kind == "goal_accepted" for event in handle.events for block in event.feed_delta)
+
+
+def test_inner_goal_projection_hides_runtime_only_authentication_contract():
+    block = GoalAcceptedBlock(
+        kind="goal_accepted",
+        block_id="inner-goal",
+        occurred_at=datetime.now(UTC),
+        task_revision=1,
+        summary=_complete_gui_goal("在网页中完成用户要求的操作"),
+    )
+
+    projected = AssistantSessionPort._project_inner_block(block)
+
+    assert isinstance(projected, GoalAcceptedBlock)
+    assert projected.block_id == "gui:inner-goal"
+    assert projected.summary == "在网页中完成用户要求的操作"
 
 
 @pytest.mark.asyncio
