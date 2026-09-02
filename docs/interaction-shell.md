@@ -52,9 +52,17 @@ the product entrypoint is now superseded by this capability-agnostic composition
 ```text
 Shell natural-language turn
 → outer PydanticAI Assistant
-→ direct answer | provider-native Web Search | run_gui_task
+→ direct answer | provider-native Web Search | run_gui_task(objective, constraints, material_inputs)
 → user-facing response
 ```
+
+The outer GUI tool is an intake boundary, not a planner. Its closed request contains only the self-contained objective,
+user-owned constraints, and material inputs resolved from the bounded conversation. It has no ordered steps, selectors,
+tool names, page-state claims, GoalPlan items, progress, or completion field. Missing facts that the Runtime can acquire
+from a fresh GUI are not clarification questions; only a material fact owned by the user may pause the conversation.
+`_compile_gui_intake` only concatenates these admitted user clauses into the existing natural-language inner
+`StartTask`; it neither plans nor grants effects. The deployment request factory's typed `TaskBoundary` remains the
+permission owner.
 
 `run_gui_task` lazily opens the existing `CoreRuntimeSessionPort`; no browser is opened by session creation. While the
 tool is pending, all GUI questions, confirmations, revisions, cancellation, pause/resume, takeover, Viewer state, and
@@ -67,6 +75,12 @@ unless deployment supplies an explicit namespace and is limited to user-requeste
 Accordingly, later statements that “the Shell does not need a conversational supervisor Agent” mean that Assistant
 prose cannot own or reinterpret Runtime control state; they no longer prohibit the outer user-facing Assistant that
 selects a bounded capability and renders its typed result.
+
+Product and benchmark tasks converge after intake. A benchmark supplies one already-complete instruction directly;
+the Chatbox first resolves references and revisions into the three-field GUI intake request. Both then create a
+TaskGoal through ThinTaskIntake and use the same once-per-start/revision GoalCompiler. The Runtime never disables that
+compiler merely because a task came from the outer Assistant, so benchmark and product execution semantics remain the
+same.
 
 ### 1.1 Reuse-first implementation rule
 

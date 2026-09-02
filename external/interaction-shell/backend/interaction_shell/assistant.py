@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssistantQuestion(BaseModel):
@@ -28,6 +28,34 @@ class GuiTaskResult(BaseModel):
     message: str = Field(max_length=16_000)
     artifact_summary: str = Field(default="", max_length=2000)
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class GuiTaskIntake(BaseModel):
+    """Outer-owned user intent passed to the single Runtime intake/compiler path."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    objective: str = Field(min_length=1, max_length=8000)
+    constraints: tuple[str, ...] = Field(default=(), max_length=32)
+    material_inputs: tuple[str, ...] = Field(default=(), max_length=32)
+
+    @field_validator("objective")
+    @classmethod
+    def _normalize_objective(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("GUI task objective cannot be blank")
+        return normalized
+
+    @field_validator("constraints", "material_inputs")
+    @classmethod
+    def _normalize_clauses(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(value.strip() for value in values)
+        if any(not value or len(value) > 2000 for value in normalized):
+            raise ValueError("GUI task clauses must be nonblank and at most 2000 characters")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("GUI task clauses must be unique")
+        return normalized
 
 
 AssistantOutput = str | AssistantQuestion
@@ -71,11 +99,12 @@ Choose capabilities by their public meaning:
 - Answer directly when the request can be answered reliably from the conversation and stable knowledge.
 - Use native web search when it is available and current or source-specific information is required.
 - Call run_gui_task only when the request requires interacting with a graphical user interface or inspecting
-  state that the delegated GUI Runtime must acquire. Give it the complete user goal and constraints, not a URL
-  unless the user supplied that URL or the URL itself is essential to the goal.
-- For a delegated website task that may require sign-in, include this contingency in the complete goal: if
-  authentication is required, prepare the safest visible out-of-band challenge, request user takeover, and resume
-  the original goal after control is returned. Never ask the GUI Runtime to collect credentials or one-time codes.
+  state that the delegated GUI Runtime must acquire. Resolve references from the conversation and fill only its
+  objective, user-owned constraints, and material inputs. Do not produce an execution plan, ordered steps, selectors,
+  tool names, or claims about page state; the delegated Runtime owns fresh observation and its single GoalCompiler.
+  Do not invent a URL when the user did not supply one and the URL itself is not essential to the goal.
+- Authentication handling is a Runtime-private safety contract. Do not add sign-in steps to the objective.
+  Never ask the GUI Runtime to collect credentials or one-time codes.
 - Delegate at most one complete GUI task per user turn. A returned success, failure, blocked, or cancelled result is
   authoritative for that turn; explain it instead of calling run_gui_task again.
 - Return AssistantQuestion only when a fact owned by the user would materially change the result and cannot be
@@ -108,6 +137,13 @@ def _complete_gui_goal(goal: str) -> str:
     """Attach the stable supervised-authentication contract to one delegated GUI goal."""
 
     return f"{goal.strip()}\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
+
+
+def _compile_gui_intake(request: GuiTaskIntake) -> str:
+    """Lower typed Outer intake to the legacy natural-language Runtime boundary."""
+
+    # 这里只拼接用户拥有的事实条款，不生成顺序、工具或网页事实；后续仍由唯一 GoalCompiler 拆解。
+    return "\n".join((request.objective, *request.constraints, *request.material_inputs))
 
 
 def _public_gui_goal(runtime_goal: str) -> str:
@@ -163,7 +199,6 @@ class PydanticAssistantTurnRunner:
         native_web_search = False
         if profile == "gemini":
             import httpx
-
             from pydantic_ai.models.google import GoogleModel
             from pydantic_ai.providers.google import GoogleProvider
 
@@ -236,12 +271,14 @@ class PydanticAssistantTurnRunner:
 
         gui_results: list[GuiTaskResult] = []
 
-        async def execute_gui_task(goal: str) -> GuiTaskResult:
-            """Run one bounded GUI task in the existing Runtime and return its public result."""
+        async def execute_gui_task(request: GuiTaskIntake) -> GuiTaskResult:
+            """Run one intake-only GUI objective through the existing Runtime."""
 
             if gui_results:
                 return gui_results[-1]
-            gui_result = await run_gui_task(_complete_gui_goal(goal))
+            gui_result = await run_gui_task(
+                _complete_gui_goal(_compile_gui_intake(request))
+            )
             gui_results.append(gui_result)
             return gui_result
 
@@ -286,8 +323,8 @@ class PydanticAssistantTurnRunner:
                     execute_gui_task,
                     name="run_gui_task",
                     description=(
-                        "Delegate a complete graphical user-interface task to the existing GUI "
-                        "Runtime. Use only when UI interaction or GUI-only state acquisition is required."
+                        "Submit a self-contained GUI objective, user-owned constraints, and material inputs "
+                        "to the existing Runtime. Do not submit an execution plan or page-state claims."
                     ),
                     sequential=True,
                 )
@@ -348,10 +385,11 @@ def _required(environment: Mapping[str, str], name: str) -> str:
 
 
 __all__ = [
-    "AssistantQuestion",
     "AssistantHistoryPersistence",
+    "AssistantQuestion",
     "AssistantTurnResult",
     "AssistantTurnRunner",
+    "GuiTaskIntake",
     "GuiTaskResult",
     "PydanticAssistantTurnRunner",
 ]

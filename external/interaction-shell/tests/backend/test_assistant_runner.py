@@ -4,8 +4,10 @@ import pytest
 from interaction_shell.assistant import (
     _ASSISTANT_INSTRUCTIONS,
     _GUI_AUTHENTICATION_CONTINGENCY,
+    GuiTaskIntake,
     GuiTaskResult,
     PydanticAssistantTurnRunner,
+    _compile_gui_intake,
     _complete_gui_goal,
     _public_gui_goal,
 )
@@ -70,7 +72,13 @@ async def test_pydantic_runner_executes_at_most_one_gui_delegation_per_user_turn
                 parts=[
                     ToolCallPart(
                         "run_gui_task",
-                        {"goal": f"complete GUI task attempt {response_count + 1}"},
+                        {
+                            "request": {
+                                "objective": f"complete GUI task attempt {response_count + 1}",
+                                "constraints": [],
+                                "material_inputs": [],
+                            }
+                        },
                         tool_call_id=f"gui-call-{response_count + 1}",
                     )
                 ]
@@ -150,11 +158,29 @@ def test_web_search_cannot_be_silently_enabled_on_an_unsupported_profile(tmp_pat
 
 
 def test_assistant_delegates_the_authentication_contingency_with_the_complete_gui_goal():
-    assert "prepare the safest visible out-of-band challenge" in _ASSISTANT_INSTRUCTIONS
-    assert "resume\n  the original goal after control is returned" in _ASSISTANT_INSTRUCTIONS
+    assert "Do not produce an execution plan" in _ASSISTANT_INSTRUCTIONS
+    assert "single GoalCompiler" in _ASSISTANT_INSTRUCTIONS
+    assert "Authentication handling is a Runtime-private safety contract" in _ASSISTANT_INSTRUCTIONS
     assert "Never ask the GUI Runtime to collect credentials" in _ASSISTANT_INSTRUCTIONS
     assert _complete_gui_goal("Original goal") == (
         f"Original goal\n\n{_GUI_AUTHENTICATION_CONTINGENCY}"
+    )
+
+
+def test_outer_gui_intake_contains_no_plan_or_page_state_fields():
+    request = GuiTaskIntake(
+        objective="比较两个站点的价格并选择更便宜的商品",
+        constraints=("不要付款",),
+        material_inputs=("预算为 100 欧元",),
+    )
+
+    assert set(GuiTaskIntake.model_fields) == {
+        "objective",
+        "constraints",
+        "material_inputs",
+    }
+    assert _compile_gui_intake(request) == (
+        "比较两个站点的价格并选择更便宜的商品\n不要付款\n预算为 100 欧元"
     )
 
 

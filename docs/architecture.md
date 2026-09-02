@@ -1010,22 +1010,33 @@ natural user turn
 → one outer PydanticAI Agent
    ├─ direct user-facing answer
    ├─ provider-native Web Search, when the configured Assistant model supports it
-   └─ run_gui_task
+   └─ run_gui_task(objective, constraints, material_inputs)
       → existing CoreRuntimeSessionPort
       → TaskGoal + fresh World + GoalPlan + ActionPolicy + Binder + Executor
 → polished CompletionBlock
 ```
 
 Creating a Shell session no longer opens Playwright or Steel. The browser and Viewer lease are created lazily only
-when PydanticAI selects `run_gui_task`; the tool receives one complete goal and returns one bounded typed
-`GuiTaskResult`. During that pending tool call, the wrapper projects the delegated Runtime's current public surface,
+when PydanticAI selects `run_gui_task`; the tool receives one typed intake-only request and returns one bounded typed
+`GuiTaskResult`. The outer request has exactly `objective | constraints | material_inputs`: it may resolve references
+from bounded conversation, ask for a missing user-owned fact, and preserve the latest revision, but it has no plan,
+ordered-step, selector, tool, page-fact, progress, or completion field. During that pending tool call, the wrapper
+deterministically lowers those user-owned clauses into the existing natural-language `StartTask`; this conversion
+does not call another model or infer ordering, page facts, or effect authority. The deployment-owned typed
+`TaskBoundary` remains the permission owner. During that pending tool call, the wrapper projects the delegated Runtime's current public surface,
 progress, AskUser/confirmation, pause/resume, takeover, and effect-reconciliation contracts. It forwards the existing
 typed commands to the same inner public session. In particular, GUI revision still goes through the sole
 TaskRevisionCompiler → consecutive TaskGoal → fresh World → GoalCompiler path, and cancellation remains a Runtime
-control command rather than model prose. The delegated TaskGoal may be more operationally explicit, but it remains a
-visible intent block and cannot replace the outer conversation's user-authored request identity.
+control command rather than model prose. The delegated TaskGoal remains a visible objective/constraint block and
+cannot replace the outer conversation's user-authored request identity. Product and benchmark ingress do not select
+different planning semantics: after ThinTaskIntake admits a TaskGoal, the same
+Runtime-owned GoalCompiler is attempted exactly once at start/revision. The benchmark merely begins at the complete
+instruction boundary; the product path adds conversational reference resolution before that boundary. No
+`source=outer` bypass exists.
 
-The outer Assistant owns general conversation and final wording only. PydanticAI owns its exact message/tool-call
+The outer Assistant owns general conversation, reference resolution, missing user-owned fact detection, and final
+wording only. It must not lower the request into an execution sequence; fresh GUI facts and advisory decomposition
+remain owned by Runtime observation and GoalCompiler. PydanticAI owns its exact message/tool-call
 history, and Harness `StepPersistence(SqliteStepStore)` plus `ModelMessagesTypeAdapter` own restart restoration;
 `SummarizingCompaction` compresses only pair-safe expired history. The GUI ActionPolicy retains its independent
 Runtime-owned PydanticAI history. Shell feed/conversation remains a bounded presentation and revision projection and

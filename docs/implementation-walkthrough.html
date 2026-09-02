@@ -89,12 +89,18 @@
       <section id="ingress">
         <p class="section-kicker">02 · Natural conversation ingress</p>
         <h2>用户说一句话后，不是直接塞进 Agent prompt</h2>
-        <p class="section-intro">自然语言、权限、并发 currentness 和公开进展分别有不同对象。Shell 可以是网页 UI、CLI 或 API；它们都必须通过同一个 <code>TargetRuntimeSession</code>。</p>
+        <p class="section-intro">自然语言、权限、并发 currentness 和公开进展分别有不同对象。Chatbox 的 Outer 只解决指代、修订、澄清和用户约束，不负责拆步骤；Benchmark 已经给出完整 instruction，所以直接从 Runtime intake 开始。两条入口最终都必须通过同一个 <code>TargetRuntimeSession</code> 和同一个 GoalCompiler。</p>
+        <pre><code>Chatbox recent turns
+→ Outer GuiTaskIntake(objective, constraints, material_inputs)
+→ run_gui_task
+                         ┐
+Benchmark instruction ──┴→ NaturalLanguageTaskRequest → TaskGoal
+                                                → one GoalCompiler → GoalPlan?</code></pre>
         <div class="trace-stack">
           <details class="trace-step" open>
             <summary><span>01</span><b>自然语言变成版本化公开命令</b><em>PublicSessionCommand</em></summary>
             <div class="trace-body">
-              <p><code>TargetRuntimeSession.start(instruction)</code> 创建 <code>NaturalLanguageTaskRequest</code>。v3 入口还要求 <code>command_id + expected_task_revision + expected_run_status</code>，同 ID 同 payload 可幂等返回；同 ID 不同 payload 是冲突。这样浏览器 UI 的旧按钮、重复网络请求或多个前端不会静默覆盖当前 run。</p>
+              <p>产品入口先由 Outer 把 bounded recent turns 规范化为只有 <code>objective / constraints / material_inputs</code> 的 <code>GuiTaskIntake</code>；该 schema 故意没有 plan、steps、selector、tool 或 page state。<code>_compile_gui_intake</code> 只把这些用户条款确定性拼成现有 inner <code>StartTask</code> 文本，不调用第二个模型、不赋予操作顺序，也不扩大 deployment <code>TaskBoundary</code> 的 effect 权限。随后 <code>TargetRuntimeSession.start(instruction)</code> 创建 <code>NaturalLanguageTaskRequest</code>。v3 入口还要求 <code>command_id + expected_task_revision + expected_run_status</code>，同 ID 同 payload 可幂等返回；同 ID 不同 payload 是冲突。</p>
               <div class="io-grid"><div><small>IN</small><code>"去 GitLab 找前三位 contributor 的邮箱"</code></div><div><small>OUT</small><code>NaturalLanguageTaskRequest(request_id, instruction, boundary, revision=1)</code></div></div>
               <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/app/public_session.py">app/public_session.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/task/intake.py">task/intake.py</a></p>
             </div>
@@ -132,6 +138,7 @@
           <div><b>Unsupported / Failed</b><span>记录 unavailable，普通 loop 继续</span></div>
         </div>
         <p>ActionPolicy 每一轮根据 <code>TaskGoal + static GoalPlan + fresh World</code> 自己判断现在该推进哪项。Runtime 不计算 “3/5 完成”，因为那会把开放世界语义偷偷变成另一个规则引擎。用户 revision 会让旧 plan 整体失效；URL 或 layout 变化不会触发自动 recompile。</p>
+        <p><b>为什么 Outer 后面仍有 GoalCompiler？</b>Outer 只确认“用户要什么”，GoalCompiler 只给这个 TaskGoal 生成一次非权威依赖骨架。不能按来源关闭 compiler：否则产品与 Benchmark 会形成两套执行语义。若未来要减少一次模型调用，也必须让两种入口共同迁移到同一个返回 <code>TaskGoal + GoalPlan</code> 的 typed boundary，而不是只让 Chatbox 绕过。</p>
         <p class="code-path">代码：<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/model/goal_compiler.py">model/goal_compiler.py</a> · <a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/e4a57a5aee7ed86337852e1c6bf0fe9d667fb0cd/src/affordance_runtime/goals/plan.py">goals/plan.py</a></p>
       </section>
 
