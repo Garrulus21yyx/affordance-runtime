@@ -15,7 +15,7 @@
     <div class="top-inner">
       <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>INTERVIEW GUIDE</small></span></a>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
-      <nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html" aria-current="page">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a></nav>
+      <nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html" aria-current="page">面试指南</a><a href="interview-playbook.html">简历深挖</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a></nav>
     </div>
   </header>
 
@@ -61,7 +61,7 @@
       <div class="side-nav-meta">答题原则<br>先 owner<br>再 contract<br>再 evidence<br>最后 trade-off</div>
     </aside>
 
-    <main id="content">
+    <main id="content"><div class="callout"><strong>从简历进入深挖</strong>保留本页 70 个基础问题。新增 <a href="interview-playbook.html">42 个针对性答辩</a>：<a href="interview-playbook.html#framework">为什么选 PydanticAI</a>、<a href="interview-playbook.html#context">压缩与变化呈现</a>、<a href="interview-playbook.html#monitor">Monitor 的输入与边界</a>、<a href="interview-playbook.html#evaluation">评测、可视化与归因</a>。</div>
       <div class="qa-tools">
         <input class="qa-search" data-qa-search type="search" placeholder="搜索：checkpoint / VLM / Binder / Task798 …" aria-label="搜索面试问题">
         <div class="qa-count" data-qa-count aria-live="polite"></div>
@@ -148,8 +148,8 @@
         <details class="qa"><summary>Q41：之前为什么发现 stall 却 block 不了震荡？</summary><div class="answer"><p>RecoverySignal 的 one-turn 生命周期错误地承载了 failure accumulation。模型用 read/search/observe 消费信号后，换一种操作就建立新 epoch，同一 R46 stall 11 次仍全是 attempt 1。根因是失败事实 owner 与反馈载体混在一起，不是阈值太宽。</p></div></details>
         <details class="qa"><summary>Q42：新的 failure center 如何工作？</summary><div class="answer"><p>EpisodeMonitor 维护最多 16 个 transition/result identities 的 unresolved center。signal 被消费只表示模型看过一次反馈，不关闭 center；无 owner-produced progress 的替代动作加入 center，再进入成员或容量耗尽即 control_stalled。center digest 形成稳定 recovery signature。</p></div></details>
         <details class="qa"><summary>Q43：什么才算真正 progress？</summary><div class="answer"><p>fresh public World semantic digest、NEW_INFORMATION、verified operational GUI result、native terminal、task revision 或 episode reset。操作名、query、region、result 语法、recovery profile 改变不算。这样不会把“换一种撞墙姿势”误判成进展。</p></div></details>
-        <details class="qa"><summary>Q44：Monitor 会不会把低效但真实的进展误杀？</summary><div class="answer"><p>设计上不会。例如逐次 Backspace 真的改变 editor value，虽然极低效，仍是 World progress，Monitor 不应 block。那是 ActionPolicy/tool semantics 问题。Monitor 只做可机械证明的 recurrence，不承担任务效率或语义优劣判断。</p></div></details>
-        <details class="qa"><summary>Q45：恢复时会不会启动 StrategyRevision 这个第二 Agent？</summary><div class="answer"><p>不会，当前生产代码已经删除独立 StrategyRevision、它的 schema/context/trace 和 scheduling state。EpisodeMonitor 只产生 typed recovery facts 与确证的 hard constraints；active recovery 让同一个 ActionPolicy 进入 deliberate profile，并在同一次 ToolCall 中提交有界 decision basis。语义路线选择仍只有一个 owner。</p></div></details>
+        <details class="qa"><summary>Q44：Monitor 会不会把低效但真实的进展误杀？</summary><div class="answer"><p>按支持合同应允许真实进展；仍需测试误报与动态噪声漏报。例如逐次 Backspace 真的改变 editor value，虽然极低效，仍是 World progress，Monitor 不应 block。那是 ActionPolicy/tool semantics 问题。Monitor 只做可机械证明的 recurrence，不承担任务效率或语义优劣判断。</p></div></details>
+        <details class="qa"><summary>Q45：恢复时会不会启动 StrategyRevision 这个第二 Agent？</summary><div class="answer"><p>不会，当前生产代码已经删除独立 StrategyRevision、它的 schema/context/trace 和 scheduling state。EpisodeMonitor 只产生 typed recovery facts 与确证的 hard constraints；首次恢复信号让同一个 ActionPolicy 的下一次决策进入 deliberate profile；当前已删除 recovery_basis，不通过自报标签证明重审。语义路线选择仍只有一个 owner。</p></div></details>
       </section>
 
       <section class="qa-group" id="evaluation">

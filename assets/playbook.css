@@ -1,0 +1,7 @@
+/* Match the existing interview visual system. */
+.evidence-source {font-size:.86rem;color:var(--muted);overflow-wrap:anywhere;}
+.deep-answer h3 {font-size:1rem;margin-top:1.2rem;}
+#scenario {display:block;max-width:100%;padding:.8rem;margin:1rem 0 1.5rem;border:1px solid var(--line);background:var(--white);color:var(--ink);font:inherit;border-radius:8px;}
+#transition-demo {grid-template-columns:repeat(3,minmax(0,1fr));}
+#transition-demo .card p {white-space:pre-line;overflow-wrap:anywhere;}
+@media(max-width:760px){#transition-demo {grid-template-columns:1fr;}}

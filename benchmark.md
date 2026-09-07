@@ -2,6 +2,159 @@
 
 ## Current status
 
+### 2026-09-07 semantic completion and citation repair — final candidate smoke
+
+Final candidate `84a54e2aa999eeb2e6f095e3b33b1a7decb2749f` was tested from a clean isolated worktree
+`/tmp/affordance-completion-final-20260907`; main branch remains uncommitted. It clarifies ActionPolicy completion
+and current fact citations, and supplies BrowserGym's native completion requirement through its existing task
+constraint field. The model selects application actions; no case-specific routing or score modification exists.
+
+| Case / trial | Steps | Runner seconds | Policy input / output tokens | Result / evidence |
+| --- | --- | --- | --- | --- |
+| miniwob-60-06 / 1 | 4 | 27.399 | 31,610 / 717 | native success / valid |
+| miniwob-60-06 / 2 | 4 | 26.986 | 31,610 / 669 | native success / valid |
+| miniwob-60-11 / 3 | 3 | 19.324 | 22,086 / 264 | native success / valid |
+| miniwob-60-01 / 4 | 3 | 19.807 | 21,533 / 350 | native success / valid |
+
+Both form-sequence-2 trials selected the requested controls, entered the requested value and then activated the
+application Submit control. Native evaluation confirmed success. read-table and login-user also succeeded.
+All four formal reports are valid, with measured usage preserved. These four smoke trials support the named
+repair and small cross-task regression check, not broad reliability or a statistically established efficiency gain.
+Provider-free verification: 97 grounded-tool integration tests, 21 protocol/finalization tests and four BrowserGym
+admission tests passed. Two separately collected real active-capture tests were skipped without their explicit
+URL environment; they are not counted as passed. Ruff and diff checks passed.
+
+Earlier candidates are retained separately: two v57-only trials at `2e11358d` corrected the F citations but still
+reported completion without application submission. Their model inputs contained the control and state facts,
+but the task had no native completion requirement. A subsequent `921b9642` trial incorrectly represented this
+natural-language requirement as an untyped structured criterion and failed at session initialization before any
+model call. The final version uses the existing natural-language task constraints and leaves structured evaluator
+criteria unchanged; admission tests check compatibility with criterion normalization. None of these three failed
+attempts is erased or included in the final candidate's four-trial success count.
+
+Control definitions and receipts: `evidence/evals/aa-20260907/{completion-repair,native-completion,completion-final}/`.
+Final raw evidence: `evidence/live/lab-completion-final-20260907-*`; summary: `completion-final/summary.json` under
+the control root. This repair turn consumed seven executions including the initialization failure, leaving three
+of the original eighteen authorized executions unused. Policy token columns do not include separately observed
+GoalCompiler usage or monetary billing. Citation membership remains strict; no E-to-F coercion was added.
+
+### 2026-09-07 evaluation repair — fresh live verification
+
+Repairs delegate BrowserGym finalization through the existing World owner, preserve measured counters across
+report exceptions, represent absent snapshot metrics as unmeasured, and propagate incomplete measurement
+populations through suite rates. A nonterminal snapshot interrupted by an exception produces a terminal failed
+report rather than violating the result schema. The launch request now lives beside the runner output directory;
+formal CLI directory creation remains intact. Labs exposes `run_evidence_valid=false` and excludes those records
+from comparisons without rewriting their diagnostic measurements.
+
+Fresh isolated snapshot: `f0e645b5b8be237aee8f430f041bbf09ea914cbd` at
+`/tmp/affordance-aa-repair-20260907`. Primary branch remains uncommitted. Three additional executions used the
+same provider, model, seed and budgets as the interrupted calibration, with separate evidence under
+`evidence/evals/aa-20260907/repair/` and `evidence/live/lab-repair-20260907-*`.
+
+| Task / repeat | Runtime / native result | Steps | Runner seconds | Policy input / output tokens | Formal evidence |
+| --- | --- | --- | --- | --- | --- |
+| form-sequence-2 / 1 | failed / incomplete after final response | 3 | 21.281 | 22,830 / 591 | valid |
+| form-sequence-2 / 2 | blocked / control_stalled | 6 | 83.599 | 75,147 / 6,935 | valid |
+| click-tab / 1 | done / complete | 1 | 5.906 | 7,082 / 88 | valid |
+
+The first repair trial records finalization `sent`, a fresh post-stop observation and native evaluator invocation;
+the old ActionResult/EnvironmentFinalization exception is absent. This verifies the repaired route, not task
+success: the evaluator still returned incomplete. The second trial establishes retained usage on a blocked run.
+The third exercises an independent successful task. Policy usage above excludes the separately observed compiler
+calls (one per task); it is not presented as complete deployment cost or monetary billing. Existing provider
+instrumentation and Langfuse SDK ingestion remain the usage source; no hand-written tokenizer or pricing table
+was introduced. Original failed reports remain unchanged. Ten of the original eighteen authorized executions
+remain unused; no A/A stability or capability-improvement conclusion is claimed.
+
+Validation: runtime suite 374 passed; remaining backend/contract suites 202 passed when run separately; frontend
+50 passed plus the added invalid-evidence display test (6 result-view tests passed); TypeScript checked. A combined
+collection produced three existing strict 150 ms lifecycle timing assertion failures; the complete isolated runtime
+suite passed. This collection-sensitive timing issue remains recorded, not hidden by loosening thresholds. The
+wrapper invariant covers every DispatchStatus, optional typed post-acquisition, cancellation and error propagation;
+projection tests cover partial/invalid measurements, persistence and missing-population aggregation. API/browser
+checks expose current live rows and invalidate the historical zeroed report in comparison.
+
+### 2026-09-07 live A/A calibration — stopped at evidence integrity gate
+
+User-authorized first round was bounded to 18 MiniWoB executions: six tasks, seed 7, three repetitions,
+10 policy steps and 180 s harness timeout per task, 210 s outer process timeout. Model and GoalCompiler were
+`deepseek-v4-flash`, observation `structure-first.v1`, with local fallback disabled. Experiment definition,
+launch receipts, raw process logs and read-only summary are in `evidence/evals/aa-20260907/`.
+
+An initial launcher spelling error was rejected before GUI/model execution and is retained separately. The
+first actual button task succeeded on the dirty working tree, but the formal evidence gate rejected its Git
+identity. An isolated clean worktree at `/tmp/affordance-aa-20260907`, commit
+`52f696174cb856b492c391f122d1755ee002e4ea`, freezes the same current source content
+(`061df9a73f830d3d713e57878807a228b65c2ae2b2bd3dd910480f1b4abee78d`). The primary branch was not committed or switched.
+
+| Trial | Task | Observed result | Steps | Runner seconds | Formal evidence |
+| --- | --- | --- | --- | --- | --- |
+| 1 | click-button | native success | 1 | 4.972 | excluded: dirty identity |
+| 2 | login-user | native success | 3 | 20.459 | valid |
+| 3 | phone-book | native success | 8 | 58.701 | valid |
+| 4 | read-table | native success | 3 | 20.949 | valid |
+| 5 | form-sequence-2 | finalization exception; no terminal task verdict | unavailable in failed projection | 20.496 | invalid |
+
+The runner stopped after trial 5; 13 executions remain unrun. There are only three valid samples, each from a
+different task, so no repeated-run variance, success-rate improvement, or A/A calibration closure is claimed.
+Local owner transcripts across all five attempts record 23 model calls (18 policy, 5 compiler), 141,491 input
+and 2,993 output tokens. These include the excluded attempts; monetary pricing is not estimated.
+
+Trial 5 exposes two distinct faults. Its `run_error` records `'ActionResult' object has no attribute 'result'`.
+`BrowserGymCaseEnvironment` forwards unknown members to its SurfaceAdapter; unlike reset/capture/execute it has
+no explicit World-level finalization forwarding. Thus `finalize` returns surface `ActionResult` while CoreLoop
+requires `EnvironmentFinalization` with post-acquisition. A provider-free boundary probe reproduces that routing
+(`finalization-boundary-probe.json`). The correct conversion owner already exists in `UnifiedWorldEnvironment`.
+
+The ensuing case projection throws `ValueError`: the interrupted snapshot still reports `running`, which the terminal report contract rejects. Runner's
+projection-exception branch then constructs every canonical metric as `MetricMeasurement(0, True)`, despite
+three accepted policy calls and one compiler call already persisted in Trace. Missing `fallback_count` triggers
+the formal report's evidence gate. The failed report's zeros must not participate in efficiency comparisons;
+raw evidence is retained unchanged. This historical run provides diagnosis; the separate repair verification above records the subsequent owner-level changes and fresh evidence.
+
+### 2026-09-06 Labs evaluation loop — provider-free validation
+
+Labs now connects experiment launch → persisted results → descriptive batch comparison → task metrics/timing and
+failure evidence → downloadable comparison JSON. The UI supports result filters, explicit baseline/candidate
+selection, paired task drilldown, observed time/token budget curves, measurement coverage, and backend provenance.
+It does not score task success from process completion or infer absent costs as zero.
+
+Backend storage for a run is under its evidence directory (Labs default: `evidence/live/lab-*`):
+
+| File | Owner and role |
+| --- | --- |
+| `../<run-id>.request.json` | Labs launcher: requested model/configuration, case budget and reproducible CLI argv |
+| `run-results.sqlite3` | Formal result store: case/run outcomes and lifecycle/report records |
+| `run.json`, `cases/<case>.json` | JSON exports consumed by the completed-results projection |
+| `traces/<case>/trace.jsonl` | Owner-produced execution evidence and new boundary timing intervals |
+| `analysis/<case>.json` | Non-authoritative failure diagnosis |
+
+Configure older directories with colon-separated `INTERACTION_SHELL_EVIDENCE_RUNS`; completed Labs directories are
+also discovered within the manager's evidence root after restart. Supported attempt identity is required. The
+comparison export is downloaded to the browser as `evaluation-comparison.json`; it is a derived report, not a
+second result database. Relative paths appear in the task detail under “后端数据来源”.
+
+Validation: 195 backend/harness tests passed, including shell tests, launcher persistence/discovery, runner,
+cleanup ownership, internal-core and internal-safety contracts. Comparison properties cover all combinations of
+three-valued outcomes and missing/zero/positive measurements for three trials: monotonic budget curves, stable
+pairing, coverage and failed-cost accounting. Timing tests verify result/exception preservation and cancellation.
+50 frontend tests passed, including API-to-view comparison, incomplete evidence and task drilldown; TypeScript
+and ESLint pass. A fresh deterministic `internal-core / scripted-model / seed 7` run produced 5 case exports (plus 5 presentation sidecars),
+SQLite and real boundary timing in `evidence/evals/labs-ui-core-20260906`. This is provider-free validation, not a
+live capability benchmark or evidence of efficiency improvement.
+
+Known measurement limits: historical traces lack timing, policy tokens do not cover every role/provider request,
+and monetary pricing is not configured. These remain explicit unavailable/scoped metrics in the UI. Different
+suite/seed/manifest conditions, missing pairs and unknown outcomes remain visible. Current comparisons are
+`inconclusive` pending complete frozen trial conditions, repeated runs and configured comparison thresholds;
+no automatic promotion or success-rate/cost tradeoff is inferred.
+
+Browser validation exercised the comparison API and curves, persisted-result drilldown, real scripted-run timing
+and data provenance at desktop (1280 px) and mobile (390 px) widths. Screenshots are under
+`output/playwright/labs-comparison-desktop.png` and `output/playwright/labs-timeline-desktop.png`.
+
+
 ### 2026-09-01 Task798/Task316 convergence reopening — owner repair implemented, live-open
 
 The paired run at commit `ec7923b4` falsified the prior closure model. Task798 completed 33 steps in its full

@@ -1,0 +1,557 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="从三条简历深挖 GUI Agent：世界呈现、五层压缩、Monitor 防震荡、AndroidWorld、评测归因与 SOTA 取舍。"><title>简历深挖与答辩 · Affordance Runtime</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/interview.css">
+<link rel="stylesheet" href="assets/playbook.css"></head><body><a class="skip-link" href="#content">跳到正文</a>
+<header class="site-top">
+<div class="top-inner"><a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>RESUME → MECHANISM → EVIDENCE</small></span></a><button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button><nav class="top-nav" id="top-navigation" aria-label="主导航"><a href="index.html">首页</a><a href="project-pitch.html">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html">基础问答</a><a href="interview-playbook.html" aria-current="page">简历深挖</a><a href="benchmark.md">评测原文</a></nav></div></header>
+<div class="hero compact">
+<div class="hero-inner">
+<div>
+<div class="eyebrow">DOM-first · general models · one acting loop</div>
+<h1>让每条亮点<br>都能<em>追问到底</em></h1>
+<p class="lede">把“世界怎样呈现、Agent 怎样理解变化”讲成主线。用 42 个针对性问题，展开上下文、Monitor、跨平台与评测的实现和取舍。</p></div>
+<div class="hero-console">
+<div class="console-head"><i></i><i></i><i></i></div>
+<div class="console-body">
+<p><b>30 seconds</b> 问题 + 三个贡献</p>
+<p><b>follow-up</b> 输入 → 机制 → 失败 → 证据</p>
+<p><b>reference</b> DialogPilot × Agent Systems Atlas</p>
+<p><b>reviewed</b> 2026-09-07</p>
+<p class="warn">模拟数字与真实任务证据分开呈现</p></div></div></div></div>
+<div class="page-grid wide">
+<aside class="side-nav" aria-label="深挖目录">
+<p class="side-nav-label">42 个针对性追问</p>
+<ol>
+<li><a href="#quickstart">三条简历入口</a></li>
+<li><a href="#position">定位与项目讲述</a></li>
+<li><a href="#context">上下文：世界、变化与压缩</a></li>
+<li><a href="#monitor">Monitor：看见什么、何时换策略</a></li>
+<li><a href="#platform">模块化与 AndroidWorld</a></li>
+<li><a href="#evaluation">评测、可视化与 Badcase 归因</a></li>
+<li><a href="#framework">PydanticAI：选型、用法与替换成本</a></li>
+<li><a href="#references">SOTA 借鉴、差异与双项目对比</a></li>
+<li><a href="#demo">交互因果示意</a></li>
+<li><a href="#provenance">版本与参考</a></li></ol></aside>
+<main id="content">
+<section id="quickstart">
+<p class="section-kicker">Start with the resume</p>
+<h2>三条简历，三条深挖路线</h2>
+<div class="cards three"><article class="card">
+<h3>上下文工程与长程决策</h3>
+<p>世界如何呈现 → Agent 如何看懂变化 → 压缩保留什么 → Monitor 如何反馈。</p><a href="#context">世界与压缩 →</a></article><article class="card">
+<h3>模块化跨平台 Runtime</h3>
+<p>同一 loop → 环境转换 owner → AndroidWorld 联系人任务 → 能力边界。</p><a href="#platform">跨平台追问 →</a></article><article class="card">
+<h3>自动化评测与优化</h3>
+<p>原生判定 → 指标分母 → 可视化下钻 → Badcase 归因 → owner 修复。</p><a href="#evaluation">评测追问 →</a></article></div>
+<p>先看 <a href="project-pitch.html#resume">完整简历版</a>，再练每题的短答。展开后才看机制与追问；不需要把整页当开场背稿。</p>
+</section>
+<div class="qa-tools"><input class="qa-search" data-qa-search type="search" placeholder="搜索：压缩 / Monitor / 归因 / Android / SOTA" aria-label="搜索深挖问题">
+<div class="qa-count" data-qa-count aria-live="polite"></div></div>
+<section class="qa-group" id="position">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>定位与项目讲述</h2>
+<p>先讲三个贡献：让模型看懂变化、跨平台复用、用实验判断改进。实现细节留给追问。</p>
+<details class="qa" id="d1"><summary>D1 · 用 30 秒介绍项目，怎样抓住重点？</summary>
+<div class="answer">
+<p><b>短答：</b>我做的是 DOM-first 通用 GUI Agent Harness，让低成本工具调用模型具备网页操作能力。核心是把页面、动作结果和状态变化组织成模型能理解的上下文，用 Monitor 发现无进展循环并触发策略重审；执行与平台解耦，独立分支已复用到 AndroidWorld；最后用原生验证器和逐步 Trace 判断到底完成了什么。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>三分钟展开顺序：① 世界呈现与长程上下文；② 同一决策循环如何接 Web/Android；③ 一个成功、一个失败案例如何被评测和修复。先说设计解决的问题，再说模块名。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如果追问“便宜多少”，说明 DOM-first 是成本策略，整体省钱幅度需要同条件实测；不要用模型单价替代每成功任务成本。</p>
+<p class="evidence-source"><b>定位：</b>项目 README；本页三条简历入口。</p></div>
+</details>
+<details class="qa" id="d2"><summary>D2 · 你到底自研了什么，哪些复用现成能力？</summary>
+<div class="answer">
+<p><b>短答：</b>自研 World 呈现、动态工具合同、语义动作绑定、单循环控制、动作效果反馈与 Monitor；浏览器交互交给 Playwright，环境生命周期和任务评分复用 BrowserGym/native evaluator，模型协议与摘要能力复用 PydanticAI/Harness。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>把个人工作展开为一个边界：输入是什么、输出是什么、失败怎样表达、哪次 trace 证明它曾经出错。团队规模、日期和个人贡献应按本人实际补充；框架接入不等于重写底层。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如果问“是不是套壳”，用 Task316 的 source → model-input 可发现性缺口，解释为什么仅调用浏览器 API 无法修复。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/core_loop.py">CoreAgentLoop</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/world/orchestrator.py">World owner</a></p></div>
+</details>
+<details class="qa" id="d3"><summary>D3 · 为什么 DOM-first？纯截图和固定 Playwright 脚本有什么不同？</summary>
+<div class="answer">
+<p><b>短答：</b>DOM/AX 提供文字、层级、角色和可操作状态，适合低成本文本模型；截图补充图像、空间和视觉属性。模型每步依据当前状态选择动作，适用于路径事先未知的任务。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>固定流程明确时 Playwright 脚本更直接；Canvas、自绘控件、错误或缺失的可访问性信息会削弱结构路径，此时通过同一观察接口引入视觉证据。DOM-first 不是把结构缺口解释成任务不可能。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何证明路线有效？同一任务、模型和预算下比较结构/结构＋视觉；分别报告结构充分与视觉依赖子集，并计入视觉调用成本。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/world/orchestrator.py">src/affordance_runtime/world/orchestrator.py</a>；<a href="https://arxiv.org/abs/2410.13825">AgentOccam</a></p></div>
+</details>
+</section>
+<section class="qa-group" id="context">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>上下文：世界、变化与压缩</h2>
+<p>Atlas 对应：AGT-003、MEM-013/014/032/033/041/044、EVAL-015。重点是信息如何进来、为什么删、删后怎样验证。</p>
+<details class="qa" id="d4"><summary>D4 · 你说五层上下文，具体是哪五层？</summary>
+<div class="answer">
+<p><b>短答：</b>页面结构化折叠、动态工具裁剪、单轮联合预算、过期历史清理、轨迹语义摘要。前两层减少进入请求的冗余，第三层负责完整请求容量，后两层处理跨轮增长。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>层</th><th>机制</th><th>保留的不变量</th></tr></thead>
+<tbody>
+<tr><td>世界呈现</td><td>PageMap、区域展开、Record/ControlGroup、coverage/cursor</td><td>记录字段与组成员关系；不完整必须可见</td></tr>
+<tr><td>工具</td><td>Registry / ActionSpace / DeliveryManifest → ToolCatalog</td><td>只引用当前可用、已交付目标；私有执行留在 Runtime</td></tr>
+<tr><td>预算</td><td>TurnPacker + RequestAdmission</td><td>页面、工具、history、协议与输出预留共同计量</td></tr>
+<tr><td>结构清理</td><td>单一 Goal/Plan 锚点，移除旧 World/media、过期操作引用</td><td>当前状态来自 fresh World，合法业务文本不被误删</td></tr>
+<tr><td>语义摘要</td><td>Harness summarizing compaction</td><td>关键结果与事实；近期调用/结果配对保真</td></tr></tbody></table></div></div>
+<p class="answer-hook"><b>继续追问：</b>这是按职责归纳的五层治理，不是连续调用五次 LLM，也不是五级缓存。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/turn_packer.py">src/affordance_runtime/model/policy/turn_packer.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a></p></div>
+</details>
+<details class="qa" id="d5"><summary>D5 · World 已经有内容，为什么模型仍然找不到？</summary>
+<div class="answer">
+<p><b>短答：</b>源数据存在不等于模型可发现。World 需要保留层级和记录边界，PageMap 需要暴露可理解的区域描述，read/search 必须返回同一完整语义单元。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>Task316 的 contributor 数据已经保留，但匿名 Collection 难以发现，模型输入未包含目标邮箱。修复为现有集合生成有界公开描述，再由通用 read_region 返回整条记录；没有增加“找邮箱”规则。后续该任务 11 步 native success。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何证明泛化？生成不同字段名、行数、文本和嵌套结构，验证字段归属、顺序及 read/search 一致性，再用未调参任务验证。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/context/world_region_index.py">src/affordance_runtime/agent/context/world_region_index.py</a>；<a href="benchmark.md">Task316 记录</a></p></div>
+</details>
+<details class="qa" id="d6"><summary>D6 · fresh observation、ToolResult、previous_transition 是不是三份重复状态？</summary>
+<div class="answer">
+<p><b>短答：</b>fresh World 回答“现在是什么”；同调用 ToolResult 回答“刚才执行和局部效果怎样”；previous_transition 将最新意图—动作—效果与受影响的 fresh 语义单元相邻呈现。它们分工不同，但都消费已提交的事实。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>执行后先采集新 World、形成 typed ActionOutcome 和 StepResult，再投影同一 tool_call_id 的结果。最新 transition 不重复塞进较早 recent_trajectory；旧历史保留语义目标而不保留失效操作引用。模型看到的是连续关系，而不是孤立的 success 字符串。</p></div>
+<h3>白板上展开一轮</h3><pre><code>W_t + Goal + Catalog_t → ToolCall(id=c17, activate E4)
+→ admission / currentness / private binding
+→ ExecutionReceipt → acquire W_t+1 → ActionOutcome
+→ commit StepResult
+→ ToolReturn(id=c17, dispatch + effect)
+→ 下一请求：W_t+1 + previous_transition + 较早轨迹 + Catalog_t+1</code></pre><p>上面是教学时序，不是可直接调用的 API。实际 GUI ToolReturn 含 <code>dispatch.completion / receipts</code> 和 <code>effect.availability / observed_change / local_postcondition / evidence_method / reason / evidence_refs</code>。效果不可用时保留 reason，如 sent_unknown 或 not_evaluated，不能填一个假的“没有变化”。</p><p>ToolResult 是反馈载体；fresh World 是当前事实。不能在 executor 返回时就先给模型“成功”，等下一次才补上未满足的后置条件。读取类工具也没有 GUI dispatch，需要保留其内容、覆盖范围和新增信息语义。</p><p class="answer-hook"><b>继续追问：</b>点击 sent 但弹窗没出现，是否成功？只能证明发送；局部效果需要后置证据，任务成功还要 native evaluator。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/tool_result_projection.py">src/affordance_runtime/agent/tool_result_projection.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/context/step_projection.py">src/affordance_runtime/agent/context/step_projection.py</a></p></div>
+</details>
+<details class="qa" id="d7"><summary>D7 · 页面变化就代表任务进展吗？</summary>
+<div class="answer">
+<p><b>短答：</b>不代表。Runtime 呈现 observed change、local postcondition 和新增信息，ActionPolicy 解释是否推进用户目标，TaskEvaluator 负责任务完成。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>后置条件使用 satisfied / unsatisfied / unknown。输入值发生变化但被 UI 正规化时，不能直接判失败；点击已 active toggle 可能撤销已满足状态。GoalPlan 没有 mutable item status，模型每步结合 fresh World 重新判断。</p></div>
+<p class="answer-hook"><b>继续追问：</b>没有变化是不是该停？读取已有页面但得到新记录可能有信息增量；反过来不相关页面变化也可能没有任务价值。Monitor 不充当语义进度评委。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/evaluation/action_outcome_projector.py">src/affordance_runtime/evaluation/action_outcome_projector.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/prompts/grounded_agent.yaml">src/affordance_runtime/model/policy/prompts/grounded_agent.yaml</a></p></div>
+</details>
+<details class="qa" id="d8"><summary>D8 · 到底什么时候压缩？80%、50%、30%、12% 是什么分母？</summary>
+<div class="answer">
+<p><b>短答：</b>先做确定性的历史清理，再检查两个触发条件：完整请求达到有效输入容量的 80%；或历史达到可用历史容量的 50%，且近期保真尾部以外至少有 15% 可回收。目标为历史容量的 30%，近期配对完整尾部预算为历史容量的 12%。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>完整请求与可用历史容量不是同一个分母。历史空间是在当前请求中为 World、tools 等留出预算后的容量；15% 可回收门槛提供滞回，避免刚压完又触发。30% 是目标配置，不是实测节省 70%。摘要仍受输出上限约束。</p></div>
+<h3>数字推演：只用于解释阈值</h3><p>假设当前可用历史容量 H=40,000 Token，历史已用 22,000，则超过 50% 水位；近期保真尾部预算为 4,800，可回收前缀需至少 6,000。符合这两个条件才走 history-pressure arm；目标摘要后历史预算为 12,000。若历史用了 21,000，但尾部以外只有 3,000 可回收，就不因历史水位单独启动；完整请求的容量压力仍可独立触发。</p><p>H 不是固定的模型 context window：当前页面和工具变多，留给历史的空间可能变小。估算用于准入，provider usage 用于事后测量，两者有误差，因此还保留 protocol reserve 与 safety margin。输出上限和摘要语义也决定实际压缩结果，不能保证恰好落在 30%。</p><p class="answer-hook"><b>继续追问：</b>阈值怎么选？当前是工程配置；在固定任务集上比较质量、触发频率、调用耗时和总 Token，不能把这些比例包装成理论最优。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">阈值常量与触发实现</a></p></div>
+</details>
+<details class="qa" id="d9"><summary>D9 · 哪些可以删，哪些必须保留？为什么不能直接截最后 N 轮？</summary>
+<div class="answer">
+<p><b>短答：</b>删过期页面和历史媒体，保留当前目标、最新 World、近期 typed call/result 以及完成任务需要的精确业务值。旧操作引用按 producer 声明的字段路径清理，不能按 E7 之类的字符串正则误删合法文本。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>较老响应中的私有 thinking 只有在结果已闭合且该响应自身存在公开文字结论等条件下才可过期；未闭合交换和保留尾部不能拆。固定 N 轮无法控制每轮长度，也可能丢掉前面取得的最终答案字段。</p></div>
+<p class="answer-hook"><b>继续追问：</b>能否用“已选中某按钮”摘要决定下一步？不能，它可能已过期；当前 UI 要重新看 fresh World。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/context/contracts.py">src/affordance_runtime/agent/context/contracts.py</a></p></div>
+</details>
+<details class="qa" id="d10"><summary>D10 · 摘要是什么格式？二次压缩会不会逐渐失真？</summary>
+<div class="answer">
+<p><b>短答：</b>摘要按“已完成结果—关键事实—失败策略”组织，当前 prompt 分别限制最多 8、8、2 项，并优先保留最终答案需要的精确值与来源。摘要是历史提示，不是可执行计划或当前状态。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>再次压缩会面对前次摘要和后续已闭合交换，因此可能累积语义损耗；不能宣称摘要完全无损。保留原始 Trace，检查精确值和来源是否还在模型可见输入；用重复压缩后的信息保留率和最终 native score 检验，不能靠摘要读起来通顺验收。</p></div>
+<p class="answer-hook"><b>继续追问：</b>用户修订目标怎么办？旧 plan 失效，重新编译；当前目标锚点由 TaskGoal 重建，不让旧摘要继续当目标 authority。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">摘要 prompt 与 SDK history</a></p></div>
+</details>
+<details class="qa" id="d11"><summary>D11 · 怎样保证 ToolCall 和 ToolResult 不被压断？摘要失败怎么办？</summary>
+<div class="answer">
+<p><b>短答：</b>给 Harness 原始 typed PydanticAI history，让它在合法调用/结果边界选择 cutoff；接受候选前再验证完整消息代数。摘要失败、超时或候选非法时保留输入历史，随后重新做容量准入。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>历史故障曾把 ToolReturn 临时改成 SystemPrompt 来显示全文，第三次摘要截断时失去调用配对，provider 因孤立结果拒绝。修复是恢复原始 typed messages；这不是多加一次 provider 重试能解决的问题。</p></div>
+<p class="answer-hook"><b>继续追问：</b>保留原历史仍超限？返回 typed capacity failure，不能静默删掉证据；压缩与 action 共用 deadline，压缩耗时也要计入。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a>；<a href="architecture.md">pair-safe compaction 故障记录</a></p></div>
+</details>
+<details class="qa" id="d12"><summary>D12 · 怎么测压缩有没有丢信息，而不只是看 Token 下降？</summary>
+<div class="answer">
+<p><b>短答：</b>分三层：结构性质验证记录与调用配对；独立标注或生成的精确事实保留测试；同任务的压缩开关配对 benchmark，观察成功、重复动作、总消耗和延迟。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>事实保留率 = 压缩后仍可正确取出的必需事实 / 标注必需事实；单列值、来源、用户约束和覆盖范围。包括同名记录、长字段、重复摘要、目标修订和相似操作引用文本。测试答案只进入评分器，不注入产品 prompt。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如果 Token 少了但成功率降了？报告 trade-off；优先定位哪类信息丢失，不以节省 Token 单独宣布改进。</p>
+<p class="evidence-source"><b>定位：</b>Atlas EVAL-015、MEM-033/041；本页评测方案。</p></div>
+</details>
+</section>
+<section class="qa-group" id="monitor">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>Monitor：看见什么、何时换策略</h2>
+<p>Atlas 对应 AGT-119。机械检测、模型策略与任务终止三者要分开讲。</p>
+<details class="qa" id="d13"><summary>D13 · Monitor 究竟能看到什么？是不是再调用一个 LLM 看截图？</summary>
+<div class="answer">
+<p><b>短答：</b>它消费已提交 StepResult、前后 public World digest、动作及执行回执、局部效果、任务评估状态和 typed InformationDelta；维护有界 transition/result identities。它不是截图识别器，不读模型内心推理，也不解析任务语义。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>输入</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td>操作与语义目标/参数的稳定签名</td><td>跨失效 E-ref 识别同一尝试</td></tr>
+<tr><td>前后 public World semantic digest</td><td>识别环境事实是否变化</td></tr>
+<tr><td>dispatch + 局部效果</td><td>区分发出动作与观察到有效操作结果</td></tr>
+<tr><td>NEW_INFORMATION / 已见结果摘要</td><td>区分读取新信息与反复读取</td></tr>
+<tr><td>native task outcome</td><td>任务已终止时关闭监测生命周期</td></tr></tbody></table></div></div>
+<p class="answer-hook"><b>继续追问：</b>findings digest 等诊断变化不是任意清空 failure center 的许可，关闭必须符合 owner-produced escape 条件。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/monitor.py">EpisodeMonitor.evaluate</a></p></div>
+</details>
+<details class="qa" id="d14"><summary>D14 · 如何发现震荡？为什么不是连续三次点同一个按钮？</summary>
+<div class="answer">
+<p><b>短答：</b>检测操作—结果转移的重复及短混合循环，同时用未解决 failure center 保留已进入的无进展成员，覆盖 S→A→S→B→S 这种非固定周期的绕圈。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>单看 action name 会把合法重复输入误判；单看前后两个步骤会漏掉夹杂搜索/读取的重复。签名基于语义尝试和结果 World，而非临时句柄。center 有界，当前最多 16 个不同转移/结果；容量耗尽也返回 control_stalled。</p></div>
+<p class="answer-hook"><b>继续追问：</b>16 是什么？存储/执行边界，不是“允许点 16 次”的启发式成功标准；普通任务总步数预算另有 owner。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/monitor.py">src/affordance_runtime/agent/monitor.py</a></p></div>
+</details>
+<details class="qa" id="d15"><summary>D15 · 怎么让 Agent 及时换策略？Monitor 会替它选择新按钮吗？</summary>
+<div class="answer">
+<p><b>短答：</b>第一次确证循环时，将停滞事实与硬约束注入恰好下一次 ActionPolicy 决策；同一策略角色进入 deliberate 配置，获得配置中的推理/模型/输出预算增强。替代路线仍由模型根据 fresh World 和当前工具选择。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>反馈可以促使模型重新检查阻碍、获取缺失证据、换路或提交已有支持的结果。当前没有独立 Reflector，也没有要求工具附带 recovery_basis 标签；标签无法证明真正重审。再进入已记录的无进展成员时 Runtime 终止循环。</p></div>
+<p class="answer-hook"><b>继续追问：</b>这能保证模型想出新策略吗？不能。Monitor 保证一次可见的调整机会与有界控制；策略恢复成功率要独立评测。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/decision_capability.py">src/affordance_runtime/agent/decision_capability.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/prompts/grounded_agent.yaml">src/affordance_runtime/model/policy/prompts/grounded_agent.yaml</a></p></div>
+</details>
+<details class="qa" id="d16"><summary>D16 · 换成 read/search 后，为什么还不能重置停滞？</summary>
+<div class="answer">
+<p><b>短答：</b>换操作本身不是逃离停滞。若没有 owner 产生的新信息、语义 World 变化或有效 GUI 结果，尝试加入原 failure center；signal 被消费仅表示模型看过反馈，不代表问题已解决。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>Task798 曾夹杂读取与搜索，使旧实现不断创建 attempt=1 的恢复信号，跑满时间。现在 failure-center identity 跨这些尝试保留；后续 witness 在第 18 步 control_stalled，但模型仍未给出任务所需的 typed negative。</p></div>
+<h3>用状态转移解释生命周期</h3><pre><code>尚无 center：记录 transition/result
+首次重复：建立 center，发一次 recovery signal
+下一 ActionPolicy：消费 signal，进行一次策略重审
+其后无进展的新尝试：加入同一 center
+其后重入 center 成员 / center 容量耗尽：control_stalled
+有 owner-produced escape：清空 center，恢复普通推进</code></pre><p>signal 的可见寿命是一轮，center 的私有寿命直到逃离或终止；把两者合成“recovery 已消费，所以恢复结束”正是以前的生命周期缺口。暂停时 checkpoint 保存 typed Monitor snapshot，恢复后只有 fresh World semantic digest 匹配才重装对应 center，防止把旧页面的循环约束套到新页面。</p><p class="answer-hook"><b>继续追问：</b>这个结果算成功吗？是有界控制证据，不是任务成功；不能用“少跑了几分钟”替代 native score。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/monitor.py">src/affordance_runtime/agent/monitor.py</a>；<a href="benchmark.md">Task798 witness</a></p></div>
+</details>
+<details class="qa" id="d17"><summary>D17 · 如何避免误杀有进展的重复动作？动态页面会不会绕过检测？</summary>
+<div class="answer">
+<p><b>短答：</b>有 fresh semantic World 变化、NEW_INFORMATION 或可验证的操作进展时解除相应 failure center；合法重复操作不应只因名字相同被拦截。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>逐次删除字符虽低效，却真实改变字段，属于策略效率问题。相反不相关动态内容若进入 semantic digest，可能掩盖停滞；因此摘要字段选择与新信息定义需要性质测试和真实页面验证。机械不变量不等于语义最优。</p></div>
+<p class="answer-hook"><b>继续追问：</b>测试建议：参数/字段顺序变化、动态噪声、重复但有效输入、空读、新记录、hub-and-spoke、暂停恢复；明确误报和漏报定义。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/monitor.py">src/affordance_runtime/agent/monitor.py</a>；<a href="architecture.md">failure-center 当前合同</a></p></div>
+</details>
+<details class="qa" id="d18"><summary>D18 · Monitor 如何评测？停得早会不会只是把失败变多？</summary>
+<div class="answer">
+<p><b>短答：</b>机械性质验证“重复有界、真实变化可逃离”；live 则联合报告循环率、恢复后成功率、停滞后的额外步数与失败消耗。必须检查提前中断原本可成功任务的代价。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>在固定任务/种子/预算下，比较 Monitor 开关或版本。恢复成功率分母为触发恢复的任务，整体成功率分母仍为所有已启动任务；人工审阅抽样循环轨迹并保留未知标签。配置公平预算，避免无 Monitor 组无限运行。</p></div>
+<p class="answer-hook"><b>继续追问：</b>归因：检测没触发、反馈未进入物理请求、模型看见却仍绕圈、Runtime 没按约束终止，是四种不同缺口。</p>
+<p class="evidence-source"><b>定位：</b>Atlas AGT-119、EVAL-009；配对实验建议，不声称已完成该消融。</p></div>
+</details>
+</section>
+<section class="qa-group" id="platform">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>模块化与 AndroidWorld</h2>
+<p>讲清复用了什么、转换了什么、什么仍然没有验证。</p>
+<details class="qa" id="d19"><summary>D19 · AndroidWorld 怎么接？为什么不是再写一个 Agent？</summary>
+<div class="answer">
+<p><b>短答：</b>AndroidAutomationPort 提供稳定 capture 与动作执行；AndroidSurfaceAdapter 将可访问性树投影为同一 World，私有 Binder 把语义动作转换为 Android primitive，native evaluator 返回任务分数。单一 CoreAgentLoop 和 ActionPolicy 继续复用。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>扩展分支把导航主体统一为 navigation_context，用 opaque LiveSurfaceBinding 隔离浏览器与 Android 的 currentness，并将 DOM 原生字段规范到 World 公共词汇，同步迁移呈现与动作消费者。因此初次平台化有共享合同迁移，不能声称只加一个文件、零适配。Android 不再独立实现压缩器。</p></div>
+<p class="answer-hook"><b>继续追问：</b>稳定观察与 currentness 怎么做？模型可见 capture 等稳定；执行前轻量重采，对 activity/window/node generation 和私有绑定做有效性检查。</p>
+<p class="evidence-source"><b>定位：</b>独立分支 codex/android-world-osworld，审阅提交 689e2437；<a href="assets/evidence/android-world-contacts.json">原始单任务运行记录</a>。</p></div>
+</details>
+<details class="qa" id="d20"><summary>D20 · AndroidWorld 到底跑通了什么？OSWorld 也支持了吗？</summary>
+<div class="answer">
+<p><b>短答：</b>已有 ContactsAddContact、seed 0 的 text-first 单任务记录：7 轮、status=done、official_score=1.0。它证明该路径可跑和核心复用，不能推出 AndroidWorld 总体成功率，也不证明 OSWorld 已接入。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>记录来自独立分支，保留 upstream commit 及模拟器环境说明。结构输入不完整必须标为 truncated；页面语义、执行绑定与评分都要遵守 Android 平台事实，不能直接沿用网页 selector。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何扩大证明？增加原生导航、编辑、滚动及跨应用任务，固定环境快照与种子，检查同一策略的成功与失败分布。</p>
+<p class="evidence-source"><b>定位：</b><a href="assets/evidence/android-world-contacts.json">ContactsAddContact 原始记录</a>；<a href="https://github.com/google-research/android_world">AndroidWorld 官方仓库</a>。</p></div>
+</details>
+<details class="qa" id="d21"><summary>D21 · 所谓无缝跨平台，哪些必须保持不变？哪些必须换？</summary>
+<div class="answer">
+<p><b>短答：</b>不变的是目标/观察/决策/执行结果的 typed ports、单循环和当前事实规则；替换的是采集、来源语义、私有绑定、执行原语、稳定性/时效探测及原生评分器。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>Web 的 document revision 和 Android 的 activity/window generation 不可互相冒充。公共模型输入尽量稳定，平台独有能力通过显式能力协议出现；unsupported 返回 typed outcome，不用猜测的通用点击兜底。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何验收？同一测试策略依次接不同 adapter，验证状态与结果代数不变；真实端到端任务再证明实际能力。</p>
+<p class="evidence-source"><b>定位：</b>Android 分支 Surface/Bridge；<a href="https://arxiv.org/abs/2412.05467">BrowserGym 统一环境研究</a>。</p></div>
+</details>
+</section>
+<section class="qa-group" id="evaluation">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>评测、可视化与 Badcase 归因</h2>
+<p>Atlas 对应 EVAL-008/009/015/016/032。区分已实现的实验工具、仍待执行的实验和已有单例证据。</p>
+<details class="qa" id="d22"><summary>D22 · 你怎么评测 GUI Agent？谁说任务成功？</summary>
+<div class="answer">
+<p><b>短答：</b>MiniWoB/WebArena 接原生任务 scorer。动作 receipt 只证明执行，ActionOutcome 证明局部后置条件；run status、进程退出与 native task verdict 分开记录。没有原生验证器时，先声明可用的外部后置条件或人工评审范围。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>分层：provider-free 性质/状态机测试保护合同；固定环境集成验证生命周期；live 多种子任务验证能力。截图相似度和模型说“完成了”不能代替外部任务状态。单元测试通过数量也不是成功率。</p></div>
+<p class="answer-hook"><b>继续追问：</b>若 evaluator 不可用？记录 unknown/unavailable，而不是算成功；过程失败和报告失败还要分别保留。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/benchmarks/target_loop/runner.py">src/affordance_runtime/benchmarks/target_loop/runner.py</a>；<a href="benchmark.md">评测记录</a></p></div>
+</details>
+<details class="qa" id="d23"><summary>D23 · 指标的分母是什么？怎样避免只统计成功任务？</summary>
+<div class="answer">
+<p><b>短答：</b>同时报告成功、失败、未知与 measurement coverage。预算内验证成功率使用已启动任务为分母，未知显式列出；token/time 缺失不是零。每成功任务摊销消耗包含成功和失败运行的全部已测成本。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>设 N 为启动次数，S 为 verified success：成功率 S/N；若成本完整且 S>0，摊销成本 = Σ全部运行成本/S。输入、输出、cache、compiler、repair、vision、compaction 应说明覆盖范围；当前部分历史只含 policy tokens，不能称全角色总成本或美元成本。</p></div>
+<h3>算一组小样本，识别缺失与零</h3><p>教学样本共 4 次：A 成功耗 10k，B 失败耗 20k，C 成功耗 15k，D 结局未知且 Token 未测。验证成功率为 2/4=50%，同时列 unknown=1；已测 Token 小计 45k、覆盖 3/4。不能报“总 Token 45k”或“每成功任务 22.5k”，因为 D 的消耗未知。若补齐 D=5k，完整总量才为 50k，摊销值为 25k/成功任务。</p><p>输入 Token 的下降与费用下降也不等价：不同模型、缓存命中、输出、升级调用和视觉计价可能不同。没有完整定价配置时只报告已测量维度，不用 Token 乘一个随手估计的单价。</p><p class="answer-hook"><b>继续追问：</b>失败耗时高怎么办？保留；只看成功任务平均延迟会产生幸存者偏差。若未知结局存在，可额外给 S/N 到 (S+U)/N 的描述性边界。</p>
+<p class="evidence-source"><b>定位：</b><a href="benchmark.md">Labs measurement scope</a>；本页为指标讲述口径。</p></div>
+</details>
+<details class="qa" id="d24"><summary>D24 · 怎么证明是你的模块有效，而不是模型随机波动？</summary>
+<div class="answer">
+<p><b>短答：</b>先同版本重复运行做 A/A，了解波动；再冻结代码、模型/profile、环境、任务/种子、budget、prompt 和 evaluator，做配对 A/B。开发集用于定位，held-out 用于最终验证。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>实验</th><th>只改变什么</th><th>观察什么</th></tr></thead>
+<tbody>
+<tr><td>上下文</td><td>页面交付或历史压缩策略，分别实验</td><td>事实保留、成功率、总 Token、摘要时间</td></tr>
+<tr><td>恢复</td><td>Monitor/反馈版本</td><td>重复率、恢复后成功、误中断、失败成本</td></tr>
+<tr><td>视觉</td><td>结构与结构＋视觉</td><td>视觉子集得分与额外开销</td></tr>
+<tr><td>模型</td><td>同 Harness 下的模型配置</td><td>质量—成本曲线，含升级与重试</td></tr></tbody></table></div></div>
+<p class="answer-hook"><b>继续追问：</b>多 seed 不等于独立任务样本。建议按 task 聚类 bootstrap 或分层报告区间；现有 Labs 描述性比较并未实现自动显著性晋级。</p>
+<p class="evidence-source"><b>定位：</b>实验方案；<a href="benchmark.md">A/A 与 Labs 当前边界</a>。</p></div>
+</details>
+<details class="qa" id="d25"><summary>D25 · 简历的 34%、46%、62%→78% 从哪里来？</summary>
+<div class="answer">
+<p><b>短答：</b>它们是本次简历练习的模拟数字，不属于真实 benchmark。网页把模拟版单独折叠，真实证据展示任务、分支、版本和测量口径。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>可引用 Task316 11 步 native success、Task798 18 步 control_stalled、Android 联系人任务 7 轮 score 1.0；三者性质不同，不能平均成整体能力结论。9 月 7 日早期 A/A 校准只有三个有效样本，尚不足以证明提升。</p></div>
+<p class="answer-hook"><b>继续追问：</b>要替换模拟值，先按冻结条件跑正式基线与候选；指标、运行目录和原始 evidence 必须能对应。</p>
+<p class="evidence-source"><b>定位：</b><a href="project-pitch.html#resume">简历模拟与真实表述</a>；<a href="benchmark.md">实际状态</a>。</p></div>
+</details>
+<details class="qa" id="d26"><summary>D26 · 如何可视化？你会当场打开哪几个视图？</summary>
+<div class="answer">
+<p><b>短答：</b>按“实验总览 → 配对任务 → 步骤轨迹 → 模型/工具边界证据”展示。总览看成功与测量覆盖，任务页看回退与耗时，步骤看当前 World、动作结果及 Monitor，证据页看输入是否真的送达。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>Labs 工作区的比较视图消费 SQLite 结果与 JSON exports，支持预算曲线、任务配对、耗时/Token 和失败证据下钻；JSONL Trace 由各 owner 记录，Langfuse/OTel 是可选观察出口。新增 Labs 比较功能仍属于工作区实现，本次只发布讲述页面，没有部署该应用。</p></div>
+<h3>三分钟演示的具体动作</h3><ol><li>在 Labs 选择 baseline/candidate，先展示任务集合、seed、缺失配对和 unknown，解释为什么有时结论仍是 inconclusive。</li><li>点一个 regressed case，展示该次最终状态与阶段时间线；将 provider 时间和浏览器 capture/execute 时间分开。</li><li>打开停滞附近的 step：并排看 fresh World、意图/局部效果以及 Monitor signal；指出“已送达但无效果”的差别。</li><li>再打开实际 provider 交换，验证关键事实和反馈确实进入请求；最后回到原生 scorer 与正式报表，避免只展示一段看起来合理的推理。</li></ol><p>当前实现的 UI 与完整取证操作不必都在同一个面板：受保护的 transcript 可在授权 evidence inspector 或本地 JSONL 查看。SSE 用 cursor/event identity 展示增量；正式结果落库再导出，不能让前端事件流成为第二结果库。</p><p class="answer-hook"><b>继续追问：</b>不要把 SSE 文本流当审计库；重开页面要从已持久化结果恢复展示。统计图不能在前端把缺失数据填成零。</p>
+<p class="evidence-source"><b>定位：</b><a href="architecture.md">2026-09-06 Labs 工作区设计记录</a>；<a href="#demo">本页交互示意</a>。</p></div>
+</details>
+<details class="qa" id="d27"><summary>D27 · 预算曲线怎么画？曲线上升能证明减少预算也会成功吗？</summary>
+<div class="answer">
+<p><b>短答：</b>横轴为已观测时间或 Token 阈值，纵轴为在该阈值内成功的运行数除以该批启动次数。它描述已完成样本，不模拟截短预算后的反事实结果。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>部分样本缺少成本时仍显示 coverage，不能猜其位置。阶段 timing 可能嵌套，父子区间不能直接相加；P95 与均值的统计范围要一致，成本完整性不足时抑制总量和摊销值。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何知道慢在哪？比较 environment setup、capture、policy、compiler、execution/observation、evaluation、finalization 的实际区间，区分 provider 慢与浏览器等待。</p>
+<p class="evidence-source"><b>定位：</b>Labs 工作区 timing/comparison；<a href="benchmark.md">measurement limits</a>。</p></div>
+</details>
+<details class="qa" id="d28"><summary>D28 · Badcase 怎么归因？不是让另一个 LLM 写一句“推理失败”吗？</summary>
+<div class="answer">
+<p><b>短答：</b>沿 source → World → delivery → 物理模型输入 → policy call → binding → dispatch → fresh World → evaluator 找首次偏离合同的边界。Trace 提供证据，归因结论是派生分析。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>证据对比</th><th>优先检查</th></tr></thead>
+<tbody>
+<tr><td>源里有，World 没有</td><td>Surface projection / 来源完整性</td></tr>
+<tr><td>World 有，模型输入没有</td><td>可发现性、折叠、预算、交付覆盖</td></tr>
+<tr><td>输入正确，动作不对</td><td>ActionPolicy/模型语义；需多样本验证</td></tr>
+<tr><td>语义调用合法，绑定/执行不对</td><td>Binder、currentness、executor</td></tr>
+<tr><td>dispatch 成功，预期效果没有</td><td>页面后置条件、异步时序、未知结果</td></tr>
+<tr><td>原始结果存在，报表缺失或全零</td><td>finalization / metric projection / reporting</td></tr></tbody></table></div></div>
+<h3>现场下钻操作</h3><ol><li>在结果表锁定 attempt/case/seed，打开正式 verdict 与 measurement validity。</li><li>找到首次异常前后的 step，检查 before/after World 和执行回执。</li><li>若怀疑模型没看见，直接检查该次物理 input_messages 与 ToolCatalog；不能只看准备阶段的 Context 对象。</li><li>若源数据有、物理输入无，向上对比 source topology、区域目录、coverage、预算和交付；若物理输入完整，则保留模型原始输出及 repair。</li><li>写出可证伪假设：修复哪个转换后，同一类型输入应满足哪个性质；最后看 held-out 是否仍需新生产分支。</li></ol><p>这条链用 attempt/case、step、tool_call_id、World revision、provider request/repair 身份关联。Trace、分析 JSON 和可视化都只消费事实；不能在分析器里重建一个“正确结果”再拿它当 native verdict。</p><p class="answer-hook"><b>继续追问：</b>“最后一个报错”可能只是下游症状。先建立反例和 owner，再决定改 prompt、投影或执行边界。</p>
+<p class="evidence-source"><b>定位：</b>Atlas EVAL-009/016；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/tool_result_projection.py">src/affordance_runtime/agent/tool_result_projection.py</a></p></div>
+</details>
+<details class="qa" id="d29"><summary>D29 · 定位以后怎么改？什么时候改 Prompt、换模型、做 SFT？</summary>
+<div class="answer">
+<p><b>短答：</b>模型看不到事实就先修 World/delivery；事实和工具都正确、仍反复误解时才比较 prompt 或模型；执行与评分错误修对应 owner。项目范围是现成模型的 inference-time Harness，不做训练或 SFT。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>每次记录症状、触发、直接机制、共同根因和支持合同，改 owner 后覆盖消费者与异常路径；用性质测试保护泛化，再跑相同 witness 和新鲜 held-out。重复重开时要检查 shared authority/acceptance gap，不继续按案例补分支。</p></div>
+<p class="answer-hook"><b>继续追问：</b>如何决定下一项？按失败频率×可挽回任务×成本影响排序；如果换模型能快速填补语义缺口，就同条件量化，而不是为了自研继续堆规则。</p>
+<p class="evidence-source"><b>定位：</b>Atlas EVAL-009/032；<a href="architecture.md">owner-first 设计记录</a>。</p></div>
+</details>
+<details class="qa" id="d30"><summary>D30 · 讲一个从发现到修复的完整故事。</summary>
+<div class="answer">
+<p><b>短答：</b>Task316：用户需要贡献者邮箱，source 已保留记录，但模型输入没有这些信息；根因是匿名集合不可发现，修复区域描述与原有 read 路径，后续 11 步成功。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>对照 Task798：模型绕圈是表象；先修 failure center 被无进展读写清空的生命周期，再验证 18 步确定性停滞终止。仍未拿到 native 任务正确结局，因此把“控制修复”和“语义成功”分开报告。</p></div>
+<p class="answer-hook"><b>继续追问：</b>为什么不把 Task316 邮箱直接塞 prompt？那是旁路答案，无法证明通用页面呈现能力。</p>
+<p class="evidence-source"><b>定位：</b><a href="benchmark.md">Task316/798 真实 witness</a>。</p></div>
+</details>
+<details class="qa" id="d31"><summary>D31 · 如果跑完任务后生成报告报错，算 GUI 失败吗？</summary>
+<div class="answer">
+<p><b>短答：</b>不能直接算。9 月 7 日早期校准遇到 finalization 返回类型错配，后续 case projection 也异常；原始 provider transcript 已有调用，报表回退全零却丢掉真实成本。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>收尾转换应由 UnifiedWorldEnvironment 的 World-level finalization owner 完成，case wrapper 正确转发；报告缺指标保留 unavailable，并关联原始调用，不伪造零值。修复状态以 benchmark 最新记录为准，这里只保留故障分析方法。</p></div>
+<p class="answer-hook"><b>继续追问：</b>怎么验收异常路径？对成功、执行异常、收尾异常、投影异常分别验证任务 verdict、生命周期和已发生成本仍能区分。</p>
+<p class="evidence-source"><b>定位：</b><a href="benchmark.md">2026-09-07 A/A 诊断记录</a>。</p></div>
+</details>
+</section>
+<section class="qa-group" id="framework">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>PydanticAI：选型、用法与替换成本</h2>
+<p>这部分按当前代码和官方文档比较。仓库未证明做过所有候选的历史 PoC，因此不把今天的比较伪装成过去的实验。</p>
+<details class="qa" id="d32"><summary>D32 · 为什么选 PydanticAI？不要只回答“类型安全”。</summary>
+<div class="answer">
+<p><b>短答：</b>这个项目需要模型提出当前工具调用后立即把控制权交回 Runtime；需要保留 provider 的 typed message、call_id、thinking 和多模态部分；还要在同一消息模型上做压缩、重试与持久化。PydanticAI 的 ExternalToolset / DeferredToolRequests 与这些边界相合，而 Python/Pydantic 已是项目合同基础。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>代码不是把浏览器 click 注册成可自由执行的 SDK 函数。先从 World 编译 ToolCatalog，再把 ToolDefinition 放进 ExternalToolset；Agent 返回 DeferredToolRequests，bridge 解析唯一合法动作，Runtime 做风险、绑定和时效检查后才执行。这样复用协议层能力而保留外部副作用的控制。</p>
+<p>另一个实用收益是 SDK 的 ModelRequest/ModelResponse 及 ToolCallPart/ToolReturnPart 可以直接用于历史序列化和 Harness 摘要，不必在多个自定义 JSON 聊天格式之间往返。代价是 bridge 与 SDK 消息语义和版本存在耦合，升级需要兼容测试。</p></div>
+<p class="answer-hook"><b>继续追问：</b>为什么不是类型校验越多越好？JSON Schema 只能验证表示，不能证明目标当前存在、点击真的生效、用户允许操作或任务完成；这些仍由 Runtime 的领域合同处理。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a>；<a href="https://pydantic.dev/docs/ai/tools-toolsets/deferred-tools/">官方 Deferred Tools</a>。</p></div>
+</details>
+<details class="qa" id="d33"><summary>D33 · 沿一次真实调用说出 PydanticAI API 和对象怎么流转。</summary>
+<div class="answer">
+<p><b>短答：</b>CanonicalProviderEnvelope 被 codec 转成 instructions、prompt、ExternalToolset、message_history 和 DeferredToolResults；Agent.run 返回本轮消息与 DeferredToolRequests，bridge 再向 Runtime 返回一个语义动作。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<ol>
+<li>TurnPacker 完成 World、tools、history 和容量准入，固定本次 envelope。</li>
+<li>建立 <code>Agent(..., output_type=[str, DeferredToolRequests], retries={tools: ..., output: ...})</code>。允许 str 进入解析分支，是为了由 output_validator 明确拒绝纯文本并产生 ModelRetry，不表示运行时接受纯文本动作。</li>
+<li><code>run(..., toolsets=[ExternalToolset], message_history=..., deferred_tool_results=..., usage_limits=UsageLimits(request_limit=...))</code> 发出请求；物理设置来自当前 profile。</li>
+<li><code>capture_run_messages</code> 在每次 SDK run 的 finally 中捕获消息，即使后续验证抛错也留下交换；provider 初始与 repair 调用记录各自输入/输出。</li>
+<li>解析 DeferredToolRequests 并验证唯一合法当前 tool call，映射到 SelectAction 或本地工具；Binder/Executor 位于 SDK 调用之后。</li>
+<li>提交 StepResult 后，以同一 call_id 回填 ToolReturn/DeferredToolResults，下一轮附带最新 World 继续。</li></ol></div>
+<p class="answer-hook"><b>继续追问：</b>如果回答“SDK 自动把所有工具执行完”，说明没有理解这个项目的集成方式。当前 provider-free 验证要检查“未通过 runtime admission 的提案，dispatch 次数为零”。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">run_policy_envelope / _pydantic_model_boundary_codec</a></p></div>
+</details>
+<details class="qa" id="d34"><summary>D34 · 用了 PydanticAI Agent，为什么还保留 CoreAgentLoop？是不是双循环？</summary>
+<div class="answer">
+<p><b>短答：</b>PydanticAI 内部可以因协议和输出校验发生有限交换；CoreAgentLoop 拥有跨 GUI 步骤的运行状态。两者范围不同：前者取得一份合法提案，后者执行一次外部动作、观察效果并决定继续或终止。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>模型一步可能经历输出 repair，但不能因 repair 多点击一次。当前工具目录绑定 fresh World，proposal 通过后才解析私有参数。Runtime 在 step 边界处理用户暂停/取消、风险确认、currentness、post-acquisition、Monitor 与 evaluator。SDK 的 run 结束不代表 GUI task done。</p>
+<p>如果换成让 SDK 的内置 tool loop 直接调浏览器，再由外层重复执行同一动作，就会有双重执行权；因此 ExternalToolset 的外部执行交接是关键。SDK 托管的 step persistence 也不取代 Runtime checkpoint 中的控制与环境事实。</p></div>
+<p class="answer-hook"><b>继续追问：</b>模型一次返回两个 ToolCall 怎么办？即使 provider 忽略 parallel_tool_calls=false，边界也必须验证恰好一个；不截取第一个悄悄执行。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/core_loop.py">src/affordance_runtime/agent/core_loop.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a></p></div>
+</details>
+<details class="qa" id="d35"><summary>D35 · 和原生 SDK、LangChain、LangGraph、smolagents 怎么比较？</summary>
+<div class="answer">
+<p><b>短答：</b>比较的是本项目需要的控制边界，不是给框架排总榜。原生 SDK 更直接但消息恢复要自己维护；LangChain 有现成 agent 与 middleware；LangGraph 擅长显式持久图编排；smolagents 的代码行动路线适合另一类执行边界。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>候选</th><th>合理使用场景</th><th>本项目的具体取舍</th></tr></thead>
+<tbody>
+<tr><td>原生 provider SDK / HTTP</td><td>单 provider、协议简单，要求最大 wire 控制</td><td>需要自行维护消息配对、重试、工具描述、摘要与序列化；早期原型可行，多角色/协议演进维护面增大</td></tr>
+<tr><td><a href="https://docs.langchain.com/oss/python/langchain/agents">LangChain create_agent</a></td><td>希望快速构建 agent loop，使用 middleware 和集成生态</td><td>也有类型化输出与工具控制，并非“不类型安全”；本项目已有领域 loop，选择更贴近现有 typed history 的模型边界</td></tr>
+<tr><td><a href="https://docs.langchain.com/oss/python/langgraph/overview">LangGraph</a></td><td>长生命周期图、分支、持久化恢复、HITL 编排</td><td>可以实现同样系统，但必须明确定义图 state 与 World/Runtime checkpoint 的唯一归属；目前没有证据要求再迁移这层</td></tr>
+<tr><td><a href="https://huggingface.co/docs/smolagents/index">smolagents</a></td><td>简洁的 agent，尤其代码动作与 sandbox 场景</td><td>代码执行灵活，但任意脚本容易跨过本项目“单次语义动作→绑定→效果”边界；若采用其工具调用模式仍需相同领域适配</td></tr>
+<tr><td>PydanticAI + Harness</td><td>typed Python 消息、外部工具交接和历史压缩</td><td>当前边界契合；承担版本、provider 差异与 wrapper 正确性的测试成本</td></tr></tbody></table></div></div>
+<p class="answer-hook"><b>继续追问：</b>“你都实测过吗？”当前没有覆盖所有候选的公平 PoC 证据。这是可核对的能力比较；如果要重选，应拿同一工具交接/中断/异常历史任务做原型。</p>
+<p class="evidence-source"><b>定位：</b>官方文档于 2026-09-07 核对；本项目选择理由由现有集成代码支持。</p></div>
+</details>
+<details class="qa" id="d36"><summary>D36 · PydanticAI 的 retry、你的 repair、网络 retry 会不会指数放大？</summary>
+<div class="answer">
+<p><b>短答：</b>必须按层共享预算。schema/output repair 改正提案表示，transport retry 处理请求传输；两者都不能回放已执行 GUI 副作用。当前同一语义 envelope 共享 transport allowance，并设置 SDK request_limit 与整体 policy deadline。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>普通输出校验和 deliberate 完整重试有不同预算：deliberate 不叠加内部多轮修复，最多一次同上下文完整输出重试；representation repair 不再开嵌套输出重试。每次物理 SDK run 用独立 capture context 记录，因为 capture_run_messages 只捕获该 context 的第一场 run。</p>
+<p>压缩先花掉的时间也要从剩余 action timeout 中扣除，不能静态分出永远不可借用的额度。已送达但效果未知的 GUI 请求不在 provider retry 的语义范围内，要进入新的观察/协调路径。</p></div>
+<p class="answer-hook"><b>继续追问：</b>验证：注入超时、纯文本、截断、多调用、缺字段，断言物理请求次数有界、每次 transcript 存在、未执行提案零 dispatch、已执行动作不因格式失败重放。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">协议请求预算与 deadline 传播</a></p></div>
+</details>
+<details class="qa" id="d37"><summary>D37 · 用了框架还遇到什么坑？怎样判断是 SDK 的锅还是 wrapper 的锅？</summary>
+<div class="answer">
+<p><b>短答：</b>已知配对压缩故障属于 wrapper：为了让摘要看到长 ToolReturn，把它伪装成 SystemPrompt，破坏了库依赖的 typed boundary。SDK 不能再识别 call/result，所以第三次增量摘要出现孤立结果。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>排查顺序是比较原始 SDK messages、临时摘要视图、返回候选及最终 provider envelope。在 SDK 原始历史上复现，若错误消失，则先修 wrapper 的合同。最终去掉伪装，让官方 typed history 通过；候选整体合法性校验失败时恢复原历史。</p>
+<p>依赖选择不是“一劳永逸”。当前 pyproject 将 pydantic-ai-slim 限制在 2.33 系列、Harness 限制在 0.25 系列；官方在线文档会演进，面试解释实际行为要以锁定版本及测试为准。不能用新版文档替旧 wrapper 的故障背书。</p></div>
+<p class="answer-hook"><b>继续追问：</b>升级 gate 至少覆盖 typed history round-trip、deferred 交接、pair-safe cutoff、错误消息/usage、provider reasoning 设置和异常 transcript；先做 provider-free，再做少量授权 live 兼容验证。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/pyproject.toml">pyproject.toml</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a></p></div>
+</details>
+<details class="qa" id="d38"><summary>D38 · 如果明天不用 PydanticAI，哪里要改？什么时候值得换？</summary>
+<div class="answer">
+<p><b>短答：</b>主要替换 provider bridge、SDK history codec、工具定义与 deferred 交接、usage/trace 映射及 compaction/persistence 集成。TaskGoal、World、ActionPolicy port、Binder、Executor、Monitor 和 evaluator 合同保持稳定，但历史 checkpoint 格式不能假装天然兼容。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>先定义迁移验收：同样模型/工具输入产生可校验提案；同 call_id 结果回填；不合法提案零执行；中断与恢复不重复副作用；摘要保留配对；每物理调用有 usage/错误记录。历史迁移需显式版本转换，不能把原始 wire 字段直接塞给新 SDK。</p>
+<p>换型触发点应是已有证据：关键 provider 能力无法表达、升级维护成本持续超过收益，或出现真正需要持久图调度的产品需求。若只是另一框架更热门，不足以证明迁移值得。</p></div>
+<p class="answer-hook"><b>继续追问：</b>公平 PoC 先测五件事：动态目录、非法输出修复、外部执行交接、暂停后回填、长历史压缩。跑通 happy path 不能证明更易维护。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/model/policy/pydantic_ai_bridge.py">src/affordance_runtime/model/policy/pydantic_ai_bridge.py</a>；<a href="https://github.com/Garrulus21yyx/affordance-runtime/blob/81c1b719/src/affordance_runtime/agent/policy.py">src/affordance_runtime/agent/policy.py</a></p></div>
+</details>
+</section>
+<section class="qa-group" id="references">
+<p class="section-kicker">DEEP DIVE</p>
+<h2>SOTA 借鉴、差异与双项目对比</h2>
+<p>参考研究解释取舍；库复用、设计同向和实测胜出是三种不同声明。来源核对日期：2026-09-07。</p>
+<details class="qa" id="d39"><summary>D39 · 你借鉴了谁？到底哪里不同？</summary>
+<div class="answer">
+<p><b>短答：</b>最接近的思想是 AgentOccam 的 observation/action 对齐；工程上直接复用 PydanticAI/Harness 的 typed history 与摘要；BrowserGym 提供环境和评分生态。自己的工作集中在统一 World、动作效果呈现、当前引用绑定和有界 Monitor。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>参考</th><th>借鉴/关系</th><th>本项目的取舍</th></tr></thead>
+<tbody>
+<tr><td><a href="https://arxiv.org/abs/2410.13825">AgentOccam · 2024/2025</a></td><td>改善观察与动作表示，发挥现成 LLM</td><td>进一步明确 World→ToolResult→transition 的工程合同；没有宣称超过其论文成绩</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2504.00906">Agent S2 · 2025</a></td><td>通用认知与 grounding 专职能力分工</td><td>采用单一 ActionPolicy＋可替换证据源，不采用多层动态规划控制</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2509.02544">UI-TARS-2 · 2025</a></td><td>多轮 GUI 能力与训练路线的对照</td><td>使用现成模型增强 Harness，不训练 GUI policy 或构建 RL 数据飞轮</td></tr>
+<tr><td><a href="https://pydantic.dev/docs/ai/harness/compaction/">PydanticAI Harness</a></td><td>直接复用摘要和 typed message 机制</td><td>自行定义 GUI 信息保留规则、容量触发、currentness 与失败保护</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2412.05467">BrowserGym · 2024</a></td><td>统一 environment/benchmark 接口</td><td>在其上实现世界呈现与控制；Android 另接自身 adapter/evaluator</td></tr></tbody></table></div></div>
+<p class="answer-hook"><b>继续追问：</b>以上是阅读来源后的设计对比，不是自动证明创新或 SOTA 排名；“比 S2 更便宜”仍需公平对照。</p>
+<p class="evidence-source"><b>定位：</b>各行链接为一手论文/官方文档；具体 SDK 使用以项目锁定版本为准。</p></div>
+</details>
+<details class="qa" id="d40"><summary>D40 · 和 DialogPilot 有什么区别？为什么一个多 Agent、一个单循环？</summary>
+<div class="answer">
+<p><b>短答：</b>DialogPilot 面向客服后端，核心是有界业务任务、证据覆盖、持久化准入与回答发布；GUI 项目面对不断变化的外部页面，核心是当前世界、动作效果与控制权。拆分依据是事实与执行边界。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>DialogPilot 可以将独立领域任务交给 Worker，经 TaskGraph/Coverage 汇总；这里多个角色若同时认定页面状态或发动作，会增加控制冲突，因此只有一个 ActionPolicy。视觉补证不接管执行，两项目都让副作用与完成事实由明确 owner 产生。</p></div>
+<p class="answer-hook"><b>继续追问：</b>共性如何讲？模型负责语义，Runtime 保持事实与权限；但不能把 DialogPilot 的 PostgreSQL、多 Agent、Memory 能力挪到 GUI 简历里。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://garrulus21yyx.github.io/DialogPilot/project-pitch.html">DialogPilot 项目讲述</a>；<a href="https://garrulus21yyx.github.io/DialogPilot/interview-guide.html">追问手册</a>。</p></div>
+</details>
+<details class="qa" id="d41"><summary>D41 · 为什么不用 LangGraph 或直接用更强的 computer-use 模型？</summary>
+<div class="answer">
+<p><b>短答：</b>本项目研究一个现成模型在更好的输入与控制支持下能完成多少任务，当前单步串行的外部副作用适合单循环。复杂持久图调度不是主要缺口，模型强弱则应作为可替换变量评测。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>更强模型可能直接改善语义决策，专用 computer-use 模型可能改善视觉 grounding；但它们不自动解决过期引用、异常报告或任务评分。若专用模型在同条件质量/成本上更优，就通过 provider/grounding port 接入。</p></div>
+<p class="answer-hook"><b>继续追问：</b>你的创新是什么？是有证据支撑的系统组合与 owner 修复，不是新模型算法；当前没有公平全面对照就不称超越 SOTA。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://arxiv.org/abs/2504.00906">Agent S2</a>；<a href="https://arxiv.org/abs/2410.13825">AgentOccam</a>。</p></div>
+</details>
+<details class="qa" id="d42"><summary>D42 · 面试官连续追问五层，怎样不再变成背术语？</summary>
+<div class="answer">
+<p><b>短答：</b>短答给机制和结果；追问落到输入/输出；再追问给失败 witness；最后给实验分母与取舍。每条简历都能沿这条链向下展开。</p>
+<div class="deep-answer">
+<h3>机制与证据</h3>
+<p>压缩：保留什么→cutoff/分母→配对失效案例→信息保留与成本；Monitor：看到什么→签名和 failure center→混合循环→误报与恢复率；平台：port→private binding→Android witness→支持范围；评测：native verdict→覆盖率→坏报告→固定条件重跑。</p></div>
+<p class="answer-hook"><b>继续追问：</b>反问对方：团队当前主要缺口是感知、长任务策略还是工具执行？如何定义失败与质量/成本权衡？用答案对齐自己的贡献。</p>
+<p class="evidence-source"><b>定位：</b><a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview-project.html">Atlas 项目深挖</a>；<a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview.html">Atlas 面试索引</a>。</p></div>
+</details>
+</section>
+<section id="demo">
+<p class="section-kicker">Interactive explanation · synthetic</p>
+<h2>沿一次转移看信息怎样呈现</h2>
+<p>教学示意，非真实 benchmark Trace。切换情境，比较 World、ToolResult 和 Monitor 的职责。</p><label for="scenario">选择情境</label><select id="scenario"><option value="effect">点击已发送，但没有预期效果</option><option value="repeat">读—点—读混合循环</option><option value="escape">读取发现新记录</option></select>
+<div id="transition-demo" class="cards" aria-live="polite"></div>
+<p id="demo-boundary" class="callout"></p>
+</section>
+<section id="provenance">
+<h2>版本、来源与讲述边界</h2>
+<p>这是已有实现的派生讲述材料。当前架构与验收以 <a href="architecture.md">architecture.md</a>、<a href="benchmark.md">benchmark.md</a> 为准。核心代码定位固定到 81c1b719；Android 扩展核对本地独立分支 689e2437，运行记录作为静态 evidence 保存；Labs 2026-09-06/07 比较与异常路径为工作区进展，本次未发布其应用代码。</p>
+<p>Atlas 仅用于追问设计，并非这些项目答案的事实来源：<a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview-project.html">项目与证据</a>、<a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview-memory-context.html">Memory / Context</a>、<a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview-agent.html">Agent</a>、<a href="https://garrulus21yyx.github.io/agent-systems-atlas/pages/interview-llm-rag-eval.html">评测</a>。追问 ID 见各节说明；借鉴 DialogPilot 的短答—机制—失败案例结构。</p>
+<p>SOTA 链接为 2026-09-07 核对的一手来源，表示相关路线与设计取舍，不代表本项目拥有排行榜结论。压缩目标、单任务成绩、provider-free 测试和跨任务提升分别陈述。</p>
+</section>
+</main></div>
+<footer class="footer">
+<div class="footer-inner">
+<p>先讲价值，再讲机制，最后打开证据。</p><a href="project-pitch.html#resume">返回简历版</a></div></footer>
+<script src="assets/interview.js"></script>
+<script src="assets/playbook.js"></script>
+</body></html>

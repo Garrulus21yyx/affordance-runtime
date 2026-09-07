@@ -16,7 +16,7 @@
       <a class="wordmark" href="index.html"><span class="wordmark-mark">AR</span><span class="wordmark-copy">Affordance Runtime<small>PROJECT PITCH</small></span></a>
       <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="top-navigation">菜单</button>
       <nav class="top-nav" id="top-navigation" aria-label="主导航">
-        <a href="index.html">首页</a><a href="project-pitch.html" aria-current="page">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html">面试指南</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
+        <a href="index.html">首页</a><a href="project-pitch.html" aria-current="page">项目讲述</a><a href="implementation-walkthrough.html">实现链路</a><a href="interview-guide.html">面试指南</a><a href="interview-playbook.html">简历深挖</a><a href="architecture.md">架构原文</a><a href="benchmark.md">评测原文</a>
       </nav>
     </div>
   </header>
@@ -48,6 +48,7 @@
     <aside class="side-nav" aria-label="本页目录">
       <p class="side-nav-label">项目讲述</p>
       <ol>
+        <li><a href="#resume">00 简历三条亮点</a></li>
         <li><a href="#versions">01 三种讲法</a></li>
         <li><a href="#problem">02 问题定义</a></li>
         <li><a href="#architecture">03 总体架构</a></li>
@@ -62,32 +63,22 @@
         <li><a href="#stories">12 STAR 故事</a></li>
         <li><a href="#sources">13 一手资料</a></li>
       </ol>
-      <div class="side-nav-meta">DERIVED MATERIAL<br>authority: architecture.md<br>status: benchmark.md<br>baseline: 2026-09-02</div>
+      <div class="side-nav-meta">DERIVED MATERIAL<br>authority: architecture.md<br>status: benchmark.md<br>reviewed: 2026-09-07</div>
     </aside>
 
     <main id="content">
+<section id="resume"><p class="section-kicker">Resume · three contributions</p><h2>DOM-first 通用 GUI Agent Harness</h2><p><b>Python · PydanticAI · Playwright · BrowserGym · FastAPI · Next.js · Langfuse</b></p><p>面向低成本通用大模型，构建以 DOM 结构化感知为主、视觉按需增强的 Agent Harness，赋予普通 Tool-Calling 模型跨站网页理解与多步骤 GUI 操作能力。</p><ul><li><b>上下文工程与长程决策：</b>针对信息膨胀、状态误判与动作震荡，设计五层 Context Management（世界结构化呈现／动态工具裁剪／联合预算装配／过期观察清理／轨迹语义压缩），将 fresh observation、ToolResult 与状态转移组织为“动作—效果—进展”因果上下文；结合 Monitor 混合循环检测与推理升级，为 Agent 提供策略调整反馈并限制无效循环。</li><li><b>模块化跨平台 Runtime：</b>解耦感知、决策、绑定、执行与评估，通过 SurfaceAdapter 统一 DOM／AX／视觉输入，隔离平台协议与私有路由；独立 AndroidWorld 分支复用同一 CoreAgentLoop 和 ActionPolicy，text-first 联系人任务 <b>7 轮、官方评分 1.0</b>。</li><li><b>自动化评测与优化闭环：</b>接入 MiniWoB／WebArena 原生验证器，贯通逐步 Trace、失败归因及实验结果可视化；建设配对比较与时间／Token 预算视图，区分任务结局、执行异常与测量缺失，以固定条件回归和 held-out 验证驱动 owner 级修复。</li></ul><p><a href="interview-playbook.html">逐条展开：42 个针对性追问与源码定位 →</a></p><details class="qa"><summary>模拟简历数字版：仅用于面试练习，非实测结果</summary><div class="answer"><p>可在上下文条目末加入“平均输入 Token 降低 34%，无效重复动作减少 46%”；在评测条目末加入“30 类任务、150 次运行，成功率由 62% 提升至 78%，单次成功任务摊销 Token 降低 28%”。</p><p><b>以上整组数字为模拟，不出自项目 benchmark。</b>正式讲述需替换为同模型、同任务/种子、同预算的实测；62%→78% 是 16 个百分点。Android 单例只证明对应分支路径；Labs 比较为工作区实现进展。</p></div></details></section>
       <section id="versions">
         <p class="section-kicker">01 · Tell it at three depths</p>
         <h2>30 秒、3 分钟、10 分钟怎么讲</h2>
         <h3>30 秒版本</h3>
-        <div class="callout">
-          <strong>可直接背</strong>
-          我做的是一个 Harness-first 的网页 GUI Agent Runtime。目标不是训练专用模型，而是让 DeepSeek V4 Flash 这种普通工具调用模型也能做跨站长任务。模型只看统一的公开世界并选择一个语义动作；Runtime 拥有工具合同、私有 binding、currentness、风险确认、执行、postcondition、checkpoint 和最终状态。结构化证据不够时，VLM 作为同一 World 的证据源按需开启。用户可以随时请求暂停、取消、修订目标或接管浏览器，Runtime 在最近合法边界确认，归还控制时必须先刷新世界。核心创新是把认知与控制 authority 分开，并用 BrowserGym / WebArena trace 验证 owner contract、held-out 行为与收敛；aggregate 泛化仍是开放证据。
-        </div>
+        <div class="callout"><strong>可直接讲</strong>我做的是 DOM-first 通用 GUI Agent Harness，让低成本工具调用模型也能操作网页。核心有三点：把页面、动作结果与状态变化组织成可理解的上下文，并通过压缩和 Monitor 支撑长任务；解耦平台与决策，独立分支已复用到 AndroidWorld；用原生评测和逐步 Trace 找到失败发生在哪个边界，再修复和回归。</div>
 
         <h3>3 分钟版本</h3>
-        <ol class="flow-list">
-          <li><b>动机：模型能力 ≠ 系统可靠性。</b><span>通用模型会理解网页，却会调用过期元素、重复动作、把 executor success 当任务完成，也很难被外部用户安全中断。</span></li>
-          <li><b>设计：一个 loop，三个顶层真值。</b><span>TaskGoal 是当前目标；fresh World 是当前环境；TaskEvaluator/native verifier 提供任务完成真值。Catalog、Binder、Executor、Monitor 等转换也各有唯一 owner；GoalPlan、模型 prose、Trace 都不是第二真相。</span></li>
-          <li><b>感知：多源输入，单一世界。</b><span>DOM、BrowserGym、视觉、WoT、HTTP 由各自 SurfaceAdapter 投影并保留 lineage，再融合为 WorldObservation；VLM 不是平行 Agent。</span></li>
-          <li><b>动作：公开语义，私有执行。</b><span>ActionPolicy 只看到当前 Catalog 和短生命周期 E-ref；Runtime 重新 admission、risk、binding、currentness，再由 Surface 执行。</span></li>
-          <li><b>闭环：动作之后才知道。</b><span>每次 dispatch 后采 fresh World，ActionOutcome 只证明局部 UI 效果，TaskEvaluator/native verifier 提供完成或任务级失败事实；Monitor、用户和 Runtime 另行拥有控制终止。</span></li>
-          <li><b>协作：控制不是 kill thread。</b><span>pause/cancel 在 safe boundary 收敛；revision 生成新 TaskGoal；takeover 发放 lease；return control 先重采世界。</span></li>
-          <li><b>证据：说清边界。</b><span>provider-free 2284 tests；Task316 live success；Task798 的机械震荡已能 block，但 typed negative 的模型选择仍开放。</span></li>
-        </ol>
+        <ol class="flow-list"><li><b>世界呈现和上下文。</b><span>先解释“模型能看见页面，不一定能理解变化”：记录需要保留字段关系，ToolResult 需要区分发出动作与实际效果，fresh World 必须和最新 transition 相邻。再讲五层治理如何去冗余、保配对，以及 Monitor 如何发现混合循环并给同一 ActionPolicy 一次重审机会。</span></li><li><b>跨平台架构。</b><span>模型看统一世界和语义动作，平台承担来源语义、私有绑定、currentness 与执行。Android 扩展迁移共享的导航和绑定合同，复用同一 loop，联系人单例 7 轮官方评分 1.0；不把单例包装成整套 benchmark 成绩。</span></li><li><b>评测与迭代。</b><span>讲 Task316 的信息可发现性修复，再讲 Task798 只闭合机械停滞、业务结果仍开放。最后解释 native score、Token/耗时覆盖、配对比较和 Badcase 首次偏离边界，说明怎样决定改呈现、Prompt、模型还是执行。</span></li></ol>
 
         <h3>10 分钟版本</h3>
-        <p>按本页顺序讲：问题定义 1 分钟、全链路 4 分钟、用户控制和视觉 2 分钟、SOTA 取舍 1 分钟、真实失败与证据 2 分钟。主线始终是“事实由谁拥有、转换在哪个边界发生、失败如何 typed fail-closed”。</p>
+        <p>按面试官关注点选择一条深挖：上下文与 Monitor 4 分钟、PydanticAI 选型和外部工具交接 2 分钟、跨平台 1 分钟、评测/Badcase 2 分钟、SOTA 与取舍 1 分钟。打开 <a href="interview-playbook.html">42 题技术答辩</a>，每题都有具体机制、失败路径、追问与定位。</p>
       </section>
 
       <section id="problem">

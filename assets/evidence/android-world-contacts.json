@@ -1,0 +1,21 @@
+{
+  "benchmark": "AndroidWorld",
+  "upstream_commit": "3e50888527ef9f29b9157ecd537e408008bb1c85",
+  "task": "ContactsAddContact",
+  "seed": 0,
+  "goal": "Create a new contact for Louis Lopez. Their number is +10487647593.",
+  "model_profile": "deepseek",
+  "status": "done",
+  "turns": 7,
+  "official_score": 1.0,
+  "text_first": true,
+  "failure_code": null,
+  "runtime_failure": null,
+  "policy_failure": null,
+  "environment_notes": [
+    "The temporary upstream Docker checkout used eclipse-temurin:18-jdk-jammy because openjdk:18-jdk-slim is unavailable.",
+    "The temporary image kept package discovery inside /opt/android-world and installed matplotlib==3.6.1 from the upstream non-Docker requirements.",
+    "The emulator required an IPv4 wlan0 policy route so the accessibility forwarder could reach its in-container gRPC server.",
+    "The upstream Contacts snapshot was absent; the official task lifecycle and evaluator still completed successfully."
+  ]
+}

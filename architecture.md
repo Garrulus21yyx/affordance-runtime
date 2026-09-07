@@ -1,5 +1,67 @@
 # Architecture
 
+### 2026-09-07 ActionPolicy completion and citation clarification
+
+Frozen live inputs prove that the application Submit control and F state_evidence were delivered. The v56 policy
+instruction to submit once outputs were supported did not distinguish prepared fields from task-required application
+effects. v57 makes that distinction in the existing ActionPolicy prompt and final-response tool description. The
+model still decides whether a UI commit is needed; no Runtime button matching or automatic submission is added.
+Read-only answers may finish from supported output. Native evaluation remains the task verdict owner.
+
+Presentation sidecars cite current F facts or delivered media evidence, whereas E/N/R identify subjects/regions.
+The shared schema and private membership rejection now state this domain and the available correction. Existing
+membership remains strict across final artifacts, nested items and interaction options; citations remain optional.
+No dynamic ref enumeration, alias coercion or second binding authority is introduced. Catalog integration tests
+exercise valid current refs, invalid subject/stale refs, correction and omitted citations across these consumers.
+The first two v57-only live trials still stopped before application submission despite correct F citations. Their
+TaskGoal had empty success_criteria: the BrowserGym intake forwarded the page instruction but omitted its native
+completion requirement. The existing benchmark TaskBoundary now supplies a uniform natural-language completion constraint
+for all admitted tasks, including using an available task-completion control after preparation. This
+states the environment task contract without changing native scoring, inspecting answers or choosing controls.
+Live validation is recorded separately in benchmark.md; a prompt change alone is not capability closure.
+
+### 2026-09-07 evaluation boundary repair
+
+BrowserGymCaseEnvironment explicitly delegates finalization support, codec and finalize to its existing UnifiedWorldEnvironment, which owns post-acquisition. Case projection converts interrupted nonterminal runtime snapshots into failed reports without inventing a task verdict. The existing measurement projection is shared by normal and failed report conversion; unavailable measurements remain null and suite rates require complete measured populations. Provider usage remains sourced from existing provider instrumentation and Langfuse generation ingestion; no tokenizer or price catalog is introduced.
+
+Labs persists its request alongside the future output directory, leaving directory creation to the formal CLI. Completed-run projections expose the formal report evidence verdict, show invalid evidence in the UI, and exclude its outcome/cost from comparisons while retaining diagnostic values. Historical reports are not rewritten.
+
+### 2026-09-06 Labs evaluation loop — persisted results and descriptive comparison
+
+The Labs launcher, completed-result table, paired comparison, task detail, and existing evidence inspector share
+one result chain. `SQLiteRunResultStore` owns formal case/run results; `run.json` and `cases/*.json` are exports.
+`CompletedRunSummaryResolver` projects only allowlisted run directories and supported attempt identities. Its v2
+contract preserves nullable measurements and owner-produced `failure_facts.task_outcome_kind/code`; process exit,
+Runtime status and evaluator outcome remain independent. Missing/invalid measurements never become zero.
+
+`BenchmarkLabManager` persists the launch spec, seed, timeout, turn budget and command in `../<run-id>.request.json` before
+starting its existing subprocess. No environment dump or credential is stored. It rediscovers completed `lab-*`
+directories under its own evidence root after a restart; this restores result discovery, not live process control.
+Explicit `INTERACTION_SHELL_EVIDENCE_RUNS` roots remain supported. Raw evidence retains the engineering-key boundary.
+
+Harness instrumentation records `benchmark_timing` start/end events directly around existing environment setup,
+reset/capture, policy/generation, GoalCompiler, execution-plus-observation, evaluation, finalization and cleanup
+boundaries. Each interval has an ID, a monotonic offset from the case instrumentation origin, and a completion,
+error, cancellation or unfinished disposition. `RunTraceRecorder` persists these non-authoritative observations;
+no Core Loop control or evaluator meaning moves into Trace. Intervals can nest and cannot be summed as exclusive
+phase costs. Historical traces without timing are unavailable, never reconstructed from event sequence.
+
+`target_loop/comparison.py` owns pure descriptive comparison over persisted evaluator outcomes and measured costs.
+It preserves the union of case identities and marks missing pairs and unknown outcomes explicitly. Failed-run
+consumption contributes to totals; incomplete measurement coverage suppresses totals and amortized costs. Budget
+curves show observed successful runs within a measured cost threshold, divided by the batch's recorded trials;
+they do not predict the effects of rerunning at a different budget. The shell only renders these projections and
+exports the same comparison JSON. Suite/seed/manifest differences are reported; current evidence lacks complete
+frozen environment/model/evaluator conditions and repeated-trial decision thresholds, so verdict remains
+`inconclusive`. This is an evaluation/diagnosis loop, without automatic candidate promotion.
+
+Public API: `GET /labs/completed-runs`, `GET /labs/completed-runs/{locator_id}/detail`, and
+`GET /labs/evaluation/comparison?baseline_attempt=...&candidate_attempt=...`. Detail reads bounded local traces,
+checks attempt/case lineage, and exposes metrics and relative data provenance, never model transcripts. OpenAPI,
+TypeScript and Valibot contracts are regenerated together. Policy token metrics remain scoped to their original
+owner; complete all-role physical-request accounting and monetary pricing are not claimed.
+
+
 ## Current status
 
 The current production target is a thin, single-loop GUI agent. The former generic evidence-delivery system is no
