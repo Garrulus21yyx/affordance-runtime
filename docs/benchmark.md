@@ -2,6 +2,37 @@
 
 ## Current status
 
+### Incremental observation projection acceptance
+
+2026-09-08 status: **design documented; implementation and performance acceptance pending**. The supported contract
+and owner migration are defined in [architecture.md](architecture.md#observation-reuse-fresh-acquisition-incremental-derivation).
+Existing same-World projection reuse and RegionVersion outline reuse are the baseline, not proof of cross-World
+ActorWorld/grounding/evidence reuse. Historical Task97 timings below describe that baseline only.
+
+Before claiming the optimization implemented and verified:
+
+- Run differential/property tests over generated valid World transitions against the existing full projector.
+  Compare complete public inventory, state/relations, coverage, ordering, action offers, refs and resolver mappings,
+  evidence/media applicability, and model delivery under the same turn inputs. Strip only explicitly volatile
+  per-invocation metadata; never normalize away current World identity, provenance or permission differences.
+- Vary content, structure, insertion/removal/reordering, cross-region relations, action capability, task revision,
+  controls, viewport/media and document lineage independently and in combination. Identical fresh content must
+  preserve eligible content reuse while producing fresh envelope identity. Compare cold, warm and cache-miss paths;
+  verify deleted targets cannot resolve and stale refs/evidence cannot execute or become current through reuse.
+- Exercise same-World local reads and GUI post-action transitions through context, Catalog, Binder and StepResult.
+  Check acquisition/projection failure, cancellation, reset, reconnect and checkpoint restoration preserve currentness
+  and never publish a partial mixed-generation bundle. These tests protect owner contracts, not named page cases.
+- Measure owner-emitted recomputed/reused fragment counts, cache-miss reason, digest/index cost, projection latency,
+  per-turn assembly latency and peak memory on the same frozen inputs/configuration. Include unchanged fresh Worlds,
+  local changes and broad structural changes. Require equivalent output and lower median projection latency on the
+  declared repeated-local-change workload; retain full recomputation if bookkeeping erases that benefit. Report
+  sample counts and p50/p95, cold-path cost and memory alongside gains rather than claiming universal speedup.
+- After separate user authorization, run representative live benchmark comparisons with fixed profile, tasks/seeds
+  and budgets. Report native outcomes, capture count/time, projection time, provider time/tokens and total latency
+  separately. A projection replay improvement establishes neither task success nor end-to-end generalization.
+
+This documentation update runs no live benchmark and records no new runtime capability or overall closure.
+
 ### 2026-09-01 Task798/Task316 convergence reopening — owner repair implemented, live-open
 
 The paired run at commit `ec7923b4` falsified the prior closure model. Task798 completed 33 steps in its full

@@ -241,11 +241,15 @@ Benchmark instruction ──┴→ NaturalLanguageTaskRequest → TaskGoal
           <div><span>D</span><b>ProviderEnvelope</b><small>最终物理请求</small></div>
         </div>
         <div class="table-wrap"><table class="compare-table"><thead><tr><th>层</th><th>具体包含</th><th>谁能看</th><th>省略/过期策略</th></tr></thead><tbody>
-          <tr><td>AgentContext</td><td>TaskGoal、GoalPlan、fresh World、canonical refs、完整 ActionSpace、workspace、last StepResult、control feedback、final codec</td><td>Runtime / policy boundary</td><td>同一 observation 的昂贵 projection 只构造一次；World 更新则整个 context 过期</td></tr>
+          <tr><td>AgentContext</td><td>TaskGoal、GoalPlan、fresh World、canonical refs、完整 ActionSpace、workspace、last StepResult、control feedback、final codec</td><td>Runtime / policy boundary</td><td>每个 policy turn 重新组装；精确 World/ActionSpace 等输入不变时复用昂贵 projection；新 World 使用新 bundle</td></tr>
           <tr><td>ModelTurnDelivery</td><td>ActorWorld PageMap、ActiveView、collection folds、coverage、ActionDeliveryPlan、可选 screenshot、deferred ToolReturn</td><td>模型</td><td>重复项折叠；未交付范围显式写出，可用 R-ref/read/search/cursor 恢复</td></tr>
           <tr><td>ToolCatalog</td><td>本轮允许工具 schema、已交付 E-ref 的 private resolver、catalog digest</td><td>模型看 schema；Runtime 看 resolver</td><td>只在该 context 有效；未交付 route 不可调用</td></tr>
           <tr><td>ProviderEnvelope</td><td>system、current user JSON、官方 history、deferred result、media bytes/digest、tools、settings、output contract、reserves</td><td>provider transport</td><td>对最终物理 envelope 做 admission，而不是只估 prompt 字符串</td></tr>
         </tbody></table></div>
+        <h3 id="observation-reuse">采集、投影、每轮组装是三个生命周期</h3>
+        <p><code>fill</code>、勾选、切换 dashboard tab 即使 URL 不变，也走 fresh post-action World；本地 <code>read_region / search_page_content / list_regions / find_controls</code> 查询已有 World，无需 GUI dispatch。复用投影不代表旧页面一直 current，执行前仍须 currentness 检查。</p>
+        <p>当前代码支持同一 World 内复用 <code>ObservationContextProjection</code>，跨 World 的 <code>RegionVersion</code> 只复用部分 outline。<a href="architecture.md#observation-reuse-fresh-acquisition-incremental-derivation">增量设计</a>将复用粒度延伸到依赖未变的 region/target 内容：先从 fresh World 建立区域与依赖摘要，再复用或重算片段，并绑定新 World 的 refs、resolver 和证据 lineage。新旧 index 就绪后才产生 <code>PublicWorldDelta</code>，它不是全部依赖的失效清单。</p>
+        <p>输入可能联动校验和结果区域，滚动可能改变截图与 grounding；哪些片段可复用由完整依赖决定。每轮 history、feedback、action page 与 context identity 仍重新组装。跨 World 增量投影是待实施设计，<a href="benchmark.md#incremental-observation-projection-acceptance">等价性与性能验收</a>尚待完成，不能沿用历史耗时宣称新收益。</p>
         <h3>页面压缩：保留结构骨架，把重复内容变成可取回记录</h3>
         <div class="cards two">
           <article class="card"><h3>PageMap + ActiveView</h3><p>当前页面、focus、active dialog/form、salient region、可执行 targets 和关键事实优先展开；结构顺序、父子关系、region membership、状态和 provenance 保留。<code>lossless_public=True</code> 指 public World 投影不静默丢掉已支持的语义类型。</p></article>
@@ -292,7 +296,7 @@ Benchmark instruction ──┴→ NaturalLanguageTaskRequest → TaskGoal
         <h2>一次 step 的真实路径：决策只是中点</h2>
         <div class="sequence dense">
           <div class="actor">Initialize</div><div class="event"><b>reset → first fresh World → one GoalCompiler call</b>；建立唯一 RunState，不创建 Planner/Worker 第二 loop。</div>
-          <div class="actor">Context</div><div class="event">若 observation/task revision 变化，重建 ActionSpace、canonical projection、region index、AgentContext、DeliveryPlan 和 Catalog。</div>
+          <div class="actor">Context</div><div class="event">每个 policy turn 组装 AgentContext 与当前 delivery/Catalog；同一 World 且投影依赖不变时复用昂贵派生结果。fresh World 到来则替换 bundle；task revision 使 GoalPlan 和任务相关动作/交付失效。</div>
           <div class="actor">Policy</div><div class="event">用 TaskGoal + GoalPlan + fresh World + bounded history + current tools 产生一个 closed decision；返回的 context_id 必须仍当前。</div>
           <div class="actor">Resolve</div><div class="event">ToolCall → Catalog resolver → <code>SelectAction</code>；或直接成为 observation/read/search/wait/final/ask/abort 分支。</div>
           <div class="actor">Gate</div><div class="event">ActionSpace admission → replay guard → RiskPolicy/confirmation → Binder → environment currentness/live probe。</div>

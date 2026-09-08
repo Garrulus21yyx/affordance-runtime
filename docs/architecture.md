@@ -1,5 +1,112 @@
 # Architecture
 
+## Observation reuse: fresh acquisition, incremental derivation
+
+Design revision: 2026-09-08. **Proposed; cross-World projection reuse is not implemented or benchmark-verified.**
+This section extends the existing same-generation lifecycle described below. It does not change acquisition,
+currentness, dispatch, or task-completion authority. Acceptance and measurement status live in
+[benchmark.md](benchmark.md#incremental-observation-projection-acceptance).
+
+### Evidence and the efficiency gap
+
+`ObservationContextProjection` currently holds model World, grounding, ActorWorld, evidence index, complete action
+view, labels, and catalog digest for one exact observation/ActionSpace/canonical lineage/capability/control tuple.
+`ContextBuilder.project_observation()` builds those derivatives; `build()` assembles each policy turn from them and
+current task, history, delivery, and feedback. A new AgentContext does not imply a new browser capture.
+`WorldDeliveryIndex.from_observation(previous_index=...)` already retains an unchanged `RegionVersion.version` and
+`cached_outline` when document lineage and content/structure digests agree. It still partitions and materializes the
+fresh index before making that comparison. This is partial outline reuse, not incremental ActorWorld or grounding.
+
+The trigger is a fresh observation after a small GUI operation, such as fill or a dashboard tab change. The immediate
+mechanism is replacement of the observation-wide projection bundle. The shared limitation is that its lifetime key
+correctly protects freshness but also determines the reuse granularity of every expensive derivative. There is no
+measurement here proving that capture, projection, or provider latency dominates the current end-to-end workload.
+The positive target is a new current bundle assembled from fresh identities and reusable immutable content whose
+complete dependencies are unchanged. URL equality, operation name, and apparent page similarity do not prove reuse.
+
+### Owners and data flow
+
+| Fact or conversion | Owner and consumers |
+| --- | --- |
+| Fresh source evidence and lineage | SurfaceAdapter/acquisition/Fusion produce the current `WorldObservation`; projection and evaluators consume it. |
+| Complete semantic action inventory | `ActionSpaceBuilder` consumes current TaskGoal and World; index, Catalog and Binder consume its result. |
+| Region membership, topology and versions | `WorldDeliveryIndex` owns comparison with the prior index; transition and context projections consume it. |
+| Public change facts | `WorldTransitionProjector` consumes exact before/after Worlds and indexes; local effect, feedback and Workspace consume `PublicWorldDelta`. |
+| Public refs and private ref resolution | `CanonicalPublicWorldProjection` binds current records; grounding, delivery and Catalog consume that binding. |
+| Expensive derived content and reuse | Existing model/actor/grounding/evidence projection owners define their dependencies; `ContextBuilder` assembles their current bundle and per-turn context. |
+| Execution and termination | Binder/Executor retain currentness and dispatch ownership; TaskEvaluator/native verifier retains completion ownership. |
+| Measurements | Each projection owner emits measured work/reuse/latency; existing Trace and benchmark reporting observe it. |
+
+```text
+GUI dispatch or explicit acquisition -> fresh WorldObservation
+  -> current ActionSpace + fresh region inventory/dependency digests
+  -> compare prior same-lineage inputs; classify reusable and changed dependencies
+  -> current canonical refs/resolvers + recomputed or reused immutable content
+  -> new ObservationContextProjection for this exact World
+  -> per-turn AgentContext + action delivery + Catalog + provider envelope
+
+exact before/after Worlds + their indexes -> PublicWorldDelta -> existing effect/feedback consumers
+same-World local read/search/find -> reuse current bundle -> new per-turn delivery/context
+```
+
+The fresh index precedes the delta: the existing transition projector requires both indexes. `changed_region_keys`
+is useful supporting change evidence, but is not an exhaustive invalidation key for topology, actions, capabilities,
+viewport, or media. `semantic_changed=false` likewise does not establish projection equivalence. Reuse eligibility
+belongs to each derivation owner, not to CoreLoop or a new delta-driven controller. The loop only carries and
+atomically installs owner-produced current bundles at existing commit boundaries.
+
+### Supported reuse and invalidation contract
+
+1. **Every new World gets a new envelope.** Observation/action-space IDs, canonical lineage, public ref assignments,
+   private resolvers, evidence provenance and media applicability must describe the fresh inputs, even if public
+   content is identical. Cached content cannot carry an old executable ref, binding, cursor, evidence index or
+   observation identity into the new envelope. Ref-dependent derivatives are rebuilt unless their owner explicitly
+   separates reusable content from current binding and proves that conversion equivalent to full projection.
+2. **Reuse is dependency-complete and local.** Within one episode/document lineage, a region or target fragment may
+   be reused only when its identity is unambiguous and every input read by that derivation is equal. Keys include the
+   projection schema/configuration plus the relevant content/state, membership, source topology/order, relations,
+   action offers and capabilities. Cross-region relationships invalidate all dependent fragments, not just the
+   region containing the edited control. Existing RegionVersion digests are a starting point, not a universal key.
+3. **Visual and task inputs have separate dependencies.** Viewport, scroll, geometry, frame/media digest and source
+   provenance invalidate affected visual/grounding output even when text is unchanged. Task revision invalidates
+   goal resolution and task-dependent action/delivery output; unchanged task-independent content can be reused only
+   after its dependencies are checked. Runtime controls, projection limits and catalog contracts invalidate their
+   consumers. History, recent steps, feedback, selected action page and context identity are assembled each turn.
+4. **Freshness is independent of cache hits.** GUI dispatch, including fill, toggles and same-URL tab changes, retains
+   causal fresh post-action acquisition. Explicit refresh and return from user control retain their capture rules.
+   Local read/search/find/list tools query the already captured current World without GUI dispatch; that permission
+   does not certify a live page as unchanged indefinitely. Existing currentness checks still govern execution.
+5. **The fallback is full derivation from fresh inputs.** Missing cache, changed/unknown dependency, ambiguous match,
+   changed document lineage, reconnect or incompatible configuration means a cache miss and recomputation. A valid
+   cache miss is not a task failure. Invalid fresh inputs still use the owning boundary's failure contract; stale
+   evidence is never substituted for failed acquisition or projection. Publish a complete validated bundle or retain
+   the existing failure path, never a mixture of before/after identities. Cancellation cannot publish partial work.
+6. **The cache is disposable and bounded.** Retain only the current bundle and the immediately preceding generation
+   needed during a transition, bounded by the admitted inventory. Removed fragments are discarded at commit;
+   episode reset/reconnect clears reuse eligibility. Checkpoints restore authoritative state and fresh acquisition,
+   not a projection cache. The implementation does not accumulate a navigation history or semantic memory.
+
+For example, fill may change the form, focus, validation and a results region. Fresh capture determines all affected
+inputs; only independent sidebar/footer content can be reused. Opening a dashboard tab can replace membership,
+controls and relations without changing the URL. Scroll can preserve text fragments while requiring fresh geometry
+and media grounding. None of these examples becomes a production branch or an action-name invalidation rule.
+
+### Bounded migration and tradeoffs
+
+Start by measuring the existing owners separately: capture, fusion, index/digest construction, canonical projection,
+model/actor/grounding/evidence derivation, per-turn packing and provider exchange. Use the current full projector as
+the reference implementation. Extend index/dependency comparison and extract immutable content fragments only in
+owners with measured repeated work; integrate through the existing `ContextBuilder` and transition carry-forward
+path. Migrate local discovery, delivery/Catalog, evidence and exceptional transitions together wherever they consume
+those fragments. Keep the existing full-projection path as the normal cache-miss implementation.
+
+Whole-World reuse remains the simpler same-generation path; full recomputation remains the safe fresh-generation
+baseline. Region/target reuse adds comparison and invalidation cost, so expand it only where measured savings exceed
+that cost. A linear scan of fresh inputs and current ref rebinding may remain necessary: this design does not promise
+O(changed regions) total capture/projection time, lower model token usage, or faster provider calls. DOM patch capture,
+remote shared caches, durable caches, new planners, task-progress state and benchmark-specific heuristics are outside
+this revision. Implementation and closure require the falsifiable equivalence and performance gates in benchmark.md.
+
 ## Current status
 
 The current production target is a thin, single-loop GUI agent. The former generic evidence-delivery system is no
@@ -2863,14 +2970,14 @@ seconds. Second, transition projection and later action discovery could independ
 lossless model/grounding/actor projections, while `StepResult -> RunState` discarded the already constructed
 after-World index.
 
-The positive generation-lifecycle contract is now:
+The implemented same-generation lifecycle contract is:
 
 ```text
 fresh World + current ActionSpace
 -> one source-order map per source
 -> one WorldDeliveryIndex + canonical projection + observation context projection
 -> same-World policy/read/search/find turns reuse those immutable derivations
--> next fresh World atomically replaces them
+-> next fresh World atomically replaces the current bundle
 ```
 
 `WorldObservation` remains the only current environment authority. `ObservationContextProjection` is a disposable,
@@ -2878,7 +2985,9 @@ non-serialized bundle of pure derivations keyed by the exact observation, Action
 capabilities, and Runtime controls; it is neither another World nor a progress or execution state machine.
 `WorldTransitionProjector` accepts the exact before/after indexes already owned by the transition, and `StepResult`
 carries the after index into `RunState`. Action discovery consumes the current context's index and grounding instead
-of rebuilding them.
+of rebuilding them. The proposed incremental-derivation design at the top of this document preserves that
+replacement boundary while allowing dependency-validated content reuse inside the new bundle; it is not part of
+these historical implementation measurements.
 
 Source-order lookup is now a single O(N) map per source. On the exact run2 World, the full 4,083-action replay retains
 all 644 functional regions while `WorldDeliveryIndex` falls from about 71.9 to 1.7 seconds. Canonical projection takes
