@@ -24,11 +24,11 @@ jobs:
       - name: Verify fixed real adapter conformance
         run: >-
           python -m pytest -q
-          tests/test_browsergym_adapter_conformance.py
-          tests/test_browsergym_active_capture_conformance.py
-          tests/test_browsergym_dependency_inventory.py
-          tests/test_browsergym_oracle_isolation.py
-          tests/test_browsergym_report_privacy.py
+          tests/benchmarks/surfaces/browsergym/test_browsergym_adapter_conformance.py
+          tests/benchmarks/surfaces/browsergym/test_browsergym_active_capture_conformance.py
+          tests/benchmarks/surfaces/browsergym/test_browsergym_dependency_inventory.py
+          tests/benchmarks/surfaces/browsergym/test_browsergym_oracle_isolation.py
+          tests/benchmarks/surfaces/browsergym/test_browsergym_report_privacy.py
       - name: Generate exact-head adapter attestation
         run: >-
           python -m affordance_runtime.benchmarks.external_smoke.cli
