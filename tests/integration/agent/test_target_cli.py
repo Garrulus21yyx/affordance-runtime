@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -31,6 +34,9 @@ from affordance_runtime.task import (
     UnavailableTaskRevisionCompiler,
 )
 from tests.support.agent.target_agent_loop_support import FirstOfferedActionPolicy
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _boundary_file(tmp_path: Path, payload: dict[str, object]) -> Path:
@@ -168,6 +174,24 @@ def test_product_cli_routes_only_the_target_run_contract(monkeypatch, tmp_path: 
     assert parsed.command == "run"
     with pytest.raises(SystemExit):
         build_parser().parse_args(["benchmark"])
+
+
+def test_product_cli_module_execution_reaches_parser() -> None:
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT / "src")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "affordance_runtime.app.cli", "--help"],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "usage: affordance-runtime" in result.stdout
+    assert "run" in result.stdout
 
 
 def test_target_run_closes_browser_and_projects_nonready_outcome(tmp_path: Path) -> None:

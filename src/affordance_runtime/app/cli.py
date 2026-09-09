@@ -245,3 +245,7 @@ def _evaluation_spec(value: object) -> EvaluationSpec | None:
         authoritative_checks=authoritative,
         strict_source_lineage=strict,
     )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
